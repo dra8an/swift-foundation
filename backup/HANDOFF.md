@@ -297,10 +297,15 @@ Hebcal CSV reference lives outside the repo at `~/Projects/claude/CalendarAPI/ic
 | 54 | Step 1 — sync `port/hebrew-main` to `upstream/main` | ✅ done (2026-06-05 on Swift 6.4 machine; both now at `5829fa1`) |
 | 59 | Adopt single-PR direction (vs two PRs in `MAIN_MERGE.md`) — combine v8–v15 perf + v19–v22 dedup into one PR | ✅ done (2026-06-05; documented in `backup/PR_PLAN.md`) |
 | 60 | Adapt Suite C (`HebrewRecurrenceRuleParityProbe.swift`) — replace `_CalendarICU` reference with `Calendar(identifier: .hebrew)` route. Snapshot as v25. | ✅ done (2026-06-05, **uncommitted** — `backup/v25-suite-c-upstream-ready/`; safety snap at `backup/v24-frozen-pre-v25/`; **0 divergences across 13 tests preserved**) |
-| 61 | Audit `BenchmarkCalendar.swift` for fast-path benchmark coverage; decide which (if any) new benches to add to the PR | open |
-| 62 | Generate three commit-shape patches from `backup/v*-*/` snapshots; verify each applies atop `port/hebrew-main`'s file state | open |
-| 63 | Cross-check no `LockedState` leaks into outgoing patches (PR builds on Swift 6.4, must use Mutex) | open |
-| 64 | Open PR `port/hebrew-perf-and-dedup` against `swiftlang/swift-foundation` `main` (Swift 6.4 machine) | open — gated on #60/#61/#62/#63 |
+| 61 | Audit `BenchmarkCalendar.swift` for fast-path benchmark coverage | ✅ done (2026-06-05; **decision: ship zero new benchmarks**, quote perf table in PR description) |
+| 62 | Generate three commit-shape patches from `backup/v*-*/` snapshots | superseded by 2-commit shape; mega-commit on `port/hebrew` (`ccbe1fc`) + cherry-pick + selective staging used instead |
+| 63 | Cross-check no `LockedState` leaks into outgoing patches | ✅ done (2026-06-05; `grep LockedState Sources/FoundationEssentials/Calendar/*.swift` returned nothing on PR branch) |
+| 64 | Open PR `port/hebrew-perf-and-dedup` against `swiftlang/swift-foundation` `main` (Swift 6.4 machine) | open — gated on 6.4 build/test + Gregorian-dedup decision + 6.4-review-comments resolution |
+| 65 | Mega-commit on `port/hebrew` (single commit of v8–v25 + local infrastructure) | ✅ done (2026-06-05, `ccbe1fc`, pushed to `origin`) |
+| 66 | Create + push `port/hebrew-perf-and-dedup` PR branch with 2 commits (fast paths + SHAREABLE_APIS) | ✅ done (2026-06-05, pushed to `origin`) |
+| 67 | Apply v19–v22 dedup operations to upstream's `Calendar_Gregorian.swift` (deferred from 6.3 — needs 6.4 build/test) | open — discuss tomorrow before acting |
+| 68 | Address Swift 6.4 machine review comments on the PR branch | open — comments TBD; user will brief tomorrow |
+| 69 | Write PR body (description, perf table, reviewer-facing cover notes) | open — gated on #67 outcome |
 | 55 | Back-sync `f94c6ac` to local `port/hebrew` as v23 (floor + feature flag) | ✅ done (2026-06-04, **uncommitted** — `backup/v23-floor-and-feature-flag/`; safety snap at `backup/v22-frozen-pre-v23/`) |
 | 56 | Back-sync `b1b8fdf` to local `port/hebrew` as v24 (Hebrew test split) | ✅ done (2026-06-04, **uncommitted** — `backup/v24-hebrew-test-split/`; safety snap at `backup/v23-frozen-pre-v24/`) |
 | 57 | After v23 + v24: re-run `clean-test.sh "Calendar\|RecurrenceRule\|Hebrew"` and confirm 211/211 stays green | ✅ done (2026-06-04, **211/211 in 15 suites, build 440 s + test 164 s + incremental broader-filter pass 52 s**) |
@@ -309,22 +314,33 @@ Hebcal CSV reference lives outside the repo at `~/Projects/claude/CalendarAPI/ic
 
 ## What's next
 
-### Status as of 2026-06-05
+### Status as of 2026-06-05 evening
 
-Step 1 (sync `port/hebrew-main` to `upstream/main`) DONE on the Swift 6.4 machine. `origin/port/hebrew-main` and `upstream/main` are both at `5829fa1` as of 2026-06-05 session start. Local `port/hebrew` verified in sync for Hebrew files (v23+v24 from 2026-06-04 already absorbed `f94c6ac` + `b1b8fdf`).
+**PR branch `port/hebrew-perf-and-dedup` is BUILT and PUSHED to `origin`.** Swift 6.4 machine has run validation — user reports "some comments, but in general it's fine." Specific comments TBD tomorrow morning.
 
-PR direction decided 2026-06-05: **single combined PR for v8–v22 (fast paths + SHAREABLE_APIS dedup)** — see `backup/PR_PLAN.md`. Three commits, branch `port/hebrew-perf-and-dedup` off `port/hebrew-main`.
+Two commits on the PR branch (atop `port/hebrew-main` == `upstream/main`):
+- `8342e1d` — Add Hebrew calendar fast paths + shared protocol method (Commit 1: shared-code wiring + Hebrew implementation + Suite C parity probe)
+- `86515dd` — Extract shared calendar helpers into _CalendarConstants + _CalendarUtility (Commit 2: shared helpers + Hebrew adoption; **Gregorian deliberately reverted to upstream** — Gregorian dedup deferred)
 
-### Next actions (pre-PR work, can run locally on Swift 6.3)
+Today's accomplishments in order:
+1. Confirmed step 1 sync (`origin/port/hebrew-main` == `upstream/main` at `5829fa1`).
+2. Task #60: Suite C adapted to drop `_CalendarICU` reference (v25, 0 divergences preserved).
+3. Task #61: BenchmarkCalendar audit — decision: ship zero new benchmarks (quote perf numbers in PR description).
+4. Mega-commit on `port/hebrew` (`ccbe1fc`): single commit of entire v8–v25 stack + local infrastructure → clean working tree.
+5. Branch `port/hebrew-perf-and-dedup` created off `port/hebrew-main` + reshaped to 2 PR commits via cherry-pick + selective staging.
+6. Pushed both branches to `origin`.
+7. Handoff to Swift 6.4 machine for build + test + Gregorian-dedup decision + PR open.
 
-Per `backup/PR_PLAN.md § Pre-PR work`:
+User-driven decision today: **2-commit PR shape** instead of the 3-commit shape originally in `PR_PLAN.md` (fast paths + Hebrew impl bundled into Commit 1; SHAREABLE_APIS dedup as Commit 2).
 
-1. **Adapt Suite C** — replace `_CalendarICU(.hebrew)` reference in `HebrewRecurrenceRuleParityProbe.swift` with `Calendar(identifier: .hebrew)` (routes to ICU via v23 feature-flag-off). Verify 0 divergences still hold. Snapshot as v25.
-2. **Audit `BenchmarkCalendar.swift`** for fast-path benchmark coverage.
-3. **Generate three commit-shape patches** from `backup/v*-*/` snapshots. Verify each applies atop upstream's file state.
-4. **Cross-check Mutex/LockedState** — Swift 6.4 PR builds need Mutex; ensure no `LockedState` leaks into the outgoing patches.
+See `backup/SESSION_2026-06-05.md` for the full session log.
 
-After local pre-PR work, the PR-branch creation happens on the Swift 6.4 machine (commands captured in `backup/PR_PLAN.md § PR-branch creation`).
+### Next actions (tomorrow 2026-06-06)
+
+1. **Address 6.4 review comments** — specific items TBD; user will brief on resume.
+2. **Decide on Gregorian dedup** — apply as Commit 3 on the PR branch (using `patch --fuzz=3` from port/hebrew snapshots on the 6.4 machine) OR defer to follow-up PR. Discuss before acting.
+3. **Write PR body** — use commit messages + `SHARED_CODE_SAFETY.md` (Commit 1 cover) + `SHAREABLE_APIS.md` (Commit 2 design) + benchmark numbers from local `HebrewVsICUBenchmark.swift`.
+4. **Open PR** against `swiftlang/swift-foundation` `main` from the 6.4 machine.
 
 ### Gated on PR #1953 outcome
 
