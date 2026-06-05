@@ -1,0 +1,30 @@
+[0/3] Write swift-version-5C4449F6204E82C2.txt
+[1/4] Compiling CSystem shims.c
+[2/5] Write Objects.LinkFileList
+[3/5] Linking BenchmarkBoilerplateGenerator-tool
+[4/5] Applying BenchmarkBoilerplateGenerator-tool
+Building for debugging...
+[0/3] Write swift-version-5C4449F6204E82C2.txt
+[1/4] Compiling CSystem shims.c
+[2/5] Write Objects.LinkFileList
+ld: warning: building for macOS-13.0, but linking with dylib '/usr/local/opt/jemalloc/lib/libjemalloc.2.dylib' which was built for newer version 14.0
+[3/5] Linking BenchmarkTool-tool
+[4/5] Applying BenchmarkTool-tool
+Build of product 'BenchmarkTool' complete! (10.51s)
+Build complete!
+Building BenchmarkTool in release mode...
+Building benchmark targets in debug mode for benchmark run...
+Building InternationalizationBenchmarks
+
+==================
+Running Benchmarks
+==================
+
+
+========================================================================================================
+Baseline 'Current_run'
+========================================================================================================
+
+Host 'Dragans-iMac.local' with 6 'x86_64' processors with 64 GB memory, running:
+Darwin Kernel Version 24.6.0: Wed Nov  5 21:30:23 PST 2025; root:xnu-11417.140.69.705.2~1/RELEASE_X86_64
+

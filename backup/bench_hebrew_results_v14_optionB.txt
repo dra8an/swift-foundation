@@ -1,0 +1,375 @@
+[0/3] Write swift-version-5C4449F6204E82C2.txt
+[1/4] Compiling CSystem shims.c
+[2/5] Write Objects.LinkFileList
+[3/5] Linking BenchmarkBoilerplateGenerator-tool
+[4/5] Applying BenchmarkBoilerplateGenerator-tool
+Building for debugging...
+[0/3] Write swift-version-5C4449F6204E82C2.txt
+[1/4] Compiling CSystem shims.c
+[2/5] Write Objects.LinkFileList
+ld: warning: building for macOS-13.0, but linking with dylib '/usr/local/opt/jemalloc/lib/libjemalloc.2.dylib' which was built for newer version 14.0
+[3/5] Linking BenchmarkTool-tool
+[4/5] Applying BenchmarkTool-tool
+Build of product 'BenchmarkTool' complete! (10.28s)
+Build complete!
+Building BenchmarkTool in release mode...
+Building benchmark targets in debug mode for benchmark run...
+Building InternationalizationBenchmarks
+
+==================
+Running Benchmarks
+==================
+
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:CurrentDateComponentsFromThanksgivings
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:CurrentDateComponentsFromThanksgivings
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K  3% [-                                                           ] ETA: 00:00:04 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 15% [---------                                                   ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 23% [-------------                                               ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 34% [--------------------                                        ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 46% [---------------------------                                 ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 54% [--------------------------------                            ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 65% [---------------------------------------                     ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 73% [-------------------------------------------                 ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 81% [------------------------------------------------            ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K 88% [----------------------------------------------------        ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleBikeParties
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleDailyWithTimes
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleDailyWithTimes
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K  3% [-                                                           ] ETA: 00:00:04 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 15% [---------                                                   ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 22% [-------------                                               ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 35% [---------------------                                       ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 46% [---------------------------                                 ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 51% [------------------------------                              ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 61% [------------------------------------                        ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 71% [------------------------------------------                  ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 83% [-------------------------------------------------           ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K 96% [---------------------------------------------------------   ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleLaborDay
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K  3% [-                                                           ] ETA: 00:00:04 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 16% [---------                                                   ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 31% [------------------                                          ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 40% [------------------------                                    ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 46% [---------------------------                                 ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 55% [---------------------------------                           ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 64% [--------------------------------------                      ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 76% [---------------------------------------------               ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 85% [---------------------------------------------------         ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K 94% [--------------------------------------------------------    ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleThanksgivingMeals
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K  3% [-                                                           ] ETA: 00:00:04 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 10% [------                                                      ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 17% [----------                                                  ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 28% [----------------                                            ] ETA: 00:00:03 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 39% [-----------------------                                     ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 46% [---------------------------                                 ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 56% [----------------------------------                          ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 64% [--------------------------------------                      ] ETA: 00:00:02 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 71% [------------------------------------------                  ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 78% [----------------------------------------------              ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 86% [---------------------------------------------------         ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K 94% [--------------------------------------------------------    ] ETA: 00:00:01 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:RecurrenceRuleThanksgivings
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForAutoupdatingCurrentCalendar
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForAutoupdatingCurrentCalendar
+InternationalizationBenchmarks/BenchmarkCalendar.swift:214: Assertion failed
+Process failed: BenchmarkTool.BenchmarkTool.RunCommandError.WaitPIDError
+Failed to run 'run' for /Users/draganbesevic/Projects/claude/swift-foundation/Benchmarks/.build/x86_64-apple-macosx/debug/InternationalizationBenchmarks, error code [4]
+Likely your benchmark crashed, try running the tool in the debugger, e.g.
+lldb /Users/draganbesevic/Projects/claude/swift-foundation/Benchmarks/.build/x86_64-apple-macosx/debug/InternationalizationBenchmarks
+Or check Console.app for a backtrace if on macOS.
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForCurrentCalendar
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForCurrentCalendar
+InternationalizationBenchmarks/BenchmarkCalendar.swift:205: Assertion failed
+Process failed: BenchmarkTool.BenchmarkTool.RunCommandError.WaitPIDError
+Failed to run 'run' for /Users/draganbesevic/Projects/claude/swift-foundation/Benchmarks/.build/x86_64-apple-macosx/debug/InternationalizationBenchmarks, error code [4]
+Likely your benchmark crashed, try running the tool in the debugger, e.g.
+lldb /Users/draganbesevic/Projects/claude/swift-foundation/Benchmarks/.build/x86_64-apple-macosx/debug/InternationalizationBenchmarks
+Or check Console.app for a backtrace if on macOS.
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForFixedCalendars
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForFixedCalendars
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K  7% [----                                                        ] ETA: 00:00:04 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 15% [---------                                                   ] ETA: 00:00:03 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 22% [-------------                                               ] ETA: 00:00:03 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 28% [-----------------                                           ] ETA: 00:00:03 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 44% [--------------------------                                  ] ETA: 00:00:02 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 59% [-----------------------------------                         ] ETA: 00:00:02 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 67% [----------------------------------------                    ] ETA: 00:00:01 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 82% [-------------------------------------------------           ] ETA: 00:00:01 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K 89% [-----------------------------------------------------       ] ETA: 00:00:01 | InternationalizationBenchmarks:allocationsForFixedLocale
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:allocationsForFixedLocale
+InternationalizationBenchmarks/BenchmarkCalendar.swift:179: Assertion failed
+Process failed: BenchmarkTool.BenchmarkTool.RunCommandError.WaitPIDError
+Failed to run 'run' for /Users/draganbesevic/Projects/claude/swift-foundation/Benchmarks/.build/x86_64-apple-macosx/debug/InternationalizationBenchmarks, error code [4]
+Likely your benchmark crashed, try running the tool in the debugger, e.g.
+lldb /Users/draganbesevic/Projects/claude/swift-foundation/Benchmarks/.build/x86_64-apple-macosx/debug/InternationalizationBenchmarks
+Or check Console.app for a backtrace if on macOS.
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K  3% [-                                                           ] ETA: 00:00:04 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K  7% [----                                                        ] ETA: 00:00:04 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 11% [------                                                      ] ETA: 00:00:03 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 19% [-----------                                                 ] ETA: 00:00:03 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 31% [------------------                                          ] ETA: 00:00:03 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 39% [-----------------------                                     ] ETA: 00:00:02 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 47% [----------------------------                                ] ETA: 00:00:02 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 55% [---------------------------------                           ] ETA: 00:00:02 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 59% [-----------------------------------                         ] ETA: 00:00:02 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 63% [-------------------------------------                       ] ETA: 00:00:02 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 74% [--------------------------------------------                ] ETA: 00:00:01 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 82% [-------------------------------------------------           ] ETA: 00:00:01 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K 90% [------------------------------------------------------      ] ETA: 00:00:01 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:copyOnWritePerformanceNoDiff
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:identifierFromComponents
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:identifierFromComponents
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K  1% [                                                            ] ETA: 00:00:04 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K  8% [----                                                        ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 15% [---------                                                   ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 22% [-------------                                               ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 28% [----------------                                            ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 34% [--------------------                                        ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 41% [------------------------                                    ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 51% [------------------------------                              ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 56% [----------------------------------                          ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 64% [--------------------------------------                      ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 73% [-------------------------------------------                 ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 83% [-------------------------------------------------           ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 88% [----------------------------------------------------        ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 92% [-------------------------------------------------------     ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K 99% [----------------------------------------------------------- ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivings
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:nextThousandThanksgivings
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K  1% [                                                            ] ETA: 00:00:04 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K  5% [---                                                         ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 11% [------                                                      ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 16% [---------                                                   ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 23% [-------------                                               ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 32% [-------------------                                         ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 38% [----------------------                                      ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 43% [-------------------------                                   ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 48% [----------------------------                                ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 52% [-------------------------------                             ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 56% [----------------------------------                          ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 61% [------------------------------------                        ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 65% [---------------------------------------                     ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 74% [--------------------------------------------                ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 84% [--------------------------------------------------          ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 93% [-------------------------------------------------------     ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K 97% [----------------------------------------------------------  ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:nextThousandThanksgivingsSequence
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K  1% [                                                            ] ETA: 00:00:04 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 11% [------                                                      ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 18% [----------                                                  ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 23% [-------------                                               ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 30% [------------------                                          ] ETA: 00:00:03 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 37% [----------------------                                      ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 47% [----------------------------                                ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 51% [------------------------------                              ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 59% [-----------------------------------                         ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 63% [-------------------------------------                       ] ETA: 00:00:02 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 68% [----------------------------------------                    ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 74% [--------------------------------------------                ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 81% [------------------------------------------------            ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 88% [----------------------------------------------------        ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K 93% [-------------------------------------------------------     ] ETA: 00:00:01 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | InternationalizationBenchmarks:nextThousandThursdaysInTheFourthWeekOfNovember
+
+========================================================================================================
+Baseline 'Current_run'
+========================================================================================================
+
+Host 'Dragans-iMac.local' with 6 'x86_64' processors with 64 GB memory, running:
+Darwin Kernel Version 24.6.0: Wed Nov  5 21:30:23 PST 2025; root:xnu-11417.140.69.705.2~1/RELEASE_X86_64
+
+==============================
+InternationalizationBenchmarks
+==============================
+
+CurrentDateComponentsFromThanksgivings
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │        22 │        22 │        22 │        22 │        22 │        22 │        22 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (μs) *       │      5673 │      5673 │      5673 │      5673 │      5673 │      5673 │      5673 │         1 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+RecurrenceRuleBikeParties
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │       127 │       127 │       127 │       127 │       127 │       127 │       127 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (K)        │         9 │         9 │         9 │         9 │         9 │         9 │         9 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (μs) *       │       113 │       114 │       115 │       115 │       115 │       115 │       115 │        26 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+RecurrenceRuleDailyWithTimes
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │      3742 │      3742 │      3742 │      3742 │      3742 │      3742 │      3742 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (μs) *       │      3024 │      3024 │      3024 │      3024 │      3024 │      3024 │      3024 │         1 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+RecurrenceRuleLaborDay
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │        92 │        92 │        92 │        92 │        92 │        92 │        92 │        24 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (K)        │        10 │         9 │         9 │         7 │         6 │         6 │         6 │        24 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (μs) *       │       103 │       106 │       108 │       110 │       113 │       115 │       115 │        24 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+RecurrenceRuleThanksgivingMeals
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │        80 │        80 │        80 │        80 │        80 │        80 │        80 │        32 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (K)        │        11 │        11 │        11 │        11 │        10 │         6 │         6 │        32 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (μs) *       │        86 │        87 │        87 │        90 │        91 │       102 │       102 │        32 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+RecurrenceRuleThanksgivings
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │       102 │       102 │       102 │       102 │       102 │       102 │       102 │        28 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (K)        │         9 │         9 │         9 │         9 │         9 │         8 │         8 │        28 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (μs) *       │       104 │       105 │       105 │       106 │       107 │       108 │       108 │        28 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+allocationsForAutoupdatingCurrentCalendar
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │        80 │        80 │        80 │        80 │        80 │        80 │        80 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │        11 │        11 │        11 │        11 │        11 │        11 │        11 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │     24087 │     24087 │     24087 │     24087 │     24087 │     24087 │     24087 │         1 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+allocationsForCurrentCalendar
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │        80 │        80 │        80 │        80 │        80 │        80 │        80 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │        11 │        11 │        11 │        11 │        11 │        11 │        11 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │     24528 │     24528 │     24528 │     24528 │     24528 │     24528 │     24528 │         1 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+allocationsForFixedCalendars
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │        56 │        56 │        56 │        56 │        56 │        56 │        56 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │        10 │        10 │        10 │        10 │        10 │        10 │        10 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │     20521 │     20521 │     20521 │     20521 │     20521 │     20521 │     20521 │         1 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+allocationsForFixedLocale
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │         0 │         0 │         0 │         0 │         0 │         0 │         0 │        14 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │        10 │        10 │        10 │        10 │        10 │        10 │        10 │        14 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (M)        │         4 │         4 │         4 │         4 │         4 │         4 │         4 │        14 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │       221 │       222 │       222 │       222 │       222 │       223 │       223 │        14 │error: benchmarkCrashed
+
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+copyOnWritePerformanceNoDiff
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │         0 │         0 │         0 │         0 │         0 │         0 │         0 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │        10 │        10 │        10 │        10 │        10 │        10 │        10 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (M)        │         9 │         9 │         8 │         8 │         8 │         8 │         8 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │       117 │       117 │       117 │       117 │       117 │       118 │       118 │        26 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+identifierFromComponents
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │         3 │         3 │         3 │         3 │         3 │         3 │         3 │         1 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │      5198 │      5198 │      5198 │      5198 │      5198 │      5198 │      5198 │         1 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+nextThousandThanksgivings
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │         0 │         0 │         0 │         0 │         0 │         0 │         0 │       753 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (K)        │       267 │       262 │       259 │       254 │       247 │       234 │       211 │       753 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │      3757 │      3809 │      3856 │      3914 │      3973 │      4116 │      4331 │       753 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+nextThousandThanksgivingsSequence
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │         0 │         0 │         0 │         0 │         0 │         0 │         0 │       720 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (K)        │       257 │       252 │       247 │       241 │       234 │       216 │       201 │       720 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │      3892 │      3969 │      4037 │      4106 │      4182 │      4325 │      4478 │       720 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+nextThousandThursdaysInTheFourthWeekOfNovember
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │         0 │         0 │         0 │         0 │         0 │         0 │         0 │       723 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Throughput (# / s) (K)        │       258 │       253 │       248 │       242 │       236 │       220 │       169 │       723 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ns) *       │      3885 │      3953 │      4018 │      4092 │      4164 │      4297 │      4420 │       723 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+1 benchmark job(s) failed during runtime.
