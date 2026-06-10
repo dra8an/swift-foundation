@@ -1271,19 +1271,16 @@ public struct Calendar : Hashable, Equatable, Sendable {
         _calendar.nextDate(after: date, matching: components, direction: direction)
     }
 
-    /// Whether the calendar implementation supports the `nextDate` fast path.
-    internal var _supportsNextDateFastPath: Bool {
-        _calendar.supportsNextDateFastPath
-    }
-
     public func enumerateDates(startingAfter start: Date, matching components: DateComponents, matchingPolicy: MatchingPolicy, repeatedTimePolicy: RepeatedTimePolicy = .first, direction: SearchDirection = .forward, using block: (_ result: Date?, _ exactMatch: Bool, _ stop: inout Bool) -> Void) {
-        // Fast path: opt-in flag + probe confirms the calendar handles this pattern.
+        // Fast-path: if the calendar implementation has a direct answer for the
+        // first match AND default policies are in effect, drive the loop with
+        // repeated nextDate(after:matching:) calls instead of the generic
+        // enumerate framework. The fast path opts out (returns nil) for any
+        // pattern it can't handle, so this is safe.
         if matchingPolicy == .nextTime && repeatedTimePolicy == .first,
-           _supportsNextDateFastPath,
-           let firstMatch = _calendar.nextDate(after: start, matching: components, direction: direction) {
+           let _ = _calendar.nextDate(after: start, matching: components, direction: direction) {
+            var current = start
             var stop = false
-            block(firstMatch, true, &stop)
-            var current = firstMatch
             while !stop {
                 guard let next = _calendar.nextDate(after: current, matching: components, direction: direction) else {
                     block(nil, false, &stop)

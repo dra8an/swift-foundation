@@ -94,8 +94,6 @@ internal final class _CalendarHebrew: _CalendarProtocol, @unchecked Sendable {
 
     // hash(into:) uses the `_CalendarProtocol` default impl.
 
-    var supportsNextDateFastPath: Bool { true }
-
     // MARK: - Range
 
     // Year bounds: match ICU's Hebrew reporting of ±5M (covers full Int32 year range
@@ -370,10 +368,10 @@ internal final class _CalendarHebrew: _CalendarProtocol, @unchecked Sendable {
         case .era:
             // Hebrew has a single AM era spanning from epoch to effectively forever.
             // Matches ICU's reported start (Hebrew epoch, -181,778,083,200 s before
-            // Date reference = year 1 AM, Tishrei 1, midnight UTC) and duration (Calendar._inf_ti).
+            // Date reference = year 1 AM, Tishrei 1, midnight UTC) and duration (_CalendarConstants.inf_ti).
             return DateInterval(
                 start: Date(timeIntervalSinceReferenceDate: -181_778_083_200.0),
-                duration: Calendar._inf_ti
+                duration: _CalendarConstants.inf_ti
             )
         case .year:
             // Tishri 1 of this year → Tishri 1 of next year.
@@ -516,7 +514,7 @@ internal final class _CalendarHebrew: _CalendarProtocol, @unchecked Sendable {
         let comps = dateComponents([.weekday, .hour, .minute, .second], from: date, in: self.timeZone)
         guard let dayOfWeek = comps.weekday else { return false }
         let timeInDay = TimeInterval(
-            (comps.hour ?? 0) * Calendar._kSecondsInHour
+            (comps.hour ?? 0) * _CalendarConstants.kSecondsInHour
             + (comps.minute ?? 0) * 60
             + (comps.second ?? 0)
         )
@@ -979,11 +977,13 @@ internal final class _CalendarHebrew: _CalendarProtocol, @unchecked Sendable {
         // {weekday, day} and {weekday, month} (without wdOrd or wOM) aren't fast-pathed.
         if hasWeekday && hasDay { return nil }
         if hasWeekday && hasMonth && !hasWdOrd && !hasWeekOfMonth { return nil }
-        // Time-only fast path. Requires at least one time field.
+        // Time-only fast path ({h, mi, s, ns?} with no calendar fields): handled
+        // separately below. Requires hour/minute/second all set so the gating
+        // matches what `_unadjustedDates`'s cartesian / single-combo short-circuits
+        // produce for daily-frequency rules. Partial time-fields fall through.
         let timeOnly = !hasMonth && !hasDay && !hasWeekday
         if timeOnly {
-            guard components.hour != nil || components.minute != nil ||
-                  components.second != nil || components.nanosecond != nil else { return nil }
+            guard components.hour != nil, components.minute != nil, components.second != nil else { return nil }
         }
 
         let tz = self.timeZone
@@ -996,14 +996,9 @@ internal final class _CalendarHebrew: _CalendarProtocol, @unchecked Sendable {
         let forward = direction == .forward
 
         if timeOnly {
-            let period: Double
-            if components.hour != nil       { period = 86400 }
-            else if components.minute != nil { period = 3600 }
-            else if components.second != nil { period = 60 }
-            else                             { period = 1 }
-            return nextTimeOfDayPeriodicMatch(rd: rd, currentSecsInDay: currentSecsInDay,
-                                              targetInPeriod: secsInDay, period: period,
-                                              forward: forward, tz: tz)
+            return nextTimeOfDayMatch(rd: rd, currentSecsInDay: currentSecsInDay,
+                                      targetSecsInDay: secsInDay,
+                                      forward: forward, tz: tz)
         }
 
         if hasWeekOfMonth {
@@ -1160,39 +1155,6 @@ internal final class _CalendarHebrew: _CalendarProtocol, @unchecked Sendable {
             targetRd = (targetSecsInDay < currentSecsInDay) ? rd : rd - 1
         }
         return utcDate(fromRataDie: targetRd, secondsInDay: targetSecsInDay, in: tz,
-                      repeatedTimePolicy: .former, skippedTimePolicy: .former)
-    }
-
-    private func nextTimeOfDayPeriodicMatch(rd: Int64, currentSecsInDay: Double,
-                                            targetInPeriod: Double, period: Double,
-                                            forward: Bool, tz: TimeZone) -> Date? {
-        if period >= 86400 {
-            return nextTimeOfDayMatch(rd: rd, currentSecsInDay: currentSecsInDay,
-                                      targetSecsInDay: targetInPeriod,
-                                      forward: forward, tz: tz)
-        }
-        let currentInPeriod = currentSecsInDay.truncatingRemainder(dividingBy: period)
-        let periodStart = currentSecsInDay - currentInPeriod
-        var resultSecsInDay: Double
-        if forward {
-            resultSecsInDay = (targetInPeriod > currentInPeriod)
-                ? periodStart + targetInPeriod
-                : periodStart + period + targetInPeriod
-        } else {
-            resultSecsInDay = (targetInPeriod < currentInPeriod)
-                ? periodStart + targetInPeriod
-                : periodStart - period + targetInPeriod
-        }
-        var targetRd = rd
-        while resultSecsInDay >= 86400 {
-            resultSecsInDay -= 86400
-            targetRd += 1
-        }
-        while resultSecsInDay < 0 {
-            resultSecsInDay += 86400
-            targetRd -= 1
-        }
-        return utcDate(fromRataDie: targetRd, secondsInDay: resultSecsInDay, in: tz,
                       repeatedTimePolicy: .former, skippedTimePolicy: .former)
     }
 

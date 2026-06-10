@@ -817,7 +817,7 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
             return nil
         case .era:
             if time < -63113904000.0 {
-                return Date(timeIntervalSinceReferenceDate: -63113904000.0 - Calendar._inf_ti)
+                return Date(timeIntervalSinceReferenceDate: -63113904000.0 - _CalendarConstants.inf_ti)
             } else {
                 return Date(timeIntervalSinceReferenceDate: -63113904000.0)
             }
@@ -1396,9 +1396,9 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
             return nil
         case .era:
             if time < -63113904000.0 {
-                return DateInterval(start: Date(timeIntervalSinceReferenceDate: -63113904000.0 - Calendar._inf_ti), duration: Calendar._inf_ti)
+                return DateInterval(start: Date(timeIntervalSinceReferenceDate: -63113904000.0 - _CalendarConstants.inf_ti), duration: _CalendarConstants.inf_ti)
             } else {
-                return DateInterval(start: Date(timeIntervalSinceReferenceDate: -63113904000.0), duration: Calendar._inf_ti)
+                return DateInterval(start: Date(timeIntervalSinceReferenceDate: -63113904000.0), duration: _CalendarConstants.inf_ti)
             }
 
         case .hour:
@@ -1433,7 +1433,7 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
                 let newUDate = try add(.era, to: start, amount: 1, inTimeZone: timeZone)
                 guard newUDate != start else {
                     // Probably because we are at the limit of era.
-                    return DateInterval(start: start, duration: Calendar._inf_ti)
+                    return DateInterval(start: start, duration: _CalendarConstants.inf_ti)
                 }
                 upperBound = start
 
@@ -1466,7 +1466,7 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
             switch error {
             case .overflow(_, _, _):
                 // We are at the limit.
-                return DateInterval(start: start, duration: Calendar._inf_ti)
+                return DateInterval(start: start, duration: _CalendarConstants.inf_ti)
             case .notAdvancing(_, _):
                 // Doesn't apply here
                 return nil
@@ -1497,7 +1497,7 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
         guard let hour = timeInDay.hour, let minute = timeInDay.minute, let second = timeInDay.second else {
             preconditionFailure("Unexpected nil values for hour, minute, or second")
         }
-        return TimeInterval(hour * Calendar._kSecondsInHour + minute * 60 + second)
+        return TimeInterval(hour * _CalendarConstants.kSecondsInHour + minute * 60 + second)
     }
 
     func timeInDay(inSmallComponent component: Calendar.Component, for date: Date) -> TimeInterval {
@@ -1521,7 +1521,7 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
             return totalSecond
         }
 
-        totalSecond += TimeInterval(minute * Calendar._kSecondsInMinute)
+        totalSecond += TimeInterval(minute * _CalendarConstants.kSecondsInMinute)
         return TimeInterval(totalSecond)
     }
 
@@ -2088,7 +2088,7 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
         }
         let monthLen = numberOfDaysInMonth(month, year: year)
         guard year == gregorianStartYear else {
-            let monthStartDate = date - Double((day - 1) * Calendar._kSecondsInDay)
+            let monthStartDate = date - Double((day - 1) * _CalendarConstants.kSecondsInDay)
             return (day, monthStartDate, monthLen, false)
         }
 
@@ -2099,8 +2099,8 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
         } else {
             attemptDayOfMonth = day
         }
-        let monthStartDate = date - Double((attemptDayOfMonth - 1) * Calendar._kSecondsInDay)
-        let monthEndDateForCutoverMonth = monthStartDate + Double((monthLen - kCutoverMonthRollbackDays) * Calendar._kSecondsInDay)
+        let monthStartDate = date - Double((attemptDayOfMonth - 1) * _CalendarConstants.kSecondsInDay)
+        let monthEndDateForCutoverMonth = monthStartDate + Double((monthLen - kCutoverMonthRollbackDays) * _CalendarConstants.kSecondsInDay)
         if monthStartDate < gregorianStartDate && monthEndDateForCutoverMonth >= gregorianStartDate {
             // this month is the cutover month
             return (attemptDayOfMonth, monthStartDate, monthLen - kCutoverMonthRollbackDays, true)
@@ -2264,15 +2264,15 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
         var nanoseconds: Double = 0
         switch field {
         case .weekdayOrdinal, .weekOfMonth, .weekOfYear:
-            amountInSeconds = Double(Calendar._kSecondsInWeek) * Double(amount)
+            amountInSeconds = Double(_CalendarConstants.kSecondsInWeek) * Double(amount)
             keepWallTime = true
 
         case .day, .dayOfYear, .weekday:
-            amountInSeconds = Double(amount) * Double(Calendar._kSecondsInDay)
+            amountInSeconds = Double(amount) * Double(_CalendarConstants.kSecondsInDay)
             keepWallTime = true
 
         case .hour:
-            amountInSeconds = Double(amount) * Double(Calendar._kSecondsInHour)
+            amountInSeconds = Double(amount) * Double(_CalendarConstants.kSecondsInHour)
             keepWallTime = false
 
         case .minute:
@@ -2422,8 +2422,8 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
 
             if inGregorianCutoverMonth {
                 // Manipulating time directly generally does not work with DST. In these cases we want to go through our normal path as below
-                let monthLengthInSec = Double(daysInMonth * Calendar._kSecondsInDay)
-                var timeIntervalIntoMonth = (date.timeIntervalSince(monthStart) + Double(amount * Calendar._kSecondsInDay)).remainder(dividingBy: monthLengthInSec)
+                let monthLengthInSec = Double(daysInMonth * _CalendarConstants.kSecondsInDay)
+                var timeIntervalIntoMonth = (date.timeIntervalSince(monthStart) + Double(amount * _CalendarConstants.kSecondsInDay)).remainder(dividingBy: monthLengthInSec)
                 if timeIntervalIntoMonth < 0 {
                     timeIntervalIntoMonth += monthLengthInSec
                 }
@@ -2445,10 +2445,10 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
             let max: Int
             if field == .hour {
                 max = 24
-                length = Calendar._kSecondsInHour
+                length = _CalendarConstants.kSecondsInHour
             } else if field == .minute {
                 max = 60
-                length = Calendar._kSecondsInMinute
+                length = _CalendarConstants.kSecondsInMinute
             } else { // if field == .second
                 max = 60
                 length = 1
@@ -2497,13 +2497,13 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
                 dayOffset += 7
             }
 
-            let rewindedDate = date - Double(dayOffset * Calendar._kSecondsInDay) // shifted date considering first day of week
-            let newDate = date + Double(amount * Calendar._kSecondsInDay)
+            let rewindedDate = date - Double(dayOffset * _CalendarConstants.kSecondsInDay) // shifted date considering first day of week
+            let newDate = date + Double(amount * _CalendarConstants.kSecondsInDay)
 
             var newSecondsOffset = newDate.timeIntervalSince(rewindedDate)
-            newSecondsOffset = newSecondsOffset.remainder(dividingBy: Double(Calendar._kSecondsInWeek))  // constrain the offset to fewer than a week
+            newSecondsOffset = newSecondsOffset.remainder(dividingBy: Double(_CalendarConstants.kSecondsInWeek))  // constrain the offset to fewer than a week
             if newSecondsOffset < 0 {
-                newSecondsOffset += Double(Calendar._kSecondsInWeek)
+                newSecondsOffset += Double(_CalendarConstants.kSecondsInWeek)
             }
 
             result = rewindedDate + newSecondsOffset
@@ -2517,9 +2517,9 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
             let preWeeks = (day - 1) / 7
             let numberOfDaysInMonth = numberOfDaysInMonth(month, year: year)
             let postWeeks = (numberOfDaysInMonth - day) / 7
-            let rewindedDate = date - Double(preWeeks * Calendar._kSecondsInWeek) // same time in the day on the first same weekday in the month
-            let newDate = date + Double(amount * Calendar._kSecondsInWeek)
-            let gap = Double((preWeeks + postWeeks + 1) * Calendar._kSecondsInWeek) // number of seconds in this month, calculated based on the number of weeks
+            let rewindedDate = date - Double(preWeeks * _CalendarConstants.kSecondsInWeek) // same time in the day on the first same weekday in the month
+            let newDate = date + Double(amount * _CalendarConstants.kSecondsInWeek)
+            let gap = Double((preWeeks + postWeeks + 1) * _CalendarConstants.kSecondsInWeek) // number of seconds in this month, calculated based on the number of weeks
             var newSecondsOffset = newDate.timeIntervalSince(rewindedDate)
             newSecondsOffset = newSecondsOffset.remainder(dividingBy: gap) // constrain the offset to fewer than a month, starting from the first weekday of the month
             if newSecondsOffset < 0 {
@@ -2574,7 +2574,7 @@ internal final class _CalendarGregorian: _CalendarProtocol, @unchecked Sendable 
 
             // Manipulating time directly does not work well with DST. Go through our normal path as below
             if inGregorianCutoverMonth {
-                return monthStart + TimeInterval((newDayOfMonth - 1) * Calendar._kSecondsInDay) - TimeInterval(tzOffset)
+                return monthStart + TimeInterval((newDayOfMonth - 1) * _CalendarConstants.kSecondsInDay) - TimeInterval(tzOffset)
             } else {
                 var dc = dateComponents(monthBasedComponents, from: date, in: .gmt)
                 dc.day = newDayOfMonth

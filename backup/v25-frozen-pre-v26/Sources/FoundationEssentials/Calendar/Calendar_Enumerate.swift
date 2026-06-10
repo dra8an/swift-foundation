@@ -335,9 +335,16 @@ extension Calendar {
                 let validates = matchingComponents._validate(for: calendar)
                 finished = !validates
 
-                self.usesFastPath = validates && matchingPolicy == .nextTime && repeatedTimePolicy == .first
-                    && calendar._supportsNextDateFastPath
-                    && calendar._calendarNextDate(after: start, matching: matchingComponents, direction: direction) != nil
+                // Probe once: if the calendar has a fast-path answer for this
+                // pattern AND policies are default, commit to the fast loop.
+                // Other calendars hit the protocol default (returns nil) and
+                // fall through to the existing `_enumerateDatesStep` path.
+                if validates && matchingPolicy == .nextTime && repeatedTimePolicy == .first,
+                   calendar._calendarNextDate(after: start, matching: matchingComponents, direction: direction) != nil {
+                    self.usesFastPath = true
+                } else {
+                    self.usesFastPath = false
+                }
             }
 
             mutating func next() -> Element? {
@@ -546,8 +553,14 @@ extension Calendar {
                                          inSearchingDate searchingDate: Date,
                                          previouslyReturnedMatchDate: Date?) throws -> SearchStepResult {
 
-        // Fast-path: ask the calendar directly. Returns nil for unrecognized patterns.
-        if _supportsNextDateFastPath && matchingPolicy == .nextTime && repeatedTimePolicy == .first {
+        // Fast-path: ask the calendar implementation directly. Mirrors the wiring
+        // in Calendar.enumerateDates / Calendar.nextDate. Only fires when policies
+        // are at default — the fast path is exact-match-only and never approximates,
+        // so it returns nil for any pattern it can't handle (or for non-default
+        // policies). On nil, fall through to the generic framework.
+        // Other calendars get the protocol default extension (returns nil), so this
+        // is a no-op for them.
+        if matchingPolicy == .nextTime && repeatedTimePolicy == .first {
             if let fast = _calendarNextDate(after: searchingDate, matching: matchingComponents, direction: direction) {
                 return SearchStepResult(result: (fast, true), newSearchDate: fast)
             }

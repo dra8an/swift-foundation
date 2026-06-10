@@ -675,7 +675,29 @@ extension Calendar {
         return false
     }
 
-    /// Expand `_DateComponentCombinations` into a flat array of single-valued `DateComponents`. Negative ordinals are translated to `{month, weekday, weekOfMonth}` using `anchor`'s month structure. Returns nil if the pattern can't be expanded.
+    /// Cartesian-product expansion of `_DateComponentCombinations` into a
+    /// flat array of single-valued `DateComponents`. Used by
+    /// `_unadjustedDates`'s multi-combination short-circuit.
+    ///
+    /// `anchor` is required when the combinations contain negative
+    /// `.nth(N, day)` weekday entries (e.g. `.nth(-1, .friday)` for "last
+    /// Friday"). When supplied, negatives are translated at runtime to
+    /// `{month, weekday, weekOfMonth}` using the anchor's month structure
+    /// — which routes through our existing `{m, wd, weekOfMonth}` fast
+    /// path and preserves Suite A/B raw-enumerate parity with ICU (which
+    /// rejects negative `weekdayOrdinal` directly).
+    ///
+    /// Returns nil when:
+    /// - any populated field has more than 1 value AND the cartesian product
+    ///   would exceed `maxCombinations`;
+    /// - any weekday entry is `.every(day)` (no ordinal) or `.nth(0, day)`;
+    /// - weekday is `.nth(N, day)` with `N < 0` AND `anchor == nil`;
+    /// - the combinations have a multi-month list AND a negative ordinal
+    ///   (the runtime translation only handles 0 or 1 month entry).
+    ///
+    /// On success, the returned array contains every cartesian combination
+    /// of populated fields, each produced `DateComponents` fast-path-
+    /// eligible.
     fileprivate func _expandedDateComponents(
         _ c: _DateComponentCombinations,
         anchor: Date? = nil,
@@ -801,77 +823,54 @@ extension Calendar {
             return true
         }
 
-        // Build a base DateComponents with single valued axes, then vary only the multi valued ones.
-        var base = DateComponents()
-        var axes: [(WritableKeyPath<DateComponents, Int?>, [Int])] = []
-
-        if let ms = c.months {
-            if ms.count == 1 {
-                base.month = ms[0].index
-                base.isLeapMonth = ms[0].isLeap
-            } else {
-                axes.append((\.month, ms.map(\.index)))
+        // Helper to produce a base DateComponents from a per-axis selection.
+        func make(monthIdx: Int, weekdayIdx: Int,
+                  daysOfMonthIdx: Int, daysOfYearIdx: Int, weeksOfYearIdx: Int,
+                  hoursIdx: Int, minutesIdx: Int, secondsIdx: Int) -> DateComponents? {
+            var dc = DateComponents()
+            if let ms = c.months {
+                dc.month = ms[monthIdx].index
+                dc.isLeapMonth = ms[monthIdx].isLeap
             }
-        }
-        if let woy = c.weeksOfYear {
-            if woy.count == 1 { base.weekOfYear = woy[0] }
-            else { axes.append((\.weekOfYear, woy)) }
-        }
-        if let doy = c.daysOfYear {
-            if doy.count == 1 { base.dayOfYear = doy[0] }
-            else { axes.append((\.dayOfYear, doy)) }
-        }
-        if let dom = c.daysOfMonth {
-            if dom.count == 1 { base.day = dom[0] }
-            else { axes.append((\.day, dom)) }
-        }
-        if let hs = c.hours {
-            if hs.count == 1 { base.hour = hs[0] }
-            else { axes.append((\.hour, hs)) }
-        }
-        if let mins = c.minutes {
-            if mins.count == 1 { base.minute = mins[0] }
-            else { axes.append((\.minute, mins)) }
-        }
-        if let secs = c.seconds {
-            if secs.count == 1 { base.second = secs[0] }
-            else { axes.append((\.second, secs)) }
+            if let woy = c.weeksOfYear { dc.weekOfYear = woy[weeksOfYearIdx] }
+            if let doy = c.daysOfYear { dc.dayOfYear = doy[daysOfYearIdx] }
+            if let dom = c.daysOfMonth { dc.day = dom[daysOfMonthIdx] }
+            if let wds = c.weekdays {
+                guard translateWeekday(wds[weekdayIdx], into: &dc) else { return nil }
+            }
+            if let hs = c.hours { dc.hour = hs[hoursIdx] }
+            if let mins = c.minutes { dc.minute = mins[minutesIdx] }
+            if let secs = c.seconds { dc.second = secs[secondsIdx] }
+            return dc
         }
 
-        // Handle weekdays: translate each entry into the base or build a seed list.
-        var seeds: [DateComponents]
-        if let wds = c.weekdays {
-            if wds.count == 1 {
-                guard translateWeekday(wds[0], into: &base) else { return nil }
-                seeds = [base]
-            } else {
-                seeds = []
-                seeds.reserveCapacity(wds.count)
-                for wd in wds {
-                    var wdBase = base
-                    guard translateWeekday(wd, into: &wdBase) else { return nil }
-                    seeds.append(wdBase)
+        var result: [DateComponents] = []
+        result.reserveCapacity(total)
+        for mIdx in 0..<monthsCount {
+            for wIdx in 0..<weekdaysCount {
+                for domIdx in 0..<daysOfMonthCount {
+                    for doyIdx in 0..<daysOfYearCount {
+                        for woyIdx in 0..<weeksOfYearCount {
+                            for hIdx in 0..<hoursCount {
+                                for miIdx in 0..<minutesCount {
+                                    for sIdx in 0..<secondsCount {
+                                        guard let dc = make(
+                                            monthIdx: mIdx, weekdayIdx: wIdx,
+                                            daysOfMonthIdx: domIdx,
+                                            daysOfYearIdx: doyIdx,
+                                            weeksOfYearIdx: woyIdx,
+                                            hoursIdx: hIdx, minutesIdx: miIdx,
+                                            secondsIdx: sIdx) else { return nil }
+                                        result.append(dc)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        } else {
-            seeds = [base]
         }
-
-        // Expand each multi valued axis by cloning and patching.
-        for (keyPath, values) in axes {
-            var expanded: [DateComponents] = []
-            expanded.reserveCapacity(seeds.count * values.count)
-            for seed in seeds {
-                for v in values {
-                    var dc = seed
-                    dc[keyPath: keyPath] = v
-                    expanded.append(dc)
-                }
-            }
-            seeds = expanded
-        }
-
-        return seeds
+        return result
     }
 
     /// If every populated field of `c` has exactly one value AND the weekday
@@ -1076,35 +1075,64 @@ extension Calendar {
                                       matchingPolicy: MatchingPolicy,
                                       repeatedTimePolicy: RepeatedTimePolicy) throws -> [(Date, DateComponents)]? {
 
-        // Fast-path short-circuits. Only fires when the calendar opts in.
-        if _supportsNextDateFastPath && matchingPolicy == .nextTime && repeatedTimePolicy == .first {
+        // Fast-path short-circuits for the expansion chain. Both gated on
+        // `_calendarNextDate(...)` returning non-nil — the protocol default
+        // is `nil`, so other calendars (Gregorian, Islamic, Chinese, etc.)
+        // fall through to the existing path unchanged.
+        //
+        // (1) Single-combination short-circuit: every populated combination
+        // field has exactly one value. The entire expansion-and-filter
+        // chain below collapses to a single `_calendarNextDate` call.
+        // Benefits e.g. `RecurrenceRuleThanksgivings`, `RecurrenceRuleLaborDay`.
+        if matchingPolicy == .nextTime && repeatedTimePolicy == .first,
+           let dc = _singleCombinationDateComponents(combinationComponents),
+           let fast = _calendarNextDate(after: startDate, matching: dc, direction: .forward) {
+            return [(fast, dc)]
+        }
 
-            // (1) Single-combination: one value per field.
-            if let dc = _singleCombinationDateComponents(combinationComponents),
-               let fast = _calendarNextDate(after: startDate, matching: dc, direction: .forward) {
-                return [(fast, dc)]
-            }
-
-            // (2) Multi-combination (positive ordinals): cartesian product.
-            if let allDCs = _expandedDateComponents(combinationComponents) {
-                var results: [(Date, DateComponents)] = []
-                results.reserveCapacity(allDCs.count)
-                var allFastPathed = true
-                for dc in allDCs {
-                    guard let fast = _calendarNextDate(after: startDate, matching: dc, direction: .forward) else {
-                        allFastPathed = false
-                        break
-                    }
-                    results.append((fast, dc))
+        // (2) Multi-combination short-circuit (positive ordinals only):
+        // cartesian product of fields produces N >= 2 fast-path-eligible
+        // `DateComponents`. Each is probed via `_calendarNextDate`; if ALL
+        // succeed, sort the resulting dates chronologically and return.
+        // Benefits e.g. `RecurrenceRuleThanksgivingMeals` (multi-hour).
+        if matchingPolicy == .nextTime && repeatedTimePolicy == .first,
+           let allDCs = _expandedDateComponents(combinationComponents) {
+            var results: [(Date, DateComponents)] = []
+            results.reserveCapacity(allDCs.count)
+            var allFastPathed = true
+            for dc in allDCs {
+                guard let fast = _calendarNextDate(after: startDate, matching: dc, direction: .forward) else {
+                    allFastPathed = false
+                    break
                 }
-                if allFastPathed && !results.isEmpty {
-                    results.sort { $0.0 < $1.0 }
-                    return results
-                }
+                results.append((fast, dc))
             }
+            if allFastPathed && !results.isEmpty {
+                results.sort { $0.0 < $1.0 }
+                return results
+            }
+        }
 
-            // (3) Multi-combination with negative ordinal translation.
-            if _unadjustedDatesHasNegativeOrdinal(combinationComponents),
+        // (3) Multi-combination short-circuit with negative-ordinal
+        // translation: handles patterns like `RecurrenceRuleBikeParties`
+        // (`weekdays = [.nth(1, .friday), .nth(-1, .friday)]`). The negative
+        // ordinal is translated at runtime to `{month, weekday, weekOfMonth}`
+        // using the anchor's month structure, routing through our existing
+        // `{m, wd, weekOfMonth}` fast path — preserving Suite A/B raw-
+        // enumerate parity (which rejects negative `weekdayOrdinal` directly).
+        //
+        // Cross-calendar safety: a sentinel `_calendarNextDate(matching:
+        // {weekday: 1})` probe runs FIRST. Non-Hebrew calendars hit the
+        // protocol-default nil → bail before doing the expensive
+        // anchor-dependent calendar primitive calls inside
+        // `_expandedDateComponents(_:anchor:)`. Aggregate added cost for
+        // non-Hebrew calendars per `_unadjustedDates` call when negative
+        // ordinals are present: ~10 ns (one extra probe).
+        if matchingPolicy == .nextTime && repeatedTimePolicy == .first,
+           _unadjustedDatesHasNegativeOrdinal(combinationComponents) {
+            var sentinel = DateComponents()
+            sentinel.weekday = 1
+            if _calendarNextDate(after: startDate, matching: sentinel, direction: .forward) != nil,
                let allDCs = _expandedDateComponents(combinationComponents, anchor: startDate) {
                 var results: [(Date, DateComponents)] = []
                 results.reserveCapacity(allDCs.count)
