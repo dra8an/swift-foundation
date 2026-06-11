@@ -29,6 +29,7 @@ public struct CollationData: Sendable {
         static let rootElementsOffset = 12
         static let contextsOffset = 13
         static let unsafeBwdOffset = 14
+        static let scriptsOffset = 16
     }
 
     let trie: UTrie2
@@ -39,6 +40,12 @@ public struct CollationData: Sendable {
     let jamoCE32sStart: Int
     /// Single-byte primary `xx000000` used for numeric collation.
     let numericPrimary: UInt32
+    /// Script/reorder-group data: numScripts, then scriptsIndex[numScripts+16]
+    /// mapping script and special reorder codes to scriptStarts entries, then
+    /// scriptStarts (primary-weight high 16 bits per range).
+    let numScripts: Int
+    let scriptsIndex: [UInt16]
+    let scriptStarts: [UInt16]
 
     public enum ParseError: Error {
         case tooShort
@@ -118,6 +125,51 @@ public struct CollationData: Sendable {
             contexts[i] = UInt16(bytes[b]) | (UInt16(bytes[b + 1]) << 8)
         }
         self.contexts = contexts
+
+        // Scripts part: u16 numScripts, scriptsIndex[numScripts+16], scriptStarts[].
+        let (scriptsOffset, scriptsLength) = part(IX.scriptsOffset)
+        if scriptsLength >= 2 {
+            var scripts = [UInt16](repeating: 0, count: scriptsLength / 2)
+            for i in 0..<scripts.count {
+                let b = headerSize + scriptsOffset + i * 2
+                scripts[i] = UInt16(bytes[b]) | (UInt16(bytes[b + 1]) << 8)
+            }
+            let numScripts = Int(scripts[0])
+            guard scripts.count > 1 + numScripts + 16 + 2 else { throw ParseError.missingPart("scripts") }
+            self.numScripts = numScripts
+            self.scriptsIndex = Array(scripts[1..<(1 + numScripts + 16)])
+            self.scriptStarts = Array(scripts[(1 + numScripts + 16)...])
+        } else {
+            numScripts = 0
+            scriptsIndex = []
+            scriptStarts = []
+        }
+    }
+
+    /// First special reorder code (UCOL_REORDER_CODE_FIRST = space group).
+    static let reorderCodeFirst: Int32 = 0x1000
+
+    /// Index into scriptStarts for a script or special reorder code.
+    /// (CollationData::getScriptIndex.)
+    private func scriptIndex(of script: Int32) -> Int {
+        if script < 0 {
+            return 0
+        } else if script < Int32(numScripts) {
+            return Int(scriptsIndex[Int(script)])
+        } else if script < Self.reorderCodeFirst {
+            return 0
+        }
+        let special = script - Self.reorderCodeFirst
+        guard special < 8 else { return 0 }  // MAX_NUM_SPECIAL_REORDER_CODES
+        return Int(scriptsIndex[numScripts + Int(special)])
+    }
+
+    /// Last primary weight of a reorder group (for variableTop derivation).
+    /// (CollationData::getLastPrimaryForGroup.)
+    func lastPrimaryForGroup(_ script: Int32) -> UInt32 {
+        let index = scriptIndex(of: script)
+        if index == 0 { return 0 }
+        return (UInt32(scriptStarts[index + 1]) << 16) - 1
     }
 
     /// Reads a CE32 stored as two big-endian-ordered 16-bit units in contexts[].

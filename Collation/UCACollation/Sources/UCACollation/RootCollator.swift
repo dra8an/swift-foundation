@@ -1,12 +1,15 @@
-// Primary-strength comparison against the CLDR root collation.
+// String comparison against the CLDR root collation.
 //
-// Milestone-2 scope (see Docs/04-milestone-plan.md):
+// Milestone-3 scope (see Docs/04-milestone-plan.md):
 // - input is incrementally NFD-decomposed and canonically reordered before CE
 //   lookup (the fused-decomposition front end of the ICU4X model), so
 //   arbitrary non-NFD input compares correctly
-// - primary level only (UCOL_PRIMARY), default options (alternate=non-ignorable)
-// - root data only, no tailorings; works against both the regular root data
-//   (with canonical closure) and the NFD-only ICU4X variant
+// - all strengths (primary..quaternary, identical) and settings: alternate
+//   shifted + maxVariable, case-first, case-level, backwards-secondary
+//   ("French"), numeric (CODAN)
+// - root data only, no tailorings, no script reordering (milestone 7); works
+//   against both the regular root data (with canonical closure) and the
+//   NFD-only ICU4X variant
 // - context-dependent mappings (prefixes/contractions) resolve to their
 //   default CE32, i.e. suffix/prefix matching is NOT yet performed (milestone 4).
 //   This is correct whenever the text does not actually form a contraction.
@@ -37,32 +40,51 @@ public struct RootCollator: Sendable {
 
     // MARK: Comparison
 
-    /// Compares two strings at primary strength under root collation.
-    public func compare(_ left: String, _ right: String) throws -> Order {
-        var l = PrimaryIterator(data: data, norm: norm, scalars: left.unicodeScalars)
-        var r = PrimaryIterator(data: data, norm: norm, scalars: right.unicodeScalars)
-        while true {
-            let lp = try l.nextNonIgnorablePrimary()
-            let rp = try r.nextNonIgnorablePrimary()
-            if lp != rp {
-                // nil (end of string) sorts before any non-ignorable primary,
-                // which is never 0.
-                return (lp ?? 0) < (rp ?? 0) ? .ascending : .descending
-            }
-            if lp == nil {
-                return .same
+    /// Compares two strings under root collation.
+    /// Defaults to tertiary strength with all options off, like ICU.
+    public func compare(
+        _ left: String, _ right: String, options: CollationOptions = CollationOptions()
+    ) throws -> Order {
+        var leftCEs = try collationElements(of: left, numeric: options.numeric)
+        var rightCEs = try collationElements(of: right, numeric: options.numeric)
+        let variableTopValue: UInt32
+        if options.alternate == .shifted {
+            variableTopValue = data.lastPrimaryForGroup(
+                CollationData.reorderCodeFirst + options.maxVariable.rawValue)
+        } else {
+            variableTopValue = 0
+        }
+        let result = CollationCompare.compareUpToQuaternary(
+            &leftCEs, &rightCEs, options: options.icuOptions, variableTopValue: variableTopValue)
+        if result != 0 {
+            return result < 0 ? .ascending : .descending
+        }
+        if options.strength == .identical {
+            // Identical level: compare NFD forms in code point order.
+            var l = NFDIterator(norm: norm, scalars: left.unicodeScalars)
+            var r = NFDIterator(norm: norm, scalars: right.unicodeScalars)
+            while true {
+                let lc = l.next()
+                let rc = r.next()
+                if lc != rc {
+                    return (lc ?? 0) < (rc ?? 0) ? .ascending : .descending
+                }
+                if lc == nil { return .same }
             }
         }
+        return .same
     }
 
-    /// All primary weights (including ignorable zeros) for a string. Test hook.
+    /// All CEs of a string, terminated by NO_CE.
+    func collationElements(of s: String, numeric: Bool = false) throws -> [Int64] {
+        var iter = CEIterator(data: data, norm: norm, numeric: numeric, scalars: s.unicodeScalars)
+        return try iter.collectAll()
+    }
+
+    /// All primary weights (including ignorable zeros, excluding the NO_CE
+    /// terminator) for a string. Test hook.
     func primaries(of s: String) throws -> [UInt32] {
-        var iter = PrimaryIterator(data: data, norm: norm, scalars: s.unicodeScalars)
-        var result: [UInt32] = []
-        while let p = try iter.nextPrimary() {
-            result.append(p)
-        }
-        return result
+        try collationElements(of: s).dropLast().map { UInt32(truncatingIfNeeded: $0 >> 32) }
     }
 
     /// The NFD form of a string as produced by the fused front end. Test hook.
@@ -73,122 +95,5 @@ public struct RootCollator: Sendable {
             result.unicodeScalars.append(Unicode.Scalar(c)!)
         }
         return result
-    }
-}
-
-/// Iterates the primary weights of a string's collation elements,
-/// reading scalars through the incremental-NFD front end.
-struct PrimaryIterator {
-    let data: CollationData
-    var scalars: NFDIterator
-    /// Primaries pending from an expansion, in order; consumed before the next scalar.
-    var pending: [UInt32] = []
-    var pendingNext = 0
-
-    init(data: CollationData, norm: NormalizationData, scalars: String.UnicodeScalarView) {
-        self.data = data
-        self.scalars = NFDIterator(norm: norm, scalars: scalars)
-    }
-
-    /// Next primary weight that is not zero (primary-ignorable CEs are skipped),
-    /// or nil at the end of the string.
-    mutating func nextNonIgnorablePrimary() throws -> UInt32? {
-        while let p = try nextPrimary() {
-            if p != 0 { return p }
-        }
-        return nil
-    }
-
-    mutating func nextPrimary() throws -> UInt32? {
-        if pendingNext < pending.count {
-            let p = pending[pendingNext]
-            pendingNext += 1
-            return p
-        }
-        guard let c = scalars.next() else { return nil }
-        pending.removeAll(keepingCapacity: true)
-        pendingNext = 0
-        try appendPrimaries(c: c, ce32: data.trie.get(c), depth: 0)
-        pendingNext = 1
-        return pending[0]
-    }
-
-    /// Resolves a CE32 to one or more primary weights, appending them to `pending`.
-    /// Mirrors the tag dispatch of CollationIterator::appendCEsFromCE32.
-    private mutating func appendPrimaries(c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {
-        // Specials never nest deeper than digit/u0000 -> expansion -> jamo in root data.
-        guard depth <= 4 else { throw RootCollator.CollationError.malformedData }
-        var ce32 = initialCE32
-        while true {
-            if !Collation.isSpecialCE32(ce32) {
-                pending.append(Collation.primaryFromSimpleCE32(ce32))
-                return
-            }
-            switch Collation.tagFromCE32(ce32) {
-            case .longPrimary:
-                pending.append(Collation.primaryFromLongPrimaryCE32(ce32))
-                return
-            case .longSecondary:
-                pending.append(0)
-                return
-            case .latinExpansion:
-                pending.append(Collation.latinExpansionFirstPrimary(ce32))
-                pending.append(0)
-                return
-            case .expansion32:
-                let index = Collation.indexFromCE32(ce32)
-                for i in 0..<Collation.lengthFromCE32(ce32) {
-                    try appendPrimaries(c: c, ce32: data.ce32s[index + i], depth: depth + 1)
-                }
-                return
-            case .expansion:
-                let index = Collation.indexFromCE32(ce32)
-                for i in 0..<Collation.lengthFromCE32(ce32) {
-                    pending.append(Collation.primaryFromCE(data.ces[index + i]))
-                }
-                return
-            case .prefix, .contraction:
-                // Milestone 1: no context matching; use the default CE32
-                // stored ahead of the context UCharsTrie.
-                ce32 = data.readContextCE32(at: Collation.indexFromCE32(ce32))
-            case .digit:
-                // Numeric collation is off; use the regular CE32 for the digit.
-                ce32 = data.ce32s[Collation.indexFromCE32(ce32)]
-            case .u0000:
-                ce32 = data.ce32s[0]
-            case .hangul:
-                try appendHangulPrimaries(syllable: c, depth: depth)
-                return
-            case .offset:
-                let dataCE = data.ces[Collation.indexFromCE32(ce32)]
-                pending.append(Collation.threeBytePrimaryForOffsetData(c, dataCE))
-                return
-            case .implicit:
-                pending.append(Collation.unassignedPrimaryFromCodePoint(c))
-                return
-            case .fallback, .reserved3, .builderData, .leadSurrogate:
-                // Fallback/builder data cannot occur in root data; lead surrogates
-                // cannot occur when iterating Unicode scalars.
-                throw RootCollator.CollationError.unsupportedMapping(scalar: c, tag: ce32 & 0xf)
-            }
-        }
-    }
-
-    /// Decomposes a Hangul syllable arithmetically and appends the Jamo primaries.
-    /// (CollationIterator::appendCEsFromCE32, HANGUL_TAG case.)
-    private mutating func appendHangulPrimaries(syllable c: UInt32, depth: Int) throws {
-        guard data.jamoCE32sStart >= 0, (0xac00...0xd7a3).contains(c) else {
-            throw RootCollator.CollationError.unsupportedMapping(scalar: c, tag: Collation.Tag.hangul.rawValue)
-        }
-        let sIndex = Int(c) - 0xac00
-        let l = sIndex / 588          // leading consonant, 19 values
-        let v = (sIndex % 588) / 28   // vowel, 21 values
-        let t = sIndex % 28           // optional trailing consonant, 27 values (1..27)
-        let jamo = data.jamoCE32sStart
-        try appendPrimaries(c: c, ce32: data.ce32s[jamo + l], depth: depth + 1)
-        try appendPrimaries(c: c, ce32: data.ce32s[jamo + 19 + v], depth: depth + 1)
-        if t != 0 {
-            try appendPrimaries(c: c, ce32: data.ce32s[jamo + 19 + 21 + t - 1], depth: depth + 1)
-        }
     }
 }

@@ -1,0 +1,96 @@
+// Collation options, mirroring ICU4C's CollationSettings options word
+// (i18n/collationsettings.h) so the ported comparison code can use the same
+// bit tests as the original.
+
+public struct CollationOptions: Sendable, Equatable {
+    public enum Strength: Int32, Sendable {
+        case primary = 0
+        case secondary = 1
+        case tertiary = 2
+        case quaternary = 3
+        /// Quaternary plus an NFD code-point-order tiebreaker.
+        case identical = 15
+    }
+
+    public enum Alternate: Sendable {
+        /// Variable characters (spaces, punctuation, ...) are regular CEs.
+        case nonIgnorable
+        /// Variable characters are shifted down to the quaternary level.
+        case shifted
+    }
+
+    public enum CaseFirst: Sendable {
+        case off
+        case lowerFirst
+        case upperFirst
+    }
+
+    /// Which reorder groups count as "variable" under alternate=shifted.
+    public enum MaxVariable: Int32, Sendable {
+        case space = 0
+        case punctuation = 1
+        case symbol = 2
+        case currency = 3
+    }
+
+    public var strength: Strength = .tertiary
+    public var alternate: Alternate = .nonIgnorable
+    public var maxVariable: MaxVariable = .punctuation
+    public var caseFirst: CaseFirst = .off
+    /// Insert a separate case level between the secondary and tertiary levels.
+    public var caseLevel = false
+    /// Compare secondary weights backwards ("French" accent ordering).
+    public var backwardSecondary = false
+    /// Compare digit runs numerically (CODAN): "item9" < "item10".
+    public var numeric = false
+
+    public init() {}
+
+    // MARK: ICU options word (CollationSettings bit layout)
+
+    enum Bits {
+        static let shifted: Int32 = 4
+        static let alternateMask: Int32 = 0xc
+        static let upperFirst: Int32 = 0x100
+        static let caseFirst: Int32 = 0x200
+        static let caseFirstAndUpperMask: Int32 = 0x300
+        static let caseLevel: Int32 = 0x400
+        static let backwardSecondary: Int32 = 0x800
+        static let strengthShift: Int32 = 12
+    }
+
+    /// The equivalent CollationSettings::options word.
+    var icuOptions: Int32 {
+        var options: Int32 = strength.rawValue << Bits.strengthShift
+        if alternate == .shifted { options |= Bits.shifted }
+        switch caseFirst {
+        case .off: break
+        case .lowerFirst: options |= Bits.caseFirst
+        case .upperFirst: options |= Bits.caseFirstAndUpperMask
+        }
+        if caseLevel { options |= Bits.caseLevel }
+        if backwardSecondary { options |= Bits.backwardSecondary }
+        return options
+    }
+
+    // Static helpers matching CollationSettings, operating on the options word.
+
+    static func strength(of options: Int32) -> Int32 {
+        options >> Bits.strengthShift
+    }
+
+    static func isTertiaryWithCaseBits(_ options: Int32) -> Bool {
+        (options & (Bits.caseLevel | Bits.caseFirst)) == Bits.caseFirst
+    }
+
+    /// Tertiary-level mask: keep case bits only when caseFirst is on and
+    /// caseLevel is off.
+    static func tertiaryMask(of options: Int32) -> UInt32 {
+        isTertiaryWithCaseBits(options)
+            ? Collation.caseAndTertiaryMask : Collation.onlyTertiaryMask
+    }
+
+    static func sortsTertiaryUpperCaseFirst(_ options: Int32) -> Bool {
+        (options & (Bits.caseLevel | Bits.caseFirstAndUpperMask)) == Bits.caseFirstAndUpperMask
+    }
+}

@@ -7,31 +7,37 @@ moves into `Sources/` at integration time (milestone 8). See
 `../Docs/03-swift-strategy.md` for the strategy and `../Docs/04-milestone-plan.md`
 for the plan.
 
-## Status: milestone 2 complete
+## Status: milestone 3 complete
 
-Primary-strength comparison against the CLDR root collation with **incremental
-NFD decomposition fused into the iterator** (the ICU4X model): arbitrary
-non-NFD input compares correctly. Validated by differential tests against
-ICU 79 (205-string corpus incl. non-NFD forms, full pairwise matrix, 100%
-agreement against BOTH bundled data variants) and against Foundation's
-`decomposedStringWithCanonicalMapping` for the normalizer itself.
+Full multi-level comparison against the CLDR root collation, with incremental
+NFD decomposition fused into the iterator (the ICU4X model — normalization is
+always on). All strengths (primary..quaternary + identical) and settings:
+alternate=shifted with maxVariable, case-first, case-level, French backwards
+secondary, numeric (CODAN). Validated by differential tests against ICU 79:
+13 collator configurations × 2 bundled data variants × a 239×239 corpus
+matrix = 1.49M comparisons, 100% agreement. The oracle runs with
+`UCOL_NORMALIZATION_MODE=UCOL_ON` to match the always-normalizing design.
 
 Implemented:
-- `CollationData` — reader for the binary "UCol" v5 format; two bundled
-  variants: `ucadata.icu` (regular, canonical closure) and `ucadata-icu4x.icu`
-  (genuca -X: NFD-only, no closure, no Hangul syllable mappings)
+- `CollationData` — reader for the binary "UCol" v5 format incl. scripts data
+  (variableTop derivation); two bundled variants: `ucadata.icu` (regular,
+  canonical closure) and `ucadata-icu4x.icu` (genuca -X: NFD-only)
 - `UTrie2` — read-only code point → CE32 trie lookup
 - `NormalizationData` + `NFDIterator` — full canonical decomposition with
   canonical reordering (UAX #15), arithmetic Hangul; data generated from ICU's
   `norm2/nfc.txt` by the `GenNormData` tool into `nfd.bin` (34 KB)
-- `RootCollator` — primary-level compare over the NFD front end; CE32 tag
-  dispatch including expansions, digits, Hangul, OFFSET (Han), implicits
+- `CEIterator` — full 64-bit collation elements over the NFD front end,
+  incl. numeric (CODAN) digit-run CEs
+- `CollationCompare` — faithful port of `compareUpToQuaternary`
+  (level-by-level, variable shifting, case level, case-first, French)
+- `CollationOptions` — public options mirroring ICU's settings word
+- `RootCollator` — `compare(_:_:options:)`, identical-level NFD tiebreaker
 
 Not yet implemented — see `../Docs/04-milestone-plan.md` for the numbered plan:
-- secondary/case/tertiary/quaternary levels; settings (milestone 3)
 - contraction/prefix context matching (milestone 4; currently resolves to
   default CE32s — correct unless the text actually forms a contraction)
-- sort keys (5), conformance/perf (6), tailorings (7), Foundation integration (8)
+- sort keys (5), conformance/perf (6), tailorings + script reordering (7),
+  Foundation integration (8)
 
 ## Regenerating the normalization data
 

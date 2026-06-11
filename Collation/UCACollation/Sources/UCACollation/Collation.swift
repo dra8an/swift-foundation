@@ -52,6 +52,61 @@ enum Collation {
         Int((ce32 >> 8) & 0x1f)
     }
 
+    // MARK: 64-bit CE constants
+
+    /// Sentinel CE at the end of a CE sequence (primary 1, weight16 0x0100 each).
+    static let noCE: Int64 = 0x1_0100_0100
+    static let noCEPrimary: UInt32 = 1
+    static let noCEWeight16: UInt32 = 0x0100
+    static let mergeSeparatorPrimary: UInt32 = 0x0200_0000
+    static let commonSecAndTerCE: Int64 = 0x0500_0500
+    static let onlyTertiaryMask: UInt32 = 0x3f3f
+    static let caseAndTertiaryMask: UInt32 = 0xc000 | 0x3f3f  // CASE_MASK | ONLY_TERTIARY_MASK
+
+    // MARK: 64-bit CE construction (collation.h)
+
+    /// 64-bit CE from a simple, long-primary, or long-secondary CE32.
+    @inline(__always)
+    static func ceFromCE32(_ ce32In: UInt32) -> Int64 {
+        let tertiary = ce32In & 0xff
+        if tertiary < specialCE32LowByte {
+            // normal form ppppsstt -> pppp0000ss00tt00
+            return (Int64(ce32In & 0xffff_0000) << 32) | Int64((ce32In & 0xff00) << 16)
+                | Int64(tertiary << 8)
+        }
+        let ce32 = ce32In - tertiary
+        if (tertiary & 0xf) == Tag.longPrimary.rawValue {
+            // long-primary form ppppppC1 -> pppppp00_05000500
+            return (Int64(ce32) << 32) | commonSecAndTerCE
+        }
+        // long-secondary form ssssttC2 -> 00000000_sssstt00
+        return Int64(ce32)
+    }
+
+    /// First CE of a LATIN_EXPANSION CE32: [pp, 05, tt].
+    @inline(__always)
+    static func latinCE0FromCE32(_ ce32: UInt32) -> Int64 {
+        (Int64(ce32 & 0xff00_0000) << 32) | 0x0500_0000 | Int64((ce32 & 0xff_0000) >> 8)
+    }
+
+    /// Second CE of a LATIN_EXPANSION CE32: [00, ss, 05].
+    @inline(__always)
+    static func latinCE1FromCE32(_ ce32: UInt32) -> Int64 {
+        Int64((ce32 & 0xff00) << 16) | 0x0500
+    }
+
+    /// CE from a primary weight with common secondary/tertiary.
+    @inline(__always)
+    static func makeCE(_ p: UInt32) -> Int64 {
+        (Int64(p) << 32) | commonSecAndTerCE
+    }
+
+    /// Digit value (0..9) from a DIGIT_TAG CE32.
+    @inline(__always)
+    static func digitFromCE32(_ ce32: UInt32) -> Int32 {
+        Int32((ce32 >> 8) & 0xf)
+    }
+
     // MARK: Primary weight extraction
 
     /// Primary weight (left-justified in 32 bits) of a simple CE32 `ppppsstt`.

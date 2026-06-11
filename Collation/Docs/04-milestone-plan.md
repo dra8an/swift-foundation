@@ -10,7 +10,7 @@
 |---|-----------|--------|
 | 1 | Pipeline proof: primary-only root compare | **Done 2026-06-11** |
 | 2 | Fused NFD decomposition + NFD-only data | **Done 2026-06-11** |
-| 3 | Full level loop + settings | not started |
+| 3 | Full level loop + settings | **Done 2026-06-11** |
 | 4 | Contraction & prefix matching | not started |
 | 5 | Sort keys | not started |
 | 6 | Conformance & performance baseline | not started |
@@ -116,6 +116,25 @@ nears.)
 PRIMARY→QUATERNARY and for each setting toggled (shifted, case-first upper/lower,
 case-level, French, numeric with digit-heavy corpus, e.g. "item9" < "item10").
 Script reordering is *out of scope* until tailorings (M7) unless trivially cheap.
+
+**Outcome (2026-06-11).** Delivered as planned (commit history has details):
+- `CollationOptions` mirrors the ICU options word; `CEIterator` produces full
+  64-bit CEs (incl. CODAN numeric digit runs with one-scalar pushback);
+  `CollationCompare` is a faithful port of `compareUpToQuaternary` over
+  NO_CE-terminated CE arrays; identical strength adds an NFD code-point
+  tiebreaker. Scripts data is now parsed for maxVariable→variableTop
+  derivation (present in both data variants). Script reordering deferred to M7.
+- Verification: 13 oracle configurations (5 strengths, shifted ×2, case
+  level ×2, case-first ×2, French, numeric) × 2 data variants × 239×239
+  corpus = 1.49M comparisons, 100% agreement with ICU 79.
+- Two findings worth recording: (1) ICU's root collator defaults to
+  normalization OFF; since our implementation always normalizes (ICU4X
+  model), the oracle must set UCOL_NORMALIZATION_MODE=UCOL_ON or
+  non-canonically-ordered marks compare differently. (2) A transcription
+  error in CASE_AND_TERTIARY_MASK (0xc03f vs the correct 0xff3f =
+  CASE_MASK|ONLY_TERTIARY_MASK) masked the NO_CE terminator to zero and ran
+  the case-first tertiary loop off the array — caught by the caseFirst
+  differential configs; masks are now derived, not transcribed.
 
 ---
 

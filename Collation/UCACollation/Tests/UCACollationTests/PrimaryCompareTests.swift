@@ -1,9 +1,24 @@
 import Testing
 @testable import UCACollation
 
+/// Behavioral tests at primary strength (the milestone-1 suite).
 @Suite struct PrimaryCompareTests {
     static let collator = try! RootCollator()
-    var collator: RootCollator { Self.collator }
+    var collator: PrimaryStrengthCollator { PrimaryStrengthCollator(base: Self.collator) }
+
+    /// Wrapper fixing options at primary strength, preserving the original
+    /// shape of these tests (written when compare() was primary-only).
+    struct PrimaryStrengthCollator {
+        let base: RootCollator
+        func compare(_ l: String, _ r: String) throws -> RootCollator.Order {
+            var options = CollationOptions()
+            options.strength = .primary
+            return try base.compare(l, r, options: options)
+        }
+        func primaries(of s: String) throws -> [UInt32] {
+            try base.primaries(of: s)
+        }
+    }
 
     @Test func dataLoads() throws {
         let data = try CollationData.root()

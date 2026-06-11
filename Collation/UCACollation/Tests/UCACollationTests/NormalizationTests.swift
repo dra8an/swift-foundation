@@ -110,11 +110,17 @@ import Testing
 
     @Test(arguments: [0, 1]) func equivalentFormsCompareEqual(collatorIndex: Int) throws {
         let (name, collator) = Self.collators[collatorIndex]
-        for cls in Self.equivalenceClasses {
-            for a in cls {
-                for b in cls {
-                    let order = try collator.compare(a, b)
-                    #expect(order == .same, "[\(name)] \(a.debugDescription) vs \(b.debugDescription)")
+        // Canonical equivalents are equal at every strength — including
+        // identical, whose tiebreaker compares NFD forms.
+        for strength in [CollationOptions.Strength.tertiary, .identical] {
+            var options = CollationOptions()
+            options.strength = strength
+            for cls in Self.equivalenceClasses {
+                for a in cls {
+                    for b in cls {
+                        let order = try collator.compare(a, b, options: options)
+                        #expect(order == .same, "[\(name)/\(strength)] \(a.debugDescription) vs \(b.debugDescription)")
+                    }
                 }
             }
         }

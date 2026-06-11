@@ -203,3 +203,37 @@ ñ
 ợ
 ợ
 ợ
+di Silva
+diSilva
+di-Silva
+Di Silva
+dinner
+100
+020
+00100
+0
+0001
+item002
+item02
+Item2
+x9y
+x10y
+x009y
+31472398723987239847298375982735
+péché
+pêche
+peche
+pécher
+pêcher
+a­b
+a​b
+$100
+€100
+a$b
+a€b
++1
+=1
+ a
+a  b
+A circle
+a　b
