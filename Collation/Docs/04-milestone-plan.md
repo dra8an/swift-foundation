@@ -19,7 +19,7 @@
 
 Standing rule for every milestone: differential testing against ICU 79 (machine-local
 build at `~/Projects/claude/collation/icu-build`, outside this repo) is the
-acceptance gate. New functionality ships with new oracle coverage; existing golden
+acceptance gate. New functionality ships with new ICU-reference coverage; existing golden
 tests stay green.
 
 ---
@@ -27,7 +27,7 @@ tests stay green.
 ## Milestone 1 — Pipeline proof (DONE)
 
 **Scope.** Smallest vertical slice touching every layer: binary data → trie →
-CE32 resolution → comparison → oracle validation.
+CE32 resolution → comparison → validation against ICU reference answers.
 
 **Delivered** (2026-06-11, `UCACollation/` package):
 - `CollationData`: reader for the "UCol" v5 binary format (`ucadata.icu`)
@@ -40,7 +40,7 @@ CE32 resolution → comparison → oracle validation.
 **Verification (passed).** 175-string corpus (ASCII, accented Latin precomposed +
 decomposed, Greek, Cyrillic, Han, Hangul, kana, expansions, emoji, plane 16,
 unassigned); full 175×175 pairwise matrix vs `ucol_strcollUTF8` at
-`UCOL_PRIMARY`: 100% agreement. Oracle and Swift read byte-identical data.
+`UCOL_PRIMARY`: 100% agreement. ICU and our Swift reader use byte-identical data.
 
 ---
 
@@ -124,12 +124,12 @@ Script reordering is *out of scope* until tailorings (M7) unless trivially cheap
   NO_CE-terminated CE arrays; identical strength adds an NFD code-point
   tiebreaker. Scripts data is now parsed for maxVariable→variableTop
   derivation (present in both data variants). Script reordering deferred to M7.
-- Verification: 13 oracle configurations (5 strengths, shifted ×2, case
+- Verification: 13 option sets checked against ICU reference answers (5 strengths, shifted ×2, case
   level ×2, case-first ×2, French, numeric) × 2 data variants × 239×239
   corpus = 1.49M comparisons, 100% agreement with ICU 79.
 - Two findings worth recording: (1) ICU's root collator defaults to
   normalization OFF; since our implementation always normalizes (ICU4X
-  model), the oracle must set UCOL_NORMALIZATION_MODE=UCOL_ON or
+  model), the ICU reference run must set UCOL_NORMALIZATION_MODE=UCOL_ON or
   non-canonically-ordered marks compare differently. (2) A transcription
   error in CASE_AND_TERTIARY_MASK (0xc03f vs the correct 0xff3f =
   CASE_MASK|ONLY_TERTIARY_MASK) masked the NO_CE terminator to zero and ran

@@ -1,16 +1,16 @@
 /*
  * gen_golden: generates comparison matrices for the differential test corpus
- * across a set of collator configurations, using ICU4C as the oracle.
+ * across a set of collator configurations, using ICU4C to produce the reference answers.
  *
  * Usage: gen_golden <corpus.txt> <out-dir>
  *
  * Reads corpus strings (UTF-8, one per line, newline stripped, line order
- * significant). For each configuration, opens the root collator with those
+ * significant). For each option set, opens the root collator with those
  * settings and writes <out-dir>/matrix-<name>.txt: one line per corpus string
  * with one character per corpus string: '<', '=', or '>' for
  * ucol_strcollUTF8(s[i], s[j]).
  *
- * Configuration names must match DifferentialTests.swift.
+ * Option-set names must match DifferentialTests.swift.
  *
  * Build (against the locally built ICU; see UCACollation/README.md):
  *   clang gen_golden.c -o gen_golden \
@@ -32,9 +32,9 @@ typedef struct {
     UCollationStrength strength;
     UColAttribute attr;        /* UCOL_ATTRIBUTE_COUNT = none */
     UColAttributeValue value;
-} Config;
+} OptionSet;
 
-static const Config configs[] = {
+static const OptionSet optionSets[] = {
     {"primary",    UCOL_PRIMARY,    UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT},
     {"secondary",  UCOL_SECONDARY,  UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT},
     {"tertiary",   UCOL_TERTIARY,   UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT},
@@ -70,34 +70,34 @@ int main(int argc, char **argv) {
     fclose(in);
     fprintf(stderr, "corpus: %d strings\n", n);
 
-    int numConfigs = (int)(sizeof(configs) / sizeof(configs[0]));
-    for (int k = 0; k < numConfigs; k++) {
+    int numOptionSets = (int)(sizeof(optionSets) / sizeof(optionSets[0]));
+    for (int k = 0; k < numOptionSets; k++) {
         UErrorCode status = U_ZERO_ERROR;
         UCollator *coll = ucol_open("root", &status);
         if (U_FAILURE(status)) {
             fprintf(stderr, "ucol_open: %s\n", u_errorName(status));
             return 1;
         }
-        ucol_setStrength(coll, configs[k].strength);
+        ucol_setStrength(coll, optionSets[k].strength);
         /* Our implementation follows the ICU4X model: normalization is always
          * on. ICU's root collator defaults to normalization OFF, which gives
          * different (non-canonical) results for input whose combining marks
-         * are not in canonical order. Align the oracle. */
+         * are not in canonical order. Generate the reference answers the same way. */
         ucol_setAttribute(coll, UCOL_NORMALIZATION_MODE, UCOL_ON, &status);
         if (U_FAILURE(status)) {
             fprintf(stderr, "setAttribute(norm): %s\n", u_errorName(status));
             return 1;
         }
-        if (configs[k].attr != UCOL_ATTRIBUTE_COUNT) {
-            ucol_setAttribute(coll, configs[k].attr, configs[k].value, &status);
+        if (optionSets[k].attr != UCOL_ATTRIBUTE_COUNT) {
+            ucol_setAttribute(coll, optionSets[k].attr, optionSets[k].value, &status);
             if (U_FAILURE(status)) {
-                fprintf(stderr, "setAttribute(%s): %s\n", configs[k].name, u_errorName(status));
+                fprintf(stderr, "setAttribute(%s): %s\n", optionSets[k].name, u_errorName(status));
                 return 1;
             }
         }
 
         char path[1024];
-        snprintf(path, sizeof(path), "%s/matrix-%s.txt", argv[2], configs[k].name);
+        snprintf(path, sizeof(path), "%s/matrix-%s.txt", argv[2], optionSets[k].name);
         FILE *out = fopen(path, "w");
         if (!out) { perror(path); return 1; }
         for (int i = 0; i < n; i++) {
@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
                 UCollationResult r = ucol_strcollUTF8(coll, lines[i], -1, lines[j], -1, &status);
                 if (U_FAILURE(status)) {
                     fprintf(stderr, "strcoll(%s,%d,%d): %s\n",
-                            configs[k].name, i, j, u_errorName(status));
+                            optionSets[k].name, i, j, u_errorName(status));
                     return 1;
                 }
                 fputc(r == UCOL_LESS ? '<' : r == UCOL_GREATER ? '>' : '=', out);

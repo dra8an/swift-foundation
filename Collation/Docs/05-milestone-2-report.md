@@ -113,7 +113,7 @@ All 14 tests green:
    spellings, `a+◌̂+◌̣` in both mark orders, `Å`/`A+◌̊`/U+212B, `0F73` vs
    `0F71 0F72`, `F900` vs `8C48`, `1D15E` vs its decomposition). Full 205×205
    matrix at `UCOL_PRIMARY`, ×2 data variants = **84,050 comparisons, 100%
-   agreement**. The oracle (`gen_golden.c`) is unchanged: ICU's verdict does
+   agreement**. The reference generator (`gen_golden.c`) is unchanged: ICU's verdict does
    not depend on which data *we* read.
 2. **Normalizer vs Foundation** (`NormalizationTests`): our `nfd()` against
    `decomposedStringWithCanonicalMapping` for ~13k single scalars across

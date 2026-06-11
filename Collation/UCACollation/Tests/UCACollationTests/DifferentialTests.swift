@@ -3,9 +3,9 @@ import Testing
 @testable import UCACollation
 
 /// Differential tests against ICU4C: Tools/gen_golden.c produced
-/// Golden/matrix-<config>.txt by running ucol_strcollUTF8 over every ordered
-/// pair of Golden/corpus.txt strings, for each collator configuration. Our
-/// compare() must agree on all pairs, for every configuration — against both
+/// Golden/matrix-<option-set>.txt by running ucol_strcollUTF8 over every ordered
+/// pair of Golden/corpus.txt strings, for each option set (a named combination of collator settings). Our
+/// compare() must agree on all pairs, for every option set — against both
 /// the regular data and the NFD-only ICU4X variant (ICU's verdict does not
 /// depend on which data *we* read; correct results must be identical).
 @Suite struct DifferentialTests {
@@ -14,8 +14,8 @@ import Testing
         ("icu4x", RootCollator(data: try! .rootICU4X(), norm: try! .standard())),
     ]
 
-    /// Must match the configs table in Tools/gen_golden.c.
-    static let configs: [(String, CollationOptions)] = {
+    /// Must match the optionSets table in Tools/gen_golden.c.
+    static let optionSets: [(String, CollationOptions)] = {
         func options(_ strength: CollationOptions.Strength, _ tweak: (inout CollationOptions) -> Void = { _ in }) -> CollationOptions {
             var o = CollationOptions()
             o.strength = strength
@@ -47,14 +47,14 @@ import Testing
     }()
 
     @Test(arguments: 0..<13, [0, 1])
-    func matchesICU(configIndex: Int, collatorIndex: Int) throws {
-        let (configName, options) = Self.configs[configIndex]
+    func matchesICU(optionSetIndex: Int, collatorIndex: Int) throws {
+        let (optionSetName, options) = Self.optionSets[optionSetIndex]
         let (variant, collator) = Self.collators[collatorIndex]
         let corpus = Self.corpus
 
         let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
         let matrix = try String(
-            contentsOf: golden.appendingPathComponent("matrix-\(configName).txt"), encoding: .utf8
+            contentsOf: golden.appendingPathComponent("matrix-\(optionSetName).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)
         try #require(corpus.count == matrix.count, "corpus/matrix size mismatch — regenerate goldens")
 
@@ -72,12 +72,12 @@ import Testing
                     failures += 1
                     if failures <= 10 {
                         Issue.record(
-                            "[\(configName)/\(variant)] compare(\(corpus[i].debugDescription), \(corpus[j].debugDescription)): got \(got), ICU says \(expected)"
+                            "[\(optionSetName)/\(variant)] compare(\(corpus[i].debugDescription), \(corpus[j].debugDescription)): got \(got), ICU says \(expected)"
                         )
                     }
                 }
             }
         }
-        #expect(failures == 0, "[\(configName)/\(variant)] \(failures) of \(corpus.count * corpus.count) pairs disagree with ICU")
+        #expect(failures == 0, "[\(optionSetName)/\(variant)] \(failures) of \(corpus.count * corpus.count) pairs disagree with ICU")
     }
 }

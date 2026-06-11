@@ -14,8 +14,8 @@ NFD decomposition fused into the iterator (the ICU4X model — normalization is
 always on). All strengths (primary..quaternary + identical) and settings:
 alternate=shifted with maxVariable, case-first, case-level, French backwards
 secondary, numeric (CODAN). Validated by differential tests against ICU 79:
-13 collator configurations × 2 bundled data variants × a 239×239 corpus
-matrix = 1.49M comparisons, 100% agreement. The oracle runs with
+13 option sets (named combinations of collator settings) × 2 bundled data variants × a 239×239 corpus
+matrix = 1.49M comparisons, 100% agreement. The ICU reference answers are generated with
 `UCOL_NORMALIZATION_MODE=UCOL_ON` to match the always-normalizing design.
 
 Implemented:

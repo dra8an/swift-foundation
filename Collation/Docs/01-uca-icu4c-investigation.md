@@ -196,5 +196,5 @@ This design is the "collation v2" rewrite (ICU 53, 2014). ICU4J mirrors it class
 ICU4X consumes a variant of the same data — the tree contains `icu4xMode` flags and the
 ICU4X-only `CONTRACT_HAS_STARTER` bit (see `02-icu4x-strategy.md`).
 
-Conformance oracle for any port: the UCA test files under `testdata`
+Conformance reference for any port: the UCA test files under `testdata`
 (`CollationTest_SHIFTED`, `CollationTest_NON_IGNORABLE`) and ICU's own `CollationTest`.

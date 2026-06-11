@@ -42,12 +42,12 @@ and sort keys (M5) — the *comparison semantics* are now complete.
 
 ## Verification
 
-`gen_golden.c` now emits one matrix per configuration; the corpus grew to 239
+`gen_golden.c` now emits one matrix per option set; the corpus grew to 239
 strings (shifted classics like "di Silva"/"diSilva"/"di-Silva", numeric runs
 incl. a 32-digit value, French accent pairs, ignorables, currency/symbol
-variables). 13 configurations:
+variables). 13 option sets:
 
-| Config | Strength | Setting |
+| Option set | Strength | Setting |
 |---|---|---|
 | primary…identical | each | defaults |
 | shifted / shifted3 | quaternary / tertiary | alternate=shifted |
@@ -56,7 +56,7 @@ variables). 13 configurations:
 | french | tertiary | backwards secondary |
 | numeric | tertiary | CODAN |
 
-13 configs × 2 data variants (regular + NFD-only ICU4X) × 239² pairs =
+13 option sets × 2 data variants (regular + NFD-only ICU4X) × 239² pairs =
 **1.49M comparisons, 100% agreement with ICU 79.**
 
 ## Two findings worth remembering
@@ -64,7 +64,7 @@ variables). 13 configurations:
 1. **ICU's root collator defaults to normalization OFF.** Our implementation
    (like ICU4X) always normalizes. For input whose combining marks are not in
    canonical order, the two genuinely differ at secondary strength and the
-   difference showed up immediately in the matrix. The oracle now sets
+   difference showed up immediately in the matrix. The reference answers are now generated with
    `UCOL_NORMALIZATION_MODE=UCOL_ON` everywhere. Implication for Foundation
    integration: our comparisons match "ICU with normalization on", which is
    the CLDR-recommended and canonically-correct behavior — but not bit-for-bit
@@ -73,7 +73,7 @@ variables). 13 configurations:
    `CASE_AND_TERTIARY_MASK` (0xc03f instead of `CASE_MASK |
    ONLY_TERTIARY_MASK` = 0xff3f) zeroed the NO_CE terminator's masked
    tertiary and ran the case-first tertiary loop out of bounds. The
-   caseFirst differential configs caught it within seconds — exactly the kind
+   caseFirst differential option sets caught it within seconds — exactly the kind
    of bug the per-setting matrices exist for. Masks are now written as
    derivations of their component constants, not as literals.
 

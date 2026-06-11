@@ -103,7 +103,7 @@ Essentials clients avoid it.
 4. **Port the remaining runtime**: the CE iterator (modeled on ICU4X's `elements.rs` rather
    than ICU4C's `collationiterator.cpp`), level-by-level compare, sort keys, settings — the
    parts rated "ports cleanly" above are unchanged by this decision.
-5. **Validate continuously against an oracle**: ICU's UCA conformance files
+5. **Validate continuously against reference implementations**: ICU's UCA conformance files
    (`testdata/.../CollationTest_SHIFTED`, `CollationTest_NON_IGNORABLE`) and differential
    testing against `ucol_strcoll`.
 
