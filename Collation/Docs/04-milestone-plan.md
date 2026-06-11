@@ -9,7 +9,7 @@
 | # | Milestone | Status |
 |---|-----------|--------|
 | 1 | Pipeline proof: primary-only root compare | **Done 2026-06-11** |
-| 2 | Fused NFD decomposition + NFD-only data | not started |
+| 2 | Fused NFD decomposition + NFD-only data | **Done 2026-06-11** |
 | 3 | Full level loop + settings | not started |
 | 4 | Contraction & prefix matching | not started |
 | 5 | Sort keys | not started |
@@ -75,6 +75,27 @@ normalization data reader usable independently of collation.
 define our own container. (Leaning: parse `genrb -X` TOML offline with a small
 tool, emit a compact Swift-friendly binary; revisit when Foundation integration
 nears.)
+
+**Outcome (2026-06-11).** Delivered as planned, with these decisions:
+- Normalization data is generated from ICU's `norm2/nfc.txt` (the gennorm2
+  source format) by the `GenNormData` tool into `nfd.bin` (34 KB: full
+  recursively-expanded decompositions + ccc; sorted arrays + binary search).
+  This is a *provisional* container — the ICU4X single-trie design
+  (decomposition + ccc + safety markers in one lookup) remains the target for
+  the perf pass (M6). Hangul stays arithmetic.
+- `NFDIterator` decomposes and canonically reorders (stable insertion sort by
+  ccc per reorderable unit) in front of CE lookup; normalization cannot be
+  turned off, matching ICU4X.
+- BOTH data variants are bundled and continuously tested: regular
+  `ucadata.icu` (closure) and `ucadata-icu4x.icu` (prebuilt genuca -X, NFD-only,
+  no Hangul mappings — Jamo resolve via the trie after our decomposition). The
+  icu4x variant passed the full differential matrix unmodified, empirically
+  confirming the closure-free model. Default stays `ucadata.icu` until M4
+  settles context matching against the icu4x contexts data.
+- Verification: 205-string corpus (30 non-NFD/equivalence forms added),
+  205×205 matrix vs ICU at primary strength, 100% on both variants; normalizer
+  differentially tested against Foundation's NFD over ~13k scalars in
+  normalization-stable blocks plus 432 combining-mark sequences.
 
 ---
 

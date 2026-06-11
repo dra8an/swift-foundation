@@ -1,12 +1,15 @@
 // Primary-strength comparison against the CLDR root collation.
 //
-// Milestone-1 scope (see Docs/03-swift-strategy.md):
+// Milestone-2 scope (see Docs/04-milestone-plan.md):
+// - input is incrementally NFD-decomposed and canonically reordered before CE
+//   lookup (the fused-decomposition front end of the ICU4X model), so
+//   arbitrary non-NFD input compares correctly
 // - primary level only (UCOL_PRIMARY), default options (alternate=non-ignorable)
-// - root data only, no tailorings
+// - root data only, no tailorings; works against both the regular root data
+//   (with canonical closure) and the NFD-only ICU4X variant
 // - context-dependent mappings (prefixes/contractions) resolve to their
-//   default CE32, i.e. suffix/prefix matching is NOT yet performed. This is
-//   correct whenever the surrounding text does not actually form a contraction
-//   or match a prefix condition (true for all-ASCII input against root data).
+//   default CE32, i.e. suffix/prefix matching is NOT yet performed (milestone 4).
+//   This is correct whenever the text does not actually form a contraction.
 
 public struct RootCollator: Sendable {
     public enum Order: Int, Sendable {
@@ -21,21 +24,23 @@ public struct RootCollator: Sendable {
     }
 
     let data: CollationData
+    let norm: NormalizationData
 
-    public init(data: CollationData) {
+    public init(data: CollationData, norm: NormalizationData) {
         self.data = data
+        self.norm = norm
     }
 
     public init() throws {
-        self.init(data: try CollationData.root())
+        self.init(data: try CollationData.root(), norm: try NormalizationData.standard())
     }
 
     // MARK: Comparison
 
     /// Compares two strings at primary strength under root collation.
     public func compare(_ left: String, _ right: String) throws -> Order {
-        var l = PrimaryIterator(data: data, scalars: left.unicodeScalars)
-        var r = PrimaryIterator(data: data, scalars: right.unicodeScalars)
+        var l = PrimaryIterator(data: data, norm: norm, scalars: left.unicodeScalars)
+        var r = PrimaryIterator(data: data, norm: norm, scalars: right.unicodeScalars)
         while true {
             let lp = try l.nextNonIgnorablePrimary()
             let rp = try r.nextNonIgnorablePrimary()
@@ -52,26 +57,37 @@ public struct RootCollator: Sendable {
 
     /// All primary weights (including ignorable zeros) for a string. Test hook.
     func primaries(of s: String) throws -> [UInt32] {
-        var iter = PrimaryIterator(data: data, scalars: s.unicodeScalars)
+        var iter = PrimaryIterator(data: data, norm: norm, scalars: s.unicodeScalars)
         var result: [UInt32] = []
         while let p = try iter.nextPrimary() {
             result.append(p)
         }
         return result
     }
+
+    /// The NFD form of a string as produced by the fused front end. Test hook.
+    func nfd(_ s: String) -> String {
+        var iter = NFDIterator(norm: norm, scalars: s.unicodeScalars)
+        var result = ""
+        while let c = iter.next() {
+            result.unicodeScalars.append(Unicode.Scalar(c)!)
+        }
+        return result
+    }
 }
 
-/// Iterates the primary weights of a string's collation elements.
+/// Iterates the primary weights of a string's collation elements,
+/// reading scalars through the incremental-NFD front end.
 struct PrimaryIterator {
     let data: CollationData
-    var scalars: String.UnicodeScalarView.Iterator
+    var scalars: NFDIterator
     /// Primaries pending from an expansion, in order; consumed before the next scalar.
     var pending: [UInt32] = []
     var pendingNext = 0
 
-    init(data: CollationData, scalars: String.UnicodeScalarView) {
+    init(data: CollationData, norm: NormalizationData, scalars: String.UnicodeScalarView) {
         self.data = data
-        self.scalars = scalars.makeIterator()
+        self.scalars = NFDIterator(norm: norm, scalars: scalars)
     }
 
     /// Next primary weight that is not zero (primary-ignorable CEs are skipped),
@@ -89,10 +105,9 @@ struct PrimaryIterator {
             pendingNext += 1
             return p
         }
-        guard let scalar = scalars.next() else { return nil }
+        guard let c = scalars.next() else { return nil }
         pending.removeAll(keepingCapacity: true)
         pendingNext = 0
-        let c = scalar.value
         try appendPrimaries(c: c, ce32: data.trie.get(c), depth: 0)
         pendingNext = 1
         return pending[0]

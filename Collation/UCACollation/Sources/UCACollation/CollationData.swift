@@ -134,4 +134,13 @@ public struct CollationData: Sendable {
         }
         return try CollationData(contentsOf: url)
     }
+
+    /// The bundled NFD-only root collation data (genuca -X variant: no canonical
+    /// closure, no Hangul syllable mappings; requires the NFD front end).
+    public static func rootICU4X() throws -> CollationData {
+        guard let url = Bundle.module.url(forResource: "ucadata-icu4x", withExtension: "icu") else {
+            throw ParseError.missingPart("bundled ucadata-icu4x.icu")
+        }
+        return try CollationData(contentsOf: url)
+    }
 }
