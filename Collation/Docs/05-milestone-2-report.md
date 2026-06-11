@@ -1,6 +1,6 @@
 # Milestone 2 Report: Fused NFD Decomposition
 
-> Completed 2026-06-11 (commit `e47c6e1`). Companion to the brief outcome note in
+> Completed 2026-06-11 (commit `cf4058b`). Companion to the brief outcome note in
 > `04-milestone-plan.md`. Milestone 1 background: `04-milestone-plan.md` §M1.
 
 ## What this milestone was for

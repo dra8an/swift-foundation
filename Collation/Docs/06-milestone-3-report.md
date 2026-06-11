@@ -1,6 +1,6 @@
 # Milestone 3 Report: Full Level Loop + Settings
 
-> Completed 2026-06-11 (commit `42b55f1`). Companion to the outcome note in
+> Completed 2026-06-11 (commit `dae5c88`). Companion to the outcome note in
 > `04-milestone-plan.md`. Previous report: `05-milestone-2-report.md`.
 
 ## What this milestone was for
