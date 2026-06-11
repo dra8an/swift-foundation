@@ -78,17 +78,40 @@ struct CEIterator {
 
     // MARK: Main loop
 
+    /// True once the NO_CE terminator has been appended.
+    private(set) var terminated = false
+
     /// All CEs of the string, terminated by NO_CE.
     mutating func collectAll() throws -> [Int64] {
-        while let c = scalarAhead(0) {
-            discardAhead(1)
-            consumedExtras.removeAll(keepingCapacity: true)
-            try appendCEs(c: c, ce32: data.trie.get(c), depth: 0)
-            pushHistory(c)
-            for extra in consumedExtras { pushHistory(extra) }
-        }
-        ces.append(Collation.noCE)
+        while try appendMore() {}
         return ces
+    }
+
+    /// Appends the CEs of the next character, or the NO_CE terminator at the
+    /// end of input. Returns false once terminated. Enables lazy comparison:
+    /// the primary level usually decides without generating all CEs.
+    mutating func appendMore() throws -> Bool {
+        guard !terminated else { return false }
+        guard let c = scalarAhead(0) else {
+            ces.append(Collation.noCE)
+            terminated = true
+            return false
+        }
+        discardAhead(1)
+        consumedExtras.removeAll(keepingCapacity: true)
+        try appendCEs(c: c, ce32: data.trie.get(c), depth: 0)
+        pushHistory(c)
+        for extra in consumedExtras { pushHistory(extra) }
+        return true
+    }
+
+    /// The CE at index `i`, generating lazily as needed. `i` must not run
+    /// past the NO_CE terminator (all level loops stop at NO_CE).
+    mutating func ce(at i: Int) throws -> Int64 {
+        while ces.count <= i {
+            if try !appendMore() { break }
+        }
+        return ces[i]
     }
 
     private mutating func appendCEs(c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {

@@ -17,10 +17,11 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "GenNormData"),
+        .executableTarget(name: "Bench", dependencies: ["UCACollation"]),
         .testTarget(
             name: "UCACollationTests",
             dependencies: ["UCACollation"],
-            resources: [.copy("Golden")]
+            resources: [.copy("Golden"), .copy("Conformance")]
         ),
     ]
 )

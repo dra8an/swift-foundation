@@ -45,9 +45,13 @@ public struct RootCollator: Sendable {
     public func compare(
         _ left: String, _ right: String, options: CollationOptions = CollationOptions()
     ) throws -> Order {
-        var leftCEs = try collationElements(of: left, numeric: options.numeric)
-        var rightCEs = try collationElements(of: right, numeric: options.numeric)
-        let result = CollationCompare.compareUpToQuaternary(
+        // CEs are generated lazily: the primary level usually decides the
+        // comparison after a few characters.
+        var leftCEs = CEIterator(
+            data: data, norm: norm, numeric: options.numeric, scalars: left.unicodeScalars)
+        var rightCEs = CEIterator(
+            data: data, norm: norm, numeric: options.numeric, scalars: right.unicodeScalars)
+        let result = try CollationCompare.compareUpToQuaternary(
             &leftCEs, &rightCEs, options: options.icuOptions,
             variableTopValue: variableTopValue(options))
         if result != 0 {

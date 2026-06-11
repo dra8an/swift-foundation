@@ -7,7 +7,7 @@ moves into `Sources/` at integration time (milestone 8). See
 `../Docs/03-swift-strategy.md` for the strategy and `../Docs/04-milestone-plan.md`
 for the plan.
 
-## Status: milestone 5 complete
+## Status: milestone 6 complete
 
 Full multi-level comparison against the CLDR root collation, with incremental
 NFD decomposition fused into the iterator (the ICU4X model — normalization is
@@ -38,9 +38,13 @@ Implemented:
 - `RootCollator` — `compare(_:_:options:)`, `sortKey(for:options:)`,
   identical-level NFD tiebreaker
 
+Verification: official UCA/CLDR conformance suite (433k lines, both files)
+green on both data variants; differential matrices, byte-identical sort keys,
+and a seeded fuzz corpus vs ICU 79. Benchmarks: `swift run -c release Bench
+Tools/bench/bench-ascii.txt` (vs `Tools/bench_icu.c`).
+
 Not yet implemented — see `../Docs/04-milestone-plan.md` for the numbered plan:
-- conformance/perf (6), tailorings + script reordering (7),
-  Foundation integration (8)
+- tailorings + script reordering (7), Foundation integration (8)
 
 ## Regenerating the normalization data
 

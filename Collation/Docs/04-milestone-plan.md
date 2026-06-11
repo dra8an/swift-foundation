@@ -13,7 +13,7 @@
 | 3 | Full level loop + settings | **Done 2026-06-11** |
 | 4 | Contraction & prefix matching | **Done 2026-06-11** |
 | 5 | Sort keys | **Done 2026-06-11** |
-| 6 | Conformance & performance baseline | not started |
+| 6 | Conformance & performance baseline | **Done 2026-06-11** |
 | 7 | Locale tailorings | not started |
 | 8 | swift-foundation integration | not started |
 
@@ -220,6 +220,22 @@ The conformance-critical, fiddly one.
 
 **Deliverable.** Conformance suite in CI-runnable form; benchmark numbers
 recorded in the docs; no conformance regressions tolerated afterward.
+
+**Outcome (2026-06-11).** Delivered; details in `09-milestone-6-report.md`:
+- Official UCA/CLDR conformance suite green: CollationTest_CLDR_SHIFTED_SHORT
+  + NON_IGNORABLE_SHORT (433k lines, UCA 17), strength=identical, both data
+  variants; compare() and sort keys agree on every adjacent pair. Lines with
+  unpaired surrogates are skipped (Swift Strings cannot represent them; same
+  property as ICU4X).
+- Fuzz harness: seeded 2000-string corpus weighted toward trouble spots
+  (Tools/gen_fuzz_corpus.py); ICU reference keys via gen_golden --keys-only;
+  all 13 option sets x 2 variants byte-identical (52k keys).
+- Benchmarks (Tools/bench, Sources/Bench vs Tools/bench_icu.c, release,
+  this machine): after making compare() lazy (CEs generated on demand,
+  3x gain), Swift compare ~2.2-2.4 us/op vs ICU 16-73 ns/op; sortKey
+  ~3.1-3.7 us/op vs ICU ~200 ns/op. Remaining gap: per-compare allocations
+  (iterator buffers) and no identical-prefix/fast-Latin paths -- deferred to
+  M8 hardening with Span/InlineArray work.
 
 ---
 

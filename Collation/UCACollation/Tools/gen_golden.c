@@ -51,10 +51,13 @@ static const OptionSet optionSets[] = {
 };
 
 int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s <corpus.txt> <out-dir>\n", argv[0]);
+    if (argc < 3 || argc > 4) {
+        fprintf(stderr, "usage: %s <corpus.txt> <out-dir-and-prefix> [--keys-only]\n", argv[0]);
         return 2;
     }
+    /* With --keys-only, only keys-*.txt files are written (for corpora too
+     * large for pairwise matrices) and argv[2] is used as path prefix. */
+    int keysOnly = argc == 4 && strcmp(argv[3], "--keys-only") == 0;
     FILE *in = fopen(argv[1], "r");
     if (!in) { perror("corpus"); return 1; }
 
@@ -97,27 +100,31 @@ int main(int argc, char **argv) {
         }
 
         char path[1024];
-        snprintf(path, sizeof(path), "%s/matrix-%s.txt", argv[2], optionSets[k].name);
-        FILE *out = fopen(path, "w");
-        if (!out) { perror(path); return 1; }
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) {
-                status = U_ZERO_ERROR;
-                UCollationResult r = ucol_strcollUTF8(coll, lines[i], -1, lines[j], -1, &status);
-                if (U_FAILURE(status)) {
-                    fprintf(stderr, "strcoll(%s,%d,%d): %s\n",
-                            optionSets[k].name, i, j, u_errorName(status));
-                    return 1;
+        FILE *out;
+        if (!keysOnly) {
+            snprintf(path, sizeof(path), "%s/matrix-%s.txt", argv[2], optionSets[k].name);
+            out = fopen(path, "w");
+            if (!out) { perror(path); return 1; }
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < n; j++) {
+                    status = U_ZERO_ERROR;
+                    UCollationResult r = ucol_strcollUTF8(coll, lines[i], -1, lines[j], -1, &status);
+                    if (U_FAILURE(status)) {
+                        fprintf(stderr, "strcoll(%s,%d,%d): %s\n",
+                                optionSets[k].name, i, j, u_errorName(status));
+                        return 1;
+                    }
+                    fputc(r == UCOL_LESS ? '<' : r == UCOL_GREATER ? '>' : '=', out);
                 }
-                fputc(r == UCOL_LESS ? '<' : r == UCOL_GREATER ? '>' : '=', out);
+                fputc('\n', out);
             }
-            fputc('\n', out);
+            fclose(out);
+            fprintf(stderr, "wrote %s (%dx%d)\n", path, n, n);
         }
-        fclose(out);
-        fprintf(stderr, "wrote %s (%dx%d)\n", path, n, n);
 
         /* Reference sort keys: one hex-encoded ucol_getSortKey per line. */
-        snprintf(path, sizeof(path), "%s/keys-%s.txt", argv[2], optionSets[k].name);
+        snprintf(path, sizeof(path), keysOnly ? "%s-keys-%s.txt" : "%s/keys-%s.txt",
+                 argv[2], optionSets[k].name);
         out = fopen(path, "w");
         if (!out) { perror(path); return 1; }
         for (int i = 0; i < n; i++) {

@@ -1,19 +1,21 @@
 // Level-by-level CE comparison, a faithful port of
 // CollationCompare::compareUpToQuaternary (i18n/collationcompare.cpp).
 //
-// Operates on materialized CE arrays terminated by NO_CE (ICU runs the same
-// loops over its lazily-filled CE buffer). The primary loop may rewrite
-// variable CEs in place (shifting them to the quaternary level), which is why
-// the arrays are inout. Script reordering is not yet supported (milestone 7);
+// Operates on lazily-filled CE buffers terminated by NO_CE (like ICU's
+// CollationIterator/CEBuffer): the primary loop pulls CEs on demand and
+// usually decides without generating the rest; the deeper levels run only
+// when all primaries were equal, i.e. when the buffers are already complete.
+// The primary loop may rewrite variable CEs in place (shifting them to the
+// quaternary level). Script reordering is not yet supported (milestone 7);
 // the corresponding hooks are omitted.
 
 enum CollationCompare {
     /// Returns -1 / 0 / +1. `variableTopValue` is the highest variable primary
     /// (used only when options has alternate=shifted).
     static func compareUpToQuaternary(
-        _ leftCEs: inout [Int64], _ rightCEs: inout [Int64],
+        _ left: inout CEIterator, _ right: inout CEIterator,
         options: Int32, variableTopValue: UInt32
-    ) -> Int {
+    ) throws -> Int {
         let variableTop: UInt32
         if (options & CollationOptions.Bits.alternateMask) == 0 {
             variableTop = 0
@@ -26,10 +28,10 @@ enum CollationCompare {
         // Fetch CEs, compare primaries, store secondary & tertiary weights.
         // Variable CEs are shifted to quaternary: only their primary is kept
         // (lower 32 bits zeroed); following primary ignorables are zeroed out.
-        func nextPrimary(_ ces: inout [Int64], _ i: inout Int) -> UInt32 {
+        func nextPrimary(_ ces: inout CEIterator, _ i: inout Int) throws -> UInt32 {
             var primary: UInt32
             repeat {
-                var ce = ces[i]
+                var ce = try ces.ce(at: i)
                 i += 1
                 primary = UInt32(truncatingIfNeeded: ce >> 32)
                 if primary < variableTop && primary > Collation.mergeSeparatorPrimary {
@@ -38,13 +40,13 @@ enum CollationCompare {
                     anyVariable = true
                     repeat {
                         // Store only the primary of the variable CE.
-                        ces[i - 1] = ce & Int64(bitPattern: 0xffff_ffff_0000_0000)
+                        ces.ces[i - 1] = ce & Int64(bitPattern: 0xffff_ffff_0000_0000)
                         while true {
-                            ce = ces[i]
+                            ce = try ces.ce(at: i)
                             i += 1
                             primary = UInt32(truncatingIfNeeded: ce >> 32)
                             if primary == 0 {
-                                ces[i - 1] = 0
+                                ces.ces[i - 1] = 0
                             } else {
                                 break
                             }
@@ -58,8 +60,8 @@ enum CollationCompare {
         var li = 0
         var ri = 0
         while true {
-            let leftPrimary = nextPrimary(&leftCEs, &li)
-            let rightPrimary = nextPrimary(&rightCEs, &ri)
+            let leftPrimary = try nextPrimary(&left, &li)
+            let rightPrimary = try nextPrimary(&right, &ri)
             if leftPrimary != rightPrimary {
                 // (Script reordering would apply here.)
                 return leftPrimary < rightPrimary ? -1 : 1
@@ -78,13 +80,13 @@ enum CollationCompare {
                 while true {
                     var leftSecondary: UInt32
                     repeat {
-                        leftSecondary = UInt32(truncatingIfNeeded: leftCEs[leftIndex]) >> 16
+                        leftSecondary = UInt32(truncatingIfNeeded: left.ces[leftIndex]) >> 16
                         leftIndex += 1
                     } while leftSecondary == 0
 
                     var rightSecondary: UInt32
                     repeat {
-                        rightSecondary = UInt32(truncatingIfNeeded: rightCEs[rightIndex]) >> 16
+                        rightSecondary = UInt32(truncatingIfNeeded: right.ces[rightIndex]) >> 16
                         rightIndex += 1
                     } while rightSecondary == 0
 
@@ -103,13 +105,13 @@ enum CollationCompare {
                     var p: UInt32
                     var leftLimit = leftStart
                     while true {
-                        p = UInt32(truncatingIfNeeded: leftCEs[leftLimit] >> 32)
+                        p = UInt32(truncatingIfNeeded: left.ces[leftLimit] >> 32)
                         if !(p > Collation.mergeSeparatorPrimary || p == 0) { break }
                         leftLimit += 1
                     }
                     var rightLimit = rightStart
                     while true {
-                        p = UInt32(truncatingIfNeeded: rightCEs[rightLimit] >> 32)
+                        p = UInt32(truncatingIfNeeded: right.ces[rightLimit] >> 32)
                         if !(p > Collation.mergeSeparatorPrimary || p == 0) { break }
                         rightLimit += 1
                     }
@@ -121,13 +123,13 @@ enum CollationCompare {
                         var leftSecondary: UInt32 = 0
                         while leftSecondary == 0 && leftIndex > leftStart {
                             leftIndex -= 1
-                            leftSecondary = UInt32(truncatingIfNeeded: leftCEs[leftIndex]) >> 16
+                            leftSecondary = UInt32(truncatingIfNeeded: left.ces[leftIndex]) >> 16
                         }
 
                         var rightSecondary: UInt32 = 0
                         while rightSecondary == 0 && rightIndex > rightStart {
                             rightIndex -= 1
-                            rightSecondary = UInt32(truncatingIfNeeded: rightCEs[rightIndex]) >> 16
+                            rightSecondary = UInt32(truncatingIfNeeded: right.ces[rightIndex]) >> 16
                         }
 
                         if leftSecondary != rightSecondary {
@@ -161,7 +163,7 @@ enum CollationCompare {
                     // with only primary weights.
                     var ce: Int64
                     repeat {
-                        ce = leftCEs[leftIndex]
+                        ce = left.ces[leftIndex]
                         leftIndex += 1
                         leftCase = UInt32(truncatingIfNeeded: ce)
                     } while UInt32(truncatingIfNeeded: ce >> 32) == 0 || leftCase == 0
@@ -169,7 +171,7 @@ enum CollationCompare {
                     leftCase &= 0xc000
 
                     repeat {
-                        ce = rightCEs[rightIndex]
+                        ce = right.ces[rightIndex]
                         rightIndex += 1
                         rightCase = UInt32(truncatingIfNeeded: ce)
                     } while UInt32(truncatingIfNeeded: ce >> 32) == 0 || rightCase == 0
@@ -181,14 +183,14 @@ enum CollationCompare {
                     // a primary/secondary CE's uppercase; see UCA well-formedness
                     // condition 2 and LDML Collation, Case Parameters.)
                     repeat {
-                        leftCase = UInt32(truncatingIfNeeded: leftCEs[leftIndex])
+                        leftCase = UInt32(truncatingIfNeeded: left.ces[leftIndex])
                         leftIndex += 1
                     } while leftCase <= 0xffff
                     leftLower32 = leftCase
                     leftCase &= 0xc000
 
                     repeat {
-                        rightCase = UInt32(truncatingIfNeeded: rightCEs[rightIndex])
+                        rightCase = UInt32(truncatingIfNeeded: right.ces[rightIndex])
                         rightIndex += 1
                     } while rightCase <= 0xffff
                     rightCase &= 0xc000
@@ -218,7 +220,7 @@ enum CollationCompare {
             var leftLower32: UInt32
             var leftTertiary: UInt32
             repeat {
-                leftLower32 = UInt32(truncatingIfNeeded: leftCEs[leftIndex])
+                leftLower32 = UInt32(truncatingIfNeeded: left.ces[leftIndex])
                 leftIndex += 1
                 anyQuaternaries |= leftLower32
                 assert((leftLower32 & Collation.onlyTertiaryMask) != 0 || (leftLower32 & 0xc0c0) == 0)
@@ -228,7 +230,7 @@ enum CollationCompare {
             var rightLower32: UInt32
             var rightTertiary: UInt32
             repeat {
-                rightLower32 = UInt32(truncatingIfNeeded: rightCEs[rightIndex])
+                rightLower32 = UInt32(truncatingIfNeeded: right.ces[rightIndex])
                 rightIndex += 1
                 anyQuaternaries |= rightLower32
                 assert((rightLower32 & Collation.onlyTertiaryMask) != 0 || (rightLower32 & 0xc0c0) == 0)
@@ -274,7 +276,7 @@ enum CollationCompare {
         while true {
             var leftQuaternary: UInt32
             repeat {
-                let ce = leftCEs[leftIndex]
+                let ce = left.ces[leftIndex]
                 leftIndex += 1
                 leftQuaternary = UInt32(truncatingIfNeeded: ce) & 0xffff
                 if leftQuaternary <= Collation.noCEWeight16 {
@@ -289,7 +291,7 @@ enum CollationCompare {
 
             var rightQuaternary: UInt32
             repeat {
-                let ce = rightCEs[rightIndex]
+                let ce = right.ces[rightIndex]
                 rightIndex += 1
                 rightQuaternary = UInt32(truncatingIfNeeded: ce) & 0xffff
                 if rightQuaternary <= Collation.noCEWeight16 {
