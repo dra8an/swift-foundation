@@ -2,6 +2,23 @@
 
 **Cold-resume: read this file first.** Last update: 2026-06-04.
 
+## 🚧 SUPERSEDED CONTEXT BELOW for cold-resume on 2026-06-12+
+
+**As of 2026-06-11**, active work has moved on. Read these FIRST:
+
+1. `backup/SESSION_2026-06-11.md` — today's full progress (Buddhist port complete b1–b3; Japanese Suite A complete j1).
+2. `backup/BUDDHIST_JAPANESE_PLAN.md` — Buddhist + Japanese plan (revised 2026-06-11 to single branch / single PR).
+3. `backup/j1-japanese-suite-a-complete/README.md` — Japanese state, including ⚠ Meiji 1868-09-08 vs CLDR 1868-10-23 anomaly with investigation paths.
+
+**Current branch**: `port/buddhist` (off `port/hebrew`'s `67c538c`). Work is **uncommitted** — first action on resume is `git status` to inventory, then commit + push.
+
+**PR #2028 status** (waiting on reviewer): 4 commits live on `port/hebrew-perf-and-dedup`; latest is `f764dc7` "Add per-pattern probe to fast-path gate" (the Option B fix). Five round-1 reviewer comments all addressed in `0127031`. No new reviewer activity yet.
+
+The rest of THIS file describes the Hebrew port state as of 2026-06-04 — still accurate for the Hebrew side, but no longer reflects the active work.
+
+---
+
+
 ## ⚠ Current status: PR #1953 MERGED upstream (squash) → reverted → REAPPLIED on 2026-06-03
 
 Hebrew is **live in `upstream/main`** as of 2026-06-03 via the squash + re-apply trio:
