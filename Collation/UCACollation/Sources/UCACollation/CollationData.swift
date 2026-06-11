@@ -30,6 +30,7 @@ public struct CollationData: Sendable {
         static let contextsOffset = 13
         static let unsafeBwdOffset = 14
         static let scriptsOffset = 16
+        static let compressibleBytesOffset = 17
     }
 
     let trie: UTrie2
@@ -46,6 +47,9 @@ public struct CollationData: Sendable {
     let numScripts: Int
     let scriptsIndex: [UInt16]
     let scriptStarts: [UInt16]
+    /// Per-primary-lead-byte flags: compressible lead bytes allow primary
+    /// compression in sort keys. 256 entries.
+    let compressibleBytes: [Bool]
 
     public enum ParseError: Error {
         case tooShort
@@ -144,6 +148,11 @@ public struct CollationData: Sendable {
             scriptsIndex = []
             scriptStarts = []
         }
+
+        let (cbOffset, cbLength) = part(IX.compressibleBytesOffset)
+        guard cbLength >= 256 else { throw ParseError.missingPart("compressibleBytes") }
+        compressibleBytes = bytes[(headerSize + cbOffset)..<(headerSize + cbOffset + 256)]
+            .map { $0 != 0 }
     }
 
     /// First special reorder code (UCOL_REORDER_CODE_FIRST = space group).

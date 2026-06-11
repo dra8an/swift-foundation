@@ -47,15 +47,9 @@ public struct RootCollator: Sendable {
     ) throws -> Order {
         var leftCEs = try collationElements(of: left, numeric: options.numeric)
         var rightCEs = try collationElements(of: right, numeric: options.numeric)
-        let variableTopValue: UInt32
-        if options.alternate == .shifted {
-            variableTopValue = data.lastPrimaryForGroup(
-                CollationData.reorderCodeFirst + options.maxVariable.rawValue)
-        } else {
-            variableTopValue = 0
-        }
         let result = CollationCompare.compareUpToQuaternary(
-            &leftCEs, &rightCEs, options: options.icuOptions, variableTopValue: variableTopValue)
+            &leftCEs, &rightCEs, options: options.icuOptions,
+            variableTopValue: variableTopValue(options))
         if result != 0 {
             return result < 0 ? .ascending : .descending
         }
@@ -73,6 +67,35 @@ public struct RootCollator: Sendable {
             }
         }
         return .same
+    }
+
+    /// The sort key for a string: level bytes with 01 separators, optional
+    /// identical level (BOCSU over NFD), 00 terminator. Byte-wise comparison
+    /// of two sort keys equals compare() at the same options.
+    public func sortKey(
+        for s: String, options: CollationOptions = CollationOptions()
+    ) throws -> [UInt8] {
+        let ces = try collationElements(of: s, numeric: options.numeric)
+        var key: [UInt8] = []
+        CollationKeys.writeSortKeyUpToQuaternary(
+            ces: ces, compressibleBytes: data.compressibleBytes,
+            options: options.icuOptions, variableTopValue: variableTopValue(options),
+            into: &key)
+        if options.strength == .identical {
+            key.append(1)  // level separator
+            var iter = NFDIterator(norm: norm, scalars: s.unicodeScalars)
+            var nfdScalars: [UInt32] = []
+            while let c = iter.next() { nfdScalars.append(c) }
+            CollationKeys.writeIdenticalLevelRun(scalars: nfdScalars, into: &key)
+        }
+        key.append(0)  // terminator
+        return key
+    }
+
+    private func variableTopValue(_ options: CollationOptions) -> UInt32 {
+        guard options.alternate == .shifted else { return 0 }
+        return data.lastPrimaryForGroup(
+            CollationData.reorderCodeFirst + options.maxVariable.rawValue)
     }
 
     /// All CEs of a string, terminated by NO_CE.

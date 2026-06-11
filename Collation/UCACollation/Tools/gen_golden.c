@@ -114,8 +114,36 @@ int main(int argc, char **argv) {
             fputc('\n', out);
         }
         fclose(out);
-        ucol_close(coll);
         fprintf(stderr, "wrote %s (%dx%d)\n", path, n, n);
+
+        /* Reference sort keys: one hex-encoded ucol_getSortKey per line. */
+        snprintf(path, sizeof(path), "%s/keys-%s.txt", argv[2], optionSets[k].name);
+        out = fopen(path, "w");
+        if (!out) { perror(path); return 1; }
+        for (int i = 0; i < n; i++) {
+            UChar us[MAX_LINE];
+            int32_t usLength;
+            status = U_ZERO_ERROR;
+            u_strFromUTF8(us, MAX_LINE, &usLength, lines[i], -1, &status);
+            if (U_FAILURE(status)) {
+                fprintf(stderr, "u_strFromUTF8(%d): %s\n", i, u_errorName(status));
+                return 1;
+            }
+            uint8_t skey[4096];
+            int32_t skeyLength = ucol_getSortKey(coll, us, usLength, skey, sizeof(skey));
+            if (skeyLength <= 0 || skeyLength > (int32_t)sizeof(skey)) {
+                fprintf(stderr, "ucol_getSortKey(%s,%d) length %d\n",
+                        optionSets[k].name, i, skeyLength);
+                return 1;
+            }
+            for (int32_t b = 0; b < skeyLength; b++) {
+                fprintf(out, "%02x", skey[b]);
+            }
+            fputc('\n', out);
+        }
+        fclose(out);
+        ucol_close(coll);
+        fprintf(stderr, "wrote keys-%s.txt\n", optionSets[k].name);
     }
     return 0;
 }
