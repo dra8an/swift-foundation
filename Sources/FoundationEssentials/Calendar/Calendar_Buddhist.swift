@@ -137,4 +137,10 @@ internal final class _CalendarBuddhist: _CalendarProtocol, @unchecked Sendable {
         if requested.contains(.year), let y = dc.year { dc.year = y + Self.yearOffset }
         if requested.contains(.era) { dc.era = 0 }
     }
+
+#if FOUNDATION_FRAMEWORK
+    func bridgeToNSCalendar() -> NSCalendar {
+        _NSSwiftCalendar(calendar: Calendar(inner: self))
+    }
+#endif
 }

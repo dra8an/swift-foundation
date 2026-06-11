@@ -362,11 +362,10 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
     }
 
     func dateComponents(_ components: Calendar.ComponentSet, from start: Date, to end: Date) -> DateComponents {
-        var dc = gregorian.dateComponents(components, from: start, to: end)
-        if components.contains(.year) {
-            dc.year = japaneseYearDifference(from: start, to: end)
-        }
-        return dc
+        // Gregorian's calendar-aware diff is correct for the imperial calendar too:
+        // same-era spans collapse year/month/day naturally, and cross-era spans
+        // share the same Gregorian-year arithmetic since era boundaries don't shift days.
+        gregorian.dateComponents(components, from: start, to: end)
     }
 
     func nextDate(after date: Date, matching components: DateComponents, direction: Calendar.SearchDirection) -> Date? {
@@ -415,18 +414,18 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
         return DateInterval(start: start, end: endDate)
     }
 
-    private func japaneseYearDifference(from start: Date, to end: Date) -> Int {
-        let s = gregorian.dateComponents([.year], from: start).year ?? 0
-        let e = gregorian.dateComponents([.year], from: end).year ?? 0
-        return e - s
-    }
-
     // MARK: - Components conversion
 
     private func convertedToGregorian(_ components: DateComponents) -> DateComponents {
         var dc = components
-        if let era = dc.era, let year = dc.year, let eraEntry = eraEntry(byIndex: era) {
-            dc.year = year + eraEntry.startGregorianYear - 1
+        if let year = dc.year {
+            // Year is era-relative. If era is missing (as in slow-path enumeration,
+            // where _adjustedComponents writes back year without era), default to the
+            // latest era — matches ICU's behaviour when no explicit era is given.
+            let eraIndex = dc.era ?? Self.eras.first!.index
+            if let eraEntry = eraEntry(byIndex: eraIndex) {
+                dc.year = year + eraEntry.startGregorianYear - 1
+            }
         }
         dc.era = nil
         return dc
@@ -442,4 +441,10 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
         }
         // For pre-Meiji dates, leave gregorian's era + year as-is.
     }
+
+#if FOUNDATION_FRAMEWORK
+    func bridgeToNSCalendar() -> NSCalendar {
+        _NSSwiftCalendar(calendar: Calendar(inner: self))
+    }
+#endif
 }

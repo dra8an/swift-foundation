@@ -1502,7 +1502,7 @@ internal final class _CalendarHebrew: _CalendarProtocol, @unchecked Sendable {
 
 #if FOUNDATION_FRAMEWORK
     func bridgeToNSCalendar() -> NSCalendar {
-        fatalError("TODO: bridgeToNSCalendar")
+        _NSSwiftCalendar(calendar: Calendar(inner: self))
     }
 #endif
 }
