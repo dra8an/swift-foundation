@@ -23,6 +23,7 @@ public struct CollationData: Sendable {
         static let options = 1
         static let jamoCE32sStart = 4
         static let reorderCodesOffset = 5
+        static let reorderTableOffset = 6
         static let trieOffset = 7
         static let cesOffset = 9
         static let ce32sOffset = 11
@@ -92,8 +93,11 @@ public struct CollationData: Sendable {
         var indexes = [Int32](repeating: 0, count: indexesLength)
         for i in 0..<indexesLength { indexes[i] = i32(i * 4) }
 
+        // Parts whose indexes are beyond indexesLength are absent (length 0),
+        // like CollationDataReader::getIndex returning -1.
         func part(_ ix: Int) -> (offset: Int, length: Int) {
-            (Int(indexes[ix]), Int(indexes[ix + 1] - indexes[ix]))
+            guard ix + 1 < indexesLength else { return (0, 0) }
+            return (Int(indexes[ix]), Int(indexes[ix + 1] - indexes[ix]))
         }
 
         numericPrimary = UInt32(bitPattern: indexes[IX.options]) & 0xff00_0000
@@ -149,10 +153,14 @@ public struct CollationData: Sendable {
             scriptStarts = []
         }
 
+        // Optional in tailorings (fall back to the base data's).
         let (cbOffset, cbLength) = part(IX.compressibleBytesOffset)
-        guard cbLength >= 256 else { throw ParseError.missingPart("compressibleBytes") }
-        compressibleBytes = bytes[(headerSize + cbOffset)..<(headerSize + cbOffset + 256)]
-            .map { $0 != 0 }
+        if cbLength >= 256 {
+            compressibleBytes = bytes[(headerSize + cbOffset)..<(headerSize + cbOffset + 256)]
+                .map { $0 != 0 }
+        } else {
+            compressibleBytes = []
+        }
     }
 
     /// First special reorder code (UCOL_REORDER_CODE_FIRST = space group).
@@ -203,5 +211,126 @@ public struct CollationData: Sendable {
             throw ParseError.missingPart("bundled ucadata-icu4x.icu")
         }
         return try CollationData(contentsOf: url)
+    }
+
+    // MARK: Tailorings
+
+    /// A parsed tailoring binary (%%CollationBin): per-locale default options,
+    /// optional mappings (nil for settings-only tailorings like fr-CA), and
+    /// optional script reordering.
+    struct Tailoring {
+        let options: Int32
+        let data: CollationData?
+        let reordering: Reordering?
+    }
+
+    /// Parses a compiled tailoring ("UCol" v5 with data header).
+    /// (CollationDataReader::read, tailoring path.)
+    static func tailoring(bytes: [UInt8]) throws -> Tailoring {
+        guard bytes.count >= 24, bytes[2] == 0xda, bytes[3] == 0x27 else {
+            throw ParseError.badMagic
+        }
+        let headerSize = Int(bytes[0]) | (Int(bytes[1]) << 8)
+        func i32(_ byteOffset: Int) -> Int32 {
+            let b = headerSize + byteOffset
+            return Int32(bytes[b]) | (Int32(bytes[b + 1]) << 8)
+                | (Int32(bytes[b + 2]) << 16) | (Int32(bytes[b + 3]) << 24)
+        }
+        let indexesLength = Int(i32(0))
+        var indexes = [Int32](repeating: 0, count: indexesLength)
+        for i in 0..<indexesLength { indexes[i] = i32(i * 4) }
+        func part(_ ix: Int) -> (offset: Int, length: Int) {
+            guard ix + 1 < indexesLength else { return (0, 0) }
+            return (headerSize + Int(indexes[ix]), Int(indexes[ix + 1] - indexes[ix]))
+        }
+
+        let options = indexes[IX.options] & 0xffff
+
+        // Mappings: present only if there is a trie.
+        let (_, trieLength) = part(IX.trieOffset)
+        let data: CollationData? = trieLength >= 8 ? try CollationData(bytes: bytes) : nil
+
+        // Script reordering: codes (with trailing ranges) and the permutation table.
+        var reordering: Reordering?
+        let (rcOffset, rcLength) = part(IX.reorderCodesOffset)
+        if rcLength >= 4 {
+            var raw = [UInt32](repeating: 0, count: rcLength / 4)
+            for i in 0..<raw.count {
+                let b = rcOffset + i * 4
+                raw[i] = UInt32(bytes[b]) | (UInt32(bytes[b + 1]) << 8)
+                    | (UInt32(bytes[b + 2]) << 16) | (UInt32(bytes[b + 3]) << 24)
+            }
+            // Trailing entries with non-zero upper 16 bits are reorder ranges.
+            var rangesLength = 0
+            while rangesLength < raw.count - 1
+                && (raw[raw.count - rangesLength - 1] & 0xffff_0000) != 0 {
+                rangesLength += 1
+            }
+            let ranges = Array(raw[(raw.count - rangesLength)...])
+            let (rtOffset, rtLength) = part(IX.reorderTableOffset)
+            guard rtLength >= 256 else {
+                // Regenerating an omitted reorder table requires the builder's
+                // makeReorderRanges; not needed for ICU-compiled data.
+                throw ParseError.missingPart("reorderTable")
+            }
+            let table = Array(bytes[rtOffset..<(rtOffset + 256)])
+            reordering = Reordering(table: table, rawRanges: ranges)
+        }
+
+        return Tailoring(options: options, data: data, reordering: reordering)
+    }
+
+    public static func tailoring(named name: String) throws -> [UInt8] {
+        guard let url = Bundle.module.url(
+            forResource: name, withExtension: "bin", subdirectory: "tailorings")
+        else {
+            throw ParseError.missingPart("bundled tailoring \(name)")
+        }
+        return [UInt8](try Data(contentsOf: url))
+    }
+}
+
+/// Script reordering: a permutation of primary lead bytes, with a range table
+/// for "split" lead bytes shared by two reordered scripts.
+/// (CollationSettings reordering, aliasReordering/reorder/reorderEx.)
+struct Reordering: Sendable {
+    let table: [UInt8]      // 256 entries; 0 at non-zero index = split byte
+    let ranges: [UInt32]    // (limit << 16) | offset entries from the first split byte
+    let minHighNoReorder: UInt32
+
+    init(table: [UInt8], rawRanges: [UInt32]) {
+        self.table = table
+        // Drop ranges before the first split byte; they are fully handled by
+        // the table. (CollationSettings::aliasReordering.)
+        var firstSplit = 0
+        while firstSplit < rawRanges.count && (rawRanges[firstSplit] & 0xff_0000) == 0 {
+            firstSplit += 1
+        }
+        if firstSplit == rawRanges.count {
+            ranges = []
+            minHighNoReorder = 0
+        } else {
+            ranges = Array(rawRanges[firstSplit...])
+            minHighNoReorder = rawRanges[rawRanges.count - 1] & 0xffff_0000
+        }
+    }
+
+    @inline(__always)
+    func reorder(_ p: UInt32) -> UInt32 {
+        let b = table[Int(p >> 24)]
+        if b != 0 || p <= Collation.noCEPrimary {
+            return (UInt32(b) << 24) | (p & 0xff_ffff)
+        }
+        return reorderEx(p)
+    }
+
+    /// Slow path for split lead bytes. (CollationSettings::reorderEx.)
+    private func reorderEx(_ p: UInt32) -> UInt32 {
+        if p >= minHighNoReorder { return p }
+        // Round up p so that the comparison ignores the offset bits.
+        let q = p | 0xffff
+        var i = 0
+        while q >= ranges[i] { i += 1 }
+        return p &+ (ranges[i] << 24)
     }
 }

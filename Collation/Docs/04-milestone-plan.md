@@ -14,7 +14,7 @@
 | 4 | Contraction & prefix matching | **Done 2026-06-11** |
 | 5 | Sort keys | **Done 2026-06-11** |
 | 6 | Conformance & performance baseline | **Done 2026-06-11** |
-| 7 | Locale tailorings | not started |
+| 7 | Locale tailorings | **Done 2026-06-11** |
 | 8 | swift-foundation integration | not started |
 
 Standing rule for every milestone: differential testing against ICU 79 (machine-local
@@ -250,6 +250,26 @@ recorded in the docs; no conformance regressions tolerated afterward.
 
 **Verification.** Differential vs ICU with locale collators: de-phonebook (ä=ae),
 sv (å/ä/ö after z), fr-CA (backwards secondary), tr (dotless i), ja, zh-pinyin.
+
+**Outcome (2026-06-11).** Delivered; details in `10-milestone-7-report.md`:
+- Offline: extract_tailoring.c pulls compiled %%CollationBin blobs (same
+  "UCol" v5 format) from ICU's resource bundles; 8 locales bundled:
+  de-phonebook, sv, da, fr_CA (settings-only, 32 bytes), tr, lt, ja, zh
+  (pinyin, 131 KB incl. reordering).
+- Runtime: base-fallback CE lookup (FALLBACK_CE32 -> root) threaded through
+  the CE iterator (expansions/contexts/digits resolve in the owning data);
+  per-locale default options decoded from IX_OPTIONS (fr-CA backwards
+  secondary, da caseFirst=upper); script reordering (table + split-byte
+  ranges, CollationSettings::reorder/reorderEx port) applied in compare and
+  sort keys.
+- Verification: per-locale ICU reference matrices + byte-identical sort keys
+  over the corpus (grown to 328 strings with tr/sv/da/de/lt/pinyin/kana
+  additions), all 8 locales 100%; locale defaults asserted; classic
+  orderings (z < ö in sv, aa primary-equal a-ring in da, Mueller/Mueller
+  phonebook, Turkish dotless i, fr-CA backwards accents) green.
+- The genrb -X TOML path (NFD-only tailorings for the icu4x data variant)
+  remains future work; compiled regular tailorings + the always-NFD runtime
+  are verified equivalent against ICU.
 
 ---
 

@@ -7,7 +7,7 @@ moves into `Sources/` at integration time (milestone 8). See
 `../Docs/03-swift-strategy.md` for the strategy and `../Docs/04-milestone-plan.md`
 for the plan.
 
-## Status: milestone 6 complete
+## Status: milestone 7 complete
 
 Full multi-level comparison against the CLDR root collation, with incremental
 NFD decomposition fused into the iterator (the ICU4X model — normalization is
@@ -43,8 +43,13 @@ green on both data variants; differential matrices, byte-identical sort keys,
 and a seeded fuzz corpus vs ICU 79. Benchmarks: `swift run -c release Bench
 Tools/bench/bench-ascii.txt` (vs `Tools/bench_icu.c`).
 
+Locale tailorings: 8 bundled (de-phonebook, sv, da, fr_CA, tr, lt, ja,
+zh-pinyin) via `RootCollator(tailoringNamed:)` — compiled %%CollationBin
+binaries extracted from ICU resources (Tools/extract_tailoring.c), with
+base-fallback lookup, per-locale default options, and script reordering.
+
 Not yet implemented — see `../Docs/04-milestone-plan.md` for the numbered plan:
-- tailorings + script reordering (7), Foundation integration (8)
+- swift-foundation integration (8)
 
 ## Regenerating the normalization data
 

@@ -14,7 +14,7 @@ enum CollationCompare {
     /// (used only when options has alternate=shifted).
     static func compareUpToQuaternary(
         _ left: inout CEIterator, _ right: inout CEIterator,
-        options: Int32, variableTopValue: UInt32
+        options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil
     ) throws -> Int {
         let variableTop: UInt32
         if (options & CollationOptions.Bits.alternateMask) == 0 {
@@ -60,10 +60,14 @@ enum CollationCompare {
         var li = 0
         var ri = 0
         while true {
-            let leftPrimary = try nextPrimary(&left, &li)
-            let rightPrimary = try nextPrimary(&right, &ri)
+            var leftPrimary = try nextPrimary(&left, &li)
+            var rightPrimary = try nextPrimary(&right, &ri)
             if leftPrimary != rightPrimary {
-                // (Script reordering would apply here.)
+                // Return the primary difference, with script reordering.
+                if let reordering {
+                    leftPrimary = reordering.reorder(leftPrimary)
+                    rightPrimary = reordering.reorder(rightPrimary)
+                }
                 return leftPrimary < rightPrimary ? -1 : 1
             }
             if leftPrimary == Collation.noCEPrimary { break }
@@ -302,7 +306,11 @@ enum CollationCompare {
             } while rightQuaternary == 0
 
             if leftQuaternary != rightQuaternary {
-                // (Script reordering would apply here.)
+                // Return the difference, with script reordering.
+                if let reordering {
+                    leftQuaternary = reordering.reorder(leftQuaternary)
+                    rightQuaternary = reordering.reorder(rightQuaternary)
+                }
                 return leftQuaternary < rightQuaternary ? -1 : 1
             }
             if leftQuaternary == Collation.noCEPrimary { break }

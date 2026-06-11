@@ -46,6 +46,22 @@ public struct CollationOptions: Sendable, Equatable {
 
     public init() {}
 
+    /// Decodes a CollationSettings options word (e.g. a tailoring's defaults
+    /// from the data's IX_OPTIONS).
+    init(icuOptionsWord word: Int32) {
+        strength = Strength(rawValue: word >> Bits.strengthShift) ?? .tertiary
+        alternate = (word & Bits.alternateMask) != 0 ? .shifted : .nonIgnorable
+        maxVariable = MaxVariable(rawValue: (word >> 4) & 7) ?? .punctuation
+        switch word & Bits.caseFirstAndUpperMask {
+        case Bits.caseFirst: caseFirst = .lowerFirst
+        case Bits.caseFirstAndUpperMask: caseFirst = .upperFirst
+        default: caseFirst = .off
+        }
+        caseLevel = (word & Bits.caseLevel) != 0
+        backwardSecondary = (word & Bits.backwardSecondary) != 0
+        numeric = (word & 2) != 0
+    }
+
     // MARK: ICU options word (CollationSettings bit layout)
 
     enum Bits {

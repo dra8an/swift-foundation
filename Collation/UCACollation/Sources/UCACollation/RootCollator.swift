@@ -27,15 +27,43 @@ public struct RootCollator: Sendable {
     }
 
     let data: CollationData
+    /// The base (root) data when `data` is a tailoring.
+    let base: CollationData?
     let norm: NormalizationData
+    /// Script reordering from the tailoring, if any.
+    let reordering: Reordering?
+    /// The tailoring's default options (e.g. backwards-secondary for fr-CA);
+    /// plain defaults for the root collator.
+    public let defaultOptions: CollationOptions
 
     public init(data: CollationData, norm: NormalizationData) {
         self.data = data
+        self.base = nil
         self.norm = norm
+        self.reordering = nil
+        self.defaultOptions = CollationOptions()
     }
 
     public init() throws {
         self.init(data: try CollationData.root(), norm: try NormalizationData.standard())
+    }
+
+    /// A collator for a bundled locale tailoring (e.g. "sv", "de-phonebook",
+    /// "fr_CA", "ja", "zh"), based on the regular root data.
+    public init(tailoringNamed name: String) throws {
+        let tailoring = try CollationData.tailoring(bytes: CollationData.tailoring(named: name))
+        let root = try CollationData.root()
+        if let tailoringData = tailoring.data {
+            self.data = tailoringData
+            self.base = root
+        } else {
+            // Settings-only tailoring (e.g. fr-CA): use the base data directly.
+            self.data = root
+            self.base = nil
+        }
+        self.norm = try NormalizationData.standard()
+        self.reordering = tailoring.reordering
+        self.defaultOptions = CollationOptions(icuOptionsWord: tailoring.options)
     }
 
     // MARK: Comparison
@@ -48,12 +76,14 @@ public struct RootCollator: Sendable {
         // CEs are generated lazily: the primary level usually decides the
         // comparison after a few characters.
         var leftCEs = CEIterator(
-            data: data, norm: norm, numeric: options.numeric, scalars: left.unicodeScalars)
+            data: data, base: base, norm: norm, numeric: options.numeric,
+            scalars: left.unicodeScalars)
         var rightCEs = CEIterator(
-            data: data, norm: norm, numeric: options.numeric, scalars: right.unicodeScalars)
+            data: data, base: base, norm: norm, numeric: options.numeric,
+            scalars: right.unicodeScalars)
         let result = try CollationCompare.compareUpToQuaternary(
             &leftCEs, &rightCEs, options: options.icuOptions,
-            variableTopValue: variableTopValue(options))
+            variableTopValue: variableTopValue(options), reordering: reordering)
         if result != 0 {
             return result < 0 ? .ascending : .descending
         }
@@ -81,10 +111,12 @@ public struct RootCollator: Sendable {
     ) throws -> [UInt8] {
         let ces = try collationElements(of: s, numeric: options.numeric)
         var key: [UInt8] = []
+        let compressibleBytes = data.compressibleBytes.isEmpty
+            ? base!.compressibleBytes : data.compressibleBytes
         CollationKeys.writeSortKeyUpToQuaternary(
-            ces: ces, compressibleBytes: data.compressibleBytes,
+            ces: ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            into: &key)
+            reordering: reordering, into: &key)
         if options.strength == .identical {
             key.append(1)  // level separator
             var iter = NFDIterator(norm: norm, scalars: s.unicodeScalars)
@@ -98,13 +130,16 @@ public struct RootCollator: Sendable {
 
     private func variableTopValue(_ options: CollationOptions) -> UInt32 {
         guard options.alternate == .shifted else { return 0 }
-        return data.lastPrimaryForGroup(
+        // Scripts data lives in the root; tailorings usually omit it.
+        let scriptsData = data.scriptStarts.isEmpty ? base! : data
+        return scriptsData.lastPrimaryForGroup(
             CollationData.reorderCodeFirst + options.maxVariable.rawValue)
     }
 
     /// All CEs of a string, terminated by NO_CE.
     func collationElements(of s: String, numeric: Bool = false) throws -> [Int64] {
-        var iter = CEIterator(data: data, norm: norm, numeric: numeric, scalars: s.unicodeScalars)
+        var iter = CEIterator(
+            data: data, base: base, norm: norm, numeric: numeric, scalars: s.unicodeScalars)
         return try iter.collectAll()
     }
 

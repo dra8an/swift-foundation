@@ -126,7 +126,7 @@ enum CollationKeys {
     /// (CollationKeys::writeSortKeyUpToQuaternary.)
     static func writeSortKeyUpToQuaternary(
         ces: [Int64], compressibleBytes: [Bool],
-        options: Int32, variableTopValue: UInt32,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
         into key: inout [UInt8]
     ) {
         var levels = levelFlags(strength: CollationOptions.strength(of: options))
@@ -178,6 +178,7 @@ enum CollationKeys {
                 }
                 repeat {
                     if (levels & quaternaryFlag) != 0 {
+                        if let reordering { p = reordering.reorder(p) }
                         if (p >> 24) >= quatShiftedLimitByte {
                             // Prevent shifted primary lead bytes from
                             // overlapping with the common compression range.
@@ -199,6 +200,7 @@ enum CollationKeys {
             if p > Collation.noCEPrimary && (levels & primaryFlag) != 0 {
                 // Test the un-reordered primary for compressibility.
                 let isCompressible = compressibleBytes[Int(p >> 24)]
+                if let reordering { p = reordering.reorder(p) }
                 let p1 = p >> 24
                 if !isCompressible || p1 != (prevReorderedPrimary >> 24) {
                     if prevReorderedPrimary != 0 {

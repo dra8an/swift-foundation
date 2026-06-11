@@ -13,7 +13,11 @@
 // snapshots a struct copy (replacing ICU's SkippedState machinery).
 
 struct CEIterator {
+    /// The tailoring data (or root when there is no tailoring).
     let data: CollationData
+    /// The base (root) data when `data` is a tailoring; lookups fall back here
+    /// when the tailoring maps a character to FALLBACK_CE32.
+    let base: CollationData?
     let norm: NormalizationData
     let numeric: Bool
     var scalars: NFDIterator
@@ -31,11 +35,24 @@ struct CEIterator {
     /// the current character; pushed into prefix history after it.
     private var consumedExtras: [UInt32] = []
 
-    init(data: CollationData, norm: NormalizationData, numeric: Bool, scalars: String.UnicodeScalarView) {
+    init(data: CollationData, base: CollationData? = nil, norm: NormalizationData,
+         numeric: Bool, scalars: String.UnicodeScalarView) {
         self.data = data
+        self.base = base
         self.norm = norm
         self.numeric = numeric
         self.scalars = NFDIterator(norm: norm, scalars: scalars)
+    }
+
+    /// Looks up the CE32 for a code point, falling back from the tailoring to
+    /// the base data. Returns the data that owns the resulting CE32.
+    @inline(__always)
+    private func lookup(_ c: UInt32) -> (d: CollationData, ce32: UInt32) {
+        let ce32 = data.trie.get(c)
+        if ce32 == Collation.fallbackCE32, let b = base {
+            return (b, b.trie.get(c))
+        }
+        return (data, ce32)
     }
 
     // MARK: Lookahead buffer
@@ -99,7 +116,8 @@ struct CEIterator {
         }
         discardAhead(1)
         consumedExtras.removeAll(keepingCapacity: true)
-        try appendCEs(c: c, ce32: data.trie.get(c), depth: 0)
+        let (d, ce32) = lookup(c)
+        try appendCEs(d: d, c: c, ce32: ce32, depth: 0)
         pushHistory(c)
         for extra in consumedExtras { pushHistory(extra) }
         return true
@@ -114,7 +132,7 @@ struct CEIterator {
         return ces[i]
     }
 
-    private mutating func appendCEs(c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {
+    private mutating func appendCEs(d: CollationData, c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {
         // Specials never nest deeper than prefix -> contraction -> expansion
         // (plus digit/u0000 indirections) in root data.
         guard depth <= 6 else { throw RootCollator.CollationError.malformedData }
@@ -135,34 +153,34 @@ struct CEIterator {
             case .expansion32:
                 let index = Collation.indexFromCE32(ce32)
                 for i in 0..<Collation.lengthFromCE32(ce32) {
-                    ces.append(Collation.ceFromCE32(data.ce32s[index + i]))
+                    ces.append(Collation.ceFromCE32(d.ce32s[index + i]))
                 }
                 return
             case .expansion:
                 let index = Collation.indexFromCE32(ce32)
                 for i in 0..<Collation.lengthFromCE32(ce32) {
-                    ces.append(data.ces[index + i])
+                    ces.append(d.ces[index + i])
                 }
                 return
             case .prefix:
-                ce32 = prefixCE32(ce32)
+                ce32 = prefixCE32(d: d, ce32)
             case .contraction:
-                ce32 = contractionCE32(ce32)
+                ce32 = contractionCE32(d: d, ce32)
             case .digit:
                 if numeric {
-                    try appendNumericCEs(firstCE32: ce32)
+                    try appendNumericCEs(d: d, firstCE32: ce32)
                     return
                 }
-                ce32 = data.ce32s[Collation.indexFromCE32(ce32)]
+                ce32 = d.ce32s[Collation.indexFromCE32(ce32)]
             case .u0000:
-                ce32 = data.ce32s[0]
+                ce32 = d.ce32s[0]
             case .hangul:
                 // Unreachable behind the NFD front end (syllables decompose to
                 // Jamo first), but kept for data completeness.
-                try appendHangulCEs(syllable: c, depth: depth)
+                try appendHangulCEs(d: d, syllable: c, depth: depth)
                 return
             case .offset:
-                let dataCE = data.ces[Collation.indexFromCE32(ce32)]
+                let dataCE = d.ces[Collation.indexFromCE32(ce32)]
                 ces.append(Collation.makeCE(Collation.threeBytePrimaryForOffsetData(c, dataCE)))
                 return
             case .implicit:
@@ -178,11 +196,11 @@ struct CEIterator {
 
     /// Resolves a PREFIX_TAG CE32 by matching the preceding scalars against
     /// the prefix trie (stored last-character-first). (getCE32FromPrefix.)
-    private mutating func prefixCE32(_ ce32: UInt32) -> UInt32 {
+    private mutating func prefixCE32(d: CollationData, _ ce32: UInt32) -> UInt32 {
         let index = Collation.indexFromCE32(ce32)
-        var result = data.readContextCE32(at: index)  // default if no prefix match
+        var result = d.readContextCE32(at: index)  // default if no prefix match
         guard let p1 = prev1 else { return result }
-        var trie = UCharsTrie(units: data.contexts, offset: index + 2)
+        var trie = UCharsTrie(units: d.contexts, offset: index + 2)
         var match = trie.firstForCodePoint(p1)
         if match.hasValue {
             result = UInt32(bitPattern: trie.getValue())
@@ -204,9 +222,9 @@ struct CEIterator {
     /// the suffix trie, including discontiguous contractions per UTS #10 S2.1.
     /// Matched scalars are consumed; marks skipped over by a discontiguous
     /// match stay in the lookahead and produce their own CEs afterwards.
-    private mutating func contractionCE32(_ contractionCE32: UInt32) -> UInt32 {
+    private mutating func contractionCE32(d: CollationData, _ contractionCE32: UInt32) -> UInt32 {
         let index = Collation.indexFromCE32(contractionCE32)
-        let defaultCE32 = data.readContextCE32(at: index)
+        let defaultCE32 = d.readContextCE32(at: index)
         guard let first = scalarAhead(0) else { return defaultCE32 }
         if (contractionCE32 & Collation.contractNextCCC) != 0 && norm.ccc(first) == 0 {
             // Every suffix starts with a non-starter; a starter cannot match.
@@ -214,7 +232,7 @@ struct CEIterator {
         }
 
         // Longest contiguous match (UTS #10 S2.1 "longest initial substring S").
-        var trie = UCharsTrie(units: data.contexts, offset: index + 2)
+        var trie = UCharsTrie(units: d.contexts, offset: index + 2)
         var bestCE32 = defaultCE32
         var bestLength = 0
         var stateAfterBest = trie  // trie state after the matched part of S
@@ -267,17 +285,19 @@ struct CEIterator {
         return bestCE32
     }
 
-    private mutating func appendHangulCEs(syllable c: UInt32, depth: Int) throws {
-        guard data.jamoCE32sStart >= 0, (0xac00...0xd7a3).contains(c) else {
+    private mutating func appendHangulCEs(d dIn: CollationData, syllable c: UInt32, depth: Int) throws {
+        // Jamo CE32s normally live in the base (root) data.
+        let d = dIn.jamoCE32sStart >= 0 ? dIn : (base ?? dIn)
+        guard d.jamoCE32sStart >= 0, (0xac00...0xd7a3).contains(c) else {
             throw RootCollator.CollationError.unsupportedMapping(scalar: c, tag: Collation.Tag.hangul.rawValue)
         }
         let sIndex = Int(c) - 0xac00
-        let jamo = data.jamoCE32sStart
-        try appendCEs(c: c, ce32: data.ce32s[jamo + sIndex / 588], depth: depth + 1)
-        try appendCEs(c: c, ce32: data.ce32s[jamo + 19 + (sIndex % 588) / 28], depth: depth + 1)
+        let jamo = d.jamoCE32sStart
+        try appendCEs(d: d, c: c, ce32: d.ce32s[jamo + sIndex / 588], depth: depth + 1)
+        try appendCEs(d: d, c: c, ce32: d.ce32s[jamo + 19 + (sIndex % 588) / 28], depth: depth + 1)
         let t = sIndex % 28
         if t != 0 {
-            try appendCEs(c: c, ce32: data.ce32s[jamo + 19 + 21 + t - 1], depth: depth + 1)
+            try appendCEs(d: d, c: c, ce32: d.ce32s[jamo + 19 + 21 + t - 1], depth: depth + 1)
         }
     }
 
@@ -285,11 +305,11 @@ struct CEIterator {
 
     /// Collects the digit run starting with `firstCE32` and appends numeric CEs.
     /// (CollationIterator::appendNumericCEs, forward direction.)
-    private mutating func appendNumericCEs(firstCE32: UInt32) throws {
+    private mutating func appendNumericCEs(d: CollationData, firstCE32: UInt32) throws {
         var digits: [Int32] = [Collation.digitFromCE32(firstCE32)]
         var count = 0
         while let c = scalarAhead(count) {
-            let ce32 = data.trie.get(c)
+            let (_, ce32) = lookup(c)
             guard Collation.isSpecialCE32(ce32) && Collation.tagFromCE32(ce32) == .digit else { break }
             digits.append(Collation.digitFromCE32(ce32))
             count += 1
@@ -301,16 +321,16 @@ struct CEIterator {
             while pos < digits.count - 1 && digits[pos] == 0 { pos += 1 }
             // Write a sequence of CEs for at most 254 digits at a time.
             let segmentLength = min(digits.count - pos, 254)
-            appendNumericSegmentCEs(digits[pos..<(pos + segmentLength)])
+            appendNumericSegmentCEs(d: d, digits[pos..<(pos + segmentLength)])
             pos += segmentLength
         } while pos < digits.count
     }
 
     /// (CollationIterator::appendNumericSegmentCEs.)
-    private mutating func appendNumericSegmentCEs(_ digitsSlice: ArraySlice<Int32>) {
+    private mutating func appendNumericSegmentCEs(d: CollationData, _ digitsSlice: ArraySlice<Int32>) {
         let digits = Array(digitsSlice)
         var length = digits.count
-        let numericPrimary = data.numericPrimary
+        let numericPrimary = d.numericPrimary
         // Note: We use primary byte values 2..255: digits are not compressible.
         if length <= 7 {
             // Very dense encoding for small numbers.

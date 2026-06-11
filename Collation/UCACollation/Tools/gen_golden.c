@@ -32,6 +32,7 @@ typedef struct {
     UCollationStrength strength;
     UColAttribute attr;        /* UCOL_ATTRIBUTE_COUNT = none */
     UColAttributeValue value;
+    const char *locale;        /* NULL = root with explicit settings */
 } OptionSet;
 
 static const OptionSet optionSets[] = {
@@ -48,6 +49,15 @@ static const OptionSet optionSets[] = {
     {"lowerfirst", UCOL_TERTIARY,   UCOL_CASE_FIRST, UCOL_LOWER_FIRST},
     {"french",     UCOL_TERTIARY,   UCOL_FRENCH_COLLATION, UCOL_ON},
     {"numeric",    UCOL_TERTIARY,   UCOL_NUMERIC_COLLATION, UCOL_ON},
+    /* Locale tailorings, with each locale's default options. */
+    {"de-phonebook", UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "de@collation=phonebook"},
+    {"sv",    UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "sv"},
+    {"da",    UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "da"},
+    {"fr-CA", UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "fr_CA"},
+    {"tr",    UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "tr"},
+    {"lt",    UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "lt"},
+    {"ja",    UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "ja"},
+    {"zh",    UCOL_DEFAULT, UCOL_ATTRIBUTE_COUNT, UCOL_DEFAULT, "zh@collation=pinyin"},
 };
 
 int main(int argc, char **argv) {
@@ -76,12 +86,14 @@ int main(int argc, char **argv) {
     int numOptionSets = (int)(sizeof(optionSets) / sizeof(optionSets[0]));
     for (int k = 0; k < numOptionSets; k++) {
         UErrorCode status = U_ZERO_ERROR;
-        UCollator *coll = ucol_open("root", &status);
+        const char *loc = optionSets[k].locale ? optionSets[k].locale : "root";
+        UCollator *coll = ucol_open(loc, &status);
         if (U_FAILURE(status)) {
-            fprintf(stderr, "ucol_open: %s\n", u_errorName(status));
+            fprintf(stderr, "ucol_open(%s): %s\n", loc, u_errorName(status));
             return 1;
         }
-        ucol_setStrength(coll, optionSets[k].strength);
+        /* Locale option sets use the locale's default settings. */
+        if (!optionSets[k].locale) ucol_setStrength(coll, optionSets[k].strength);
         /* Our implementation follows the ICU4X model: normalization is always
          * on. ICU's root collator defaults to normalization OFF, which gives
          * different (non-canonical) results for input whose combining marks

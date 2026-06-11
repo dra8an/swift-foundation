@@ -14,6 +14,7 @@ let package = Package(
                 .copy("Resources/ucadata.icu"),
                 .copy("Resources/ucadata-icu4x.icu"),
                 .copy("Resources/nfd.bin"),
+                .copy("Resources/tailorings"),
             ]
         ),
         .executableTarget(name: "GenNormData"),
