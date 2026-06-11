@@ -1,42 +1,100 @@
 // Produces the full 64-bit collation elements of a string, reading scalars
 // through the incremental-NFD front end. CE32 tag dispatch mirrors
-// CollationIterator::appendCEsFromCE32; numeric collation (CODAN) mirrors
+// CollationIterator::appendCEsFromCE32; contraction matching (including
+// discontiguous contractions per UTS #10 S2.1) mirrors
+// nextCE32FromContraction/nextCE32FromDiscontiguousContraction; prefix
+// matching mirrors getCE32FromPrefix; numeric collation (CODAN) mirrors
 // appendNumericCEs/appendNumericSegmentCEs.
+//
+// Because the scalar stream is already fully NFD-normalized and canonically
+// ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and
+// discontiguous matching operates on discrete combining marks exactly as
+// UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state
+// snapshots a struct copy (replacing ICU's SkippedState machinery).
 
 struct CEIterator {
     let data: CollationData
+    let norm: NormalizationData
     let numeric: Bool
     var scalars: NFDIterator
-    /// One-scalar pushback used by digit-run collection.
-    var pushedBack: UInt32?
     var ces: [Int64] = []
+
+    /// Normalized scalars read ahead of the current position.
+    private var lookahead: [UInt32] = []
+    private var lookaheadStart = 0
+    /// The two most recently processed scalars (most recent first), used for
+    /// prefix (precontext) matching. Sufficient for all CLDR prefixes: a
+    /// single starter, or a starter followed by a kana voicing mark.
+    private var prev1: UInt32?
+    private var prev2: UInt32?
+    /// Scalars consumed as contraction suffixes / digit runs while processing
+    /// the current character; pushed into prefix history after it.
+    private var consumedExtras: [UInt32] = []
 
     init(data: CollationData, norm: NormalizationData, numeric: Bool, scalars: String.UnicodeScalarView) {
         self.data = data
+        self.norm = norm
         self.numeric = numeric
         self.scalars = NFDIterator(norm: norm, scalars: scalars)
     }
 
-    private mutating func nextScalar() -> UInt32? {
-        if let c = pushedBack {
-            pushedBack = nil
-            return c
+    // MARK: Lookahead buffer
+
+    /// The normalized scalar `i` positions ahead (0 = next), or nil at the end.
+    private mutating func scalarAhead(_ i: Int) -> UInt32? {
+        while lookahead.count - lookaheadStart <= i {
+            guard let c = scalars.next() else { return nil }
+            lookahead.append(c)
         }
-        return scalars.next()
+        return lookahead[lookaheadStart + i]
     }
+
+    /// Consumes `n` scalars, recording them for prefix history.
+    private mutating func consumeAhead(_ n: Int) {
+        for k in 0..<n {
+            consumedExtras.append(lookahead[lookaheadStart + k])
+        }
+        discardAhead(n)
+    }
+
+    /// Consumes `n` scalars without recording history.
+    private mutating func discardAhead(_ n: Int) {
+        lookaheadStart += n
+        if lookaheadStart > 32 {
+            lookahead.removeFirst(lookaheadStart)
+            lookaheadStart = 0
+        }
+    }
+
+    /// Removes the scalar `i` positions ahead (UTS #10 S2.1.3 "remove C").
+    private mutating func removeAhead(at i: Int) {
+        lookahead.remove(at: lookaheadStart + i)
+    }
+
+    private mutating func pushHistory(_ c: UInt32) {
+        prev2 = prev1
+        prev1 = c
+    }
+
+    // MARK: Main loop
 
     /// All CEs of the string, terminated by NO_CE.
     mutating func collectAll() throws -> [Int64] {
-        while let c = nextScalar() {
+        while let c = scalarAhead(0) {
+            discardAhead(1)
+            consumedExtras.removeAll(keepingCapacity: true)
             try appendCEs(c: c, ce32: data.trie.get(c), depth: 0)
+            pushHistory(c)
+            for extra in consumedExtras { pushHistory(extra) }
         }
         ces.append(Collation.noCE)
         return ces
     }
 
     private mutating func appendCEs(c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {
-        // Specials never nest deeper than digit/u0000 -> expansion -> jamo in root data.
-        guard depth <= 4 else { throw RootCollator.CollationError.malformedData }
+        // Specials never nest deeper than prefix -> contraction -> expansion
+        // (plus digit/u0000 indirections) in root data.
+        guard depth <= 6 else { throw RootCollator.CollationError.malformedData }
         var ce32 = initialCE32
         while true {
             if !Collation.isSpecialCE32(ce32) {
@@ -63,9 +121,10 @@ struct CEIterator {
                     ces.append(data.ces[index + i])
                 }
                 return
-            case .prefix, .contraction:
-                // Milestone 4 will match context; use the default CE32 for now.
-                ce32 = data.readContextCE32(at: Collation.indexFromCE32(ce32))
+            case .prefix:
+                ce32 = prefixCE32(ce32)
+            case .contraction:
+                ce32 = contractionCE32(ce32)
             case .digit:
                 if numeric {
                     try appendNumericCEs(firstCE32: ce32)
@@ -92,6 +151,99 @@ struct CEIterator {
         }
     }
 
+    // MARK: Prefix (precontext) matching
+
+    /// Resolves a PREFIX_TAG CE32 by matching the preceding scalars against
+    /// the prefix trie (stored last-character-first). (getCE32FromPrefix.)
+    private mutating func prefixCE32(_ ce32: UInt32) -> UInt32 {
+        let index = Collation.indexFromCE32(ce32)
+        var result = data.readContextCE32(at: index)  // default if no prefix match
+        guard let p1 = prev1 else { return result }
+        var trie = UCharsTrie(units: data.contexts, offset: index + 2)
+        var match = trie.firstForCodePoint(p1)
+        if match.hasValue {
+            result = UInt32(bitPattern: trie.getValue())
+        }
+        if match.hasNext, let p2 = prev2 {
+            match = trie.nextForCodePoint(p2)
+            if match.hasValue {
+                result = UInt32(bitPattern: trie.getValue())
+            }
+            // Prefixes longer than two scalars do not occur in CLDR data
+            // (see Docs/02-icu4x-strategy.md); deeper history is not kept.
+        }
+        return result
+    }
+
+    // MARK: Contraction (suffix) matching
+
+    /// Resolves a CONTRACTION_TAG CE32 by matching following scalars against
+    /// the suffix trie, including discontiguous contractions per UTS #10 S2.1.
+    /// Matched scalars are consumed; marks skipped over by a discontiguous
+    /// match stay in the lookahead and produce their own CEs afterwards.
+    private mutating func contractionCE32(_ contractionCE32: UInt32) -> UInt32 {
+        let index = Collation.indexFromCE32(contractionCE32)
+        let defaultCE32 = data.readContextCE32(at: index)
+        guard let first = scalarAhead(0) else { return defaultCE32 }
+        if (contractionCE32 & Collation.contractNextCCC) != 0 && norm.ccc(first) == 0 {
+            // Every suffix starts with a non-starter; a starter cannot match.
+            return defaultCE32
+        }
+
+        // Longest contiguous match (UTS #10 S2.1 "longest initial substring S").
+        var trie = UCharsTrie(units: data.contexts, offset: index + 2)
+        var bestCE32 = defaultCE32
+        var bestLength = 0
+        var stateAfterBest = trie  // trie state after the matched part of S
+        var i = 0
+        var match = trie.firstForCodePoint(first)
+        while match != .noMatch {
+            i += 1
+            if match.hasValue {
+                bestCE32 = UInt32(bitPattern: trie.getValue())
+                bestLength = i
+                stateAfterBest = trie
+            }
+            guard match.hasNext, let s = scalarAhead(i) else { break }
+            match = trie.nextForCodePoint(s)
+        }
+
+        // Discontiguous contractions (S2.1.1–S2.1.3): process the non-starters
+        // following the match. The stream is canonically ordered, so a
+        // candidate C is blocked iff some intervening mark has ccc >= ccc(C),
+        // i.e. iff prevCC (the ccc of the last skipped mark) >= ccc(C).
+        if (contractionCE32 & Collation.contractTrailingCCC) != 0
+            // With CONTRACT_SINGLE_CP_NO_MATCH, discontiguous matching only
+            // extends an existing match (ICU: sinceMatch < lookAhead).
+            && ((contractionCE32 & Collation.contractSingleCpNoMatch) == 0 || bestLength > 0) {
+            var matchedState = stateAfterBest
+            var j = bestLength
+            var prevCC: UInt8 = 0
+            while let s = scalarAhead(j) {
+                let cc = norm.ccc(s)
+                if cc == 0 { break }  // S2.1.1: only non-starters following S
+                if prevCC < cc {
+                    // "If C is not blocked from S, find if S+C has a match." (S2.1.2)
+                    var attempt = matchedState
+                    let m = attempt.nextForCodePoint(s)
+                    if m.hasValue {
+                        // "If there is a match, replace S by S+C, and remove C." (S2.1.3)
+                        bestCE32 = UInt32(bitPattern: attempt.getValue())
+                        removeAhead(at: j)
+                        matchedState = attempt
+                        if !m.hasNext { break }
+                        continue  // keep prevCC; the next mark shifted into j
+                    }
+                }
+                prevCC = cc
+                j += 1
+            }
+        }
+
+        consumeAhead(bestLength)
+        return bestCE32
+    }
+
     private mutating func appendHangulCEs(syllable c: UInt32, depth: Int) throws {
         guard data.jamoCE32sStart >= 0, (0xac00...0xd7a3).contains(c) else {
             throw RootCollator.CollationError.unsupportedMapping(scalar: c, tag: Collation.Tag.hangul.rawValue)
@@ -112,15 +264,14 @@ struct CEIterator {
     /// (CollationIterator::appendNumericCEs, forward direction.)
     private mutating func appendNumericCEs(firstCE32: UInt32) throws {
         var digits: [Int32] = [Collation.digitFromCE32(firstCE32)]
-        while let c = nextScalar() {
+        var count = 0
+        while let c = scalarAhead(count) {
             let ce32 = data.trie.get(c)
-            if Collation.isSpecialCE32(ce32) && Collation.tagFromCE32(ce32) == .digit {
-                digits.append(Collation.digitFromCE32(ce32))
-            } else {
-                pushedBack = c
-                break
-            }
+            guard Collation.isSpecialCE32(ce32) && Collation.tagFromCE32(ce32) == .digit else { break }
+            digits.append(Collation.digitFromCE32(ce32))
+            count += 1
         }
+        consumeAhead(count)
         var pos = 0
         repeat {
             // Skip leading zeros.

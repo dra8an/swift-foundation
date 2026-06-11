@@ -1,18 +1,18 @@
 // String comparison against the CLDR root collation.
 //
-// Milestone-3 scope (see Docs/04-milestone-plan.md):
+// Milestone-4 scope (see Docs/04-milestone-plan.md):
 // - input is incrementally NFD-decomposed and canonically reordered before CE
 //   lookup (the fused-decomposition front end of the ICU4X model), so
 //   arbitrary non-NFD input compares correctly
 // - all strengths (primary..quaternary, identical) and settings: alternate
 //   shifted + maxVariable, case-first, case-level, backwards-secondary
 //   ("French"), numeric (CODAN)
+// - full context-dependent mappings: contraction (suffix) matching including
+//   discontiguous contractions per UTS #10 S2.1, and prefix matching over the
+//   two preceding scalars (sufficient for all CLDR prefixes)
 // - root data only, no tailorings, no script reordering (milestone 7); works
 //   against both the regular root data (with canonical closure) and the
 //   NFD-only ICU4X variant
-// - context-dependent mappings (prefixes/contractions) resolve to their
-//   default CE32, i.e. suffix/prefix matching is NOT yet performed (milestone 4).
-//   This is correct whenever the text does not actually form a contraction.
 
 public struct RootCollator: Sendable {
     public enum Order: Int, Sendable {

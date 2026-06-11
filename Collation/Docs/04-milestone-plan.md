@@ -11,7 +11,7 @@
 | 1 | Pipeline proof: primary-only root compare | **Done 2026-06-11** |
 | 2 | Fused NFD decomposition + NFD-only data | **Done 2026-06-11** |
 | 3 | Full level loop + settings | **Done 2026-06-11** |
-| 4 | Contraction & prefix matching | not started |
+| 4 | Contraction & prefix matching | **Done 2026-06-11** |
 | 5 | Sort keys | not started |
 | 6 | Conformance & performance baseline | not started |
 | 7 | Locale tailorings | not started |
@@ -158,6 +158,23 @@ The conformance-critical, fiddly one.
   combining-mark sequences with blocking and non-blocking ccc patterns.
 - Differential matrix vs ICU on a context-heavy corpus.
 - Remove the milestone-1 "default CE32" caveat from the code.
+
+**Outcome (2026-06-11).** Delivered; details in `07-milestone-4-report.md`:
+- Read-side `UCharsTrie` ported; being a Swift value type, copying the struct
+  snapshots traversal state, replacing ICU's SkippedState save/replay.
+- `CEIterator` gained a normalized lookahead buffer; contraction matching
+  (contiguous longest-match + discontiguous per S2.1 with ccc blocking over
+  the already-canonically-ordered stream) and prefix matching over the two
+  preceding scalars (all CLDR prefixes fit). CONTRACT_NEXT_CCC /
+  CONTRACT_TRAILING_CCC / CONTRACT_SINGLE_CP_NO_MATCH flags honored.
+- Root data findings: exactly 4 prefix entries exist in root (Catalan/Greek
+  middle dot after l/L); the vowel-dependent kana prolonged sound mark is the
+  Japanese tailoring, not root. Tibetan 0F71+0F72/0F74/0F80 contractions and
+  the equal-ccc blocking case are exercised and ICU-verified.
+- Verification: corpus 239 -> 287 (kana, voiced kana, Tibetan incl. blocking,
+  Thai, Cyrillic, Catalan l-middle-dot); 13 option sets x 2 data variants x
+  287^2 = 2.36M comparisons, 100% agreement; targeted ContextTests prove the
+  context paths fire (not just default-agree).
 
 ---
 

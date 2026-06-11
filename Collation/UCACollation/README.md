@@ -7,7 +7,7 @@ moves into `Sources/` at integration time (milestone 8). See
 `../Docs/03-swift-strategy.md` for the strategy and `../Docs/04-milestone-plan.md`
 for the plan.
 
-## Status: milestone 3 complete
+## Status: milestone 4 complete
 
 Full multi-level comparison against the CLDR root collation, with incremental
 NFD decomposition fused into the iterator (the ICU4X model — normalization is
@@ -26,16 +26,16 @@ Implemented:
 - `NormalizationData` + `NFDIterator` — full canonical decomposition with
   canonical reordering (UAX #15), arithmetic Hangul; data generated from ICU's
   `norm2/nfc.txt` by the `GenNormData` tool into `nfd.bin` (34 KB)
-- `CEIterator` — full 64-bit collation elements over the NFD front end,
-  incl. numeric (CODAN) digit-run CEs
+- `UCharsTrie` — read-side trie for the contexts data
+- `CEIterator` — full 64-bit collation elements over the NFD front end:
+  contraction matching (incl. discontiguous per UTS #10 S2.1), prefix
+  matching, numeric (CODAN) digit-run CEs
 - `CollationCompare` — faithful port of `compareUpToQuaternary`
   (level-by-level, variable shifting, case level, case-first, French)
 - `CollationOptions` — public options mirroring ICU's settings word
 - `RootCollator` — `compare(_:_:options:)`, identical-level NFD tiebreaker
 
 Not yet implemented — see `../Docs/04-milestone-plan.md` for the numbered plan:
-- contraction/prefix context matching (milestone 4; currently resolves to
-  default CE32s — correct unless the text actually forms a contraction)
 - sort keys (5), conformance/perf (6), tailorings + script reordering (7),
   Foundation integration (8)
 

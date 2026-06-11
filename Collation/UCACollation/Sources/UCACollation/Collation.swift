@@ -30,6 +30,14 @@ enum Collation {
         case implicit = 15
     }
 
+    // CONTRACTION_TAG CE32 flag bits (collation.h).
+    /// Set if the first character of every contraction suffix has lccc != 0.
+    static let contractNextCCC: UInt32 = 0x200
+    /// Set if any contraction suffix ends with lccc != 0 (discontiguous possible).
+    static let contractTrailingCCC: UInt32 = 0x400
+    /// Set if the single code point itself has no mapping (default = fallback).
+    static let contractSingleCpNoMatch: UInt32 = 0x100
+
     @inline(__always)
     static func isSpecialCE32(_ ce32: UInt32) -> Bool {
         (ce32 & 0xff) >= specialCE32LowByte
