@@ -24,8 +24,9 @@ struct UTrie2 {
     private static let index1AdjustedOffset: UInt32 = 0x820
     private static let badUTF8DataOffset = 0x80
 
-    let index: [UInt16]
-    let data: [UInt32]
+    /// Views into the owning data's DataStorage (which keeps them alive).
+    let index: UnsafeBufferPointer<UInt16>
+    let data: UnsafeBufferPointer<UInt32>
     let highStart: UInt32
     let highValueIndex: Int
 
@@ -36,8 +37,8 @@ struct UTrie2 {
     }
 
     /// Parses a serialized 32-bit UTrie2 from `bytes` starting at `offset`,
-    /// spanning at most `length` bytes.
-    init(bytes: [UInt8], offset: Int, length: Int) throws {
+    /// spanning at most `length` bytes, into `storage`.
+    init(bytes: [UInt8], offset: Int, length: Int, storage: DataStorage) throws {
         guard length >= 16 else { throw ParseError.tooShort }
         func u16(_ at: Int) -> UInt16 {
             UInt16(bytes[offset + at]) | (UInt16(bytes[offset + at + 1]) << 8)
@@ -58,7 +59,7 @@ struct UTrie2 {
         for i in 0..<indexLength {
             index[i] = UInt16(bytes[indexStart + i * 2]) | (UInt16(bytes[indexStart + i * 2 + 1]) << 8)
         }
-        self.index = index
+        self.index = storage.store(index)
 
         var data = [UInt32](repeating: 0, count: dataLength)
         for i in 0..<dataLength {
@@ -66,7 +67,7 @@ struct UTrie2 {
             data[i] = UInt32(bytes[b]) | (UInt32(bytes[b + 1]) << 8)
                 | (UInt32(bytes[b + 2]) << 16) | (UInt32(bytes[b + 3]) << 24)
         }
-        self.data = data
+        self.data = storage.store(data)
     }
 
     /// Value for code point `c` (0..0x10FFFF). Ported from UTRIE2_GET32 / _UTRIE2_INDEX_FROM_CP.

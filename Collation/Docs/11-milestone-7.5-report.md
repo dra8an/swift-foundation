@@ -224,8 +224,54 @@ unaffected (it never skips). The dominant remaining gap on no-sharing ASCII
 is fast-Latin (unported, ICU4X precedent) and per-scalar data access — the
 Span lever is next.
 
+## Round 6: trivial data access (2026-06-12)
+
+The lever the plan called "Span-based data access". Profiling (macOS
+`sample` over the bench) showed the dominant cost was not bounds checks but
+**reference counting**: `CEIterator.lookup` returns its `CollationData` by
+value once per scalar, and because the struct held eight Swift arrays, every
+copy was eight retains + eight releases. Three fixes, in impact order:
+
+1. **One storage owner, raw views** (`DataStorage.swift`): a final class
+   owns the parsed memory (allocated/copied once at parse time, freed in
+   deinit); `CollationData`, `NormalizationData`, `UTrie2`, and `UCharsTrie`
+   now hold `UnsafeBufferPointer` views into it. Copying a data struct costs
+   one retain instead of eight, `UCharsTrie` state snapshots (discontiguous
+   contraction matching) are fully trivial, and buffer reads lose their
+   bounds checks in release builds — the data files are version-pinned,
+   parse-validated, and exercised by the conformance suites, the same trust
+   ICU4C places in its own arrays. The structs become `@unchecked Sendable`
+   (immutable after init).
+2. **`CollationDataView`**: even one retain per lookup survived, because
+   passing `self.data` alongside the iterator's `inout self` forces a
+   defensive copy that the optimizer cannot elide. The per-scalar dispatch
+   (`appendCEs` and friends) now works on a fully trivial view struct
+   (pointers + ints, zero ARC); the iterator's strong references keep the
+   memory alive.
+3. **Empty-singleton `removeAll`**: arrays initialized from `[]` share the
+   global empty-array singleton, which is never uniquely referenced — so
+   `removeAll(keepingCapacity:)` on a never-grown buffer took the
+   copy-on-write slow path every time, including once per scalar in
+   `appendMore`. All reset-path `removeAll`s are now guarded by `isEmpty`.
+   Also: `ScratchPool` uses `os_unfair_lock` on Darwin (NSLock elsewhere).
+
+**Numbers** (release, medians of repeated runs; "before" = round 5):
+
+| corpus | compare before → after | ICU | sortKey before → after | ICU |
+|---|---|---|---|---|
+| ASCII | 697 → **~239 ns** | 16 ns | ~2100 → **~785 ns** | 202 ns |
+| Latin | 768 → **~346 ns** | 27 ns | ~2400 → **~1266 ns** | 221 ns |
+| CJK | 863 → **~407 ns** | 74 ns | ~1650 → **~895 ns** | 227 ns |
+| paths | 1057 → **~603 ns** | 48 ns | ~7800 → **~1560 ns** | 672 ns |
+
+ASCII compare gap to ICU: ~44× → **~15×**; ASCII sortKey ~4×, paths sortKey
+~2.3×. Cumulative compare since the pre-lazy baseline: 7437 → 239 ns (31×).
+Remaining known levers, both currently out of scope: the single-trie nfd.bin
+(one lookup per scalar instead of two binary searches) and fast-Latin
+(a deliberate cut, ICU4X precedent — reversing it is a decision, not a task).
+
 ## Status
 
-Rounds 1–5 done: 48 tests / 16 suites green, all perf work verified against
+Rounds 1–6 done: 48 tests / 16 suites green, all perf work verified against
 the full suite. Remaining backlog in the plan: apicoll where applicable,
-g7coll rule-free parts, Span-based data access.
+g7coll rule-free parts; perf is at a natural stopping point (see round 6).

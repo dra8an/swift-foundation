@@ -7,12 +7,16 @@
 
 import Foundation
 
-public struct NormalizationData: Sendable {
+// @unchecked: the buffer views are immutable after init and their memory is
+// owned by `storage`, which the struct retains.
+public struct NormalizationData: @unchecked Sendable {
+    /// Owns the memory behind the buffer views below.
+    let storage: DataStorage
     /// (scalar << 8) | ccc, sorted by scalar.
-    let cccEntries: [UInt32]
+    let cccEntries: UnsafeBufferPointer<UInt32>
     /// (scalar << 32) | (bufferOffset << 8) | length, sorted by scalar.
-    let decompEntries: [UInt64]
-    let buffer: [UInt32]
+    let decompEntries: UnsafeBufferPointer<UInt64>
+    let buffer: UnsafeBufferPointer<UInt32>
 
     public enum ParseError: Error {
         case tooShort
@@ -33,9 +37,12 @@ public struct NormalizationData: Sendable {
         let version = try u32()
         guard version == 1 else { throw ParseError.unsupportedVersion(version) }
 
+        let storage = DataStorage()
+        self.storage = storage
+
         var ccc = [UInt32](repeating: 0, count: Int(try u32()))
         for i in 0..<ccc.count { ccc[i] = try u32() }
-        cccEntries = ccc
+        cccEntries = storage.store(ccc)
 
         var decomp = [UInt64](repeating: 0, count: Int(try u32()))
         for i in 0..<decomp.count {
@@ -43,11 +50,11 @@ public struct NormalizationData: Sendable {
             let hi = try u32()
             decomp[i] = UInt64(lo) | (UInt64(hi) << 32)
         }
-        decompEntries = decomp
+        decompEntries = storage.store(decomp)
 
         var buf = [UInt32](repeating: 0, count: Int(try u32()))
         for i in 0..<buf.count { buf[i] = try u32() }
-        buffer = buf
+        buffer = storage.store(buf)
     }
 
     /// The bundled normalization data (Unicode 17, from ICU's nfc.txt).

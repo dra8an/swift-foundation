@@ -358,12 +358,25 @@ the performance hardening that M6 deferred.
   10532 -> ~1060ns (10x; ICU 48ns). Zero-sharing corpora pay the walk:
   ascii ~697, latin ~768 (+4%), cjk ~863ns.
 
+**Round 6 delivered (2026-06-12): trivial data access (the "Span" lever).**
+- Profiling showed reference counting, not bounds checks, dominated: a
+  DataStorage class now owns all parsed memory and the data structs hold
+  UnsafeBufferPointer views (one retain per copy instead of eight); the CE
+  iterator's per-scalar dispatch uses a fully trivial CollationDataView
+  (zero ARC); reset-path removeAll calls are isEmpty-guarded (the empty
+  singleton is never uniquely referenced, so they always took the CoW slow
+  path); ScratchPool uses os_unfair_lock on Darwin.
+- compare: ascii ~697 -> ~239ns (ICU 16), latin ~346, cjk ~407, paths ~603;
+  sortKey ascii ~785ns (ICU 202), paths ~1560 (ICU 672). ASCII compare gap:
+  ~44x -> ~15x. Details in `11-milestone-7.5-report.md`.
+
 **Backlog for next rounds:**
 - apicoll behaviors where applicable; g7coll rule-free parts.
 - The runtime rule builder remains a deliberate, reversible cut — reasoning,
   costs, and a porting plan are documented in `12-rule-builder-decision.md`.
-- Perf: Span-based data access; fast-Latin remains unported (ICU4X
-  precedent) — the dominant remaining gap on no-sharing ASCII compares.
+- Perf is at a natural stopping point; remaining known levers (out of scope
+  without a new decision): single-trie nfd.bin, fast-Latin (deliberate cut,
+  ICU4X precedent).
 
 ---
 

@@ -134,7 +134,7 @@ enum CollationKeys {
     /// (without identical level and without the 00 terminator).
     /// (CollationKeys::writeSortKeyUpToQuaternary.)
     static func writeSortKeyUpToQuaternary(
-        ces: [Int64], compressibleBytes: [Bool],
+        ces: [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
         into key: inout [UInt8], reusing buffers: inout SortKeyLevelBuffers
     ) {
@@ -163,10 +163,12 @@ enum CollationKeys {
         swap(&secondaries, &buffers.secondaries)
         swap(&tertiaries, &buffers.tertiaries)
         swap(&quaternaries, &buffers.quaternaries)
-        cases.bytes.removeAll(keepingCapacity: true)
-        secondaries.bytes.removeAll(keepingCapacity: true)
-        tertiaries.bytes.removeAll(keepingCapacity: true)
-        quaternaries.bytes.removeAll(keepingCapacity: true)
+        // isEmpty guards: removeAll on a never-used array hits the shared
+        // empty-singleton storage and takes the copy-on-write slow path.
+        if !cases.bytes.isEmpty { cases.bytes.removeAll(keepingCapacity: true) }
+        if !secondaries.bytes.isEmpty { secondaries.bytes.removeAll(keepingCapacity: true) }
+        if !tertiaries.bytes.isEmpty { tertiaries.bytes.removeAll(keepingCapacity: true) }
+        if !quaternaries.bytes.isEmpty { quaternaries.bytes.removeAll(keepingCapacity: true) }
 
         var prevReorderedPrimary: UInt32 = 0  // 0==no compression
         var commonCases = 0

@@ -16,7 +16,9 @@
 
 import Foundation
 
-public struct CollationData: Sendable {
+// @unchecked: the buffer views are immutable after init and their memory is
+// owned by `storage`, which the struct retains.
+public struct CollationData: @unchecked Sendable {
     // indexes[] slots (CollationDataReader::IX_*).
     private enum IX {
         static let indexesLength = 0
@@ -34,10 +36,13 @@ public struct CollationData: Sendable {
         static let compressibleBytesOffset = 17
     }
 
+    /// Owns the memory behind all the buffer views below; copying the struct
+    /// costs one retain (the CE iterator copies it on every lookup).
+    let storage: DataStorage
     let trie: UTrie2
-    let ce32s: [UInt32]
-    let ces: [Int64]
-    let contexts: [UInt16]
+    let ce32s: UnsafeBufferPointer<UInt32>
+    let ces: UnsafeBufferPointer<Int64>
+    let contexts: UnsafeBufferPointer<UInt16>
     /// Start of the 67 Hangul Jamo CE32s within ce32s, or < 0 if none.
     let jamoCE32sStart: Int
     /// Single-byte primary `xx000000` used for numeric collation.
@@ -46,11 +51,11 @@ public struct CollationData: Sendable {
     /// mapping script and special reorder codes to scriptStarts entries, then
     /// scriptStarts (primary-weight high 16 bits per range).
     let numScripts: Int
-    let scriptsIndex: [UInt16]
-    let scriptStarts: [UInt16]
+    let scriptsIndex: UnsafeBufferPointer<UInt16>
+    let scriptStarts: UnsafeBufferPointer<UInt16>
     /// Per-primary-lead-byte flags: compressible lead bytes allow primary
     /// compression in sort keys. 256 entries.
-    let compressibleBytes: [Bool]
+    let compressibleBytes: UnsafeBufferPointer<Bool>
     /// Unsafe-backward set from the data file, as a sorted boundary list:
     /// alternating range starts and limits; `c` is in the set iff the count
     /// of boundaries <= c is odd. Characters in contraction suffixes etc. —
@@ -58,7 +63,7 @@ public struct CollationData: Sendable {
     /// equivalent to full iteration. Tailoring files store only their delta
     /// over the root set; ICU adds [:^lccc=0:] and surrogates at load time
     /// (we check lead-ccc at runtime instead, and scalars exclude surrogates).
-    let unsafeBackward: [UInt32]
+    let unsafeBackward: UnsafeBufferPointer<UInt32>
 
     public enum ParseError: Error {
         case tooShort
@@ -113,9 +118,13 @@ public struct CollationData: Sendable {
         numericPrimary = UInt32(bitPattern: indexes[IX.options]) & 0xff00_0000
         jamoCE32sStart = Int(indexes[IX.jamoCE32sStart])
 
+        let storage = DataStorage()
+        self.storage = storage
+
         let (trieOffset, trieLength) = part(IX.trieOffset)
         guard trieLength >= 8 else { throw ParseError.missingPart("trie") }
-        trie = try UTrie2(bytes: bytes, offset: headerSize + trieOffset, length: trieLength)
+        trie = try UTrie2(
+            bytes: bytes, offset: headerSize + trieOffset, length: trieLength, storage: storage)
 
         let (cesOffset, cesLength) = part(IX.cesOffset)
         var ces = [Int64](repeating: 0, count: max(0, cesLength / 8))
@@ -125,7 +134,7 @@ public struct CollationData: Sendable {
             for j in 0..<8 { v |= UInt64(bytes[b + j]) << (8 * j) }
             ces[i] = Int64(bitPattern: v)
         }
-        self.ces = ces
+        self.ces = storage.store(ces)
 
         let (ce32sOffset, ce32sLength) = part(IX.ce32sOffset)
         var ce32s = [UInt32](repeating: 0, count: max(0, ce32sLength / 4))
@@ -134,7 +143,7 @@ public struct CollationData: Sendable {
             ce32s[i] = UInt32(bytes[b]) | (UInt32(bytes[b + 1]) << 8)
                 | (UInt32(bytes[b + 2]) << 16) | (UInt32(bytes[b + 3]) << 24)
         }
-        self.ce32s = ce32s
+        self.ce32s = storage.store(ce32s)
 
         let (contextsOffset, contextsLength) = part(IX.contextsOffset)
         var contexts = [UInt16](repeating: 0, count: max(0, contextsLength / 2))
@@ -142,7 +151,7 @@ public struct CollationData: Sendable {
             let b = headerSize + contextsOffset + i * 2
             contexts[i] = UInt16(bytes[b]) | (UInt16(bytes[b + 1]) << 8)
         }
-        self.contexts = contexts
+        self.contexts = storage.store(contexts)
 
         // Scripts part: u16 numScripts, scriptsIndex[numScripts+16], scriptStarts[].
         let (scriptsOffset, scriptsLength) = part(IX.scriptsOffset)
@@ -155,12 +164,12 @@ public struct CollationData: Sendable {
             let numScripts = Int(scripts[0])
             guard scripts.count > 1 + numScripts + 16 + 2 else { throw ParseError.missingPart("scripts") }
             self.numScripts = numScripts
-            self.scriptsIndex = Array(scripts[1..<(1 + numScripts + 16)])
-            self.scriptStarts = Array(scripts[(1 + numScripts + 16)...])
+            self.scriptsIndex = storage.store(Array(scripts[1..<(1 + numScripts + 16)]))
+            self.scriptStarts = storage.store(Array(scripts[(1 + numScripts + 16)...]))
         } else {
             numScripts = 0
-            scriptsIndex = []
-            scriptStarts = []
+            scriptsIndex = storage.store([])
+            scriptStarts = storage.store([])
         }
 
         // Unsafe-backward set: a serialized UnicodeSet (USerializedSet wire
@@ -199,18 +208,18 @@ public struct CollationData: Sendable {
                 boundaries.append((UInt32(u16(i)) << 16) | UInt32(u16(i + 1)))
                 i += 2
             }
-            unsafeBackward = boundaries
+            unsafeBackward = storage.store(boundaries)
         } else {
-            unsafeBackward = []
+            unsafeBackward = storage.store([])
         }
 
         // Optional in tailorings (fall back to the base data's).
         let (cbOffset, cbLength) = part(IX.compressibleBytesOffset)
         if cbLength >= 256 {
-            compressibleBytes = bytes[(headerSize + cbOffset)..<(headerSize + cbOffset + 256)]
-                .map { $0 != 0 }
+            compressibleBytes = storage.store(
+                bytes[(headerSize + cbOffset)..<(headerSize + cbOffset + 256)].map { $0 != 0 })
         } else {
-            compressibleBytes = []
+            compressibleBytes = storage.store([])
         }
     }
 
@@ -353,6 +362,36 @@ public struct CollationData: Sendable {
             throw ParseError.missingPart("bundled tailoring \(name)")
         }
         return [UInt8](try Data(contentsOf: url))
+    }
+}
+
+/// Trivial (ARC-free) view of the CollationData fields the CE iterator's
+/// per-scalar dispatch needs. Copying CollationData retains its storage, and
+/// passing a data field alongside the iterator's inout self forces such a
+/// copy on every lookup; the view is plain pointers and ints, so those
+/// copies are free. The iterator's strong `data`/`base` keep the memory
+/// alive for as long as any view of it exists.
+struct CollationDataView {
+    let trie: UTrie2
+    let ce32s: UnsafeBufferPointer<UInt32>
+    let ces: UnsafeBufferPointer<Int64>
+    let contexts: UnsafeBufferPointer<UInt16>
+    let jamoCE32sStart: Int
+    let numericPrimary: UInt32
+
+    init(_ d: CollationData) {
+        trie = d.trie
+        ce32s = d.ce32s
+        ces = d.ces
+        contexts = d.contexts
+        jamoCE32sStart = d.jamoCE32sStart
+        numericPrimary = d.numericPrimary
+    }
+
+    /// Reads a CE32 stored as two big-endian-ordered 16-bit units in contexts[].
+    @inline(__always)
+    func readContextCE32(at index: Int) -> UInt32 {
+        (UInt32(contexts[index]) << 16) | UInt32(contexts[index + 1])
     }
 }
 

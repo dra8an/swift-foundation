@@ -31,10 +31,13 @@ struct NFDIterator {
     mutating func reset(scalars: String.UnicodeScalarView, skippingFirst n: Int = 0) {
         source = scalars.makeIterator()
         for _ in 0..<n { _ = source.next() }
-        carried.removeAll(keepingCapacity: true)
-        unit.removeAll(keepingCapacity: true)
+        // isEmpty guards: removeAll on a never-used array hits the shared
+        // empty-singleton storage, which is never uniquely referenced, and
+        // takes the copy-on-write slow path every time.
+        if !carried.isEmpty { carried.removeAll(keepingCapacity: true) }
+        if !unit.isEmpty { unit.removeAll(keepingCapacity: true) }
         unitNext = 0
-        marks.removeAll(keepingCapacity: true)
+        if !marks.isEmpty { marks.removeAll(keepingCapacity: true) }
     }
 
     /// Scratch buffer for one scalar's decomposition, reused across refills.

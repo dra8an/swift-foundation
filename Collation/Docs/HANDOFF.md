@@ -73,13 +73,12 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 ## Open backlog (in priority order as last discussed)
 
-1. **Performance levers** (M7.5 track 2 continuation): Span-based data
-   access; fast-Latin remains unported (ICU4X precedent). Buffer/iterator
-   reuse landed in round 4 (scratch pool in RootCollator); the
-   identical-prefix skip in round 5 (ICU's serialized unsafe-backward set —
-   the single-trie nfd.bin rework turned out unnecessary for it). Current:
-   ASCII compare ~697 ns vs ICU 16 ns (~44×); prefix-heavy compare ~1060 ns
-   vs ICU 48 ns; numbers and analysis in `11-milestone-7.5-report.md`.
+1. **Performance track is at a natural stopping point** (M7.5 rounds 4–6:
+   buffer reuse, identical-prefix skip, trivial data access). Current: ASCII
+   compare ~239 ns vs ICU 16 ns (~15×), sortKey ~785 vs 202 ns; numbers and
+   analysis in `11-milestone-7.5-report.md`. Remaining known levers need a
+   decision first: single-trie nfd.bin; fast-Latin (deliberate cut, ICU4X
+   precedent).
 2. Minor test scraps: apicoll-where-applicable, g7coll rule-free parts.
 3. **Parked**: rule builder (doc 12), M8 Foundation integration (await user).
 

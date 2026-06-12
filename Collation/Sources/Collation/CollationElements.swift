@@ -21,6 +21,9 @@ struct CEIterator {
     let norm: NormalizationData
     var numeric: Bool
     var scalars: NFDIterator
+    /// ARC-free views used by the per-scalar dispatch (see CollationDataView).
+    private let dataView: CollationDataView
+    private let baseView: CollationDataView?
     var ces: [Int64] = []
 
     /// Normalized scalars read ahead of the current position.
@@ -42,6 +45,8 @@ struct CEIterator {
         self.norm = norm
         self.numeric = numeric
         self.scalars = NFDIterator(norm: norm, scalars: scalars)
+        self.dataView = CollationDataView(data)
+        self.baseView = base.map(CollationDataView.init)
     }
 
     /// Rewinds onto a new input, keeping all buffer storage so that reuse
@@ -50,24 +55,25 @@ struct CEIterator {
     mutating func reset(numeric: Bool, scalars view: String.UnicodeScalarView, skippingFirst: Int = 0) {
         self.numeric = numeric
         scalars.reset(scalars: view, skippingFirst: skippingFirst)
-        ces.removeAll(keepingCapacity: true)
-        lookahead.removeAll(keepingCapacity: true)
+        // isEmpty guards: see appendMore.
+        if !ces.isEmpty { ces.removeAll(keepingCapacity: true) }
+        if !lookahead.isEmpty { lookahead.removeAll(keepingCapacity: true) }
         lookaheadStart = 0
         prev1 = nil
         prev2 = nil
-        consumedExtras.removeAll(keepingCapacity: true)
+        if !consumedExtras.isEmpty { consumedExtras.removeAll(keepingCapacity: true) }
         terminated = false
     }
 
     /// Looks up the CE32 for a code point, falling back from the tailoring to
-    /// the base data. Returns the data that owns the resulting CE32.
+    /// the base data. Returns the data view that owns the resulting CE32.
     @inline(__always)
-    private func lookup(_ c: UInt32) -> (d: CollationData, ce32: UInt32) {
-        let ce32 = data.trie.get(c)
-        if ce32 == CollationConstants.fallbackCE32, let b = base {
+    private func lookup(_ c: UInt32) -> (d: CollationDataView, ce32: UInt32) {
+        let ce32 = dataView.trie.get(c)
+        if ce32 == CollationConstants.fallbackCE32, let b = baseView {
             return (b, b.trie.get(c))
         }
-        return (data, ce32)
+        return (dataView, ce32)
     }
 
     // MARK: Lookahead buffer
@@ -140,7 +146,10 @@ struct CEIterator {
             terminated = true
             return false
         }
-        consumedExtras.removeAll(keepingCapacity: true)
+        // isEmpty guards: removeAll on a never-used array hits the shared
+        // empty-singleton storage, which is never uniquely referenced, and
+        // takes the copy-on-write slow path every time.
+        if !consumedExtras.isEmpty { consumedExtras.removeAll(keepingCapacity: true) }
         let (d, ce32) = lookup(c)
         try appendCEs(d: d, c: c, ce32: ce32, depth: 0)
         pushHistory(c)
@@ -157,7 +166,7 @@ struct CEIterator {
         return ces[i]
     }
 
-    private mutating func appendCEs(d: CollationData, c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {
+    private mutating func appendCEs(d: CollationDataView, c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {
         // Specials never nest deeper than prefix -> contraction -> expansion
         // (plus digit/u0000 indirections) in root data.
         guard depth <= 6 else { throw RootCollator.CollationError.malformedData }
@@ -221,7 +230,7 @@ struct CEIterator {
 
     /// Resolves a PREFIX_TAG CE32 by matching the preceding scalars against
     /// the prefix trie (stored last-character-first). (getCE32FromPrefix.)
-    private mutating func prefixCE32(d: CollationData, _ ce32: UInt32) -> UInt32 {
+    private mutating func prefixCE32(d: CollationDataView, _ ce32: UInt32) -> UInt32 {
         let index = CollationConstants.indexFromCE32(ce32)
         var result = d.readContextCE32(at: index)  // default if no prefix match
         guard let p1 = prev1 else { return result }
@@ -247,7 +256,7 @@ struct CEIterator {
     /// the suffix trie, including discontiguous contractions per UTS #10 S2.1.
     /// Matched scalars are consumed; marks skipped over by a discontiguous
     /// match stay in the lookahead and produce their own CEs afterwards.
-    private mutating func contractionCE32(d: CollationData, _ contractionCE32: UInt32) -> UInt32 {
+    private mutating func contractionCE32(d: CollationDataView, _ contractionCE32: UInt32) -> UInt32 {
         let index = CollationConstants.indexFromCE32(contractionCE32)
         let defaultCE32 = d.readContextCE32(at: index)
         guard let first = scalarAhead(0) else { return defaultCE32 }
@@ -310,9 +319,9 @@ struct CEIterator {
         return bestCE32
     }
 
-    private mutating func appendHangulCEs(d dIn: CollationData, syllable c: UInt32, depth: Int) throws {
+    private mutating func appendHangulCEs(d dIn: CollationDataView, syllable c: UInt32, depth: Int) throws {
         // Jamo CE32s normally live in the base (root) data.
-        let d = dIn.jamoCE32sStart >= 0 ? dIn : (base ?? dIn)
+        let d = dIn.jamoCE32sStart >= 0 ? dIn : (baseView ?? dIn)
         guard d.jamoCE32sStart >= 0, (0xac00...0xd7a3).contains(c) else {
             throw RootCollator.CollationError.unsupportedMapping(scalar: c, tag: CollationConstants.Tag.hangul.rawValue)
         }
@@ -330,7 +339,7 @@ struct CEIterator {
 
     /// Collects the digit run starting with `firstCE32` and appends numeric CEs.
     /// (CollationIterator::appendNumericCEs, forward direction.)
-    private mutating func appendNumericCEs(d: CollationData, firstCE32: UInt32) throws {
+    private mutating func appendNumericCEs(d: CollationDataView, firstCE32: UInt32) throws {
         var digits: [Int32] = [CollationConstants.digitFromCE32(firstCE32)]
         var count = 0
         while let c = scalarAhead(count) {
@@ -352,7 +361,7 @@ struct CEIterator {
     }
 
     /// (CollationIterator::appendNumericSegmentCEs.)
-    private mutating func appendNumericSegmentCEs(d: CollationData, _ digitsSlice: ArraySlice<Int32>) {
+    private mutating func appendNumericSegmentCEs(d: CollationDataView, _ digitsSlice: ArraySlice<Int32>) {
         let digits = Array(digitsSlice)
         var length = digits.count
         let numericPrimary = d.numericPrimary

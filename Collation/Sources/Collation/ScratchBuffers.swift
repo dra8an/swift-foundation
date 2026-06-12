@@ -8,6 +8,30 @@
 // simply allocate a fresh set.
 
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
+
+/// Minimal mutual exclusion for the pool: os_unfair_lock on Darwin (a few ns
+/// uncontended, vs NSLock's objc dispatch), NSLock elsewhere. The unfair lock
+/// must live at a stable address, hence the allocation.
+private struct PoolLock {
+    #if canImport(Darwin)
+    private let lock: UnsafeMutablePointer<os_unfair_lock>
+    init() {
+        lock = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
+        lock.initialize(to: os_unfair_lock())
+    }
+    func deallocate() { lock.deallocate() }
+    @inline(__always) func acquire() { os_unfair_lock_lock(lock) }
+    @inline(__always) func release() { os_unfair_lock_unlock(lock) }
+    #else
+    private let lock = NSLock()
+    func deallocate() {}
+    @inline(__always) func acquire() { lock.lock() }
+    @inline(__always) func release() { lock.unlock() }
+    #endif
+}
 
 /// One set of buffers: everything a single compare() or sortKey() call needs.
 final class ScratchBuffers {
@@ -30,18 +54,22 @@ final class ScratchBuffers {
 /// A small thread-safe pool of buffer sets, shared by all copies of one
 /// RootCollator (the iterators inside are bound to its collation data).
 final class ScratchPool: @unchecked Sendable {
-    private let lock = NSLock()
+    private let lock = PoolLock()
     private var free: [ScratchBuffers] = []
 
     func take() -> ScratchBuffers? {
-        lock.lock()
-        defer { lock.unlock() }
+        lock.acquire()
+        defer { lock.release() }
         return free.popLast()
     }
 
     func give(_ buffers: ScratchBuffers) {
-        lock.lock()
-        defer { lock.unlock() }
+        lock.acquire()
+        defer { lock.release() }
         if free.count < 4 { free.append(buffers) }
+    }
+
+    deinit {
+        lock.deallocate()
     }
 }

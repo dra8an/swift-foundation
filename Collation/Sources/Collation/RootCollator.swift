@@ -147,7 +147,7 @@ public struct RootCollator: Sendable {
         defer { scratchPool.give(scratch) }
         scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
         _ = try scratch.left.collectAll()
-        scratch.key.removeAll(keepingCapacity: true)
+        if !scratch.key.isEmpty { scratch.key.removeAll(keepingCapacity: true) }
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
         CollationKeys.writeSortKeyUpToQuaternary(
@@ -157,7 +157,7 @@ public struct RootCollator: Sendable {
         if options.strength == .identical {
             scratch.key.append(1)  // level separator
             scratch.left.scalars.reset(scalars: s.unicodeScalars)
-            scratch.nfdScalars.removeAll(keepingCapacity: true)
+            if !scratch.nfdScalars.isEmpty { scratch.nfdScalars.removeAll(keepingCapacity: true) }
             while let c = scratch.left.scalars.next() { scratch.nfdScalars.append(c) }
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &scratch.key)
         }

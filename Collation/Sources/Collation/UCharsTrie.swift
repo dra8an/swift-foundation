@@ -33,8 +33,9 @@ struct UCharsTrie {
     private static let minTwoUnitDeltaLead: Int32 = 0xfc00
     private static let threeUnitDeltaLead: Int32 = 0xffff
 
-    /// The backing units (the collation contexts array).
-    let units: [UInt16]
+    /// The backing units (a view of the collation contexts data, kept alive
+    /// by the CollationData that owns it).
+    let units: UnsafeBufferPointer<UInt16>
     /// Offset of the trie root within `units`.
     let root: Int
     /// Current position, or nil after a mismatch.
@@ -42,7 +43,7 @@ struct UCharsTrie {
     /// Remaining length of a partially-consumed linear-match node, minus 1.
     private var remainingMatchLength: Int = -1
 
-    init(units: [UInt16], offset: Int) {
+    init(units: UnsafeBufferPointer<UInt16>, offset: Int) {
         self.units = units
         self.root = offset
         self.pos = offset
@@ -228,7 +229,7 @@ struct UCharsTrie {
         Result(rawValue: Result.intermediateValue.rawValue - (node >> 15))!
     }
 
-    private static func readValue(_ units: [UInt16], _ p: Int, _ leadUnit: Int32) -> Int32 {
+    private static func readValue(_ units: UnsafeBufferPointer<UInt16>, _ p: Int, _ leadUnit: Int32) -> Int32 {
         if leadUnit < minTwoUnitValueLead {
             return leadUnit
         } else if leadUnit < threeUnitValueLead {
@@ -237,7 +238,7 @@ struct UCharsTrie {
         return (Int32(units[p]) << 16) | Int32(units[p + 1])
     }
 
-    private static func readNodeValue(_ units: [UInt16], _ p: Int, _ leadUnit: Int32) -> Int32 {
+    private static func readNodeValue(_ units: UnsafeBufferPointer<UInt16>, _ p: Int, _ leadUnit: Int32) -> Int32 {
         if leadUnit < minTwoUnitNodeValueLead {
             return (leadUnit >> 6) - 1
         } else if leadUnit < threeUnitNodeValueLead {
