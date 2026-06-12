@@ -15,7 +15,7 @@
 | 5 | Sort keys | **Done 2026-06-11** |
 | 6 | Conformance & performance baseline | **Done 2026-06-11** |
 | 7 | Locale tailorings | **Done 2026-06-11** |
-| 7.5 | ICU test-suite port + performance round | **In progress** (2026-06-11) |
+| 7.5 | ICU test-suite port + performance round | **Complete** (2026-06-12) |
 | 8 | swift-foundation integration | on hold (awaiting input) |
 
 Standing rule for every milestone: differential testing against ICU 79 (machine-local
@@ -370,13 +370,31 @@ the performance hardening that M6 deferred.
   sortKey ascii ~785ns (ICU 202), paths ~1560 (ICU 672). ASCII compare gap:
   ~44x -> ~15x. Details in `11-milestone-7.5-report.md`.
 
+**Round 7 delivered (2026-06-12): test scraps — g7coll + apicoll.**
+- g7coll TestG7Locales ported (`G7CollationTests.swift`; data extracted by
+  `Tools/extract_g7coll.py` -> g7coll.json): 8 G7 locales × pairwise order
+  over 15 fixed strings. Two findings honoring the
+  investigate-before-fixing rule: (1) ICU's character comments disagree with
+  its code units in places ("blabkbirds") — extraction is faithful to the
+  values ICU actually tests; (2) ICU's test sets quaternary+shifted but then
+  rebuilds the collator from its rule string, resetting the attributes
+  (known issue ICU-10671) — the expected orders encode *default* options,
+  and the port runs them that way. Demo tests + remaining rows are
+  rule-based (out of scope, doc 12).
+- apicoll behavioral parts ported (`ApicollTests.swift`): TestProperty
+  comparisons, TestCompare strength behavior, TestCollationKey/TestSortKey
+  key properties (empty-string key == 01 01 00; completely-ignorable string
+  keys equal empty; strength-key prefix relation), TestMaxVariable
+  (currency). The rest of apicoll is C++ API surface (clone/operators/
+  registry/rules/element iterators) with no counterpart here.
+- Suite total: **54 tests / 18 suites**. The ICU test-suite port (M7.5
+  track 1) is now complete: every portable behavior is covered.
+
 **Backlog for next rounds:**
-- apicoll behaviors where applicable; g7coll rule-free parts.
-- The runtime rule builder remains a deliberate, reversible cut — reasoning,
-  costs, and a porting plan are documented in `12-rule-builder-decision.md`.
-- Perf is at a natural stopping point; remaining known levers (out of scope
-  without a new decision): single-trie nfd.bin, fast-Latin (deliberate cut,
-  ICU4X precedent).
+- None — M7.5 is complete. The runtime rule builder remains a deliberate,
+  reversible cut (`12-rule-builder-decision.md`); perf is at a natural
+  stopping point (remaining levers — single-trie nfd.bin, fast-Latin — need
+  a decision); M8 awaits external input.
 
 ---
 

@@ -52,13 +52,14 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   full UCA runtime — fused NFD, all strengths/settings, contractions
   (incl. discontiguous S2.1) and prefixes, sort keys **byte-identical to
   ucol_getSortKey**, 15 locale tailorings incl. zh script reordering.
-- **Milestone 7.5 rounds 1–5 complete**: every portable ICU test suite is
-  ported, plus perf rounds. **48 tests / 16 suites, all green.** Suites: official UCA
+- **Milestone 7.5 complete** (rounds 1–7): every portable ICU test suite is
+  ported, plus perf rounds. **54 tests / 18 suites, all green.** Suites: official UCA
   conformance (433k lines), collationtest.txt data-driven, Thai dictionary
   (31k words), 9 classic locale suites, regcoll (13 cases), cmsccoll
-  (20 cases + extreme compression), differential matrices + byte-identical
-  keys (21 option sets × 2 data variants), 52k fuzz keys.
-- Pushed through commit `a04d5b0` (round 4); round 5 may be committed but
+  (20 cases + extreme compression), g7coll locale rows, apicoll behavioral
+  parts, differential matrices + byte-identical keys (21 option sets × 2
+  data variants), 52k fuzz keys.
+- Pushed through commit `83f085b` (round 6); round 7 may be committed but
   unpushed — check `git log origin/port/collation..HEAD`.
 
 ## Deliberate scope cuts (don't re-litigate without reading the docs)
@@ -71,16 +72,14 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   String); **reorder-table generation unsupported** (data-supplied
   reordering only).
 
-## Open backlog (in priority order as last discussed)
+## Open backlog
 
-1. **Performance track is at a natural stopping point** (M7.5 rounds 4–6:
-   buffer reuse, identical-prefix skip, trivial data access). Current: ASCII
-   compare ~239 ns vs ICU 16 ns (~15×), sortKey ~785 vs 202 ns; numbers and
-   analysis in `11-milestone-7.5-report.md`. Remaining known levers need a
-   decision first: single-trie nfd.bin; fast-Latin (deliberate cut, ICU4X
-   precedent).
-2. Minor test scraps: apicoll-where-applicable, g7coll rule-free parts.
-3. **Parked**: rule builder (doc 12), M8 Foundation integration (await user).
+**M7.5 is complete; nothing is actionable without a new decision.** Parked:
+- Rule builder (doc 12); M8 Foundation integration (await user).
+- Perf levers needing a decision: single-trie nfd.bin; fast-Latin
+  (deliberate cut, ICU4X precedent). Current: ASCII compare ~239 ns vs
+  ICU 16 ns (~15×), sortKey ~785 vs 202 ns; analysis in
+  `11-milestone-7.5-report.md`.
 
 ## How to work
 
@@ -100,7 +99,8 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
   ../Tests/CollationTests/Golden/corpus.txt ../Tests/CollationTests/Golden
 # fuzz keys: same with fuzz-corpus.txt + "--keys-only"; tailorings:
 # extract_tailoring.c; norm data: swift run GenNormData <nfc.txt> <nfd.bin>
-# test fixtures: extract_locale_suites.py / extract_regcoll.py / extract_cmsccoll.py
+# test fixtures: extract_locale_suites.py / extract_regcoll.py /
+#   extract_cmsccoll.py / extract_g7coll.py
 ```
 
 ## Code map (Sources/Collation/)

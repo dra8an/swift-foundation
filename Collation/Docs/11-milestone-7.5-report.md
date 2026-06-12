@@ -270,8 +270,46 @@ Remaining known levers, both currently out of scope: the single-trie nfd.bin
 (one lookup per scalar instead of two binary searches) and fast-Latin
 (a deliberate cut, ICU4X precedent — reversing it is a decision, not a task).
 
+## Round 7: the last test scraps — g7coll + apicoll (2026-06-12)
+
+**g7coll** (`G7CollationTests.swift`; `Tools/extract_g7coll.py` →
+g7coll.json): TestG7Locales checks the pairwise order of 15 fixed strings
+for the eight G7 locales (en×3 / fr_FR / de / it → root; fr_CA, ja →
+bundled tailorings). The demo tests and remaining result rows are
+rule-based — out of scope (doc 12). Two findings, both courtesy of the
+investigate-before-fixing rule:
+
+1. ICU's per-character comments disagree with its code units in places —
+   the test strings are really "blabkbirds"/"blabk-bird" etc. Mechanical
+   extraction is faithful to the values ICU tests; hand transcription from
+   the comments would have produced wrong fixtures.
+2. The first port attempt set quaternary strength + alternate=shifted, as
+   the test body appears to do — and every locale failed on exactly one
+   pair ("blabk-birds" vs "blabkbird", whose order depends on whether the
+   hyphen is primary-visible). Reading further: after setting those
+   attributes, ICU *replaces* the collator with one rebuilt from its rule
+   string, silently resetting the attributes to defaults — the known issue
+   ICU-10671 ("TestG7Locales does not test ignore-punctuation") annotated in
+   the test itself. The expected orders encode default options; the port
+   runs them that way and matches ICU's effective behavior.
+
+**apicoll** (`ApicollTests.swift`): the behavioral fraction of
+CollationAPITest, inlined (a handful of literals, cited per source
+function): TestProperty's comparisons, TestCompare's strength behavior
+("Abcda"/"abcda": tertiary > / secondary = / primary =), TestCollationKey +
+TestSortKey key properties — the empty string's tertiary key is exactly
+`01 01 00`, a completely-ignorable string (U+0001, U+034F) keys equal to
+empty, lower-strength keys prefix higher-strength keys — and
+TestMaxVariable's currency behavior under shifted. Everything else in
+apicoll exercises C++ API surface with no counterpart in this port
+(constructors, clone/operators, registry, display names, rule access,
+element iterators, subclassing).
+
 ## Status
 
-Rounds 1–6 done: 48 tests / 16 suites green, all perf work verified against
-the full suite. Remaining backlog in the plan: apicoll where applicable,
-g7coll rule-free parts; perf is at a natural stopping point (see round 6).
+**Milestone 7.5 complete.** Rounds 1–7: every portable ICU collation test
+suite is ported — **54 tests / 18 suites green** — and the perf track
+delivered 31× on ASCII compare since the pre-lazy baseline (~15× from ICU).
+Out of scope, by recorded decision: rule-based tests (doc 12), API-surface
+tests, single-trie nfd.bin, fast-Latin. Next milestone: M8 (on hold,
+awaiting maintainer/community input).
