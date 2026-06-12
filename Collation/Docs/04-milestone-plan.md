@@ -318,6 +318,8 @@ the performance hardening that M6 deferred.
 **Backlog for next rounds:**
 - cmsccoll.c non-rule regression cases; apicoll behaviors where applicable;
   g7coll rule-free parts.
+- The runtime rule builder remains a deliberate, reversible cut — reasoning,
+  costs, and a porting plan are documented in `12-rule-builder-decision.md`.
 - Perf: buffer reuse across compares, identical-prefix skip (needs
   normalization safety markers), Span-based data access.
 
