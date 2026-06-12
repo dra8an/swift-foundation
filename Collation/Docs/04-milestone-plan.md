@@ -315,9 +315,23 @@ the performance hardening that M6 deferred.
   (ko has 13 slots); the minimum-indexes guard was too strict.
 - Tailorings: ko reordering exercised; suite total 39 tests / 14 suites.
 
+**Round 3 delivered (2026-06-12): cmsccoll.c non-rule cases.**
+- 20 cases extracted (Tools/extract_cmsccoll.py -> cmsccoll.json): pinyin
+  ordering (TestBeforePinyin, TestPinyinProblem), da upper-first, fr, ko
+  Hangul data, ja quaternary/shifted kana (TestNewJapanese, 76+32 strings),
+  the six TestNumericCollation sets (incl. 32-bit boundaries, long numbers,
+  foreign + supplementary digits), upper-first quaternary, J4960
+  primary+caseLevel, J5232 Thai; TestExtremeCompression reimplemented
+  programmatically (primary-compression stress, lengths 20..500).
+- Two extraction lessons: ICU test strings are double-escaped ("\\u4e8c" is
+  decoded by u_unescape at runtime, requiring a two-stage unescape), and
+  dead #if 0 code must be stripped (TestJ784 is disabled in ICU, superseded
+  by TestBeforePinyin — its stale expectations are correctly absent).
+- The remaining ~88 cmsccoll call sites are rule-based
+  (see 12-rule-builder-decision.md). Suite total: 41 tests / 15 suites.
+
 **Backlog for next rounds:**
-- cmsccoll.c non-rule regression cases; apicoll behaviors where applicable;
-  g7coll rule-free parts.
+- apicoll behaviors where applicable; g7coll rule-free parts.
 - The runtime rule builder remains a deliberate, reversible cut — reasoning,
   costs, and a porting plan are documented in `12-rule-builder-decision.md`.
 - Perf: buffer reuse across compares, identical-prefix skip (needs
