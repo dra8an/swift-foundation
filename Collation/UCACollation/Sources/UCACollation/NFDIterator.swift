@@ -24,6 +24,9 @@ struct NFDIterator {
         self.source = scalars.makeIterator()
     }
 
+    /// Scratch buffer for one scalar's decomposition, reused across refills.
+    private var decomposed: [UInt32] = []
+
     /// Next scalar of the NFD form of the input, or nil at the end.
     mutating func next() -> UInt32? {
         if unitNext < unit.count {
@@ -31,20 +34,38 @@ struct NFDIterator {
             unitNext += 1
             return c
         }
-        refill()
+        if carried.isEmpty {
+            // Fast path: between reorderable units, a bare starter with no
+            // decomposition can be emitted without any buffering (it is a
+            // hard reordering boundary; following marks form the next unit).
+            guard let scalar = source.next() else { return nil }
+            let c = scalar.value
+            if c < 0xc0 || (norm.ccc(c) == 0 && !norm.hasDecomposition(c)) {
+                return c
+            }
+            refill(startingWith: c)
+        } else {
+            refill(startingWith: nil)
+        }
         if unit.isEmpty { return nil }
         unitNext = 1
         return unit[0]
     }
 
-    private mutating func refill() {
+    private mutating func refill(startingWith first: UInt32?) {
         unit.removeAll(keepingCapacity: true)
         unitNext = 0
         if !carried.isEmpty {
             for c in carried { absorb(c) }
             carried.removeAll(keepingCapacity: true)
         }
-        var decomposed: [UInt32] = []
+        if let first {
+            decomposed.removeAll(keepingCapacity: true)
+            if !norm.appendDecomposition(of: first, to: &decomposed) {
+                decomposed.append(first)
+            }
+            for c in decomposed { absorb(c) }
+        }
         while let scalar = source.next() {
             decomposed.removeAll(keepingCapacity: true)
             if !norm.appendDecomposition(of: scalar.value, to: &decomposed) {

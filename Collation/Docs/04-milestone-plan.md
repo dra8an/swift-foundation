@@ -15,7 +15,8 @@
 | 5 | Sort keys | **Done 2026-06-11** |
 | 6 | Conformance & performance baseline | **Done 2026-06-11** |
 | 7 | Locale tailorings | **Done 2026-06-11** |
-| 8 | swift-foundation integration | not started |
+| 7.5 | ICU test-suite port + performance round | **In progress** (2026-06-11) |
+| 8 | swift-foundation integration | on hold (awaiting input) |
 
 Standing rule for every milestone: differential testing against ICU 79 (machine-local
 build at `~/Projects/claude/collation/icu-build`, outside this repo) is the
@@ -270,6 +271,42 @@ sv (å/ä/ö after z), fr-CA (backwards secondary), tr (dotless i), ja, zh-pinyi
 - The genrb -X TOML path (NFD-only tailorings for the icu4x data variant)
   remains future work; compiled regular tailorings + the always-NFD runtime
   are verified equivalent against ICU.
+
+---
+
+## Milestone 7.5 — ICU test-suite port + performance round
+
+Added at the user's request while M8 awaits external input. Two goals: port
+ICU4C's own collation test suites (the ultimate confidence builder), and do
+the performance hardening that M6 deferred.
+
+**Round 1 delivered (2026-06-11; details in `11-milestone-7.5-report.md`):**
+- Data-driven suite: runner for test/testdata/collationtest.txt
+  (CollationTest::TestDataDriven semantics: relations =, <, <1..<4, <c, <i;
+  both directions; sort-key difference-level verification; NFD-input
+  re-checks). 300 lines run; skipped with counts: 109 @rules sections (need
+  the rule builder), reorder-attribute sections, unbundled locales,
+  unpaired-surrogate lines. FOUND A REAL BUG: U+FFFE must rank between
+  end-of-string and all code points on the identical level (compareNFDIter:
+  end=-2, FFFE=-1); fixed.
+- Thai dictionary order test (CollationThaiTest::TestDictionary): all ~31k
+  riwords.txt adjacent pairs in order under the th tailoring.
+- Tailorings grown to 15 (added th, fi, es, ko, fr, zh-stroke).
+- Performance: NFD fast path (bare starters with no decomposition bypass all
+  buffering), CE-iterator lookahead bypass, canonical-equality shortcut.
+  compare: ascii 2225->1225ns, cjk 2502->1410ns (6x/3.2x vs pre-lazy
+  baseline); sortKey ascii 3640->2734ns, cjk 2959->2334ns. ICU is still
+  ~75x faster on ASCII compare (identical-prefix + fast-Latin paths, zero
+  allocation) — remaining gap documented in the report.
+
+**Backlog for next rounds:**
+- Port regcoll.cpp (CollationRegressionTest) non-rule cases.
+- Port the classic locale suites (encoll, decoll/cdetst, escoll/cestst,
+  ficoll, frcoll/cfrtst, jacoll/cjaptst, trcoll/cturtst, lcukocol, currcoll,
+  g7coll where rule-free) — mechanical extraction of the C test arrays.
+- cmsccoll.c non-rule regression cases; apicoll behaviors where applicable.
+- Perf: buffer reuse across compares, identical-prefix skip (needs
+  normalization safety markers), Span-based data access.
 
 ---
 

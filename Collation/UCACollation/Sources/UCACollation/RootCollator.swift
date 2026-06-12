@@ -73,6 +73,9 @@ public struct RootCollator: Sendable {
     public func compare(
         _ left: String, _ right: String, options: CollationOptions = CollationOptions()
     ) throws -> Order {
+        // Swift String equality is canonical equivalence, which implies equal
+        // CEs and therefore equality at every strength including identical.
+        if left == right { return .same }
         // CEs are generated lazily: the primary level usually decides the
         // comparison after a few characters.
         var leftCEs = CEIterator(
@@ -88,14 +91,20 @@ public struct RootCollator: Sendable {
             return result < 0 ? .ascending : .descending
         }
         if options.strength == .identical {
-            // Identical level: compare NFD forms in code point order.
+            // Identical level: compare NFD forms in code point order, with
+            // end-of-string below U+FFFE (merge separator) below all code
+            // points. (compareNFDIter: end = -2, U+FFFE = -1.)
+            func rank(_ c: UInt32?) -> Int64 {
+                guard let c else { return -2 }
+                return c == 0xfffe ? -1 : Int64(c)
+            }
             var l = NFDIterator(norm: norm, scalars: left.unicodeScalars)
             var r = NFDIterator(norm: norm, scalars: right.unicodeScalars)
             while true {
                 let lc = l.next()
                 let rc = r.next()
                 if lc != rc {
-                    return (lc ?? 0) < (rc ?? 0) ? .ascending : .descending
+                    return rank(lc) < rank(rc) ? .ascending : .descending
                 }
                 if lc == nil { return .same }
             }

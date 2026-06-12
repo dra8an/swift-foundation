@@ -77,6 +77,20 @@ public struct NormalizationData: Sendable {
         return 0
     }
 
+    /// True if `c` has a canonical decomposition (including Hangul syllables).
+    @inline(__always)
+    func hasDecomposition(_ c: UInt32) -> Bool {
+        if c < 0xc0 { return false }
+        if (0xac00...0xd7a3).contains(c) { return true }
+        var lo = 0
+        var hi = decompEntries.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if decompEntries[mid] >> 32 < UInt64(c) { lo = mid + 1 } else { hi = mid }
+        }
+        return lo < decompEntries.count && decompEntries[lo] >> 32 == UInt64(c)
+    }
+
     /// Appends the full canonical decomposition of `c` to `out`.
     /// Returns false if `c` has no decomposition (nothing appended).
     @inline(__always)
