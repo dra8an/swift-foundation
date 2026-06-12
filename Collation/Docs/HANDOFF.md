@@ -76,9 +76,9 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 **M7.5 is complete; nothing is actionable without a new decision.** Parked:
 - Rule builder (doc 12); M8 Foundation integration (await user).
-- Perf levers needing a decision: single-trie nfd.bin; fast-Latin
-  (deliberate cut, ICU4X precedent). Current: ASCII compare ~239 ns vs
-  ICU 16 ns (~15×), sortKey ~785 vs 202 ns; analysis in
+- Last perf lever needing a decision: fast-Latin (deliberate cut, ICU4X
+  precedent). The single-trie nfd.bin landed in round 8. Current: ASCII
+  compare ~239 ns vs ICU 16 ns (~15×), CJK ~4.7×, Latin ~11×; analysis in
   `11-milestone-7.5-report.md`.
 
 ## How to work
@@ -110,8 +110,9 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
 - `UTrie2.swift`, `UCharsTrie.swift` — read-side trie ports
 - `CollationData.swift` — "UCol" v5 binary reader (root + tailorings +
   `Reordering`), bundled resources accessors
-- `NormalizationData.swift` + `NFDIterator.swift` — nfd.bin reader + fused
-  NFD front end (fast path for bare starters)
+- `NormalizationData.swift` + `NFDIterator.swift` — nfd.bin reader (v2:
+  single-trie, one lookup per scalar) + fused NFD front end (fast path for
+  bare starters)
 - `CollationElements.swift` — `CEIterator`: lazy CE production, contexts
   (contraction/prefix matching), numeric, base fallback
 - `CollationCompare.swift` — level-by-level compare (lazy via `ce(at:)`)

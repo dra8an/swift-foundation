@@ -305,11 +305,37 @@ apicoll exercises C++ API surface with no counterpart in this port
 (constructors, clone/operators, registry, display names, rule access,
 element iterators, subclassing).
 
+## Round 8: single-trie nfd.bin (2026-06-12)
+
+The normalization container planned since M2 ("the ICU4X single-trie design
+remains the target"), now decided and done. nfd.bin v2:
+
+- GenNormData packs one 32-bit value per scalar — ccc (bits 0..7), lead ccc
+  (8..15), decomposition length (16..18, with 7 as the Hangul sentinel) and
+  decomposition-buffer offset (19..31) — into a flat two-level trie:
+  17408 index entries (scalar >> 6) pointing at deduplicated 64-value
+  blocks (186 blocks). 96 KB on disk (was 34 KB); the sorted-array +
+  binary-search container and its three lookup paths are gone.
+- One lookup (two loads) replaces two ~11-probe binary searches per scalar.
+  Value 0 means inert (ccc 0, no decomposition), so the NFD bare-starter
+  fast path is a single read (`isInert`); lead-ccc — added in round 5 for
+  the identical-prefix skip — comes from the same read.
+- The reader validates the index entries and every value's offset/length
+  once at parse time, keeping the unchecked buffer reads in bounds for any
+  scalar 0...0x10FFFF.
+
+Numbers (release, medians): compare latin 346 → **~308 ns** (-11%), cjk
+407 → **~345 ns** (-15%); sortKey latin ~1266 → **~1038 ns**, cjk ~895 →
+**~723 ns** (both ≈ -18%). ASCII and the paths corpus are unchanged within
+noise — scalars below U+00C0 never touch the normalization data. Full suite
+green after regeneration; same 968 ccc entries and 2081 decompositions feed
+the new format.
+
 ## Status
 
-**Milestone 7.5 complete.** Rounds 1–7: every portable ICU collation test
+**Milestone 7.5 complete.** Rounds 1–8: every portable ICU collation test
 suite is ported — **54 tests / 18 suites green** — and the perf track
-delivered 31× on ASCII compare since the pre-lazy baseline (~15× from ICU).
-Out of scope, by recorded decision: rule-based tests (doc 12), API-surface
-tests, single-trie nfd.bin, fast-Latin. Next milestone: M8 (on hold,
-awaiting maintainer/community input).
+delivered 31× on ASCII compare since the pre-lazy baseline (~15× from ICU),
+with CJK compare at ~4.7× and Latin at ~11×. Out of scope, by recorded
+decision: rule-based tests (doc 12), API-surface tests, fast-Latin. Next
+milestone: M8 (on hold, awaiting maintainer/community input).

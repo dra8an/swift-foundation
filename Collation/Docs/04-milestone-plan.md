@@ -79,11 +79,11 @@ nears.)
 
 **Outcome (2026-06-11).** Delivered as planned, with these decisions:
 - Normalization data is generated from ICU's `norm2/nfc.txt` (the gennorm2
-  source format) by the `GenNormData` tool into `nfd.bin` (34 KB: full
-  recursively-expanded decompositions + ccc; sorted arrays + binary search).
-  This is a *provisional* container — the ICU4X single-trie design
-  (decomposition + ccc + safety markers in one lookup) remains the target for
-  the perf pass (M6). Hangul stays arithmetic.
+  source format) by the `GenNormData` tool into `nfd.bin` (full
+  recursively-expanded decompositions + ccc). Originally a provisional
+  sorted-arrays + binary-search container; replaced by the ICU4X single-trie
+  design in M7.5 round 8 (one lookup yields ccc + lead-ccc + decomposition).
+  Hangul stays arithmetic.
 - `NFDIterator` decomposes and canonically reorders (stable insertion sort by
   ccc per reorderable unit) in front of CE lookup; normalization cannot be
   turned off, matching ICU4X.
@@ -390,11 +390,22 @@ the performance hardening that M6 deferred.
 - Suite total: **54 tests / 18 suites**. The ICU test-suite port (M7.5
   track 1) is now complete: every portable behavior is covered.
 
+**Round 8 delivered (2026-06-12): single-trie nfd.bin (v2).**
+- The long-planned ICU4X-style normalization container, decided and done:
+  GenNormData now emits a flat two-level trie (deduplicated 64-value blocks,
+  186 blocks, 96 KB) whose packed value carries ccc, lead-ccc, decomposition
+  length (7 = Hangul sentinel) and buffer offset; value 0 = inert, giving
+  the NFD bare-starter fast path a single read. Replaces two ~11-probe
+  binary searches per scalar; reader validates index/offsets once at parse
+  so the unchecked reads stay in bounds for any scalar.
+- compare: latin ~308ns (-11%), cjk ~345ns (-15%); sortKey latin/cjk -18%;
+  ascii/paths unchanged (they bypass normalization data below U+00C0).
+
 **Backlog for next rounds:**
 - None — M7.5 is complete. The runtime rule builder remains a deliberate,
-  reversible cut (`12-rule-builder-decision.md`); perf is at a natural
-  stopping point (remaining levers — single-trie nfd.bin, fast-Latin — need
-  a decision); M8 awaits external input.
+  reversible cut (`12-rule-builder-decision.md`); the last perf lever left
+  is fast-Latin (deliberate cut, ICU4X precedent — needs a decision);
+  M8 awaits external input.
 
 ---
 

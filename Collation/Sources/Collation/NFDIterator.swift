@@ -56,7 +56,7 @@ struct NFDIterator {
             // hard reordering boundary; following marks form the next unit).
             guard let scalar = source.next() else { return nil }
             let c = scalar.value
-            if c < 0xc0 || (norm.ccc(c) == 0 && !norm.hasDecomposition(c)) {
+            if norm.isInert(c) {
                 return c
             }
             refill(startingWith: c)
