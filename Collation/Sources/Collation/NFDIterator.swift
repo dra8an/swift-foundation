@@ -24,6 +24,16 @@ struct NFDIterator {
         self.source = scalars.makeIterator()
     }
 
+    /// Rewinds onto a new input, keeping the buffers' storage so that reuse
+    /// across compares runs allocation-free.
+    mutating func reset(scalars: String.UnicodeScalarView) {
+        source = scalars.makeIterator()
+        carried.removeAll(keepingCapacity: true)
+        unit.removeAll(keepingCapacity: true)
+        unitNext = 0
+        marks.removeAll(keepingCapacity: true)
+    }
+
     /// Scratch buffer for one scalar's decomposition, reused across refills.
     private var decomposed: [UInt32] = []
 

@@ -125,8 +125,50 @@ trie-value data format), Span-based data access to eliminate bounds checks.
   Korean — with its 232 KB tailoring and script reordering — now loads and
   passes.
 
+## Round 4: performance round 2 — buffer/iterator reuse (2026-06-12)
+
+(Round 3 — cmsccoll.c non-rule cases — is summarized in the outcome note in
+`04-milestone-plan.md`.)
+
+Round 1 left compare() building two full iterator stacks per call: each side
+allocates the CE buffer and, off the ASCII fast path, the NFD unit/marks
+buffers; sortKey() additionally grows the key and four per-level buffers from
+empty every call. ICU4C avoids all of this with stack buffers, which Swift
+arrays cannot express — the equivalent is reuse.
+
+**Design.** `RootCollator` keeps a `ScratchPool`: a small lock-guarded pool
+(capacity 4) of `ScratchBuffers` sets, each holding two `CEIterator`s (with
+their fused-NFD front ends), the sort key byte buffer, the four
+`SortKeyLevel` buffers, and the identical-level scalar buffer. A call checks
+a set out, `reset(...)`s it — `removeAll(keepingCapacity:)` throughout — and
+returns it on exit, so steady-state calls run without heap allocation once
+the buffers reach working size. Properties preserved:
+
+- public API unchanged; `RootCollator` stays `Sendable` (the pool is
+  lock-guarded, and copies of a collator share it);
+- concurrent calls beyond the pool capacity just allocate a fresh set;
+- the sort key level buffers are *swapped* in and out of
+  `writeSortKeyUpToQuaternary` (not copied) so appends never copy-on-write;
+- `sortKey` builds into the reused buffer and copies out right-sized — one
+  exact-size allocation instead of a grow-realloc chain.
+
+**Numbers** (release, same harness; ICU 79 re-measured the same day):
+
+| corpus | compare before → after | ICU | sortKey before → after | ICU |
+|---|---|---|---|---|
+| ASCII | 1247 → **~690 ns** | 16 ns | 2686 → **~2000 ns** | 202 ns |
+| Latin | 1652 → **~735 ns** | 27 ns | 3550 → **~2400 ns** | 221 ns |
+| CJK | 1399 → **~870 ns** | 74 ns | 2262 → **~1620 ns** | 227 ns |
+
+ASCII compare gap to ICU: ~78× → ~43×. Cumulative since the pre-lazy
+baseline: 7437 → ~690 ns (10.8×). The remaining gap is compute, not
+allocation: per-scalar trie lookups with bounds checks, and no
+identical-prefix skip. Next levers unchanged: identical-prefix skip (needs
+normalization safety markers from the planned trie-value data format),
+Span-based data access.
+
 ## Status
 
-Rounds 1–2 done: 39 tests / 14 suites green. Remaining backlog in the plan:
-cmsccoll.c non-rule cases, apicoll where applicable, deeper perf levers
-(buffer reuse, identical-prefix skip, Span).
+Rounds 1–4 done: 41 tests / 15 suites green, all behavior-neutral perf work
+verified against the full suite. Remaining backlog in the plan: apicoll
+where applicable, g7coll rule-free parts, identical-prefix skip, Span.

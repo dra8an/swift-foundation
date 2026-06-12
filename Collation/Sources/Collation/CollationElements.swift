@@ -19,7 +19,7 @@ struct CEIterator {
     /// when the tailoring maps a character to FALLBACK_CE32.
     let base: CollationData?
     let norm: NormalizationData
-    let numeric: Bool
+    var numeric: Bool
     var scalars: NFDIterator
     var ces: [Int64] = []
 
@@ -42,6 +42,21 @@ struct CEIterator {
         self.norm = norm
         self.numeric = numeric
         self.scalars = NFDIterator(norm: norm, scalars: scalars)
+    }
+
+    /// Rewinds onto a new input, keeping all buffer storage so that reuse
+    /// across compares runs allocation-free. Equivalent to a fresh iterator
+    /// over the same collation data.
+    mutating func reset(numeric: Bool, scalars view: String.UnicodeScalarView) {
+        self.numeric = numeric
+        scalars.reset(scalars: view)
+        ces.removeAll(keepingCapacity: true)
+        lookahead.removeAll(keepingCapacity: true)
+        lookaheadStart = 0
+        prev1 = nil
+        prev2 = nil
+        consumedExtras.removeAll(keepingCapacity: true)
+        terminated = false
     }
 
     /// Looks up the CE32 for a code point, falling back from the tailoring to

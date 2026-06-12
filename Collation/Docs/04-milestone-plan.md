@@ -330,12 +330,22 @@ the performance hardening that M6 deferred.
 - The remaining ~88 cmsccoll call sites are rule-based
   (see 12-rule-builder-decision.md). Suite total: 41 tests / 15 suites.
 
+**Round 4 delivered (2026-06-12): performance round 2 — buffer reuse.**
+- RootCollator keeps a small thread-safe pool of reusable buffer sets
+  (both CE iterators with their NFD front ends, the sort key bytes, the four
+  per-level buffers); compare()/sortKey() check one out per call and reset it
+  keeping capacity, so steady-state calls run without heap allocation. Public
+  API and thread safety unchanged.
+- compare: ascii 1247->~690ns, latin 1652->~735ns, cjk 1399->~870ns
+  (1.6–2.3x); sortKey ascii 2686->~2000ns, latin 3550->~2400ns,
+  cjk 2262->~1620ns. Gap to ICU on ASCII compare: ~78x -> ~43x.
+
 **Backlog for next rounds:**
 - apicoll behaviors where applicable; g7coll rule-free parts.
 - The runtime rule builder remains a deliberate, reversible cut — reasoning,
   costs, and a porting plan are documented in `12-rule-builder-decision.md`.
-- Perf: buffer reuse across compares, identical-prefix skip (needs
-  normalization safety markers), Span-based data access.
+- Perf: identical-prefix skip (needs normalization safety markers),
+  Span-based data access.
 
 ---
 

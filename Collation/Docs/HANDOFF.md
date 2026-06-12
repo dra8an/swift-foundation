@@ -73,11 +73,12 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 ## Open backlog (in priority order as last discussed)
 
-1. **Performance levers** (M7.5 track 2 continuation): buffer/iterator reuse
-   across compares, identical-prefix skip (needs normalization safety
-   markers — pairs with the planned ICU4X-style single-trie `nfd.bin`
-   replacement), Span-based data access. Current: ASCII compare 1225 ns vs
-   ICU 16 ns (~75×); numbers and analysis in `11-milestone-7.5-report.md`.
+1. **Performance levers** (M7.5 track 2 continuation): identical-prefix skip
+   (needs normalization safety markers — pairs with the planned ICU4X-style
+   single-trie `nfd.bin` replacement), Span-based data access.
+   Buffer/iterator reuse landed in round 4 (scratch pool in RootCollator).
+   Current: ASCII compare ~690 ns vs ICU 16 ns (~43×); numbers and analysis
+   in `11-milestone-7.5-report.md`.
 2. Minor test scraps: apicoll-where-applicable, g7coll rule-free parts.
 3. **Parked**: rule builder (doc 12), M8 Foundation integration (await user).
 

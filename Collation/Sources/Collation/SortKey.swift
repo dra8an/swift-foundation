@@ -7,7 +7,7 @@
 // equals compare() at the same options.
 
 /// Per-level byte buffer. (collationkeys.cpp SortKeyLevel.)
-private struct SortKeyLevel {
+struct SortKeyLevel {
     var bytes: [UInt8] = []
 
     var isEmpty: Bool { bytes.isEmpty }
@@ -59,6 +59,15 @@ private struct SortKeyLevel {
         assert(bytes.last == 1)
         key.append(contentsOf: bytes.dropLast())
     }
+}
+
+/// Reusable storage for the four per-level buffers (lives in ScratchBuffers;
+/// writeSortKeyUpToQuaternary borrows and returns it).
+struct SortKeyLevelBuffers {
+    var cases = SortKeyLevel()
+    var secondaries = SortKeyLevel()
+    var tertiaries = SortKeyLevel()
+    var quaternaries = SortKeyLevel()
 }
 
 enum CollationKeys {
@@ -127,7 +136,7 @@ enum CollationKeys {
     static func writeSortKeyUpToQuaternary(
         ces: [Int64], compressibleBytes: [Bool],
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
-        into key: inout [UInt8]
+        into key: inout [UInt8], reusing buffers: inout SortKeyLevelBuffers
     ) {
         var levels = levelFlags(strength: CollationOptions.strength(of: options))
         if (options & CollationOptions.Bits.caseLevel) != 0 {
@@ -144,10 +153,20 @@ enum CollationKeys {
 
         let tertiaryMask = CollationOptions.tertiaryMask(of: options)
 
+        // Borrow the reusable level buffers by swapping (not copying, so the
+        // appends below never copy-on-write); swapped back, grown, at the end.
         var cases = SortKeyLevel()
         var secondaries = SortKeyLevel()
         var tertiaries = SortKeyLevel()
         var quaternaries = SortKeyLevel()
+        swap(&cases, &buffers.cases)
+        swap(&secondaries, &buffers.secondaries)
+        swap(&tertiaries, &buffers.tertiaries)
+        swap(&quaternaries, &buffers.quaternaries)
+        cases.bytes.removeAll(keepingCapacity: true)
+        secondaries.bytes.removeAll(keepingCapacity: true)
+        tertiaries.bytes.removeAll(keepingCapacity: true)
+        quaternaries.bytes.removeAll(keepingCapacity: true)
 
         var prevReorderedPrimary: UInt32 = 0  // 0==no compression
         var commonCases = 0
@@ -478,6 +497,11 @@ enum CollationKeys {
             key.append(levelSeparator)
             quaternaries.appendTo(&key)
         }
+
+        swap(&cases, &buffers.cases)
+        swap(&secondaries, &buffers.secondaries)
+        swap(&tertiaries, &buffers.tertiaries)
+        swap(&quaternaries, &buffers.quaternaries)
     }
 
     // MARK: Identical level (BOCSU; i18n/bocsu.{h,cpp})

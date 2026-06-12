@@ -35,6 +35,9 @@ public struct RootCollator: Sendable {
     /// The tailoring's default options (e.g. backwards-secondary for fr-CA);
     /// plain defaults for the root collator.
     public let defaultOptions: CollationOptions
+    /// Reusable per-call buffers, shared (thread-safely) by all copies of
+    /// this collator so repeated compares run allocation-free.
+    private let scratchPool = ScratchPool()
 
     public init(data: CollationData, norm: NormalizationData) {
         self.data = data
@@ -76,16 +79,14 @@ public struct RootCollator: Sendable {
         // Swift String equality is canonical equivalence, which implies equal
         // CEs and therefore equality at every strength including identical.
         if left == right { return .same }
+        let scratch = takeScratch()
+        defer { scratchPool.give(scratch) }
         // CEs are generated lazily: the primary level usually decides the
         // comparison after a few characters.
-        var leftCEs = CEIterator(
-            data: data, base: base, norm: norm, numeric: options.numeric,
-            scalars: left.unicodeScalars)
-        var rightCEs = CEIterator(
-            data: data, base: base, norm: norm, numeric: options.numeric,
-            scalars: right.unicodeScalars)
+        scratch.left.reset(numeric: options.numeric, scalars: left.unicodeScalars)
+        scratch.right.reset(numeric: options.numeric, scalars: right.unicodeScalars)
         let result = try CollationCompare.compareUpToQuaternary(
-            &leftCEs, &rightCEs, options: options.icuOptions,
+            &scratch.left, &scratch.right, options: options.icuOptions,
             variableTopValue: variableTopValue(options), reordering: reordering)
         if result != 0 {
             return result < 0 ? .ascending : .descending
@@ -98,11 +99,11 @@ public struct RootCollator: Sendable {
                 guard let c else { return -2 }
                 return c == 0xfffe ? -1 : Int64(c)
             }
-            var l = NFDIterator(norm: norm, scalars: left.unicodeScalars)
-            var r = NFDIterator(norm: norm, scalars: right.unicodeScalars)
+            scratch.left.scalars.reset(scalars: left.unicodeScalars)
+            scratch.right.scalars.reset(scalars: right.unicodeScalars)
             while true {
-                let lc = l.next()
-                let rc = r.next()
+                let lc = scratch.left.scalars.next()
+                let rc = scratch.right.scalars.next()
                 if lc != rc {
                     return rank(lc) < rank(rc) ? .ascending : .descending
                 }
@@ -118,23 +119,35 @@ public struct RootCollator: Sendable {
     public func sortKey(
         for s: String, options: CollationOptions = CollationOptions()
     ) throws -> [UInt8] {
-        let ces = try collationElements(of: s, numeric: options.numeric)
-        var key: [UInt8] = []
+        let scratch = takeScratch()
+        defer { scratchPool.give(scratch) }
+        scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
+        _ = try scratch.left.collectAll()
+        scratch.key.removeAll(keepingCapacity: true)
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
         CollationKeys.writeSortKeyUpToQuaternary(
-            ces: ces, compressibleBytes: compressibleBytes,
+            ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key)
+            reordering: reordering, into: &scratch.key, reusing: &scratch.levels)
         if options.strength == .identical {
-            key.append(1)  // level separator
-            var iter = NFDIterator(norm: norm, scalars: s.unicodeScalars)
-            var nfdScalars: [UInt32] = []
-            while let c = iter.next() { nfdScalars.append(c) }
-            CollationKeys.writeIdenticalLevelRun(scalars: nfdScalars, into: &key)
+            scratch.key.append(1)  // level separator
+            scratch.left.scalars.reset(scalars: s.unicodeScalars)
+            scratch.nfdScalars.removeAll(keepingCapacity: true)
+            while let c = scratch.left.scalars.next() { scratch.nfdScalars.append(c) }
+            CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &scratch.key)
         }
-        key.append(0)  // terminator
+        scratch.key.append(0)  // terminator
+        // Copy out right-sized; returning the buffer itself would pin its
+        // storage and defeat the reuse.
+        var key: [UInt8] = []
+        key.reserveCapacity(scratch.key.count)
+        key.append(contentsOf: scratch.key)
         return key
+    }
+
+    private func takeScratch() -> ScratchBuffers {
+        scratchPool.take() ?? ScratchBuffers(data: data, base: base, norm: norm)
     }
 
     private func variableTopValue(_ options: CollationOptions) -> UInt32 {
