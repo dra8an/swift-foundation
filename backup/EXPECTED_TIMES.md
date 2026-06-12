@@ -47,8 +47,16 @@ set `swift test` timeout to ≥140 s when edits touched non-leaf files.
 | Command | Expected | Hard limit |
 |---|---:|---:|
 | Full unfiltered run (~9 calendar benchmarks + ~10 locale/TZ + 3 crashing) | ~5–7 min | 8 min |
+| Full run incl. Hebrew+Buddhist+Japanese `*Calendar-*` benches, **flags=false (ICU-backed)** | ~13–16 min | 18 min |
+| Same, **flags=true (pure-Swift)** | TBD (expect well under ICU run) | 18 min until measured |
 | Filtered to ALL calendar benchmarks `--filter "nextThousand\|Recurrence\|CurrentDate"` | ~3–4 min | 5 min |
 | Filtered to ONE benchmark `--filter "^<name>$"` (anchored) | ~1.5 min cold (incl. BenchmarkTool build), ~30–40 s warm | 2 min cold |
+
+**Why the ICU-backed full run is slow (2026-06-11):** the per-calendar
+`*-allocationsForFixedCalendar` / `*-copyOnWritePerformance` benches use
+`.mega` scaling (1M iterations per sample); at ICU speeds (~4–20 µs/iter)
+one sample takes 4–20+ s, and there are 15 such benches across
+Hebrew/Buddhist/Japanese. Measured 2026-06-11: ~15 min wall.
 
 **Iteration discipline:**
 - For "is this change directionally helping?" use single-benchmark filter

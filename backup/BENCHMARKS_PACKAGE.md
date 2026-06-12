@@ -167,6 +167,82 @@ Threshold/regression handling is part of the swift-benchmark package — see
 the package's README for details. We haven't used this in the v8–v15 work
 (captured raw output to `bench_*.txt` files instead and compared by hand).
 
+## Results — Buddhist + Japanese (2026-06-11, debug mode, Intel iMac) — PR-READY
+
+> **Use this section verbatim (minus local caveats) in the Buddhist/Japanese
+> PR description.** Numbers accepted by user 2026-06-11.
+
+### Benchmarks added (uncommitted → committed on `port/buddhist`)
+
+`BenchmarkCalendar.swift` gained three mirrored 5-bench blocks so all
+calendars run **identical bench bodies**:
+
+| Shape | Gregorian | Buddhist | Japanese |
+|---|---|---|---|
+| enumerate `{m,d}` ×1000 | `GregorianCalendar-nextThousandChristmases` (12/25) | `BuddhistCalendar-nextThousandSongkrans` (4/13) | `JapaneseCalendar-nextThousandChildrensDays` (5/5) |
+| construct + day-add | `*-allocationsForFixedCalendar` | same | same |
+| CoW mutate firstWeekday | `*-copyOnWritePerformance` | same | same |
+| dateComponents y/m/d | `*-dateComponents-yearMonthDay` | same | same |
+| dc → date(from:) round-trip | `*-roundTripDateComponents` | same | same |
+
+Also fixed the 3 pre-existing crashing benches (machine-independent now):
+`copyOnWritePerformance` uses `(i % 2) + 1` (0 is invalid firstWeekday);
+the two `allocationsFor*CurrentLocale` benches assert `!identifier.isEmpty`
+instead of `== "en_US"`. And `InternationalizationBenchmark.swift`'s SPM
+entry restored to `calendarBenchmarks()` (no-arg).
+
+### Methodology
+
+ICU side: flags as committed (`Calendar(identifier:)` routes to
+`_CalendarICU` via the dynamic replacement). Ours side: SPM-branch feature
+flags in `Calendar_Cache.swift` temporarily flipped to `true` (and for the
+Gregorian control, the `.gregorian` branch temporarily routed to
+`_calendarICUClass()`), then **restored**. Single-bench anchored filters,
+debug build (release SIGBUSes on Intel x86_64 + Swift 6.3.1).
+
+### The matrix (p50, ICU → ours, ratio >1× = ours slower)
+
+| Shape | Gregorian | Buddhist | Japanese |
+|---|---|---|---|
+| enumerate {m,d} ×1000 | 676→3,581 µs (5.3×) | 355→1,639 µs (4.6×) | 201→887 µs (4.4×) |
+| alloc + day-add | 3,810→20,705 ns (5.4×) | 3,933→20,837 ns (5.3×) | 3,956→19,743 ns (5.0×) |
+| copyOnWrite | 21,689→566 ns (**38× faster**) | 20,448→783 ns (**26× faster**) | 21,001→782 ns (**27× faster**) |
+| dateComponents ymd | 55→54 ns (par) | 54→59 ns (par) | 54→126 ns (2.3×) |
+| roundTrip | 90→73 ns (1.2× faster) | 88→80 ns (par) | 87→163 ns (1.9×) |
+
+Mallocs: enumerate ours 12 (Gregorian) / 5,355 (Buddhist) / 2,966 (Japanese)
+vs ICU 333 / 162 / 96; CoW ours 1–2 vs ICU 24; dateComponents + roundTrip
+0 on both sides.
+
+### Conclusion (the PR narrative)
+
+**The Buddhist/Japanese wrappers inherit `_CalendarGregorian`'s own
+performance profile — composition adds essentially nothing.** The shipped
+upstream pure-Swift Gregorian shows the same ~5× debug-mode ratios vs ICU
+on the enumerate and alloc+add shapes; Buddhist/Japanese absolute values
+match raw Gregorian within noise (e.g. 20.8 vs 20.7 µs alloc+add).
+
+Measured composition overhead (the only cost that is *ours*):
+- CoW: +217 ns (wrapper re-construction)
+- Buddhist dateComponents: +5 ns; roundTrip: ~0
+- Japanese dateComponents: +72 ns; roundTrip: +90 ns (era probe +
+  era-table walk — fixable by folding era resolution into one pass)
+
+Wins: CoW 26–38× faster (value-type advantage, consistent with Hebrew);
+roundTrip/dateComponents par or better except Japanese era handling.
+
+### Caveats
+
+- **Debug-mode numbers.** Apple ships `_CalendarGregorian` as the
+  production default, so the ~5× debug ratios vs ICU's release-compiled C
+  are expected artifacts; they apply equally to the already-shipped
+  Gregorian. Release verification blocked by the Intel SIGBUS — re-run on
+  Apple Silicon before quoting absolute ratios upstream.
+- No fast-path `nextDate` for Buddhist/Japanese yet (Hebrew-style fast
+  paths are the obvious follow-up if enumerate performance matters).
+- Raw logs: `/tmp/bench_icu_baseline.txt`, `/tmp/bench_ours_*.txt`,
+  `/tmp/bench_greg_{ICU,OURS}_*.txt` (volatile — numbers preserved here).
+
 ## Results — first run (2026-05-03, debug mode, Intel iMac)
 
 Methodology: parameterized `calendarBenchmarks(_ identifier:)` so the same
