@@ -16,6 +16,38 @@ not have that: tailorings are consumed as **compiled binaries** (the same
 `%%CollationBin` format ICU's own build produces), and there is no API that
 accepts rule strings.
 
+## The three possible worlds
+
+It helps to separate what "building collation data" can mean:
+
+1. **Runtime building** (ICU4C's extra capability): rule strings compile to a
+   collator on demand, inside the running app. *This is the only thing this
+   implementation lacks.*
+2. **Ahead-of-time, with ICU's compiler** (this implementation today, and
+   ICU4X): ICU's build tools compile the rules; we ship and read their
+   output. Note carefully: it is not *our* compile step that does the work —
+   we borrow ICU's compiler output via `extract_tailoring`.
+3. **Ahead-of-time, with our own builder**: the same shipped binaries,
+   produced by Swift tooling directly from CLDR sources. This is what a
+   builder port would actually serve — data-pipeline independence — not
+   world 1.
+
+## What is actually lost (and not)
+
+| Scenario | Covered? |
+|---|---|
+| All current CLDR locales | yes — compiled, extracted, bundled |
+| Future CLDR rule updates | yes — re-run the pipeline (requires ICU's toolchain each time) |
+| New custom rules known at build time | yes — same pipeline (genrb on a dev machine, extract, bundle) |
+| Rule strings supplied **at runtime** | **no — the only true functional loss** |
+
+So "new rules" do not require the runtime builder — they require the offline
+pipeline. The genuine loss is one scenario: an application accepting rule
+strings dynamically (a `Collator(rules:)` API, Postgres-style user-defined
+collations). No Foundation API wants that today. The *recurring* cost is
+different in kind: every data refresh keeps ICU's toolchain in the loop,
+which is the data-pipeline-independence argument below.
+
 ## Where and why the cut was made
 
 The decision dates to the strategy phase (`02-icu4x-strategy.md`,
