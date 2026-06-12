@@ -51,6 +51,14 @@ public struct CollationData: Sendable {
     /// Per-primary-lead-byte flags: compressible lead bytes allow primary
     /// compression in sort keys. 256 entries.
     let compressibleBytes: [Bool]
+    /// Unsafe-backward set from the data file, as a sorted boundary list:
+    /// alternating range starts and limits; `c` is in the set iff the count
+    /// of boundaries <= c is odd. Characters in contraction suffixes etc. —
+    /// positions where restarting collation after an identical prefix is not
+    /// equivalent to full iteration. Tailoring files store only their delta
+    /// over the root set; ICU adds [:^lccc=0:] and surrogates at load time
+    /// (we check lead-ccc at runtime instead, and scalars exclude surrogates).
+    let unsafeBackward: [UInt32]
 
     public enum ParseError: Error {
         case tooShort
@@ -155,6 +163,47 @@ public struct CollationData: Sendable {
             scriptStarts = []
         }
 
+        // Unsafe-backward set: a serialized UnicodeSet (USerializedSet wire
+        // format): unit 0 is the boundary count with bit 0x8000 set when
+        // supplementary boundaries follow (then unit 1 is the BMP boundary
+        // count); BMP boundaries are one unit each, supplementary ones two
+        // (high, low). (uset_getSerializedSet/uset_serializedContains.)
+        let (ubOffset, ubLength) = part(IX.unsafeBwdOffset)
+        if ubLength >= 2 {
+            func u16(_ i: Int) -> Int {
+                let b = headerSize + ubOffset + i * 2
+                return Int(bytes[b]) | (Int(bytes[b + 1]) << 8)
+            }
+            let unitsAvailable = ubLength / 2
+            let word0 = u16(0)
+            let unitCount = word0 & 0x7fff
+            let bmpCount: Int
+            let arrayStart: Int
+            if (word0 & 0x8000) != 0 {
+                bmpCount = u16(1)
+                arrayStart = 2
+            } else {
+                bmpCount = unitCount
+                arrayStart = 1
+            }
+            guard arrayStart + unitCount <= unitsAvailable,
+                  bmpCount <= unitCount, (unitCount - bmpCount) % 2 == 0
+            else { throw ParseError.missingPart("unsafeBackwardSet") }
+            var boundaries = [UInt32]()
+            boundaries.reserveCapacity(bmpCount + (unitCount - bmpCount) / 2)
+            for i in 0..<bmpCount {
+                boundaries.append(UInt32(u16(arrayStart + i)))
+            }
+            var i = arrayStart + bmpCount
+            while i < arrayStart + unitCount {
+                boundaries.append((UInt32(u16(i)) << 16) | UInt32(u16(i + 1)))
+                i += 2
+            }
+            unsafeBackward = boundaries
+        } else {
+            unsafeBackward = []
+        }
+
         // Optional in tailorings (fall back to the base data's).
         let (cbOffset, cbLength) = part(IX.compressibleBytesOffset)
         if cbLength >= 256 {
@@ -189,6 +238,21 @@ public struct CollationData: Sendable {
         let index = scriptIndex(of: script)
         if index == 0 { return 0 }
         return (UInt32(scriptStarts[index + 1]) << 16) - 1
+    }
+
+    /// True if `c` is in this data's unsafe-backward boundary list (the file
+    /// part only; callers combine with the base data's list, lead-ccc, and
+    /// the numeric-digit rule).
+    @inline(__always)
+    func unsafeBackwardContains(_ c: UInt32) -> Bool {
+        // Count of boundaries <= c; odd means inside a range.
+        var lo = 0
+        var hi = unsafeBackward.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if unsafeBackward[mid] <= c { lo = mid + 1 } else { hi = mid }
+        }
+        return lo & 1 == 1
     }
 
     /// Reads a CE32 stored as two big-endian-ordered 16-bit units in contexts[].

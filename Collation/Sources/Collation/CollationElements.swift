@@ -46,10 +46,10 @@ struct CEIterator {
 
     /// Rewinds onto a new input, keeping all buffer storage so that reuse
     /// across compares runs allocation-free. Equivalent to a fresh iterator
-    /// over the same collation data.
-    mutating func reset(numeric: Bool, scalars view: String.UnicodeScalarView) {
+    /// over the same collation data, positioned after `skippingFirst` scalars.
+    mutating func reset(numeric: Bool, scalars view: String.UnicodeScalarView, skippingFirst: Int = 0) {
         self.numeric = numeric
-        scalars.reset(scalars: view)
+        scalars.reset(scalars: view, skippingFirst: skippingFirst)
         ces.removeAll(keepingCapacity: true)
         lookahead.removeAll(keepingCapacity: true)
         lookaheadStart = 0

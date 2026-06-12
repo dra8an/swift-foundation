@@ -79,12 +79,35 @@ public struct RootCollator: Sendable {
         // Swift String equality is canonical equivalence, which implies equal
         // CEs and therefore equality at every strength including identical.
         if left == right { return .same }
+
+        // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar
+        // prefixes produce identical CEs, so iteration can start at the first
+        // difference — when restarting there is provably equivalent to full
+        // iteration (see unsafeStart). On an unsafe boundary we compare from
+        // the start instead; ICU backs up partially, but skipping less is
+        // always sound and keeps the common path free of index arithmetic.
+        var lIter = left.unicodeScalars.makeIterator()
+        var rIter = right.unicodeScalars.makeIterator()
+        var shared = 0
+        var lNext = lIter.next()
+        var rNext = rIter.next()
+        while let a = lNext, let b = rNext, a == b {
+            shared += 1
+            lNext = lIter.next()
+            rNext = rIter.next()
+        }
+        if shared > 0,
+           (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
+            || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
+            shared = 0
+        }
+
         let scratch = takeScratch()
         defer { scratchPool.give(scratch) }
         // CEs are generated lazily: the primary level usually decides the
         // comparison after a few characters.
-        scratch.left.reset(numeric: options.numeric, scalars: left.unicodeScalars)
-        scratch.right.reset(numeric: options.numeric, scalars: right.unicodeScalars)
+        scratch.left.reset(numeric: options.numeric, scalars: left.unicodeScalars, skippingFirst: shared)
+        scratch.right.reset(numeric: options.numeric, scalars: right.unicodeScalars, skippingFirst: shared)
         let result = try CollationCompare.compareUpToQuaternary(
             &scratch.left, &scratch.right, options: options.icuOptions,
             variableTopValue: variableTopValue(options), reordering: reordering)
@@ -99,8 +122,9 @@ public struct RootCollator: Sendable {
                 guard let c else { return -2 }
                 return c == 0xfffe ? -1 : Int64(c)
             }
-            scratch.left.scalars.reset(scalars: left.unicodeScalars)
-            scratch.right.scalars.reset(scalars: right.unicodeScalars)
+            // ICU also runs the identical level from the skip position.
+            scratch.left.scalars.reset(scalars: left.unicodeScalars, skippingFirst: shared)
+            scratch.right.scalars.reset(scalars: right.unicodeScalars, skippingFirst: shared)
             while true {
                 let lc = scratch.left.scalars.next()
                 let rc = scratch.right.scalars.next()
@@ -148,6 +172,25 @@ public struct RootCollator: Sendable {
 
     private func takeScratch() -> ScratchBuffers {
         scratchPool.take() ?? ScratchBuffers(data: data, base: base, norm: norm)
+    }
+
+    /// True if restarting CE iteration at `c` is not provably equivalent to
+    /// full iteration — `c`'s CEs or NFD form could depend on what precedes
+    /// it. (CollationData::isUnsafeBackward, adapted: ICU's set folds in
+    /// [:^lccc=0:] at load time, and ICU lets prefix (precontext) matching
+    /// read back into the skipped prefix, which our streaming iterator
+    /// cannot — so prefix-tagged characters are unsafe here instead.)
+    private func unsafeStart(_ c: UInt32, numeric: Bool) -> Bool {
+        if data.unsafeBackwardContains(c) { return true }
+        if let base, base.unsafeBackwardContains(c) { return true }
+        if norm.leadCCC(c) != 0 { return true }
+        var ce32 = data.trie.get(c)
+        if ce32 == CollationConstants.fallbackCE32, let base {
+            ce32 = base.trie.get(c)
+        }
+        guard CollationConstants.isSpecialCE32(ce32) else { return false }
+        let tag = CollationConstants.tagFromCE32(ce32)
+        return tag == .prefix || (numeric && tag == .digit)
     }
 
     private func variableTopValue(_ options: CollationOptions) -> UInt32 {

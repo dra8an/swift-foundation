@@ -91,6 +91,27 @@ public struct NormalizationData: Sendable {
         return lo < decompEntries.count && decompEntries[lo] >> 32 == UInt64(c)
     }
 
+    /// Canonical combining class of the first scalar of `c`'s full
+    /// decomposition (`c`'s own ccc if it has none) — "lccc". Nonzero means
+    /// the NFD form of text starting at `c` can depend on what precedes it
+    /// (canonical reordering may move the lead mark across the boundary).
+    @inline(__always)
+    func leadCCC(_ c: UInt32) -> UInt8 {
+        if c < 0xc0 { return 0 }
+        if (0xac00...0xd7a3).contains(c) { return 0 }  // Hangul: leads with an L Jamo
+        var lo = 0
+        var hi = decompEntries.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if decompEntries[mid] >> 32 < UInt64(c) { lo = mid + 1 } else { hi = mid }
+        }
+        if lo < decompEntries.count && decompEntries[lo] >> 32 == UInt64(c) {
+            let entry = decompEntries[lo]
+            return ccc(buffer[Int((entry >> 8) & 0xff_ffff)])
+        }
+        return ccc(c)
+    }
+
     /// Appends the full canonical decomposition of `c` to `out`.
     /// Returns false if `c` has no decomposition (nothing appended).
     @inline(__always)

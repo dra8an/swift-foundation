@@ -167,8 +167,65 @@ identical-prefix skip. Next levers unchanged: identical-prefix skip (needs
 normalization safety markers from the planned trie-value data format),
 Span-based data access.
 
+## Round 5: identical-prefix skip (2026-06-12)
+
+The plan expected this lever to wait for the single-trie nfd.bin rework
+("normalization safety markers"). Investigating ICU4C's actual mechanism
+(`RuleBasedCollator::doCompare` + `CollationData::isUnsafeBackward`) showed
+the data is already in hand:
+
+- ICU's "UCol" binaries serialize the **unsafe-backward set** (USerializedSet
+  wire format at indexes slot 14): characters in contraction suffixes and
+  other restart hazards, computed by ICU's builder. Our reader now parses it
+  into a sorted boundary list (`CollationData.unsafeBackward`); tailoring
+  files carry a delta over the root set, so lookups check both.
+- ICU folds `[:^lccc=0:]` into the set at load time; we query lead-ccc at
+  runtime from the existing normalization data (`NormalizationData.leadCCC`).
+- Digits under numeric collation are recognized by their CE32 tag, like
+  `CollationData::isDigit`.
+
+**The skip** (in `compare()`): walk both scalar streams while equal; if the
+first differing scalar on either side is a safe restart point, both CE
+iterators start there (`reset(skippingFirst:)` fast-forwards the source
+iterator), and the identical level — like ICU's — also runs from the skip
+position. On an *unsafe* boundary we compare from the start: ICU instead
+backs up partially, but it can do so because its iterators read the full
+string — prefix (precontext) matches reach back into the skipped prefix,
+which our streaming iterator cannot. Hence one deliberate strengthening:
+characters whose mapping carries a PREFIX_TAG are themselves unsafe restart
+points here. Skipping less than ICU is always sound; skipping differently
+*more* than ICU would not be.
+
+**Verification.** The differential matrices (every ordered pair of the
+328-string corpus × 13 option sets × 2 data variants ≈ 2.8M comparisons vs
+ICU's verdicts) and the full ported suites all pass unchanged. New
+`PrefixSkipTests` pin the dangerous boundaries — digit runs under numeric
+("a12" vs "a2"), the ja prolonged sound mark (precontext), combining marks
+incl. canonically-equivalent mark order, Thai prevowel contractions, Hangul
+and supplementary-plane prefixes, ignorable tails — against sort keys, which
+never skip and are byte-identical to ICU's. Sensitivity-checked: disabling
+the safety predicate makes these tests fail (52 failures). Suite total:
+**48 tests / 16 suites**.
+
+**Numbers** (release; medians of repeated runs on a loaded machine). New
+corpus `bench-paths.txt`: 439 sorted file paths, average 26-scalar shared
+prefix — adjacent-pair comparison of sorted data, the workload this lever
+targets:
+
+| corpus | compare before → after | ICU |
+|---|---|---|
+| paths (prefix-heavy) | 10532 → **~1060 ns** | 48 ns |
+| ASCII | ~690 → ~697 ns | 16 ns |
+| Latin | ~735 → ~768 ns | 27 ns |
+| CJK | ~870 → ~863 ns | 74 ns |
+
+10× where prefixes are shared; ≤4% walk overhead where none are. sortKey is
+unaffected (it never skips). The dominant remaining gap on no-sharing ASCII
+is fast-Latin (unported, ICU4X precedent) and per-scalar data access — the
+Span lever is next.
+
 ## Status
 
-Rounds 1–4 done: 41 tests / 15 suites green, all behavior-neutral perf work
-verified against the full suite. Remaining backlog in the plan: apicoll
-where applicable, g7coll rule-free parts, identical-prefix skip, Span.
+Rounds 1–5 done: 48 tests / 16 suites green, all perf work verified against
+the full suite. Remaining backlog in the plan: apicoll where applicable,
+g7coll rule-free parts, Span-based data access.

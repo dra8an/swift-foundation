@@ -340,12 +340,30 @@ the performance hardening that M6 deferred.
   (1.6–2.3x); sortKey ascii 2686->~2000ns, latin 3550->~2400ns,
   cjk 2262->~1620ns. Gap to ICU on ASCII compare: ~78x -> ~43x.
 
+**Round 5 delivered (2026-06-12): identical-prefix skip.**
+- The planned single-trie nfd.bin rework turned out unnecessary: ICU's data
+  files already serialize the unsafe-backward set (contraction trailers
+  etc.), which our reader now parses; lead-ccc comes from the existing
+  normalization data at runtime, digits from the CE32 tag. compare() skips
+  the equal scalar prefix when restarting there is safe, falling back to a
+  full comparison on an unsafe boundary (ICU backs up partially instead;
+  skipping less is always sound). Prefix-context characters are unsafe here
+  (ICU's iterator can read back into the skipped prefix; ours cannot).
+- New PrefixSkipTests pin the boundary cases (digit runs under numeric, ja
+  prolonged sound mark, combining marks, Thai prevowel contractions, Hangul,
+  supplementary plane) against sort keys, which never skip; disabling the
+  safety check makes them fail. Suite total: 48 tests / 16 suites.
+- New prefix-heavy corpus Tools/bench/bench-paths.txt (sorted file paths,
+  avg 26-scalar shared prefix — the sort-verification workload): compare
+  10532 -> ~1060ns (10x; ICU 48ns). Zero-sharing corpora pay the walk:
+  ascii ~697, latin ~768 (+4%), cjk ~863ns.
+
 **Backlog for next rounds:**
 - apicoll behaviors where applicable; g7coll rule-free parts.
 - The runtime rule builder remains a deliberate, reversible cut — reasoning,
   costs, and a porting plan are documented in `12-rule-builder-decision.md`.
-- Perf: identical-prefix skip (needs normalization safety markers),
-  Span-based data access.
+- Perf: Span-based data access; fast-Latin remains unported (ICU4X
+  precedent) — the dominant remaining gap on no-sharing ASCII compares.
 
 ---
 

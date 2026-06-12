@@ -52,14 +52,14 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   full UCA runtime — fused NFD, all strengths/settings, contractions
   (incl. discontiguous S2.1) and prefixes, sort keys **byte-identical to
   ucol_getSortKey**, 15 locale tailorings incl. zh script reordering.
-- **Milestone 7.5 rounds 1–3 complete**: every portable ICU test suite is
-  ported. **41 tests / 15 suites, all green.** Suites: official UCA
+- **Milestone 7.5 rounds 1–5 complete**: every portable ICU test suite is
+  ported, plus perf rounds. **48 tests / 16 suites, all green.** Suites: official UCA
   conformance (433k lines), collationtest.txt data-driven, Thai dictionary
   (31k words), 9 classic locale suites, regcoll (13 cases), cmsccoll
   (20 cases + extreme compression), differential matrices + byte-identical
   keys (21 option sets × 2 data variants), 52k fuzz keys.
-- All pushed through commit `865b3da`. Working tree should be clean except
-  possibly this file's commit.
+- Pushed through commit `a04d5b0` (round 4); round 5 may be committed but
+  unpushed — check `git log origin/port/collation..HEAD`.
 
 ## Deliberate scope cuts (don't re-litigate without reading the docs)
 
@@ -73,12 +73,13 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 ## Open backlog (in priority order as last discussed)
 
-1. **Performance levers** (M7.5 track 2 continuation): identical-prefix skip
-   (needs normalization safety markers — pairs with the planned ICU4X-style
-   single-trie `nfd.bin` replacement), Span-based data access.
-   Buffer/iterator reuse landed in round 4 (scratch pool in RootCollator).
-   Current: ASCII compare ~690 ns vs ICU 16 ns (~43×); numbers and analysis
-   in `11-milestone-7.5-report.md`.
+1. **Performance levers** (M7.5 track 2 continuation): Span-based data
+   access; fast-Latin remains unported (ICU4X precedent). Buffer/iterator
+   reuse landed in round 4 (scratch pool in RootCollator); the
+   identical-prefix skip in round 5 (ICU's serialized unsafe-backward set —
+   the single-trie nfd.bin rework turned out unnecessary for it). Current:
+   ASCII compare ~697 ns vs ICU 16 ns (~44×); prefix-heavy compare ~1060 ns
+   vs ICU 48 ns; numbers and analysis in `11-milestone-7.5-report.md`.
 2. Minor test scraps: apicoll-where-applicable, g7coll rule-free parts.
 3. **Parked**: rule builder (doc 12), M8 Foundation integration (await user).
 

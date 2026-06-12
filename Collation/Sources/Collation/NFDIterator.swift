@@ -25,9 +25,12 @@ struct NFDIterator {
     }
 
     /// Rewinds onto a new input, keeping the buffers' storage so that reuse
-    /// across compares runs allocation-free.
-    mutating func reset(scalars: String.UnicodeScalarView) {
+    /// across compares runs allocation-free. `skippingFirst` positions the
+    /// iterator after the first `n` scalars (for the identical-prefix skip;
+    /// the caller guarantees that position is a clean restart boundary).
+    mutating func reset(scalars: String.UnicodeScalarView, skippingFirst n: Int = 0) {
         source = scalars.makeIterator()
+        for _ in 0..<n { _ = source.next() }
         carried.removeAll(keepingCapacity: true)
         unit.removeAll(keepingCapacity: true)
         unitNext = 0
