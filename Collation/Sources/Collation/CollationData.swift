@@ -32,6 +32,7 @@ public struct CollationData: @unchecked Sendable {
         static let rootElementsOffset = 12
         static let contextsOffset = 13
         static let unsafeBwdOffset = 14
+        static let fastLatinTableOffset = 15
         static let scriptsOffset = 16
         static let compressibleBytesOffset = 17
     }
@@ -64,6 +65,10 @@ public struct CollationData: @unchecked Sendable {
     /// over the root set; ICU adds [:^lccc=0:] and surrogates at load time
     /// (we check lead-ccc at runtime instead, and scalars exclude surrogates).
     let unsafeBackward: UnsafeBufferPointer<UInt32>
+    /// Fast Latin mini-CE table (CollationFastLatin format), empty if the
+    /// data has none or carries an unsupported format version. Tailorings
+    /// without their own fall back to the base's at the collator level.
+    let fastLatinTable: UnsafeBufferPointer<UInt16>
 
     public enum ParseError: Error {
         case tooShort
@@ -213,6 +218,28 @@ public struct CollationData: @unchecked Sendable {
             unsafeBackward = storage.store([])
         }
 
+        // Fast Latin table: gated on the format version recorded both in the
+        // options word (bits 16..23) and the table's own first unit.
+        // (CollationDataReader: a mismatch means "no fast path", not an error
+        // for us — the regular pipeline handles everything.)
+        let (flOffset, flLength) = part(IX.fastLatinTableOffset)
+        if flLength >= 4,
+           ((indexes[IX.options] >> 16) & 0xff) == Int32(CollationFastLatin.version) {
+            var units = [UInt16](repeating: 0, count: flLength / 2)
+            for i in 0..<units.count {
+                let b = headerSize + flOffset + i * 2
+                units[i] = UInt16(bytes[b]) | (UInt16(bytes[b + 1]) << 8)
+            }
+            if (units[0] >> 8) == CollationFastLatin.version,
+               Int(units[0] & 0xff) <= units.count {
+                fastLatinTable = storage.store(units)
+            } else {
+                fastLatinTable = storage.store([])
+            }
+        } else {
+            fastLatinTable = storage.store([])
+        }
+
         // Optional in tailorings (fall back to the base data's).
         let (cbOffset, cbLength) = part(IX.compressibleBytesOffset)
         if cbLength >= 256 {
@@ -239,6 +266,13 @@ public struct CollationData: @unchecked Sendable {
         let special = script - Self.reorderCodeFirst
         guard special < 8 else { return 0 }  // MAX_NUM_SPECIAL_REORDER_CODES
         return Int(scriptsIndex[numScripts + Int(special)])
+    }
+
+    /// First primary weight of a reorder group or script.
+    /// (CollationData::getFirstPrimaryForGroup.)
+    func firstPrimaryForGroup(_ script: Int32) -> UInt32 {
+        let index = scriptIndex(of: script)
+        return index == 0 ? 0 : UInt32(scriptStarts[index]) << 16
     }
 
     /// Last primary weight of a reorder group (for variableTop derivation).

@@ -52,8 +52,8 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   full UCA runtime — fused NFD, all strengths/settings, contractions
   (incl. discontiguous S2.1) and prefixes, sort keys **byte-identical to
   ucol_getSortKey**, 15 locale tailorings incl. zh script reordering.
-- **Milestone 7.5 complete** (rounds 1–7): every portable ICU test suite is
-  ported, plus perf rounds. **54 tests / 18 suites, all green.** Suites: official UCA
+- **Milestone 7.5 complete** (rounds 1–9): every portable ICU test suite is
+  ported, plus perf rounds. **59 tests / 19 suites, all green.** Suites: official UCA
   conformance (433k lines), collationtest.txt data-driven, Thai dictionary
   (31k words), 9 classic locale suites, regcoll (13 cases), cmsccoll
   (20 cases + extreme compression), g7coll locale rows, apicoll behavioral
@@ -67,19 +67,19 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 - **Runtime rule builder NOT ported** — `12-rule-builder-decision.md` has the
   full reasoning, costs, and porting plan. Tailorings are compiled binaries
   extracted from ICU's build (`Tools/extract_tailoring.c`).
-- **Fast-Latin not ported** (ICU4X precedent); **normalization cannot be
-  turned off** (architectural); **unpaired surrogates unsupported** (Swift
-  String); **reorder-table generation unsupported** (data-supplied
-  reordering only).
+- **Normalization cannot be turned off** (architectural); **unpaired
+  surrogates unsupported** (Swift String); **reorder-table generation
+  unsupported** (data-supplied reordering only). (Fast-Latin was a cut on
+  the ICU4X precedent, reversed by user decision in M7.5 round 9 — the
+  tables were already in the bundled data.)
 
 ## Open backlog
 
-**M7.5 is complete; nothing is actionable without a new decision.** Parked:
-- Rule builder (doc 12); M8 Foundation integration (await user).
-- Last perf lever needing a decision: fast-Latin (deliberate cut, ICU4X
-  precedent). The single-trie nfd.bin landed in round 8. Current: ASCII
-  compare ~239 ns vs ICU 16 ns (~15×), CJK ~4.7×, Latin ~11×; analysis in
-  `11-milestone-7.5-report.md`.
+**M7.5 is complete, including every perf lever; nothing is actionable
+without a new decision.** Parked: rule builder (doc 12); M8 Foundation
+integration (await user). Current perf: ASCII compare ~101 ns vs ICU 16 ns
+(~6.3×), Latin ~4.2×, CJK ~4.7×; sort keys 2.3–4×; analysis in
+`11-milestone-7.5-report.md`.
 
 ## How to work
 
@@ -116,6 +116,8 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
 - `CollationElements.swift` — `CEIterator`: lazy CE production, contexts
   (contraction/prefix matching), numeric, base fallback
 - `CollationCompare.swift` — level-by-level compare (lazy via `ce(at:)`)
+- `CollationFastLatin.swift` — mini-CE fast path for Latin text (compare
+  only; bails out to the regular pipeline)
 - `SortKey.swift` — sort key writer + BOCSU identical level
 - `CollationOptions.swift` — public options ↔ ICU options word
 - `RootCollator.swift` — public API: `compare`, `sortKey`,

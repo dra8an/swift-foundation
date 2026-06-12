@@ -401,11 +401,31 @@ the performance hardening that M6 deferred.
 - compare: latin ~308ns (-11%), cjk ~345ns (-15%); sortKey latin/cjk -18%;
   ascii/paths unchanged (they bypass normalization data below U+00C0).
 
+**Round 9 delivered (2026-06-12): fast Latin (scope-cut reversal).**
+- The "fast-Latin not ported" cut (ICU4X precedent) is reversed by user
+  decision: investigation showed the precompiled mini-CE tables already ship
+  inside our bundled binaries (root: 960 bytes; Latin tailorings have their
+  own; others fall back to the base's like ICU's reader), so the work was a
+  read-side port of CollationFastLatin (compare + getOptions), not a
+  builder. Nothing in the fused-NFD architecture conflicts: the table
+  operates on raw scalars and was built by ICU from the same data.
+- compare() engages the fast path after the identical-prefix skip when both
+  remainders start within U+0000..U+017F; everything unprovable bails to
+  the regular pipeline (out-of-range characters, contractions >2 chars,
+  digits under numeric, secondary differences under backwards-secondary).
+  Per-options setup (384 precomputed primaries) is cached as an immutable
+  snapshot on the collator, so bail-free compares skip the scratch pool
+  entirely. icuOptions now encodes numeric + maxVariable (completing the
+  word, which serves as the cache key).
+- compare: ascii ~239 -> ~101 ns (ICU 16), latin ~308 -> ~114 (ICU 27),
+  paths ~603 -> ~412 (ICU 48); cjk and sortKey unchanged. New
+  FastLatinTests (5 tests: engagement, bail-outs, shifted-variable
+  punctuation, key agreement); suite total 59 tests / 19 suites.
+
 **Backlog for next rounds:**
-- None — M7.5 is complete. The runtime rule builder remains a deliberate,
-  reversible cut (`12-rule-builder-decision.md`); the last perf lever left
-  is fast-Latin (deliberate cut, ICU4X precedent — needs a decision);
-  M8 awaits external input.
+- None — M7.5 is complete, including every planned perf lever. The runtime
+  rule builder remains the one deliberate, reversible cut
+  (`12-rule-builder-decision.md`); M8 awaits external input.
 
 ---
 

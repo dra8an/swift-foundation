@@ -65,8 +65,10 @@ public struct CollationOptions: Sendable, Equatable {
     // MARK: ICU options word (CollationSettings bit layout)
 
     enum Bits {
+        static let numeric: Int32 = 2
         static let shifted: Int32 = 4
         static let alternateMask: Int32 = 0xc
+        static let maxVariableShift: Int32 = 4
         static let upperFirst: Int32 = 0x100
         static let caseFirst: Int32 = 0x200
         static let caseFirstAndUpperMask: Int32 = 0x300
@@ -75,9 +77,13 @@ public struct CollationOptions: Sendable, Equatable {
         static let strengthShift: Int32 = 12
     }
 
-    /// The equivalent CollationSettings::options word.
+    /// The equivalent CollationSettings::options word (complete: numeric and
+    /// maxVariable included, so the word fully determines compare behavior —
+    /// the fast Latin path uses it as a cache key).
     var icuOptions: Int32 {
         var options: Int32 = strength.rawValue << Bits.strengthShift
+        options |= maxVariable.rawValue << Bits.maxVariableShift
+        if numeric { options |= Bits.numeric }
         if alternate == .shifted { options |= Bits.shifted }
         switch caseFirst {
         case .off: break

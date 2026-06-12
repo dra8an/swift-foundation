@@ -38,6 +38,8 @@ public struct RootCollator: Sendable {
     /// Reusable per-call buffers, shared (thread-safely) by all copies of
     /// this collator so repeated compares run allocation-free.
     private let scratchPool = ScratchPool()
+    /// The most recently used fast-Latin setup (per options word).
+    private let fastLatinCache = FastLatinCache()
 
     public init(data: CollationData, norm: NormalizationData) {
         self.data = data
@@ -96,21 +98,72 @@ public struct RootCollator: Sendable {
             lNext = lIter.next()
             rNext = rIter.next()
         }
+        var fellBack = false
         if shared > 0,
            (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
             || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
             shared = 0
+            fellBack = true
         }
 
-        let scratch = takeScratch()
-        defer { scratchPool.give(scratch) }
-        // CEs are generated lazily: the primary level usually decides the
-        // comparison after a few characters.
-        scratch.left.reset(numeric: options.numeric, scalars: left.unicodeScalars, skippingFirst: shared)
-        scratch.right.reset(numeric: options.numeric, scalars: right.unicodeScalars, skippingFirst: shared)
-        let result = try CollationCompare.compareUpToQuaternary(
-            &scratch.left, &scratch.right, options: options.icuOptions,
-            variableTopValue: variableTopValue(options), reordering: reordering)
+        // Fast Latin (CollationFastLatin): when both remainders start within
+        // the mini-CE table's range, compare on the precompiled table with no
+        // iterator pipeline (and no scratch buffers); any unsupported
+        // character or mapping bails out to the regular path. The skip
+        // walk's iterators are reusable unless an unsafe boundary forced the
+        // comparison back to the start.
+        var fastResult = CollationFastLatin.bailOutResult
+        let table = fastLatinTable
+        if !table.isEmpty {
+            var lSide: CollationFastLatin.Side
+            var rSide: CollationFastLatin.Side
+            if shared > 0 || !fellBack {
+                lSide = CollationFastLatin.Side(next: lNext?.value, rest: lIter)
+                rSide = CollationFastLatin.Side(next: rNext?.value, rest: rIter)
+            } else {
+                var li = left.unicodeScalars.makeIterator()
+                var ri = right.unicodeScalars.makeIterator()
+                lSide = CollationFastLatin.Side(next: li.next()?.value, rest: li)
+                rSide = CollationFastLatin.Side(next: ri.next()?.value, rest: ri)
+            }
+            if lSide.next.map({ $0 <= CollationFastLatin.latinMax }) ?? true,
+               rSide.next.map({ $0 <= CollationFastLatin.latinMax }) ?? true {
+                let word = options.icuOptions
+                let setup: FastLatinSetup
+                if let cached = fastLatinCache.setup(for: word) {
+                    setup = cached
+                } else {
+                    var primaries: [UInt16] = []
+                    let packed = CollationFastLatin.getOptions(
+                        table: table, scriptsData: scriptsData, reordering: reordering,
+                        options: word, primaries: &primaries)
+                    setup = FastLatinSetup(word: word, packedOptions: packed, primaries: primaries)
+                    fastLatinCache.store(setup)
+                }
+                if setup.packedOptions >= 0 {
+                    fastResult = CollationFastLatin.compare(
+                        table: table, primaries: setup.primaries,
+                        options: setup.packedOptions, left: lSide, right: rSide)
+                }
+            }
+        }
+
+        var scratch: ScratchBuffers?
+        defer { if let scratch { scratchPool.give(scratch) } }
+        let result: Int
+        if fastResult != CollationFastLatin.bailOutResult {
+            result = Int(fastResult)
+        } else {
+            // CEs are generated lazily: the primary level usually decides the
+            // comparison after a few characters.
+            let s = takeScratch()
+            scratch = s
+            s.left.reset(numeric: options.numeric, scalars: left.unicodeScalars, skippingFirst: shared)
+            s.right.reset(numeric: options.numeric, scalars: right.unicodeScalars, skippingFirst: shared)
+            result = try CollationCompare.compareUpToQuaternary(
+                &s.left, &s.right, options: options.icuOptions,
+                variableTopValue: variableTopValue(options), reordering: reordering)
+        }
         if result != 0 {
             return result < 0 ? .ascending : .descending
         }
@@ -123,11 +176,13 @@ public struct RootCollator: Sendable {
                 return c == 0xfffe ? -1 : Int64(c)
             }
             // ICU also runs the identical level from the skip position.
-            scratch.left.scalars.reset(scalars: left.unicodeScalars, skippingFirst: shared)
-            scratch.right.scalars.reset(scalars: right.unicodeScalars, skippingFirst: shared)
+            let s = scratch ?? takeScratch()
+            scratch = s
+            s.left.scalars.reset(scalars: left.unicodeScalars, skippingFirst: shared)
+            s.right.scalars.reset(scalars: right.unicodeScalars, skippingFirst: shared)
             while true {
-                let lc = scratch.left.scalars.next()
-                let rc = scratch.right.scalars.next()
+                let lc = s.left.scalars.next()
+                let rc = s.right.scalars.next()
                 if lc != rc {
                     return rank(lc) < rank(rc) ? .ascending : .descending
                 }
@@ -195,10 +250,19 @@ public struct RootCollator: Sendable {
 
     private func variableTopValue(_ options: CollationOptions) -> UInt32 {
         guard options.alternate == .shifted else { return 0 }
-        // Scripts data lives in the root; tailorings usually omit it.
-        let scriptsData = data.scriptStarts.isEmpty ? base! : data
         return scriptsData.lastPrimaryForGroup(
             CollationData.reorderCodeFirst + options.maxVariable.rawValue)
+    }
+
+    /// Scripts data lives in the root; tailorings usually omit it.
+    private var scriptsData: CollationData {
+        data.scriptStarts.isEmpty ? base! : data
+    }
+
+    /// The fast Latin table: the tailoring's own, or the base's when the
+    /// tailoring has none (CollationDataReader aliases the same way).
+    private var fastLatinTable: UnsafeBufferPointer<UInt16> {
+        data.fastLatinTable.isEmpty ? (base?.fastLatinTable ?? data.fastLatinTable) : data.fastLatinTable
     }
 
     /// All CEs of a string, terminated by NO_CE.

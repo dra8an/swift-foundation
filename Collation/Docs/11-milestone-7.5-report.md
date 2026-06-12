@@ -331,11 +331,64 @@ noise — scalars below U+00C0 never touch the normalization data. Full suite
 green after regeneration; same 968 ccc entries and 2081 decompositions feed
 the new format.
 
+## Round 9: fast Latin (2026-06-12) — a scope-cut reversal
+
+"Fast-Latin not ported (ICU4X precedent)" had been a recorded cut since the
+strategy phase. Reversed by user decision once investigation showed the
+balance had changed: the precompiled mini-CE tables (CollationFastLatin
+format version 2) already ship inside our bundled binaries — index slot 15,
+the same situation as the unsafe-backward set in round 5 — so no builder
+and no new CLDR tooling is involved; the work is a read-side port.
+
+**What was ported** (`CollationFastLatin.swift`, from
+i18n/collationfastlatin.{h,cpp}):
+- `getOptions`: precomputes 384 primaries for one options word, applying
+  variable-top (from the table header) and script reordering; returns
+  unsupported (-1) for reorderings that disturb the groups below Latin.
+- `compare`: the multi-level loop over 16-bit mini CEs — primaries with
+  variable handling, secondaries, optional case level, tertiaries
+  (caseFirst transforms), quaternaries — walking the scalar streams once
+  per level. Bail-outs route to the regular pipeline: out-of-range
+  characters, mappings the table cannot encode (it supports one-character
+  contraction suffixes and two-CE expansions), digits under numeric
+  collation, secondary differences under backwards-secondary.
+
+**Integration**: after the identical-prefix skip, when both remainders
+start within U+0000..U+017F (ICU's same gate). Adaptations for our
+options-per-call API: `icuOptions` now encodes numeric and maxVariable
+(completing the word — it is the cache key), and the per-options setup is
+cached as an immutable snapshot (`FastLatinSetup`) behind a tiny lock on
+the collator, so a bail-free compare never touches the scratch pool.
+Reader: data files without a table or with a different format version get
+an empty table (never an error); tailorings fall back to the base's table,
+as in CollationDataReader.
+
+**Verification**: every existing compare-based suite now exercises the
+integrated fast path — the differential matrices (~2.8M pairs × 13 option
+sets vs ICU verdicts), key-agreement tests, conformance, locale suites.
+New `FastLatinTests` pin the machinery itself: the path engages (real
+results, not bail-outs) for plain text, bails exactly where required
+(numeric digits, backwards-secondary differences, out-of-range), and
+shifted-variable punctuation behaves at tertiary and quaternary strengths.
+**59 tests / 19 suites green.**
+
+**Numbers** (release, medians):
+
+| corpus | compare before → after | ICU | gap |
+|---|---|---|---|
+| ASCII | 239 → **~101 ns** | 16 ns | ~6.3× |
+| Latin | 308 → **~114 ns** | 27 ns | ~4.2× |
+| paths | 603 → **~412 ns** | 48 ns | ~8.6× |
+| CJK | ~345 ns (unchanged) | 74 ns | ~4.7× |
+
+sortKey is unchanged (fast Latin is compare-only, as in ICU). Cumulative
+ASCII compare since the pre-lazy baseline: 7437 → ~101 ns (74×).
+
 ## Status
 
-**Milestone 7.5 complete.** Rounds 1–8: every portable ICU collation test
-suite is ported — **54 tests / 18 suites green** — and the perf track
-delivered 31× on ASCII compare since the pre-lazy baseline (~15× from ICU),
-with CJK compare at ~4.7× and Latin at ~11×. Out of scope, by recorded
-decision: rule-based tests (doc 12), API-surface tests, fast-Latin. Next
-milestone: M8 (on hold, awaiting maintainer/community input).
+**Milestone 7.5 complete.** Rounds 1–9: every portable ICU collation test
+suite is ported — **59 tests / 19 suites green** — and the perf track is
+finished: ASCII compare ~101 ns (~6.3× from ICU), Latin ~4.2×, CJK ~4.7×,
+sort keys 2.3–4× — all byte-identical to ICU's. The runtime rule builder
+remains the one deliberate cut (doc 12). Next milestone: M8 (on hold,
+awaiting maintainer/community input).
