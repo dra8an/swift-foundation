@@ -5,7 +5,7 @@
 // Simple CE32 (low byte < 0xc0): ppppsstt = 16-bit primary, 8-bit secondary, 8-bit tertiary.
 // Special CE32 (low byte >= 0xc0): bits 3..0 hold a tag; layout of the rest depends on the tag.
 
-enum Collation {
+enum CollationConstants {
     // MARK: Special CE32 tags (collation.h)
 
     static let specialCE32LowByte: UInt32 = 0xc0

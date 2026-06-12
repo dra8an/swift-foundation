@@ -1,10 +1,11 @@
-# UCACollation
+# Collation
 
 Pure-Swift prototype of UCA/CLDR root collation, ported from ICU4C's collation v2
 design. Lives as a self-contained package under `Collation/` in this repo (branch
 `port/collation`); it is intentionally NOT wired into the Foundation build — code
-moves into `Sources/` at integration time (milestone 8). See
-`../Docs/03-swift-strategy.md` for the strategy and `../Docs/04-milestone-plan.md`
+moves into the repo's `Sources/Foundation*` targets at integration time
+(milestone 8). See
+`Docs/03-swift-strategy.md` for the strategy and `Docs/04-milestone-plan.md`
 for the plan.
 
 ## Status: milestone 7 complete
@@ -48,7 +49,7 @@ zh-pinyin) via `RootCollator(tailoringNamed:)` — compiled %%CollationBin
 binaries extracted from ICU resources (Tools/extract_tailoring.c), with
 base-fallback lookup, per-locale default options, and script reordering.
 
-Not yet implemented — see `../Docs/04-milestone-plan.md` for the numbered plan:
+Not yet implemented — see `Docs/04-milestone-plan.md` for the numbered plan:
 - swift-foundation integration (8)
 
 ## Regenerating the normalization data
@@ -56,12 +57,12 @@ Not yet implemented — see `../Docs/04-milestone-plan.md` for the numbered plan
 ```sh
 swift run GenNormData \
   ~/Projects/claude/icu/icu4c/source/data/unidata/norm2/nfc.txt \
-  Sources/UCACollation/Resources/nfd.bin
+  Sources/Collation/Resources/nfd.bin
 ```
 
 ## Regenerating the golden data
 
-The bundled `Sources/UCACollation/Resources/ucadata.icu` is copied from a local
+The bundled `Sources/Collation/Resources/ucadata.icu` is copied from a local
 ICU 79 build (machine-local, outside this repo:
 `~/Projects/claude/collation/icu-build/data/out/build/icudt79l/coll/ucadata.icu`,
 unihan variant; source clone at `~/Projects/claude/icu`) so the oracle and the
@@ -74,6 +75,6 @@ clang gen_golden.c -o gen_golden \
   -I $ICU_SRC/icu4c/source/common -I $ICU_SRC/icu4c/source/i18n \
   -L $ICU_BUILD/lib -licuuc -licui18n -licudata
 DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
-  ../Tests/UCACollationTests/Golden/corpus.txt \
-  ../Tests/UCACollationTests/Golden/matrix.txt
+  ../Tests/CollationTests/Golden/corpus.txt \
+  ../Tests/CollationTests/Golden/matrix.txt
 ```

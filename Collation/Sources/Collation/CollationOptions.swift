@@ -103,7 +103,7 @@ public struct CollationOptions: Sendable, Equatable {
     /// caseLevel is off.
     static func tertiaryMask(of options: Int32) -> UInt32 {
         isTertiaryWithCaseBits(options)
-            ? Collation.caseAndTertiaryMask : Collation.onlyTertiaryMask
+            ? CollationConstants.caseAndTertiaryMask : CollationConstants.onlyTertiaryMask
     }
 
     static func sortsTertiaryUpperCaseFirst(_ options: Int32) -> Bool {

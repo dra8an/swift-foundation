@@ -5,7 +5,7 @@
 
 import Dispatch
 import Foundation
-import UCACollation
+import Collation
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {

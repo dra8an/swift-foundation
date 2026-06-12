@@ -163,7 +163,7 @@ enum CollationKeys {
             var ce = ces[cesIndex]
             cesIndex += 1
             var p = UInt32(truncatingIfNeeded: ce >> 32)
-            if p < variableTop && p > Collation.mergeSeparatorPrimary {
+            if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
                 // Variable CE, shift it to quaternary level.
                 // Ignore all following primary ignorables, and shift further variable CEs.
                 if commonQuaternaries != 0 {
@@ -191,13 +191,13 @@ enum CollationKeys {
                         cesIndex += 1
                         p = UInt32(truncatingIfNeeded: ce >> 32)
                     } while p == 0
-                } while p < variableTop && p > Collation.mergeSeparatorPrimary
+                } while p < variableTop && p > CollationConstants.mergeSeparatorPrimary
             }
             // ce could be primary ignorable, or NO_CE, or the merge separator,
             // or a regular primary CE, but it is not variable.
             // If ce==NO_CE, then write nothing for the primary level but
             // terminate compression on all levels and then exit the loop.
-            if p > Collation.noCEPrimary && (levels & primaryFlag) != 0 {
+            if p > CollationConstants.noCEPrimary && (levels & primaryFlag) != 0 {
                 // Test the un-reordered primary for compressibility.
                 let isCompressible = compressibleBytes[Int(p >> 24)]
                 if let reordering { p = reordering.reorder(p) }
@@ -207,7 +207,7 @@ enum CollationKeys {
                         if p < prevReorderedPrimary {
                             // No primary compression terminator
                             // at the end of the level or merged segment.
-                            if p1 > UInt32(Collation.mergeSeparatorPrimary >> 24) {
+                            if p1 > UInt32(CollationConstants.mergeSeparatorPrimary >> 24) {
                                 key.append(3)  // PRIMARY_COMPRESSION_LOW_BYTE
                             }
                         } else {
@@ -238,7 +238,7 @@ enum CollationKeys {
                     // secondary ignorable
                 } else if s == 0x0500  // COMMON_WEIGHT16
                     && ((options & CollationOptions.Bits.backwardSecondary) == 0
-                        || p != Collation.mergeSeparatorPrimary) {
+                        || p != CollationConstants.mergeSeparatorPrimary) {
                     commonSecondaries += 1
                 } else if (options & CollationOptions.Bits.backwardSecondary) == 0 {
                     if commonSecondaries != 0 {
@@ -271,14 +271,14 @@ enum CollationKeys {
                             commonSecondaries -= secCommonMaxCount
                         }
                     }
-                    if p > 0 && p <= Collation.mergeSeparatorPrimary {
+                    if p > 0 && p <= CollationConstants.mergeSeparatorPrimary {
                         // The merge separator or NO_CE: reverse the segment.
                         if secSegmentStart < secondaries.bytes.count - 1 {
                             secondaries.bytes[secSegmentStart...].reverse()
                         }
                         secondaries.appendByte(
-                            p == Collation.noCEPrimary
-                                ? UInt32(levelSeparator) : UInt32(Collation.mergeSeparatorPrimary >> 24))
+                            p == CollationConstants.noCEPrimary
+                                ? UInt32(levelSeparator) : UInt32(CollationConstants.mergeSeparatorPrimary >> 24))
                         prevSecondary = 0
                         secSegmentStart = secondaries.bytes.count
                     } else {
@@ -386,7 +386,7 @@ enum CollationKeys {
                     // Mixed case    42..7F -> 42..7F
                     // Uppercase     82..BF -> 02..3F
                     // Tertiary CE   86..BF -> C6..FF
-                    if t <= Collation.noCEWeight16 {
+                    if t <= CollationConstants.noCEWeight16 {
                         // Keep separators unchanged.
                     } else if lower32 > 0xffff {
                         // Invert case bits of primary & secondary CEs.
@@ -417,16 +417,16 @@ enum CollationKeys {
 
             if (levels & quaternaryFlag) != 0 {
                 var q = lower32 & 0xffff
-                if (q & 0xc0) == 0 && q > Collation.noCEWeight16 {
+                if (q & 0xc0) == 0 && q > CollationConstants.noCEWeight16 {
                     commonQuaternaries += 1
-                } else if q == Collation.noCEWeight16
+                } else if q == CollationConstants.noCEWeight16
                     && (options & CollationOptions.Bits.alternateMask) == 0
                     && quaternaries.isEmpty {
                     // If alternate=non-ignorable and there are only common quaternary
                     // weights, then we need not write anything.
                     quaternaries.appendByte(UInt32(levelSeparator))
                 } else {
-                    if q == Collation.noCEWeight16 {
+                    if q == CollationConstants.noCEWeight16 {
                         q = UInt32(levelSeparator)
                     } else {
                         q = 0xfc + ((q >> 6) & 3)

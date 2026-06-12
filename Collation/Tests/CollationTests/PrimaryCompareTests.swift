@@ -1,5 +1,5 @@
 import Testing
-@testable import UCACollation
+@testable import Collation
 
 /// Behavioral tests at primary strength (the milestone-1 suite).
 @Suite struct PrimaryCompareTests {

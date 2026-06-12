@@ -137,8 +137,8 @@ All 14 tests green:
 
 ## Pointers
 
-- Code: `Sources/UCACollation/{NormalizationData,NFDIterator}.swift`,
+- Code: `Sources/Collation/{NormalizationData,NFDIterator}.swift`,
   `Sources/GenNormData/main.swift`
-- Tests: `Tests/UCACollationTests/{NormalizationTests,DifferentialTests}.swift`
-- Regenerate data: `swift run GenNormData <nfc.txt> Sources/UCACollation/Resources/nfd.bin`
+- Tests: `Tests/CollationTests/{NormalizationTests,DifferentialTests}.swift`
+- Regenerate data: `swift run GenNormData <nfc.txt> Sources/Collation/Resources/nfd.bin`
 - Next: milestone 3 (full level loop + settings), `04-milestone-plan.md`

@@ -320,7 +320,7 @@ struct Reordering: Sendable {
     @inline(__always)
     func reorder(_ p: UInt32) -> UInt32 {
         let b = table[Int(p >> 24)]
-        if b != 0 || p <= Collation.noCEPrimary {
+        if b != 0 || p <= CollationConstants.noCEPrimary {
             return (UInt32(b) << 24) | (p & 0xff_ffff)
         }
         return reorderEx(p)

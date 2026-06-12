@@ -12,7 +12,7 @@
  *
  * Option-set names must match DifferentialTests.swift.
  *
- * Build (against the locally built ICU; see UCACollation/README.md):
+ * Build (against the locally built ICU; see the package README.md):
  *   clang gen_golden.c -o gen_golden \
  *     -I $ICU_SRC/icu4c/source/common -I $ICU_SRC/icu4c/source/i18n \
  *     -L $ICU_BUILD/lib -licuuc -licui18n -licudata

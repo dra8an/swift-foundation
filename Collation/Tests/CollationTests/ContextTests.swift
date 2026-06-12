@@ -1,5 +1,5 @@
 import Testing
-@testable import UCACollation
+@testable import Collation
 
 /// Targeted tests that the context-dependent paths (prefix and contraction
 /// matching) actually fire — the reference matrices prove agreement with ICU,
@@ -21,8 +21,8 @@ import Testing
         let afterX = try collator.collationElements(of: "x·")[1]
         #expect(afterL != afterX, "[\(name)] prefix condition after l did not fire")
         // The prefixed CE is secondary-only: primary weight 0.
-        #expect(Collation.primaryFromCE(afterL) == 0, "[\(name)] l·'s dot must be primary-ignorable")
-        #expect(Collation.primaryFromCE(afterX) != 0, "[\(name)] x·'s dot keeps its punctuation primary")
+        #expect(CollationConstants.primaryFromCE(afterL) == 0, "[\(name)] l·'s dot must be primary-ignorable")
+        #expect(CollationConstants.primaryFromCE(afterX) != 0, "[\(name)] x·'s dot keeps its punctuation primary")
         // Uppercase L and the Greek ano teleia variant behave the same way.
         #expect(try collator.collationElements(of: "L·")[1] == afterL)
         #expect(try collator.collationElements(of: "l\u{0387}")[1] == afterL)

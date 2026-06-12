@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import UCACollation
+@testable import Collation
 
 /// The official UCA/CLDR conformance suite (UTS #10 / TR35 Root Data Files):
 /// CollationTest_CLDR_*_SHORT.txt list strings in root-collation order; for

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import UCACollation
+@testable import Collation
 
 /// Ports of ICU4C's CollationRegressionTest (intltest/regcoll.cpp): the 13
 /// cases that exercise the root (en_US) collator with strength settings over

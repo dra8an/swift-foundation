@@ -3,13 +3,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "UCACollation",
+    name: "Collation",
     products: [
-        .library(name: "UCACollation", targets: ["UCACollation"])
+        .library(name: "Collation", targets: ["Collation"])
     ],
     targets: [
         .target(
-            name: "UCACollation",
+            name: "Collation",
             resources: [
                 .copy("Resources/ucadata.icu"),
                 .copy("Resources/ucadata-icu4x.icu"),
@@ -18,10 +18,10 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "GenNormData"),
-        .executableTarget(name: "Bench", dependencies: ["UCACollation"]),
+        .executableTarget(name: "Bench", dependencies: ["Collation"]),
         .testTarget(
-            name: "UCACollationTests",
-            dependencies: ["UCACollation"],
+            name: "CollationTests",
+            dependencies: ["Collation"],
             resources: [.copy("Golden"), .copy("Conformance")]
         ),
     ]

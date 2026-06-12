@@ -30,7 +30,7 @@ tests stay green.
 **Scope.** Smallest vertical slice touching every layer: binary data → trie →
 CE32 resolution → comparison → validation against ICU reference answers.
 
-**Delivered** (2026-06-11, `UCACollation/` package):
+**Delivered** (2026-06-11, `Collation/` package):
 - `CollationData`: reader for the "UCol" v5 binary format (`ucadata.icu`)
 - `UTrie2`: serialized-form reader and code-point lookup
 - `RootCollator`: primary-strength compare; CE32 tag dispatch covering simple,

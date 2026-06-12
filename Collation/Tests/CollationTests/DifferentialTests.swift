@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import UCACollation
+@testable import Collation
 
 /// Differential tests against ICU4C: Tools/gen_golden.c produced
 /// Golden/matrix-<option-set>.txt by running ucol_strcollUTF8 over every ordered

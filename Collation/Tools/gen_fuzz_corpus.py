@@ -4,11 +4,11 @@ trouble spots (combining marks, contraction bases, digits, Hangul, kana,
 Tibetan, format controls, supplementary planes).
 
 Deterministic for a given seed. Regenerate with:
-    python3 gen_fuzz_corpus.py 42 2000 ../Tests/UCACollationTests/Golden/fuzz-corpus.txt
+    python3 gen_fuzz_corpus.py 42 2000 ../Tests/CollationTests/Golden/fuzz-corpus.txt
 then regenerate the reference keys with gen_golden (keys-only mode):
     DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
-        ../Tests/UCACollationTests/Golden/fuzz-corpus.txt \
-        ../Tests/UCACollationTests/Golden/fuzz --keys-only
+        ../Tests/CollationTests/Golden/fuzz-corpus.txt \
+        ../Tests/CollationTests/Golden/fuzz --keys-only
 """
 import random
 import sys
