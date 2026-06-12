@@ -99,8 +99,34 @@ buffer/iterator reuse across compares (API shape question), the
 identical-prefix skip (needs normalization safety markers from the planned
 trie-value data format), Span-based data access to eliminate bounds checks.
 
+## Round 2: classic locale suites + regression cases (same day)
+
+- **Locale suites** (`LocaleSuiteTests.swift`): encoll, cdetst, cestst,
+  cfrtst, cjaptst, cturtst, ficoll, lcukocol, currcoll. The case arrays are
+  extracted mechanically from the C sources
+  (`Tools/extract_locale_suites.py` -> `locale-suites.json`) — no hand
+  transcription; the loop logic (which case indexes at which strength,
+  pairwise bug lists, full expected-order matrices, ja's caseLevel) is
+  reimplemented per suite from the C code. ICU's `doTest` semantics are
+  preserved: both directions plus sort-key order. All 9 suites pass; the
+  cdetst "doubt in primary here" cases and the fr-CA acute matrix (backwards
+  secondary) behave exactly as ICU expects.
+- **Regression cases** (`RegressionTests.swift`): 13 portable
+  CollationRegressionTest cases extracted (`Tools/extract_regcoll.py` ->
+  `regcoll.json`), including the fr-CA (4062418, 4066696) and da_DK
+  (4087241) cases that an earlier extractor draft misattributed to root —
+  the failures were the port working correctly against wrong expectations.
+  17 cases skipped with recorded reasons: 5 build collators from rule
+  strings, others exercise the CollationElementIterator API, clone/identity
+  behavior, or a normalization-off phase (4114077's OFF array is excluded;
+  its ON array runs).
+- **Another data-format fix**: ko.bin ends its indexes[] at slot 13 (no
+  contexts entry); the parser's minimum-indexes guard was too strict.
+  Korean — with its 232 KB tailoring and script reordering — now loads and
+  passes.
+
 ## Status
 
-Round 1 done. Backlog for subsequent rounds is listed in the plan: regcoll +
-cmsccoll regression cases, the classic locale suites via mechanical array
-extraction, and the deeper perf levers above.
+Rounds 1–2 done: 39 tests / 14 suites green. Remaining backlog in the plan:
+cmsccoll.c non-rule cases, apicoll where applicable, deeper perf levers
+(buffer reuse, identical-prefix skip, Span).

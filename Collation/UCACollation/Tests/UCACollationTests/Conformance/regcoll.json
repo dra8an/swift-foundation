@@ -1,0 +1,252 @@
+{
+ "cases": [
+  {
+   "name": "Test4054734",
+   "locale": "root",
+   "strength": "identical",
+   "attrs": [
+    [
+     "UCOL_NORMALIZATION_MODE",
+     "UCOL_ON"
+    ]
+   ],
+   "triplets": [
+    [
+     "\u0001",
+     "<",
+     "\u0002"
+    ],
+    [
+     "\u0001",
+     "=",
+     "\u0001"
+    ],
+    [
+     "A\u0001",
+     ">",
+     "~\u0002"
+    ],
+    [
+     "À",
+     "=",
+     "À"
+    ]
+   ]
+  },
+  {
+   "name": "Test4054736",
+   "locale": "root",
+   "strength": "secondary",
+   "attrs": [
+    [
+     "UCOL_NORMALIZATION_MODE",
+     "UCOL_ON"
+    ]
+   ],
+   "triplets": [
+    [
+     "ﭏ",
+     "=",
+     "אל"
+    ]
+   ]
+  },
+  {
+   "name": "Test4062418",
+   "locale": "fr_CA",
+   "strength": "secondary",
+   "attrs": [],
+   "triplets": [
+    [
+     "pêche",
+     "<",
+     "péché"
+    ]
+   ]
+  },
+  {
+   "name": "Test4066696",
+   "locale": "fr_CA",
+   "strength": "secondary",
+   "attrs": [],
+   "triplets": [
+    [
+     "à",
+     ">",
+     "Ǻ"
+    ]
+   ]
+  },
+  {
+   "name": "Test4087241",
+   "locale": "da",
+   "strength": "secondary",
+   "attrs": [],
+   "triplets": [
+    [
+     "z",
+     "<",
+     "æ"
+    ],
+    [
+     "ä",
+     "<",
+     "å"
+    ],
+    [
+     "Y",
+     "<",
+     "ü"
+    ]
+   ]
+  },
+  {
+   "name": "Test4087243",
+   "locale": "root",
+   "strength": "tertiary",
+   "attrs": [],
+   "triplets": [
+    [
+     "123",
+     "=",
+     "123\u0001"
+    ]
+   ]
+  },
+  {
+   "name": "Test4092260",
+   "locale": "root",
+   "strength": "tertiary",
+   "attrs": [
+    [
+     "UCOL_STRENGTH",
+     "UCOL_SECONDARY"
+    ]
+   ],
+   "triplets": [
+    [
+     "µ",
+     "=",
+     "μ"
+    ]
+   ]
+  },
+  {
+   "name": "Test4095316",
+   "locale": "root",
+   "strength": "tertiary",
+   "attrs": [
+    [
+     "UCOL_STRENGTH",
+     "UCOL_SECONDARY"
+    ]
+   ],
+   "triplets": [
+    [
+     "ϔ",
+     "=",
+     "Ϋ"
+    ]
+   ]
+  },
+  {
+   "name": "Test4103436",
+   "locale": "root",
+   "strength": "tertiary",
+   "attrs": [],
+   "triplets": [
+    [
+     "file",
+     "<",
+     "file access"
+    ],
+    [
+     "file",
+     "<",
+     "fileaccess"
+    ]
+   ]
+  },
+  {
+   "name": "Test4114076",
+   "locale": "root",
+   "strength": "tertiary",
+   "attrs": [
+    [
+     "UCOL_NORMALIZATION_MODE",
+     "UCOL_ON"
+    ]
+   ],
+   "triplets": [
+    [
+     "퓛",
+     "=",
+     "퓛"
+    ]
+   ]
+  },
+  {
+   "name": "Test4132736",
+   "locale": "fr_CA",
+   "strength": "tertiary",
+   "attrs": [],
+   "triplets": [
+    [
+     "èé",
+     "<",
+     "éè"
+    ],
+    [
+     "è́",
+     "<",
+     "é̀"
+    ]
+   ]
+  },
+  {
+   "name": "Test4133509",
+   "locale": "root",
+   "strength": "tertiary",
+   "attrs": [],
+   "triplets": [
+    [
+     "Exception",
+     "<",
+     "ExceptionInInitializerError"
+    ],
+    [
+     "Graphics",
+     "<",
+     "GraphicsEnvironment"
+    ],
+    [
+     "String",
+     "<",
+     "StringBuffer"
+    ]
+   ]
+  },
+  {
+   "name": "Test4114077",
+   "locale": "root",
+   "strength": "tertiary",
+   "attrs": [
+    [
+     "UCOL_NORMALIZATION_MODE",
+     "UCOL_OFF"
+    ],
+    [
+     "UCOL_NORMALIZATION_MODE",
+     "UCOL_ON"
+    ]
+   ],
+   "triplets": [
+    [
+     "À̖",
+     "=",
+     "À̖"
+    ]
+   ]
+  }
+ ]
+}

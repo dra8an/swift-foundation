@@ -85,8 +85,10 @@ public struct CollationData: Sendable {
                 | (Int32(bytes[b + 2]) << 16) | (Int32(bytes[b + 3]) << 24)
         }
 
+        // Tailorings may carry fewer indexes than root (e.g. ko has 13, ending
+        // at the ce32s part); absent parts are length 0 via the part() guard.
         let indexesLength = Int(i32(0))
-        guard indexesLength >= IX.contextsOffset + 2,
+        guard indexesLength >= 2,
               bytes.count >= headerSize + indexesLength * 4
         else { throw ParseError.tooShort }
 

@@ -1,0 +1,616 @@
+{
+ "en": {
+  "source": "cintltst/encoll.c",
+  "arrays": {
+   "testSourceCases": [
+    "ab",
+    "black-bird",
+    "black bird",
+    "black-bird",
+    "Hello",
+    "ABC",
+    "abc",
+    "blackbird",
+    "black-bird",
+    "black-bird",
+    "pêche",
+    "péché",
+    "ÄB̈C̈",
+    "äbc",
+    "pécher",
+    "roles",
+    "abc",
+    "A",
+    "A",
+    "ab",
+    "tcompareplain",
+    "ab",
+    "a#b",
+    "a#b",
+    "abc",
+    "Abcda",
+    "abcda",
+    "abcda",
+    "æbcda",
+    "äbcda",
+    "abc",
+    "abc",
+    "abc",
+    "abc",
+    "abc",
+    "acHc",
+    "äbc",
+    "thîs",
+    "pêche",
+    "abc",
+    "abc",
+    "abc",
+    "aæc",
+    "abc",
+    "abc",
+    "aæc",
+    "abc",
+    "abc",
+    "péché"
+   ],
+   "testTargetCases": [
+    "abc",
+    "blackbird",
+    "black-bird",
+    "black",
+    "hello",
+    "ABC",
+    "ABC",
+    "blackbirds",
+    "blackbirds",
+    "blackbird",
+    "péché",
+    "pécher",
+    "ÄB̈C̈",
+    "Äbc",
+    "péche",
+    "rôle",
+    "Aácd",
+    "Aácd",
+    "abc",
+    "abc",
+    "TComparePlain",
+    "aBc",
+    "a#B",
+    "a&b",
+    "a#c",
+    "abcda",
+    "Äbcda",
+    "äbcda",
+    "Äbcda",
+    "Äbcda",
+    "ab#c",
+    "abc",
+    "ab=c",
+    "abd",
+    "äbc",
+    "aCHc",
+    "äbc",
+    "thîs",
+    "péché",
+    "aBC",
+    "abd",
+    "äbc",
+    "aÆc",
+    "aBd",
+    "äbc",
+    "aÆc",
+    "aBd",
+    "äbc",
+    "pêche"
+   ],
+   "testBugs": [
+    "a",
+    "A",
+    "e",
+    "E",
+    "é",
+    "è",
+    "ê",
+    "ë",
+    "ea",
+    "x"
+   ],
+   "testAcute": [
+    "ee",
+    "eé",
+    "eé̀",
+    "eè",
+    "eè́",
+    "ée",
+    "éé",
+    "éé̀",
+    "éè",
+    "éè́",
+    "é̀e",
+    "é̀é",
+    "é̀é̀",
+    "é̀è",
+    "é̀è́",
+    "èe",
+    "èé",
+    "èé̀",
+    "èè",
+    "èè́",
+    "è́e",
+    "è́é",
+    "è́é̀",
+    "è́è",
+    "è́è́"
+   ],
+   "testMore": [
+    "ae",
+    "æ",
+    "Æ",
+    "af",
+    "oe",
+    "œ",
+    "Œ",
+    "of"
+   ]
+  },
+  "results": {
+   "results": [
+    -1,
+    -1,
+    -1,
+    1,
+    1,
+    0,
+    -1,
+    -1,
+    -1,
+    -1,
+    1,
+    -1,
+    0,
+    -1,
+    1,
+    1,
+    1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    1,
+    1,
+    1,
+    -1,
+    -1,
+    1,
+    -1,
+    1,
+    0,
+    1,
+    -1,
+    -1,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    -1,
+    -1,
+    0,
+    -1,
+    -1,
+    -1
+   ]
+  }
+ },
+ "de": {
+  "source": "cintltst/cdetst.c",
+  "arrays": {
+   "testSourceCases": [
+    "Größe",
+    "abc",
+    "Töne",
+    "Töne",
+    "Töne",
+    "äbc",
+    "äbc",
+    "äbc",
+    "Straße",
+    "efg",
+    "äbc",
+    "Straße"
+   ],
+   "testTargetCases": [
+    "Grossist",
+    "äbc",
+    "Ton",
+    "Tod",
+    "Tofu",
+    "Äbc",
+    "äbc",
+    "aebc",
+    "Strasse",
+    "efg",
+    "aebc",
+    "Strasse"
+   ]
+  },
+  "results": {
+   "results": [
+    [
+     -1,
+     -1
+    ],
+    [
+     0,
+     -1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     0,
+     -1
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     -1,
+     -1
+    ],
+    [
+     0,
+     1
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     -1,
+     -1
+    ],
+    [
+     0,
+     1
+    ]
+   ]
+  }
+ },
+ "es": {
+  "source": "cintltst/cestst.c",
+  "arrays": {
+   "testSourceCases": [
+    "blias",
+    "Elliot",
+    "Hello",
+    "acHc",
+    "acc",
+    "alias",
+    "acHc",
+    "acc",
+    "Hello"
+   ],
+   "testTargetCases": [
+    "bllias",
+    "Emiot",
+    "hello",
+    "aCHc",
+    "aCHc",
+    "bllias",
+    "aCHc",
+    "aCHc",
+    "hello"
+   ]
+  },
+  "results": {
+   "results": [
+    -1,
+    -1,
+    1,
+    -1,
+    -1,
+    -1,
+    0,
+    -1,
+    0
+   ]
+  }
+ },
+ "fr": {
+  "source": "cintltst/cfrtst.c",
+  "arrays": {
+   "testSourceCases": [
+    "abc",
+    "COTE",
+    "co-op",
+    "pêche",
+    "pêcher",
+    "pécher",
+    "pécher",
+    "Hello",
+    "Ǳ",
+    "ﬀ",
+    "Ǻ",
+    "ā"
+   ],
+   "testTargetCases": [
+    "ABC",
+    "côte",
+    "COOP",
+    "péché",
+    "péché",
+    "pêche",
+    "pêcher",
+    "hellO",
+    "Ǯ",
+    "◊",
+    "à",
+    "ǟ"
+   ],
+   "testAcute": [
+    "ee",
+    "ée",
+    "è́e",
+    "èe",
+    "é̀e",
+    "eé",
+    "éé",
+    "è́é",
+    "èé",
+    "é̀é",
+    "eè́",
+    "éè́",
+    "è́è́",
+    "èè́",
+    "é̀è́",
+    "eè",
+    "éè",
+    "è́è",
+    "èè",
+    "é̀è",
+    "eé̀",
+    "éé̀",
+    "è́é̀",
+    "èé̀",
+    "é̀é̀"
+   ],
+   "testBugs": [
+    "a",
+    "A",
+    "e",
+    "E",
+    "é",
+    "è",
+    "ê",
+    "ë",
+    "ea",
+    "x"
+   ]
+  },
+  "results": {
+   "results": [
+    -1,
+    -1,
+    -1,
+    -1,
+    1,
+    1,
+    -1,
+    1,
+    -1,
+    1,
+    -1,
+    -1
+   ]
+  }
+ },
+ "ja": {
+  "source": "cintltst/cjaptst.c",
+  "arrays": {
+   "testSourceCases": [
+    "ﾞ",
+    "あ",
+    "ア",
+    "ああ",
+    "アー",
+    "アート"
+   ],
+   "testTargetCases": [
+    "ﾟ",
+    "ア",
+    "ああ",
+    "アー",
+    "アート",
+    "ああと"
+   ],
+   "testBaseCases": [
+    "カ",
+    "カキ",
+    "キ",
+    "キキ"
+   ],
+   "testPlainDakutenHandakutenCases": [
+    "ハカ",
+    "バカ",
+    "ハキ",
+    "バキ"
+   ],
+   "testSmallLargeCases": [
+    "ッハ",
+    "ツハ",
+    "ッバ",
+    "ツバ"
+   ],
+   "testKatakanaHiraganaCases": [
+    "あッ",
+    "アッ",
+    "あツ",
+    "アツ"
+   ],
+   "testChooonKigooCases": [
+    "カーあ",
+    "カーア",
+    "カイあ",
+    "カイア",
+    "キーあ",
+    "キーア",
+    "キイあ",
+    "キイア"
+   ]
+  },
+  "results": {
+   "results": [
+    -1,
+    0,
+    -1,
+    1,
+    -1,
+    -1
+   ]
+  }
+ },
+ "tr": {
+  "source": "cintltst/cturtst.c",
+  "arrays": {
+   "testSourceCases": [
+    "ş",
+    "vät",
+    "old",
+    "üoid",
+    "hĞalt",
+    "stresŞ",
+    "voıd",
+    "idea",
+    "üoid",
+    "voıd",
+    "idea"
+   ],
+   "testTargetCases": [
+    "ü",
+    "vbt",
+    "Öay",
+    "void",
+    "halt",
+    "ŞtreŞs",
+    "void",
+    "Idea",
+    "void",
+    "void",
+    "Idea"
+   ]
+  },
+  "results": {
+   "results": [
+    -1,
+    -1,
+    -1,
+    -1,
+    1,
+    -1,
+    -1,
+    1,
+    -1,
+    -1,
+    1
+   ]
+  }
+ },
+ "fi": {
+  "source": "intltest/ficoll.cpp",
+  "arrays": {
+   "testSourceCases": [
+    "wat",
+    "vat",
+    "aübeck",
+    "Låvi",
+    "wat"
+   ],
+   "testTargetCases": [
+    "vat",
+    "way",
+    "axbeck",
+    "Läwe",
+    "vat"
+   ]
+  },
+  "results": {
+   "results": [
+    1,
+    -1,
+    1,
+    -1,
+    1
+   ]
+  }
+ },
+ "ko": {
+  "source": "intltest/lcukocol.cpp",
+  "arrays": {
+   "testSourceCases": [
+    "가"
+   ],
+   "testTargetCases": [
+    "각"
+   ]
+  },
+  "results": {
+   "results": [
+    -1
+   ]
+  }
+ },
+ "currency": {
+  "source": "intltest/currcoll.cpp",
+  "arrays": {
+   "currency": [
+    "¤",
+    "¢",
+    "￠",
+    "$",
+    "＄",
+    "﹩",
+    "£",
+    "￡",
+    "¥",
+    "￥",
+    "৲",
+    "৳",
+    "฿",
+    "៛",
+    "₠",
+    "₡",
+    "₢",
+    "₣",
+    "₤",
+    "₥",
+    "₦",
+    "₩",
+    "￦",
+    "₪",
+    "₫",
+    "€",
+    "₭",
+    "₮",
+    "₯"
+   ]
+  },
+  "results": {}
+ }
+}

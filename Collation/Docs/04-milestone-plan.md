@@ -299,12 +299,25 @@ the performance hardening that M6 deferred.
   ~75x faster on ASCII compare (identical-prefix + fast-Latin paths, zero
   allocation) — remaining gap documented in the report.
 
+**Round 2 delivered (2026-06-11):**
+- Classic locale suites ported: encoll (en/root), cdetst (de/root), cestst
+  (es), cfrtst (fr-CA), cjaptst (ja), cturtst (tr), ficoll (fi), lcukocol
+  (ko), currcoll (currency/root). Test arrays extracted mechanically
+  (Tools/extract_locale_suites.py -> locale-suites.json); per-suite loop
+  logic (case ranges per strength, pairwise/adjacency/matrix expectations,
+  caseLevel for ja) reimplemented from the C sources. All 9 green; doTest
+  semantics (both directions + sort-key order) preserved.
+- regcoll.cpp regression port: 13 portable cases extracted
+  (Tools/extract_regcoll.py -> regcoll.json) incl. the fr-CA and da_DK
+  cases; 17 skipped with reasons (rule-string collators x5, CE-iterator
+  API, object identity/clone, normalization-off phase). All 13 green.
+- Parser fix found by ko.bin: tailorings can end their indexes[] early
+  (ko has 13 slots); the minimum-indexes guard was too strict.
+- Tailorings: ko reordering exercised; suite total 39 tests / 14 suites.
+
 **Backlog for next rounds:**
-- Port regcoll.cpp (CollationRegressionTest) non-rule cases.
-- Port the classic locale suites (encoll, decoll/cdetst, escoll/cestst,
-  ficoll, frcoll/cfrtst, jacoll/cjaptst, trcoll/cturtst, lcukocol, currcoll,
-  g7coll where rule-free) — mechanical extraction of the C test arrays.
-- cmsccoll.c non-rule regression cases; apicoll behaviors where applicable.
+- cmsccoll.c non-rule regression cases; apicoll behaviors where applicable;
+  g7coll rule-free parts.
 - Perf: buffer reuse across compares, identical-prefix skip (needs
   normalization safety markers), Span-based data access.
 
