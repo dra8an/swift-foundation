@@ -52,8 +52,8 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   full UCA runtime — fused NFD, all strengths/settings, contractions
   (incl. discontiguous S2.1) and prefixes, sort keys **byte-identical to
   ucol_getSortKey**, 15 locale tailorings incl. zh script reordering.
-- **Milestone 7.5 complete** (rounds 1–9): every portable ICU test suite is
-  ported, plus perf rounds. **59 tests / 19 suites, all green.** Suites: official UCA
+- **Milestone 7.5 complete** (rounds 1–10): every portable ICU test suite is
+  ported, plus perf rounds. **61 tests / 19 suites, all green.** Suites: official UCA
   conformance (433k lines), collationtest.txt data-driven, Thai dictionary
   (31k words), 9 classic locale suites, regcoll (13 cases), cmsccoll
   (20 cases + extreme compression), g7coll locale rows, apicoll behavioral
@@ -77,9 +77,9 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 **M7.5 is complete, including every perf lever; nothing is actionable
 without a new decision.** Parked: rule builder (doc 12); M8 Foundation
-integration (await user). Current perf: ASCII compare ~101 ns vs ICU 16 ns
-(~6.3×), Latin ~4.2×, CJK ~4.7×; sort keys 2.3–4×; analysis in
-`11-milestone-7.5-report.md`.
+integration (await user). Current perf: compare within 2.7–4.9× of ICU4C
+everywhere (ASCII ~79 ns vs 16, Latin ~79 vs 21, paths ~158 vs 58, CJK
+~365 vs 79); sort keys 2.3–4×; analysis in `11-milestone-7.5-report.md`.
 
 ## How to work
 
@@ -117,7 +117,7 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
   (contraction/prefix matching), numeric, base fallback
 - `CollationCompare.swift` — level-by-level compare (lazy via `ce(at:)`)
 - `CollationFastLatin.swift` — mini-CE fast path for Latin text (compare
-  only; bails out to the regular pipeline)
+  only; scalar and raw-UTF-8 variants; bails out to the regular pipeline)
 - `SortKey.swift` — sort key writer + BOCSU identical level
 - `CollationOptions.swift` — public options ↔ ICU options word
 - `RootCollator.swift` — public API: `compare`, `sortKey`,

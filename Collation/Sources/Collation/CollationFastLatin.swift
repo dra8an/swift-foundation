@@ -20,6 +20,8 @@ enum CollationFastLatin {
 
     static let latinMax: UInt32 = 0x17f
     static let latinLimit = Int(latinMax) + 1
+    /// UTF-8 lead byte of LATIN_MAX: 0x00..0xc5 leads are fast-path eligible.
+    static let latinMaxUTF8Lead: UInt8 = 0xc5
     static let punctStart: UInt32 = 0x2000
     static let punctLimit: UInt32 = 0x2040
     static let numFastChars = latinLimit + Int(punctLimit - punctStart)
@@ -69,6 +71,9 @@ enum CollationFastLatin {
 
     /// Comparison result meaning "use the regular comparison".
     static let bailOutResult: Int32 = -2
+    /// Result meaning "eligible, but the per-options setup is not cached
+    /// yet": the caller computes it and retries (once per options change).
+    static let needsSetupResult: Int32 = -3
 
     /// One side of the comparison: a scalar stream with one scalar of
     /// lookahead (always primed; nil = end of string). Levels restart by
@@ -522,6 +527,380 @@ enum CollationFastLatin {
         return 0
     }
 
+    /// Compares two well-formed UTF-8 byte streams on the mini-CE table.
+    /// Returns -1/0/1, or bailOutResult if the regular comparison must be
+    /// used. The byte variant reads characters as raw bytes — ASCII is one
+    /// load, U+0080..U+017F assemble from a 0xC2..0xC5 lead + trail — which
+    /// is what makes this the fastest path.
+    /// (CollationFastLatin::compareUTF8; kept in sync with compare() above,
+    /// like ICU keeps compareUTF16 and compareUTF8 in sync.)
+    static func compareUTF8(
+        table fullTable: UnsafeBufferPointer<UInt16>, primaries: [UInt16], options optionsIn: Int32,
+        left: UnsafeBufferPointer<UInt8>, leftStart: Int,
+        right: UnsafeBufferPointer<UInt8>, rightStart: Int
+    ) -> Int32 {
+        assert((fullTable[0] >> 8) == version)
+        let table = UnsafeBufferPointer(rebasing: fullTable[Int(fullTable[0] & 0xff)...])
+        let variableTop = UInt32(bitPattern: optionsIn) >> 16  // see getOptions()
+        let options = optionsIn & 0xffff  // needed for strength(of:) to work
+
+        let leftLength = left.count
+        let rightLength = right.count
+
+        // Check for supported characters, fetch mini CEs, and compare
+        // primaries. There is no need to assemble code points beyond the
+        // two-byte Latin range; nextPairUTF8 reads the bytes it needs.
+        var leftIndex = leftStart
+        var rightIndex = rightStart
+        var leftPair: UInt32 = 0
+        var rightPair: UInt32 = 0
+        while true {
+            while leftPair == 0 {
+                if leftIndex == leftLength {
+                    leftPair = eos
+                    break
+                }
+                var c = UInt32(left[leftIndex])
+                leftIndex += 1
+                if c <= 0x7f {
+                    leftPair = UInt32(primaries[Int(c)])
+                    if leftPair != 0 { break }
+                    if c <= 0x39 && c >= 0x30 && (options & CollationOptions.Bits.numeric) != 0 {
+                        return bailOutResult
+                    }
+                    leftPair = UInt32(table[Int(c)])
+                } else if c <= UInt32(latinMaxUTF8Lead) && 0xc2 <= c && leftIndex != leftLength,
+                          case let t = left[leftIndex], 0x80 <= t && t <= 0xbf {
+                    leftIndex += 1
+                    c = ((c - 0xc2) << 6) + UInt32(t)
+                    leftPair = UInt32(primaries[Int(c)])
+                    if leftPair != 0 { break }
+                    leftPair = UInt32(table[Int(c)])
+                } else {
+                    leftPair = lookupUTF8(table, c, left, &leftIndex, leftLength)
+                }
+                if leftPair >= minShort {
+                    leftPair &= shortPrimaryMask
+                    break
+                } else if leftPair > variableTop {
+                    leftPair &= longPrimaryMask
+                    break
+                } else {
+                    leftPair = nextPairUTF8(table, leftPair, left, &leftIndex, leftLength)
+                    if leftPair == bailOut { return bailOutResult }
+                    leftPair = getPrimaries(variableTop, leftPair)
+                }
+            }
+
+            while rightPair == 0 {
+                if rightIndex == rightLength {
+                    rightPair = eos
+                    break
+                }
+                var c = UInt32(right[rightIndex])
+                rightIndex += 1
+                if c <= 0x7f {
+                    rightPair = UInt32(primaries[Int(c)])
+                    if rightPair != 0 { break }
+                    if c <= 0x39 && c >= 0x30 && (options & CollationOptions.Bits.numeric) != 0 {
+                        return bailOutResult
+                    }
+                    rightPair = UInt32(table[Int(c)])
+                } else if c <= UInt32(latinMaxUTF8Lead) && 0xc2 <= c && rightIndex != rightLength,
+                          case let t = right[rightIndex], 0x80 <= t && t <= 0xbf {
+                    rightIndex += 1
+                    c = ((c - 0xc2) << 6) + UInt32(t)
+                    rightPair = UInt32(primaries[Int(c)])
+                    if rightPair != 0 { break }
+                    rightPair = UInt32(table[Int(c)])
+                } else {
+                    rightPair = lookupUTF8(table, c, right, &rightIndex, rightLength)
+                }
+                if rightPair >= minShort {
+                    rightPair &= shortPrimaryMask
+                    break
+                } else if rightPair > variableTop {
+                    rightPair &= longPrimaryMask
+                    break
+                } else {
+                    rightPair = nextPairUTF8(table, rightPair, right, &rightIndex, rightLength)
+                    if rightPair == bailOut { return bailOutResult }
+                    rightPair = getPrimaries(variableTop, rightPair)
+                }
+            }
+
+            if leftPair == rightPair {
+                if leftPair == eos { break }
+                leftPair = 0
+                rightPair = 0
+                continue
+            }
+            let leftPrimary = leftPair & 0xffff
+            let rightPrimary = rightPair & 0xffff
+            if leftPrimary != rightPrimary {
+                return leftPrimary < rightPrimary ? -1 : 1
+            }
+            if leftPair == eos { break }
+            leftPair >>= 16
+            rightPair >>= 16
+        }
+
+        // The string is now known to be well-formed and fully supported, so
+        // the later levels use the unchecked lookups.
+
+        if CollationOptions.strength(of: options) >= CollationOptions.Strength.secondary.rawValue {
+            leftIndex = leftStart
+            rightIndex = rightStart
+            leftPair = 0
+            rightPair = 0
+            while true {
+                while leftPair == 0 {
+                    if leftIndex == leftLength {
+                        leftPair = eos
+                        break
+                    }
+                    let c = UInt32(left[leftIndex])
+                    leftIndex += 1
+                    if c <= 0x7f {
+                        leftPair = UInt32(table[Int(c)])
+                    } else {
+                        leftPair = lookupUTF8Unsafe(table, c, left, &leftIndex)
+                    }
+                    if leftPair >= minShort {
+                        leftPair = getSecondariesFromOneShortCE(leftPair)
+                        break
+                    } else if leftPair > variableTop {
+                        leftPair = commonSecPlusOffset
+                        break
+                    } else {
+                        leftPair = nextPairUTF8(table, leftPair, left, &leftIndex, leftLength)
+                        leftPair = getSecondaries(variableTop, leftPair)
+                    }
+                }
+
+                while rightPair == 0 {
+                    if rightIndex == rightLength {
+                        rightPair = eos
+                        break
+                    }
+                    let c = UInt32(right[rightIndex])
+                    rightIndex += 1
+                    if c <= 0x7f {
+                        rightPair = UInt32(table[Int(c)])
+                    } else {
+                        rightPair = lookupUTF8Unsafe(table, c, right, &rightIndex)
+                    }
+                    if rightPair >= minShort {
+                        rightPair = getSecondariesFromOneShortCE(rightPair)
+                        break
+                    } else if rightPair > variableTop {
+                        rightPair = commonSecPlusOffset
+                        break
+                    } else {
+                        rightPair = nextPairUTF8(table, rightPair, right, &rightIndex, rightLength)
+                        rightPair = getSecondaries(variableTop, rightPair)
+                    }
+                }
+
+                if leftPair == rightPair {
+                    if leftPair == eos { break }
+                    leftPair = 0
+                    rightPair = 0
+                    continue
+                }
+                let leftSecondary = leftPair & 0xffff
+                let rightSecondary = rightPair & 0xffff
+                if leftSecondary != rightSecondary {
+                    if (options & CollationOptions.Bits.backwardSecondary) != 0 {
+                        return bailOutResult
+                    }
+                    return leftSecondary < rightSecondary ? -1 : 1
+                }
+                if leftPair == eos { break }
+                leftPair >>= 16
+                rightPair >>= 16
+            }
+        }
+
+        if (options & CollationOptions.Bits.caseLevel) != 0 {
+            let strengthIsPrimary =
+                CollationOptions.strength(of: options) == CollationOptions.Strength.primary.rawValue
+            leftIndex = leftStart
+            rightIndex = rightStart
+            leftPair = 0
+            rightPair = 0
+            while true {
+                while leftPair == 0 {
+                    if leftIndex == leftLength {
+                        leftPair = eos
+                        break
+                    }
+                    let c = UInt32(left[leftIndex])
+                    leftIndex += 1
+                    leftPair = c <= 0x7f
+                        ? UInt32(table[Int(c)]) : lookupUTF8Unsafe(table, c, left, &leftIndex)
+                    if leftPair < minLong {
+                        leftPair = nextPairUTF8(table, leftPair, left, &leftIndex, leftLength)
+                    }
+                    leftPair = getCases(variableTop, strengthIsPrimary, leftPair)
+                }
+
+                while rightPair == 0 {
+                    if rightIndex == rightLength {
+                        rightPair = eos
+                        break
+                    }
+                    let c = UInt32(right[rightIndex])
+                    rightIndex += 1
+                    rightPair = c <= 0x7f
+                        ? UInt32(table[Int(c)]) : lookupUTF8Unsafe(table, c, right, &rightIndex)
+                    if rightPair < minLong {
+                        rightPair = nextPairUTF8(table, rightPair, right, &rightIndex, rightLength)
+                    }
+                    rightPair = getCases(variableTop, strengthIsPrimary, rightPair)
+                }
+
+                if leftPair == rightPair {
+                    if leftPair == eos { break }
+                    leftPair = 0
+                    rightPair = 0
+                    continue
+                }
+                let leftCase = leftPair & 0xffff
+                let rightCase = rightPair & 0xffff
+                if leftCase != rightCase {
+                    if (options & CollationOptions.Bits.upperFirst) == 0 {
+                        return leftCase < rightCase ? -1 : 1
+                    } else {
+                        return leftCase < rightCase ? 1 : -1
+                    }
+                }
+                if leftPair == eos { break }
+                leftPair >>= 16
+                rightPair >>= 16
+            }
+        }
+        if CollationOptions.strength(of: options) <= CollationOptions.Strength.secondary.rawValue {
+            return 0
+        }
+
+        let withCaseBits = CollationOptions.isTertiaryWithCaseBits(options)
+
+        leftIndex = leftStart
+        rightIndex = rightStart
+        leftPair = 0
+        rightPair = 0
+        while true {
+            while leftPair == 0 {
+                if leftIndex == leftLength {
+                    leftPair = eos
+                    break
+                }
+                let c = UInt32(left[leftIndex])
+                leftIndex += 1
+                leftPair = c <= 0x7f
+                    ? UInt32(table[Int(c)]) : lookupUTF8Unsafe(table, c, left, &leftIndex)
+                if leftPair < minLong {
+                    leftPair = nextPairUTF8(table, leftPair, left, &leftIndex, leftLength)
+                }
+                leftPair = getTertiaries(variableTop, withCaseBits, leftPair)
+            }
+
+            while rightPair == 0 {
+                if rightIndex == rightLength {
+                    rightPair = eos
+                    break
+                }
+                let c = UInt32(right[rightIndex])
+                rightIndex += 1
+                rightPair = c <= 0x7f
+                    ? UInt32(table[Int(c)]) : lookupUTF8Unsafe(table, c, right, &rightIndex)
+                if rightPair < minLong {
+                    rightPair = nextPairUTF8(table, rightPair, right, &rightIndex, rightLength)
+                }
+                rightPair = getTertiaries(variableTop, withCaseBits, rightPair)
+            }
+
+            if leftPair == rightPair {
+                if leftPair == eos { break }
+                leftPair = 0
+                rightPair = 0
+                continue
+            }
+            var leftTertiary = leftPair & 0xffff
+            var rightTertiary = rightPair & 0xffff
+            if leftTertiary != rightTertiary {
+                if CollationOptions.sortsTertiaryUpperCaseFirst(options) {
+                    if leftTertiary > mergeWeight {
+                        leftTertiary ^= caseMask
+                    }
+                    if rightTertiary > mergeWeight {
+                        rightTertiary ^= caseMask
+                    }
+                }
+                return leftTertiary < rightTertiary ? -1 : 1
+            }
+            if leftPair == eos { break }
+            leftPair >>= 16
+            rightPair >>= 16
+        }
+        if CollationOptions.strength(of: options) <= CollationOptions.Strength.tertiary.rawValue {
+            return 0
+        }
+
+        leftIndex = leftStart
+        rightIndex = rightStart
+        leftPair = 0
+        rightPair = 0
+        while true {
+            while leftPair == 0 {
+                if leftIndex == leftLength {
+                    leftPair = eos
+                    break
+                }
+                let c = UInt32(left[leftIndex])
+                leftIndex += 1
+                leftPair = c <= 0x7f
+                    ? UInt32(table[Int(c)]) : lookupUTF8Unsafe(table, c, left, &leftIndex)
+                if leftPair < minLong {
+                    leftPair = nextPairUTF8(table, leftPair, left, &leftIndex, leftLength)
+                }
+                leftPair = getQuaternaries(variableTop, leftPair)
+            }
+
+            while rightPair == 0 {
+                if rightIndex == rightLength {
+                    rightPair = eos
+                    break
+                }
+                let c = UInt32(right[rightIndex])
+                rightIndex += 1
+                rightPair = c <= 0x7f
+                    ? UInt32(table[Int(c)]) : lookupUTF8Unsafe(table, c, right, &rightIndex)
+                if rightPair < minLong {
+                    rightPair = nextPairUTF8(table, rightPair, right, &rightIndex, rightLength)
+                }
+                rightPair = getQuaternaries(variableTop, rightPair)
+            }
+
+            if leftPair == rightPair {
+                if leftPair == eos { break }
+                leftPair = 0
+                rightPair = 0
+                continue
+            }
+            let leftQuaternary = leftPair & 0xffff
+            let rightQuaternary = rightPair & 0xffff
+            if leftQuaternary != rightQuaternary {
+                return leftQuaternary < rightQuaternary ? -1 : 1
+            }
+            if leftPair == eos { break }
+            leftPair >>= 16
+            rightPair >>= 16
+        }
+        return 0
+    }
+
     // MARK: Lookups (table already has the header skipped)
 
     /// (CollationFastLatin::lookup.)
@@ -536,6 +915,128 @@ enum CollationFastLatin {
             return shortPrimaryMask | commonSec | lowerCase  // MAX_SHORT | COMMON_SEC | LOWER_CASE | COMMON_TER(0)
         } else {
             return bailOut
+        }
+    }
+
+    /// Looks up a lead byte > 0x7f that the two-byte Latin fast path did not
+    /// handle: the punctuation block (E2 80 xx), U+FFFE/U+FFFF (EF BF BE/BF),
+    /// anything else bails. (CollationFastLatin::lookupUTF8.)
+    @inline(__always)
+    private static func lookupUTF8(
+        _ table: UnsafeBufferPointer<UInt16>, _ c: UInt32,
+        _ s8: UnsafeBufferPointer<UInt8>, _ sIndex: inout Int, _ sLength: Int
+    ) -> UInt32 {
+        let i2 = sIndex + 1
+        if i2 < sLength {
+            let t1 = s8[sIndex]
+            let t2 = s8[i2]
+            sIndex += 2
+            if c == 0xe2 && t1 == 0x80 && 0x80 <= t2 && t2 <= 0xbf {
+                return UInt32(table[(latinLimit - 0x80) + Int(t2)])  // 2000..203F
+            } else if c == 0xef && t1 == 0xbf {
+                if t2 == 0xbe {
+                    return mergeWeight  // U+FFFE
+                } else if t2 == 0xbf {
+                    return shortPrimaryMask | commonSec | lowerCase  // U+FFFF
+                }
+            }
+        }
+        return bailOut
+    }
+
+    /// Unchecked lead-byte lookup for the levels after primary, which has
+    /// already vetted the whole string as well-formed and fully supported.
+    /// (CollationFastLatin::lookupUTF8Unsafe.)
+    @inline(__always)
+    private static func lookupUTF8Unsafe(
+        _ table: UnsafeBufferPointer<UInt16>, _ c: UInt32,
+        _ s8: UnsafeBufferPointer<UInt8>, _ sIndex: inout Int
+    ) -> UInt32 {
+        // The caller handled ASCII.
+        if c <= UInt32(latinMaxUTF8Lead) {
+            let t = s8[sIndex]
+            sIndex += 1
+            return UInt32(table[Int((c - 0xc2) << 6) + Int(t)])  // 0080..017F
+        }
+        let t2 = s8[sIndex + 1]
+        sIndex += 2
+        if c == 0xe2 {
+            return UInt32(table[(latinLimit - 0x80) + Int(t2)])  // 2000..203F
+        } else if t2 == 0xbe {
+            return mergeWeight  // U+FFFE
+        } else {
+            return shortPrimaryMask | commonSec | lowerCase  // U+FFFF
+        }
+    }
+
+    /// Byte-stream variant of nextPair (the s8 branch of
+    /// CollationFastLatin::nextPair): the contraction lookahead reads the
+    /// next character's bytes and consumes them only on a match.
+    private static func nextPairUTF8(
+        _ table: UnsafeBufferPointer<UInt16>, _ ceIn: UInt32,
+        _ s8: UnsafeBufferPointer<UInt8>, _ sIndex: inout Int, _ sLength: Int
+    ) -> UInt32 {
+        var ce = ceIn
+        if ce >= minLong || ce < contraction {
+            return ce  // simple or special mini CE
+        } else if ce >= expansion {
+            let index = numFastChars + Int(ce & indexMask)
+            return (UInt32(table[index + 1]) << 16) | UInt32(table[index])
+        } else /* ce >= contraction */ {
+            var index = numFastChars + Int(ce & indexMask)
+            if sIndex != sLength {
+                // Read the next character.
+                var c2 = Int32(s8[sIndex])
+                var nextIndex = sIndex + 1
+                if c2 > 0x7f {
+                    if c2 <= Int32(latinMaxUTF8Lead) && 0xc2 <= c2 && nextIndex != sLength,
+                       case let t = s8[nextIndex], 0x80 <= t && t <= 0xbf {
+                        c2 = ((c2 - 0xc2) << 6) + Int32(t)
+                        nextIndex += 1
+                    } else {
+                        let i2 = nextIndex + 1
+                        if i2 < sLength {
+                            let t1 = s8[nextIndex]
+                            let t2 = s8[i2]
+                            if c2 == 0xe2 && t1 == 0x80 && 0x80 <= t2 && t2 <= 0xbf {
+                                c2 = Int32(latinLimit - 0x80) + Int32(t2)  // 2000..203F
+                            } else if c2 == 0xef && t1 == 0xbf && (t2 == 0xbe || t2 == 0xbf) {
+                                c2 = -1  // U+FFFE & U+FFFF cannot occur in contractions.
+                            } else {
+                                return bailOut
+                            }
+                        } else {
+                            return bailOut
+                        }
+                        nextIndex += 2
+                    }
+                }
+                // Look for the next character in the contraction suffix
+                // list, which is in ascending order of single suffix
+                // characters.
+                var i = index
+                var head = Int32(table[i])  // first skip the default mapping
+                var x: Int32
+                repeat {
+                    i += Int(head >> contrLengthShift)
+                    head = Int32(table[i])
+                    x = head & Int32(contrCharMask)
+                } while x < c2
+                if x == c2 {
+                    index = i
+                    sIndex = nextIndex
+                }
+            }
+            // Return the CE or CEs for the default or contraction mapping.
+            let length = Int(table[index]) >> contrLengthShift
+            if length == 1 {
+                return bailOut
+            }
+            ce = UInt32(table[index + 1])
+            if length == 2 {
+                return ce
+            }
+            return (UInt32(table[index + 2]) << 16) | ce
         }
     }
 

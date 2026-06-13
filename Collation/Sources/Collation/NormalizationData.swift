@@ -81,6 +81,12 @@ public struct NormalizationData: @unchecked Sendable {
         return try NormalizationData(contentsOf: url)
     }
 
+    /// Trivial (ARC-free) view of the trie for hot paths that must not
+    /// retain the storage (see CollationDataView for the rationale).
+    var view: NormalizationDataView {
+        NormalizationDataView(index: index, data: data)
+    }
+
     // MARK: Lookup
 
     /// The packed trie value for a scalar (see the header comment).
@@ -139,5 +145,20 @@ public struct NormalizationData: @unchecked Sendable {
         let offset = Int(v >> 19)
         out.append(contentsOf: buffer[offset..<(offset + length)])
         return true
+    }
+}
+
+/// Trivial view of the normalization trie: the lookups the byte fast path's
+/// safety check needs, with no reference counting on capture. The owning
+/// NormalizationData must outlive it.
+struct NormalizationDataView {
+    let index: UnsafeBufferPointer<UInt16>
+    let data: UnsafeBufferPointer<UInt32>
+
+    /// See NormalizationData.leadCCC.
+    @inline(__always)
+    func leadCCC(_ c: UInt32) -> UInt8 {
+        if c < 0xc0 { return 0 }
+        return UInt8(truncatingIfNeeded: data[(Int(index[Int(c >> 6)]) << 6) | Int(c & 63)] >> 8)
     }
 }

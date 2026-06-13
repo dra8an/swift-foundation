@@ -422,6 +422,27 @@ the performance hardening that M6 deferred.
   FastLatinTests (5 tests: engagement, bail-outs, shifted-variable
   punctuation, key agreement); suite total 59 tests / 19 suites.
 
+**Round 10 delivered (2026-06-12): fast Latin over raw UTF-8.**
+- Completes the fast-Latin port with ICU's compareUTF8: native Swift strings
+  expose contiguous UTF-8, so the identical-prefix scan runs on raw bytes
+  (with trail-byte boundary backup, like ICU's UTF-8 doCompare) and the
+  mini-CE loop reads characters as single bytes (ASCII) or 0xC2..0xC5
+  lead+trail pairs — no scalar decoding at all on the fast path. Identical
+  strength and non-contiguous strings keep the scalar paths.
+- Profiling drove three structural fixes: the closures capture only trivial
+  values (capturing the collator retained its storage every call — found as
+  initializeWithCopy in the profile); the fast-Latin table and the
+  restart-safety views are stored at init (RestartSafety,
+  NormalizationDataView); the per-options setup is resolved inside the
+  closure only after eligibility passes, with a once-per-options-change
+  retry — so ineligible (e.g. CJK) text never pays for it.
+- compare (medians): ascii ~101 -> ~79 ns (ICU 16, ~4.9x), latin ~114 ->
+  ~79 (ICU 21, ~3.8x: two-byte assembly makes accented Latin as cheap as
+  ASCII), paths ~412 -> ~158 (ICU 58, ~2.7x), cjk ~345 -> ~365 (+6%, the
+  cost of attempting the byte path before bailing). The residue is
+  irreducible per-call cost: the small-string stack spill that contiguous
+  access requires, the setup-cache lock, and the closure entries.
+
 **Backlog for next rounds:**
 - None — M7.5 is complete, including every planned perf lever. The runtime
   rule builder remains the one deliberate, reversible cut

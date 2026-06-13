@@ -288,12 +288,17 @@ public struct CollationData: @unchecked Sendable {
     /// the numeric-digit rule).
     @inline(__always)
     func unsafeBackwardContains(_ c: UInt32) -> Bool {
-        // Count of boundaries <= c; odd means inside a range.
+        Self.boundariesContain(unsafeBackward, c)
+    }
+
+    /// Count of boundaries <= c; odd means inside a range.
+    @inline(__always)
+    static func boundariesContain(_ boundaries: UnsafeBufferPointer<UInt32>, _ c: UInt32) -> Bool {
         var lo = 0
-        var hi = unsafeBackward.count
+        var hi = boundaries.count
         while lo < hi {
             let mid = (lo + hi) / 2
-            if unsafeBackward[mid] <= c { lo = mid + 1 } else { hi = mid }
+            if boundaries[mid] <= c { lo = mid + 1 } else { hi = mid }
         }
         return lo & 1 == 1
     }

@@ -384,11 +384,61 @@ shifted-variable punctuation behaves at tertiary and quaternary strengths.
 sortKey is unchanged (fast Latin is compare-only, as in ICU). Cumulative
 ASCII compare since the pre-lazy baseline: 7437 → ~101 ns (74×).
 
+## Round 10: fast Latin over raw UTF-8 (2026-06-12)
+
+Round 9 left ASCII compare at ~101 ns vs ICU's 16. Deletion experiments
+showed the remaining cost was not the mini-CE arithmetic but the character
+feed and per-call glue: reading scalars through
+String.UnicodeScalarView.Iterator (a UTF-8 decoder with representation
+branches) where ICU's ucol_strcollUTF8 reads raw bytes. The fix is the rest
+of the same ICU file: **compareUTF8**.
+
+- `compare()` first tries `utf8.withContiguousStorageIfAvailable` on both
+  strings (native Swift strings qualify; small strings are spilled to the
+  stack by the stdlib). On the bytes: binary equality and the
+  identical-prefix scan are one memcmp-style loop, the restart boundary
+  backs up over trail bytes (ICU's UTF-8 doCompare), the safety check
+  decodes just the two boundary scalars, and `CollationFastLatin.compareUTF8`
+  reads characters as raw bytes — ASCII one load, U+0080..U+017F a
+  0xC2..0xC5 lead+trail pair, punctuation a three-byte sequence. Identical
+  strength and non-contiguous strings keep the scalar paths; every bail-out
+  still lands in the regular pipeline.
+- Three profile-driven structural lessons, recorded because they are
+  Swift-specific and will matter to future fast paths:
+  1. **Closures must not capture the collator.** The contiguous-storage
+     closures capturing `self` copied the struct per call — one retain per
+     stored reference, visible as `initializeWithCopy for RootCollator`.
+     The byte path is a static function taking trivial parameters.
+  2. **Views are stored, not rebuilt.** `base?.field` projections copy the
+     optional's payload (+1 retain each); the fast-Latin table and the
+     restart-safety views (RestartSafety, NormalizationDataView) are built
+     once at collator init.
+  3. **Per-options setup resolves lazily, inside the eligibility gate.**
+     Resolving it eagerly made every CJK compare pay the cache lock for a
+     path that always bails; the closure returns a needs-setup sentinel on
+     a cache miss (once per options change) and the caller retries.
+
+Numbers (release, medians; ICU 79 re-measured side by side):
+
+| corpus | compare round 9 → 10 | ICU | gap |
+|---|---|---|---|
+| ASCII | 101 → **~79 ns** | 16 ns | ~4.9× |
+| Latin | 114 → **~79 ns** | 21 ns | ~3.8× |
+| paths | 412 → **~158 ns** | 58 ns | ~2.7× |
+| CJK | 345 → ~365 ns | 79 ns | ~4.6× |
+
+Latin now costs the same as ASCII (the two-byte assembly is two ops). CJK
+pays ~6% for attempting the byte path before bailing. What remains is
+irreducible per-call cost for a value-type String API: the small-string
+stack spill that contiguous access requires (~17 ns), the setup-cache lock,
+and the closure entries. Cumulative ASCII compare across the whole effort:
+7437 → ~79 ns (94×).
+
 ## Status
 
-**Milestone 7.5 complete.** Rounds 1–9: every portable ICU collation test
-suite is ported — **59 tests / 19 suites green** — and the perf track is
-finished: ASCII compare ~101 ns (~6.3× from ICU), Latin ~4.2×, CJK ~4.7×,
-sort keys 2.3–4× — all byte-identical to ICU's. The runtime rule builder
-remains the one deliberate cut (doc 12). Next milestone: M8 (on hold,
-awaiting maintainer/community input).
+**Milestone 7.5 complete.** Rounds 1–10: every portable ICU collation test
+suite is ported — **61 tests / 19 suites green** — and the perf track is
+finished: compare within 2.7–4.9× of ICU4C on every corpus (ASCII ~79 ns
+vs 16), sort keys 2.3–4× — all byte-identical to ICU's. The runtime rule
+builder remains the one deliberate cut (doc 12). Next milestone: M8 (on
+hold, awaiting maintainer/community input).
