@@ -130,10 +130,15 @@ public struct RootCollator: @unchecked Sendable {
             }
         }
 
-        // Swift String equality is canonical equivalence, which implies equal
-        // CEs and therefore equality at every strength including identical.
-        // (After the byte path, which settles binary equality itself.)
-        if left == right { return .same }
+        // No `if left == right` shortcut here. Swift's String == is canonical
+        // equivalence, which for non-binary-equal strings runs NFC
+        // normalization to prove (in)equality — measured at ~250–400 ns per
+        // call on text with combining marks (Thai, etc.), on *every* non-equal
+        // compare. Canonical equivalence is already handled correctly by the
+        // CE pipeline below (the NFD front end yields equal CEs for equivalent
+        // strings), so the shortcut was pure cost on the non-Latin path. The
+        // byte fast path above still settles binary equality cheaply for
+        // non-identical strengths. (See Docs/13 §6.6.)
 
         // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar
         // prefixes produce identical CEs, so iteration can start at the first

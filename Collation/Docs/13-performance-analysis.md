@@ -25,8 +25,12 @@ code cost rather than scheduler contention; see §2.4):
 |---|---|---|---|---|---|---|
 | ASCII  | ~79 ns  | ~16 ns | ~4.9× | ~720 ns  | ~205 ns | ~3.5× |
 | Latin  | ~82 ns  | ~20 ns | ~4.1× | ~1040 ns | ~235 ns | ~4.4× |
-| CJK    | ~395 ns | ~78 ns | ~5.1× | ~850 ns  | ~245 ns | ~3.5× |
+| CJK    | ~350 ns | ~78 ns | ~4.4× | ~850 ns  | ~245 ns | ~3.5× |
 | paths  | ~163 ns | ~52 ns | ~3.1× | ~1610 ns | ~720 ns | ~2.2× |
+
+(CJK and other non-Latin compare improved ~12–35% after removing the
+`left == right` canonical-`==` shortcut — see §6.6, which profiles where the
+non-Latin gap actually goes.)
 
 The headline: **ASCII compare went 7437 → ~79 ns over the effort — a 94×
 speedup**, closing the gap to ICU from ~75× to ~4.9×.
@@ -177,6 +181,12 @@ round: doc 11.
 | 8 | single-trie `nfd.bin` | ~239 ns | **Latin/CJK −11/−15%**; ASCII unaffected |
 | 9 | fast Latin (scalar) | ~101 ns | mini-CE table compare |
 | 10 | fast Latin (raw UTF-8) | **~79 ns** | byte feed, no scalar decode |
+| 11 | remove `left == right` (canonical `==`) | ~79 ns | ASCII unaffected; **non-Latin −12…35%** (§6.6) |
+
+(Round 1 introduced the `if left == right` shortcut as an optimization;
+round 11 removed it after profiling showed Swift's canonical `==` dominates
+the non-Latin path — see §6.6. It never helped ASCII/Latin, which return from
+the byte fast path before reaching it.)
 
 Cumulative: **94× on ASCII compare**. The same levers moved the other corpora:
 
@@ -293,7 +303,12 @@ The general principle: on a path measured in tens of nanoseconds, a single
 retain (~5 ns) is a major line item. Trivial value types and stored views,
 not convenience projections, are mandatory.
 
-## 5. The residual gap, and why it is irreducible here
+## 5. The residual gap on the fast (ASCII) path
+
+This section dissects the *fast-Latin* ASCII gap, which is small in absolute
+terms and mostly API-boundary cost. The much larger non-Latin gap (CJK, Thai)
+is a different story — profiled separately in §6.6, where one big chunk turned
+out reducible (Swift's canonical `==`) and the rest is value-type overhead.
 
 ICU's ASCII compare is ~16 ns; ours is ~79. The ~63 ns difference breaks down
 as:
@@ -365,13 +380,14 @@ Release, ns/op; medians of 3 runs (spreads were tight, ±3%):
 
 | op | ours | ICU 79 | ratio |
 |---|---|---|---|
-| compare | ~1255 ns | ~289 ns | **4.3×** |
+| compare | ~975 ns | ~289 ns | **3.4×** |
 | sortKey | ~1020 ns | ~291 ns | **3.5×** |
 
 Note: this compare figure is on dictionary-*adjacent* pairs — collation's
 hardest case (minimal pairs; see §6.4). On random Thai pairs the absolute cost
-roughly halves (~715 ns), though the ratio to ICU widens. Both are real; §6.4
-explains the difference.
+roughly halves (~465 ns), though the ratio to ICU widens. Both are real; §6.4
+explains the difference. (These are post-§6.6 numbers — the original case study
+measured ~1255 / ~715 before the `left == right` removal.)
 
 ### 6.3 Why these numbers — the CJK story, not the Latin one
 
@@ -405,12 +421,13 @@ seed 42) makes adjacent pairs random instead. Compare, release, medians:
 
 | Thai compare | ours | ICU 79 |
 |---|---|---|
-| sorted (dictionary-adjacent) | ~1255 ns | ~289 ns |
-| shuffled (random pairs) | ~715 ns | ~102 ns |
+| sorted (dictionary-adjacent) | ~975 ns | ~289 ns |
+| shuffled (random pairs) | ~465 ns | ~102 ns |
 
-**Sorted is ~1.8× slower than shuffled — and ICU shows the identical pattern
-(289 vs 102).** That ICU exhibits it too is the proof it is a fundamental
-property of collation, not an artifact of our code.
+(Numbers post-§6.6; the ratio and mechanism below are unchanged from the
+pre-fix ~1255 / ~715.) **Sorted is ~2× slower than shuffled — and ICU shows
+the identical pattern (289 vs 102).** That ICU exhibits it too is the proof it
+is a fundamental property of collation, not an artifact of our code.
 
 The mechanism is **comparison depth**, established by instrumentation (CEs
 generated per comparison):
@@ -497,6 +514,56 @@ That, not the prefix skip, is where the ~4× gap lives.
 cause. "Sorted slower than shuffled" looked like a skip problem and was really
 a comparison-depth property — one ICU shares (§6.4). A single CE-count
 measurement would have prevented the whole detour.
+
+### 6.6 Why ~4× when "it's just bitwise arithmetic" — a CE-pipeline profile
+
+The mini-CE comparison, CE generation, and trie lookups are indeed integer/bit
+work that should run at ICU's speed. So why is non-Latin compare ~4× slower?
+Profiling sorted Thai (`sample`, leaf self-time) answers it: **the collation
+arithmetic is the minority of the time.** Categorizing the samples:
+
+| bucket | ~share | what it is |
+|---|---|---|
+| Swift `String ==` (canonical) | **~30%** | `_InternalNFC.Iterator`, `_slowCompare`, `getNormData` — see below |
+| ARC (retain/release/uniref) | ~20% | refcounting `String`-backed iterators and `Array` storage |
+| Array growth + `memmove` | ~13% | `replaceSubrange` from NFD-decomposition appends and the CE buffer |
+| exclusivity enforcement | ~5% | `begin/endAccess` on `inout`-through-class buffer access |
+| pool lock + contiguous-storage | ~4% | per-call `os_unfair_lock` + `withContiguousStorageIfAvailable` |
+| **our CE/NFD/trie arithmetic** | the rest | `appendMore`, `NFDIterator`, `compareUpToQuaternary`, `UCharsTrie` |
+
+So more than half the time was Swift-runtime overhead, not collation. The
+single largest item was a self-inflicted one, now fixed:
+
+**The `left == right` shortcut (removed).** We had an early `if left == right
+{ return .same }`. Swift's `String ==` is *canonical equivalence*: for two
+strings that are not binary-equal it must rule out canonical equivalence,
+and on text containing combining marks (Thai tone marks, vowel signs) it drops
+to a normalizing comparison (`_InternalNFC.Iterator` + `_slowCompare`). That
+cost **~250–400 ns on every non-equal non-Latin compare**. The CE pipeline
+already handles canonical equivalence correctly (the NFD front end produces
+equal CEs for equivalent strings), so the shortcut was redundant — pure cost.
+Removing it (verified: 61 tests green, ICU sort cross-check still
+tie-only):
+
+| corpus | before | after | saved |
+|---|---|---|---|
+| Thai sorted | ~1255 ns | **~975 ns** | ~280 (22%) |
+| Thai shuffled | ~715 ns | **~465 ns** | ~250 (35%) |
+| CJK | ~395 ns | **~350 ns** | ~45 (12%) |
+| ASCII / Latin | ~80 / 78 ns | unchanged | — (byte path returns first) |
+
+**The rest is structural.** Two smaller levers were measured and judged not
+worth their cost or complexity: an early byte-path bail for non-Latin text
+(the byte path always bails for Thai, duplicating the prefix scan + safety —
+but worth only ~25 ns), and `-enforce-exclusivity=unchecked` (~50 ns, a
+build-flag safety trade-off). What remains — ARC on `String`/`Array` storage
+and growable-array reallocation — is the value-type cost §5 describes,
+intrinsic to the current design. Closing it means ICU's model: fixed/stack CE
+buffers instead of growable arrays, and fewer per-call iterator allocations to
+cut the refcount traffic. That is a real refactor with diminishing returns, not
+a one-line fix — but the headline answer to "why 4×" is now concrete: it was
+~30% Swift canonical `==` (fixed) plus ~40% other Swift value-type overhead,
+and only the remainder is the arithmetic, which does run at ICU's speed.
 
 ## 7. Data-format decisions that paid off
 
@@ -612,12 +679,16 @@ ordering disagreements over 32k tailored, contraction-dense words.
 
 ## 10. Bottom line
 
-The pure-Swift collator runs comparison within 3–5× of ICU4C and sort-key
+The pure-Swift collator runs comparison within ~3.4–4.9× of ICU4C and sort-key
 generation within 2.3–4×, from a starting point of ~75–94× — with results
 byte-/verdict-identical to ICU throughout. The collation *arithmetic* is at
-ICU's speed; the residual gap is the cost of a safe, value-type `String` API
-versus ICU's raw pointers, and it is an API-design question for Foundation
-integration (M8), not an engine deficiency. Every lever that lives inside the
-port has been pulled. The one structural lesson worth carrying forward: in
-Swift, on paths this hot, **ARC traffic is the enemy** — trivial value types,
-stored views, and capture discipline matter as much as the algorithm.
+ICU's speed; the residual gap is Swift value-type overhead — refcounting,
+growable-array reallocation, and (until §6.6) a costly canonical `String ==`.
+Profiling, not intuition, is what locates these: §6.6 found that ~30% of the
+non-Latin compare was Swift's `==` doing normalization, removed it for a
+12–35% non-Latin speedup, and showed the remainder is the fixed/stack-buffer
+refactor ICU uses — a real effort with diminishing returns, and partly an
+API-design question for Foundation integration (M8). The structural lesson, now
+twice confirmed: on paths this hot, **Swift value-type overhead — ARC and
+canonical `String` semantics — is the enemy**; measure the actual work before
+believing any one part is cheap.
