@@ -365,8 +365,13 @@ Release, ns/op; medians of 3 runs (spreads were tight, ±3%):
 
 | op | ours | ICU 79 | ratio |
 |---|---|---|---|
-| compare | ~1230 ns | ~287 ns | **4.3×** |
+| compare | ~1255 ns | ~289 ns | **4.3×** |
 | sortKey | ~1020 ns | ~291 ns | **3.5×** |
+
+Note: this compare figure is on dictionary-*adjacent* pairs — collation's
+hardest case (minimal pairs; see §6.4). On random Thai pairs the absolute cost
+roughly halves (~715 ns), though the ratio to ICU widens. Both are real; §6.4
+explains the difference.
 
 ### 6.3 Why these numbers — the CJK story, not the Latin one
 
@@ -378,11 +383,11 @@ Release, ns/op; medians of 3 runs (spreads were tight, ±3%):
 - Thai is **contraction-heavy**: prevowel+consonant pairs are contractions, so
   the iterator spends real time in the `UCharsTrie` contraction-matching path
   that ASCII/Latin never enter.
-- The **identical-prefix skip is blunted** for Thai specifically: the words
-  share ~3.3 scalars of prefix, but Thai consonants and vowels are exactly the
-  contraction-trailer characters that populate the unsafe-backward set, so the
-  restart boundary is usually *unsafe* and the skip falls back to comparing
-  from the start. Thai is close to the worst case for that lever.
+- The **identical-prefix skip is blunted** for Thai (the words share ~3.3
+  scalars but Thai letters are contraction trailers in the unsafe-backward
+  set, so the boundary is usually unsafe) — **but this is not why Thai is
+  slow.** See §6.4: the cost is comparison *depth*, not the prefix. The skip
+  being blunted is a side note, not the bottleneck.
 - **Sort keys at 3.5×** are consistent with every other corpus (ASCII 3.5×,
   CJK 3.5×, Latin 4.4×): sortKey never had a fast path on either side, so it
   holds a uniform ratio regardless of script.
@@ -392,46 +397,52 @@ is **~3.5–4.3× from ICU4C, matching the CJK profile**. The fast-Latin gains
 were always Latin-specific; this 32k-word dictionary confirms the rest of the
 engine holds its ratio under a genuinely demanding workload.
 
-### 6.4 Sorted vs shuffled: what the prefix skip recovers (and can't)
+### 6.4 Sorted vs shuffled: minimal pairs, not the prefix skip
 
-`riwords.txt` is in Thai dictionary order — which `ThaiDictionaryTests`
-confirms is consistent with `th` collation order — so the §6.2 run already
-measures the *sorted*, prefix-sharing case (adjacent pairs share ~3.3 scalars).
-To isolate how much the identical-prefix skip actually recovers on Thai, three
-compare measurements (release, medians of 3):
+`riwords.txt` is in Thai dictionary order, so the §6.2 run compares adjacent
+*dictionary-consecutive* words. Shuffling the corpus (`bench-thai-shuffled.txt`,
+seed 42) makes adjacent pairs random instead. Compare, release, medians:
 
-| Thai compare | ns/op | what it is |
+| Thai compare | ours | ICU 79 |
 |---|---|---|
-| sorted (correct; skip blocked) | ~1235 | the real number |
-| sorted, skip force-on | ~900 | safety check disabled — **incorrect order**, measurement only |
-| shuffled (seed 42; ~0 shared prefix) | ~660 | `bench-thai-shuffled.txt` |
+| sorted (dictionary-adjacent) | ~1255 ns | ~289 ns |
+| shuffled (random pairs) | ~715 ns | ~102 ns |
 
-Reading these:
+**Sorted is ~1.8× slower than shuffled — and ICU shows the identical pattern
+(289 vs 102).** That ICU exhibits it too is the proof it is a fundamental
+property of collation, not an artifact of our code.
 
-- **The skip is blocked, not absent.** Forcing it on (disabling `unsafeStart`)
-  drops sorted Thai 1235 → ~900 ns, so the safety check is currently making the
-  engine CE-iterate the full shared prefix on every comparison. **Caution:** the
-  ~335 ns is the cost of skipping the *whole* prefix including its unsafe
-  characters — which is incorrect. Only the *safe* portion is legitimately
-  recoverable, and on Thai that is nearly empty; §6.5 measures this and finds
-  the recoverable part too small to matter.
-- **It declines correctly.** Those Thai characters are in the unsafe-backward
-  set *because* their contractions depend on the preceding context; letting the
-  skip fire there (the ~900 ns run) produces wrong collation order. The ~335 ns
-  is the price of correctness for a contraction-dense script, not a missed
-  optimization.
-- **Shuffled is faster than even force-on** (660 < 900) because random adjacent
-  pairs differ at character 0–1 — minimal CE work — and carry no contraction
-  context across a boundary.
+The mechanism is **comparison depth**, established by instrumentation (CEs
+generated per comparison):
 
-The mirror image is `paths`: the same sorted, prefix-heavy shape, but its
-boundary characters (letters, `/`, `.`) are *safe*, so the skip fires and fully
-neutralizes the prefix — round 5 measured that lever as 10532 → ~1060 ns
-(now ~158). Thai and paths are the two poles: identical input shape, opposite
-skip outcomes, with the unsafe-backward set the entire difference. (Note: even
-shuffled, every path shares the common `icu4c/source/i18n/` directory prefix,
-so the skip matters there regardless of order — another reason paths is the
-skip's best case and Thai its worst.)
+| | CEs per compare | where the difference resolves |
+|---|---|---|
+| sorted (dictionary-adjacent) | **~8.9** | deep — primary-equal, decided at secondary/tertiary |
+| shuffled (random pairs) | **~2.5** | shallow — a primary difference in the first scalar or two |
+
+Dictionary-consecutive words are **minimal pairs**: `กง` / `ก่ง` / `ก้ง` — the
+same base differing only by a tone mark. They are equal at the primary (and
+often secondary) level, so the lazy comparison cannot stop early; it must
+generate the *full* CE sequence for both words and walk every level to find the
+difference (~9 CEs). Random pairs differ at the primary level in the first
+character or two, so the comparison stops almost immediately (~2.5 CEs). 3.6×
+the CE work → the slower time. Sorted-adjacent comparison is the *hardest* case
+for any collator, which is exactly why ICU slows down on it too.
+
+**This corrects an earlier, wrong explanation.** A previous version of this
+section attributed sorted Thai's cost to the blocked identical-prefix skip
+(the shared prefix being re-iterated). That was incorrect, and §6.5 records the
+experiment that disproved it: the prefix skip contributes almost nothing here
+(the skipped prefix averages well under one scalar), and skipping it does not
+speed Thai up. The cost is generating and comparing ~9 CEs of a minimal pair,
+which no prefix manipulation can avoid — it is the CE-iterator's per-element
+cost (§5.1), the same lever as CJK.
+
+(The contrast with `paths` still holds, but for a different reason than first
+stated: paths adjacent pairs share long *prefixes* yet differ at the primary
+level soon after — they are not minimal pairs — and the prefix is made of safe
+characters, so the skip fires and removes it. Thai pairs are both unsafe-prefix
+*and* minimal pairs; only the second property actually drives the cost.)
 
 Regenerate the shuffled corpus deterministically:
 
@@ -442,62 +453,50 @@ random.Random(42).shuffle(ws); \
 open('Tools/bench/bench-thai-shuffled.txt','w',encoding='utf-8').write(chr(10).join(ws)+chr(10))"
 ```
 
-### 6.5 Bounded backward backup: implemented, measured, reverted
+### 6.5 Bounded backward backup: implemented, measured, reverted (a wrong lever)
 
-The §6.4 force-on run suggested a lever: when the restart boundary is unsafe,
-our code resets all the way to position 0, whereas ICU backs up only to the
+This subsection records a mistake and its correction, because the reasoning
+error is instructive.
+
+The hypothesis (an earlier §6.4) was that sorted Thai is slow because the
+identical-prefix skip is blocked: on an unsafe boundary our code resets to
+position 0 and re-iterates the shared prefix, whereas ICU backs up only to the
 nearest *safe* character (`rulebasedcollator.cpp`: `while(--equalPrefixLength >
-0 && isUnsafeBackward(c, numeric))`) and iterates forward from there. The
-estimate was ~285 ns recovered on Thai (1235 → ~950). **It was implemented,
-measured, and reverted — a negative result.**
+0 && isUnsafeBackward(c, numeric))`). The proposed fix — a bounded backward
+walk to the nearest safe scalar — was estimated at ~285 ns on Thai. **It was
+implemented, measured, and reverted with no gain (a slight regression).**
 
-Why some context is genuinely mandatory (this part holds, and is exactly ICU's
-`unsafeBackward` set): the character at the first difference can depend on the
-preceding shared prefix three ways — (1) **contractions**, the differing
-character being the trailer of a contraction whose head is in the prefix
-(Thai's prevowel/consonant ordering is built from these); (2) **precontext /
-prefix mappings**, a weight defined relative to the preceding character (kana
-voicing, etc.); (3) **canonical reordering**, a boundary mark reordering with
-prefix marks (lead-ccc ≠ 0). Start iterating at such a character in isolation
-and its weight is wrong — which is why the §6.4 force-on run sorts incorrectly.
+The failed experiment was itself the disproof. If the blocked skip were the
+cost, skipping the prefix would have helped; it didn't. Instrumenting why
+revealed two things:
 
-**What the measurement showed.** Instrumenting the implemented backup over the
-32k-word Thai corpus:
+- The shared prefix the skip could recover averages well under one scalar in
+  effect (Thai letters are pervasively unsafe-backward, so the safe restart
+  point is usually position 0), and the index-walk to find it costs about as
+  much as it saves.
+- More fundamentally — the §6.4 CE-count instrumentation — the cost is not the
+  prefix at all but the **~9 CEs of a minimal pair** generated and compared
+  across all levels. The prefix is a rounding error next to that.
 
-| metric | value |
-|---|---|
-| average forward shared prefix | 3.25 scalars |
-| average restart position after backup | **0.85 scalars** |
-| backups reaching position 0 (whole prefix unsafe) | **56%** |
+So the prefix skip was a **red herring** for Thai. The §6.4 force-on
+measurement that suggested a ~335 ns "opportunity" was misleading: forcing the
+skip on truncates the strings (incorrectly skipping unsafe shared content),
+which shortens the minimal-pair comparison — but that shared content is not a
+removable prefix, it is the body of the words, and removing it changes the
+result. No correct optimization can recover it.
 
-Thai consonants are contraction trailers, so they are *pervasively*
-unsafe-backward: the shared prefix has almost no safe restart point above 0.
-The bounded backup recovers only ~0.85 of the 3.25 prefix scalars on average —
-worth perhaps ~85 ns gross — and the index-walk it requires (stepping back over
-`UnicodeScalarView` indices) costs about that much, so the net was **neutral to
-slightly negative** (~1280 vs ~1235 ns). The §6.4 ~335 ns "opportunity" was
-illusory: most of it is skipping *unsafe* characters, which is incorrect; the
-legitimately recoverable safe tail is nearly empty on Thai.
+**Outcome.** Reverted to the round-5 reset-to-0. Correctness was never in doubt
+(the differential matrices and Thai dictionary test stayed green throughout);
+the change was dropped because it does not earn its cost *and* because it
+targeted the wrong thing. The real Thai/CJK lever is CE-iterator efficiency
+(§5.1) — generating and comparing those ~9 CEs faster (ICU uses a fixed CE
+buffer with a stack tail and no per-call allocation; we use a growable array).
+That, not the prefix skip, is where the ~4× gap lives.
 
-**Why this was the wrong lever.** ICU also backs up only to safe points and
-also faces pervasively-unsafe Thai prefixes — so ICU's 287 ns Thai compare
-does *not* come from the prefix skip either. It comes from a faster CE
-iterator (no per-call allocation, a fixed CE buffer with a stack tail vs our
-growable array). The Thai/CJK gap is iterator efficiency (§5.1), not the
-identical-prefix skip. The backup helps only scripts whose prefixes are mostly
-*safe* with occasional unsafe characters — and those are either Latin (handled
-by the byte fast path, where base letters are already safe) or scripts like CJK
-whose characters are fully safe (so the plain skip already fires without any
-backup). There is no realistic workload where the scalar-path backup pays off.
-
-**Outcome.** Reverted to the round-5 reset-to-0 (simpler, and effectively
-identical on the workloads that matter). Correctness was never in question —
-the differential matrices and Thai dictionary test stayed green throughout; the
-change was dropped purely because it does not earn its cost. The lesson:
-`unsafeBackward` membership is not occasional on contraction-dense scripts, it
-is the common case, so "back up to the nearest safe point" degenerates to "back
-up to the start." If Thai/CJK compare is ever a priority, the lever is the CE
-iterator, not the prefix skip.
+**Lesson.** Always instrument the actual work before theorizing about the
+cause. "Sorted slower than shuffled" looked like a skip problem and was really
+a comparison-depth property — one ICU shares (§6.4). A single CE-count
+measurement would have prevented the whole detour.
 
 ## 7. Data-format decisions that paid off
 
