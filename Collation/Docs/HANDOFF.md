@@ -128,7 +128,8 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
 01 ICU4C investigation · 02 ICU4X strategy · 03 Swift strategy ·
 04 **milestone plan + status table (the spine — keep it updated)** ·
 05–10 milestone reports (2–7) · 11 milestone 7.5 report (tests + perf) ·
-12 rule-builder decision record · HANDOFF (this file)
+12 rule-builder decision record · 13 performance analysis (standalone) ·
+HANDOFF (this file)
 
 Convention: every milestone/round updates doc 04's table + outcome note and
 gets a detailed report; decision records for surprising cuts; commit

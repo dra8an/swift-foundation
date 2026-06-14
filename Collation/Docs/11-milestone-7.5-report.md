@@ -1,7 +1,10 @@
 # Milestone 7.5 Report: ICU Test-Suite Port + Performance Round 1
 
-> In progress; round 1 completed 2026-06-11. Companion to the outcome note in
-> `04-milestone-plan.md`. Previous report: `10-milestone-7-report.md`.
+> Round 1 completed 2026-06-11; milestone complete 2026-06-12. Companion to
+> the outcome note in `04-milestone-plan.md`. Previous report:
+> `10-milestone-7-report.md`. For a standalone, consolidated performance
+> analysis (methodology, the full journey, cost anatomy, the residual gap),
+> see `13-performance-analysis.md`; this report keeps the per-round narrative.
 
 ## Why this milestone exists
 
