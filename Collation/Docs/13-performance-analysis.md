@@ -392,6 +392,53 @@ is **~3.5–4.3× from ICU4C, matching the CJK profile**. The fast-Latin gains
 were always Latin-specific; this 32k-word dictionary confirms the rest of the
 engine holds its ratio under a genuinely demanding workload.
 
+### 6.4 Sorted vs shuffled: what the prefix skip recovers (and can't)
+
+`riwords.txt` is in Thai dictionary order — which `ThaiDictionaryTests`
+confirms is consistent with `th` collation order — so the §6.2 run already
+measures the *sorted*, prefix-sharing case (adjacent pairs share ~3.3 scalars).
+To isolate how much the identical-prefix skip actually recovers on Thai, three
+compare measurements (release, medians of 3):
+
+| Thai compare | ns/op | what it is |
+|---|---|---|
+| sorted (correct; skip blocked) | ~1235 | the real number |
+| sorted, skip force-on | ~900 | safety check disabled — **incorrect order**, measurement only |
+| shuffled (seed 42; ~0 shared prefix) | ~660 | `bench-thai-shuffled.txt` |
+
+Reading these:
+
+- **The skip is blocked, not absent.** Forcing it on (disabling `unsafeStart`)
+  drops sorted Thai 1235 → ~900 ns, so the safety check is currently making the
+  engine CE-iterate the full shared prefix on every comparison. That ~335 ns/op
+  is real, recoverable prefix work the skip declines.
+- **It declines correctly.** Those Thai characters are in the unsafe-backward
+  set *because* their contractions depend on the preceding context; letting the
+  skip fire there (the ~900 ns run) produces wrong collation order. The ~335 ns
+  is the price of correctness for a contraction-dense script, not a missed
+  optimization.
+- **Shuffled is faster than even force-on** (660 < 900) because random adjacent
+  pairs differ at character 0–1 — minimal CE work — and carry no contraction
+  context across a boundary.
+
+The mirror image is `paths`: the same sorted, prefix-heavy shape, but its
+boundary characters (letters, `/`, `.`) are *safe*, so the skip fires and fully
+neutralizes the prefix — round 5 measured that lever as 10532 → ~1060 ns
+(now ~158). Thai and paths are the two poles: identical input shape, opposite
+skip outcomes, with the unsafe-backward set the entire difference. (Note: even
+shuffled, every path shares the common `icu4c/source/i18n/` directory prefix,
+so the skip matters there regardless of order — another reason paths is the
+skip's best case and Thai its worst.)
+
+Regenerate the shuffled corpus deterministically:
+
+```sh
+python3 -c "import random; \
+ws=[l for l in open('Tools/bench/bench-thai.txt',encoding='utf-8').read().split(chr(10)) if l]; \
+random.Random(42).shuffle(ws); \
+open('Tools/bench/bench-thai-shuffled.txt','w',encoding='utf-8').write(chr(10).join(ws)+chr(10))"
+```
+
 ## 7. Data-format decisions that paid off
 
 A recurring theme: **the data we needed was already in the bundled binaries;
