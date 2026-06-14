@@ -9,7 +9,7 @@ import Collation
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
-    FileHandle.standardError.write(Data("usage: Bench <corpus.txt> [reps]\n".utf8))
+    FileHandle.standardError.write(Data("usage: Bench <corpus.txt> [reps] [tailoring]\n".utf8))
     exit(2)
 }
 let lines = try String(contentsOfFile: arguments[1], encoding: .utf8)
@@ -17,8 +17,10 @@ let lines = try String(contentsOfFile: arguments[1], encoding: .utf8)
     .map(String.init)
 let reps = arguments.count > 2 ? Int(arguments[2])! : 200
 
-let collator = try RootCollator()
-let options = CollationOptions()
+// Optional 3rd arg selects a bundled tailoring (e.g. "th"); default is root.
+let collator = arguments.count > 3
+    ? try RootCollator(tailoringNamed: arguments[3]) : try RootCollator()
+let options = collator.defaultOptions
 
 func measure(_ name: String, ops: Int, _ body: () throws -> Void) rethrows {
     // Warmup.

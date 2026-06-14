@@ -123,6 +123,10 @@ Why each matters:
   prefixes (26 of 33 scalars on average). This is where the identical-prefix
   skip pays off and where naive O(prefix) re-iteration would dominate.
 
+A fifth corpus, `bench-thai.txt` (32,895 real Thai dictionary words, run under
+the `th` tailoring), is covered separately in §6 — it is a tailored,
+non-Latin, contraction-dense workload rather than a throughput micro-corpus.
+
 ### 2.3 ICU as the reference
 
 ICU 79.0.1, built machine-locally at `~/Projects/claude/collation/icu-build`
@@ -327,7 +331,68 @@ complexity. It was judged a reasonable stopping point: 5× on the corpus that
 is rarest in latency-sensitive sorting (CJK strings are short and primary
 differences resolve fast in absolute terms).
 
-## 6. Data-format decisions that paid off
+## 6. Case study: the Thai dictionary (32k words)
+
+A throughput test on a large, real, non-Latin, contraction-dense corpus, run
+after the perf track closed (2026-06-14) to confirm the engine holds its ratio
+under a demanding *tailored* workload — the first benchmark of a tailoring
+rather than the root collator.
+
+### 6.1 The corpus
+
+`Tools/bench/bench-thai.txt` is the **32,895 Thai words of ICU's `riwords.txt`**
+(the dictionary-order fixture also driving `ThaiDictionaryTests`), with the
+comment header and BOM stripped. The words are in Thai dictionary order, so
+adjacent pairs share ~3.3 scalars of prefix; average length 6.8 scalars,
+longest 57. Regenerate from the bundled fixture:
+
+```sh
+python3 -c "import sys; \
+print('\n'.join(l.strip() for l in \
+open('Tests/CollationTests/Conformance/riwords.txt', encoding='utf-8-sig') \
+if l.strip() and not l.startswith('#')))" > Tools/bench/bench-thai.txt
+```
+
+Both sides use Thai collation — ours via `RootCollator(tailoringNamed: "th")`,
+ICU via `ucol_open("th")` — over the same word list. Both harnesses take an
+optional locale/tailoring argument for this (added 2026-06-14):
+`Bench <corpus> <reps> th` and `bench_icu <corpus> <reps> th`. (The ICU bench's
+line cap was also raised 4096 → 40000 to hold the corpus.)
+
+### 6.2 Results
+
+Release, ns/op; medians of 3 runs (spreads were tight, ±3%):
+
+| op | ours | ICU 79 | ratio |
+|---|---|---|---|
+| compare | ~1230 ns | ~287 ns | **4.3×** |
+| sortKey | ~1020 ns | ~291 ns | **3.5×** |
+
+### 6.3 Why these numbers — the CJK story, not the Latin one
+
+- Thai is **entirely outside the fast-Latin range** (the U+0E00 block), so
+  every comparison runs the **full CE-iterator pipeline**, exactly like CJK.
+  The 4.3× ratio sits right next to the CJK compare ratio (~5×), nowhere near
+  ASCII/Latin's fast-path numbers. The fast-Latin win is Latin-specific and
+  simply does not apply.
+- Thai is **contraction-heavy**: prevowel+consonant pairs are contractions, so
+  the iterator spends real time in the `UCharsTrie` contraction-matching path
+  that ASCII/Latin never enter.
+- The **identical-prefix skip is blunted** for Thai specifically: the words
+  share ~3.3 scalars of prefix, but Thai consonants and vowels are exactly the
+  contraction-trailer characters that populate the unsafe-backward set, so the
+  restart boundary is usually *unsafe* and the skip falls back to comparing
+  from the start. Thai is close to the worst case for that lever.
+- **Sort keys at 3.5×** are consistent with every other corpus (ASCII 3.5×,
+  CJK 3.5×, Latin 4.4×): sortKey never had a fast path on either side, so it
+  holds a uniform ratio regardless of script.
+
+The conclusion: on heavy non-Latin, tailored, contraction-dense work the engine
+is **~3.5–4.3× from ICU4C, matching the CJK profile**. The fast-Latin gains
+were always Latin-specific; this 32k-word dictionary confirms the rest of the
+engine holds its ratio under a genuinely demanding workload.
+
+## 7. Data-format decisions that paid off
 
 A recurring theme: **the data we needed was already in the bundled binaries;
 the work was reading it, not building it.** Twice this turned a presumed-large
@@ -353,7 +418,7 @@ lever into a small one.
   96 KB on disk vs 34 KB — the size/speed trade chosen deliberately, since the
   file is bundled once and read on every scalar.
 
-## 7. Sort keys
+## 8. Sort keys
 
 Sort keys are 2.3–4× from ICU and were *not* a focus of the late rounds —
 fast Latin is compare-only (it has no key-generation analogue in ICU either),
@@ -371,7 +436,7 @@ the assembly cost. A profiling pass on `writeSortKeyUpToQuaternary` (it still
 swaps growable level buffers) is the obvious next lever if sort-key throughput
 ever becomes the priority.
 
-## 8. Reproducing these measurements
+## 9. Reproducing these measurements
 
 ```sh
 cd ~/Projects/claude/collation/swift-foundation/Collation
@@ -384,6 +449,22 @@ swift build -c release
 # ICU 79 reference (same harness, UTF-8 entry points):
 DYLD_LIBRARY_PATH=~/Projects/claude/collation/icu-build/lib \
   Tools/bench_icu Tools/bench/bench-ascii.txt 200
+
+# Tailored corpus (3rd arg = bundled tailoring / ICU locale). The Thai
+# dictionary is large, so fewer reps suffice (see §6):
+.build/release/Bench Tools/bench/bench-thai.txt 10 th
+DYLD_LIBRARY_PATH=~/Projects/claude/collation/icu-build/lib \
+  Tools/bench_icu Tools/bench/bench-thai.txt 10 th
+```
+
+The ICU bench must be rebuilt after the harness edit (locale arg, raised line
+cap):
+
+```sh
+cd Tools
+ICU_SRC=~/Projects/claude/icu ICU_BUILD=~/Projects/claude/collation/icu-build
+clang bench_icu.c -O2 -o bench_icu -I $ICU_SRC/icu4c/source/common \
+  -I $ICU_SRC/icu4c/source/i18n -L $ICU_BUILD/lib -licuuc -licui18n -licudata
 ```
 
 For trustworthy numbers on a loaded machine: take the lower cluster of 5–6
@@ -399,7 +480,7 @@ re-bench, `git checkout` to restore. To see the live hot path:
 sample $! 2 -file /tmp/prof.txt   # narrow the window to hit compare, not sortKey
 ```
 
-## 9. Bottom line
+## 10. Bottom line
 
 The pure-Swift collator runs comparison within 3–5× of ICU4C and sort-key
 generation within 2.3–4×, from a starting point of ~75–94× — with results

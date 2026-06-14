@@ -7,7 +7,7 @@
  *   clang bench_icu.c -o bench_icu \
  *     -I $ICU_SRC/icu4c/source/common -I $ICU_SRC/icu4c/source/i18n \
  *     -L $ICU_BUILD/lib -licuuc -licui18n -licudata
- * Usage: DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./bench_icu <corpus.txt> [reps]
+ * Usage: DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./bench_icu <corpus.txt> [reps] [locale]
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +16,7 @@
 #include "unicode/ucol.h"
 #include "unicode/ustring.h"
 
-#define MAX_LINES 4096
+#define MAX_LINES 40000
 #define MAX_LINE 1024
 
 static uint64_t now_ns(void) {
@@ -27,10 +27,11 @@ static uint64_t now_ns(void) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <corpus.txt> [reps]\n", argv[0]);
+        fprintf(stderr, "usage: %s <corpus.txt> [reps] [locale]\n", argv[0]);
         return 2;
     }
     int reps = argc > 2 ? atoi(argv[2]) : 200;
+    const char *locale = argc > 3 ? argv[3] : "root";
 
     FILE *in = fopen(argv[1], "r");
     if (!in) { perror("corpus"); return 1; }
@@ -51,7 +52,7 @@ int main(int argc, char **argv) {
     }
     fclose(in);
 
-    UCollator *coll = ucol_open("root", &status);
+    UCollator *coll = ucol_open(locale, &status);
     ucol_setAttribute(coll, UCOL_NORMALIZATION_MODE, UCOL_ON, &status);
     if (U_FAILURE(status)) { fprintf(stderr, "ucol: %s\n", u_errorName(status)); return 1; }
 
