@@ -19,6 +19,13 @@
 #define MAX_LINES 40000
 #define MAX_LINE 1024
 
+static UCollator *g_sortcoll;
+static int sort_cmp(const void *a, const void *b) {
+    UErrorCode s = U_ZERO_ERROR;
+    return ucol_strcollUTF8(g_sortcoll, *(const char *const *)a, -1,
+                            *(const char *const *)b, -1, &s);
+}
+
 static uint64_t now_ns(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -55,6 +62,15 @@ int main(int argc, char **argv) {
     UCollator *coll = ucol_open(locale, &status);
     ucol_setAttribute(coll, UCOL_NORMALIZATION_MODE, UCOL_ON, &status);
     if (U_FAILURE(status)) { fprintf(stderr, "ucol: %s\n", u_errorName(status)); return 1; }
+
+    /* `bench_icu <corpus> sort [locale]` prints lines sorted by ICU, for
+     * cross-checking sort order against ours (`Bench <corpus> sort`). */
+    if (argc > 2 && strcmp(argv[2], "sort") == 0) {
+        g_sortcoll = coll;
+        qsort(lines, n, sizeof(lines[0]), sort_cmp);
+        for (int i = 0; i < n; i++) printf("%s\n", lines[i]);
+        return 0;
+    }
 
     volatile long sink = 0;
 

@@ -580,6 +580,30 @@ re-bench, `git checkout` to restore. To see the live hot path:
 sample $! 2 -file /tmp/prof.txt   # narrow the window to hit compare, not sortKey
 ```
 
+### 9.1 Sort-order cross-check against ICU
+
+Both harnesses have a `sort` mode (and `Bench` a `keys` mode) for confirming
+the collator orders text the same as ICU — collation is the ordering rule;
+sorting is its main application, so this is the natural end-to-end check:
+
+```sh
+.build/release/Bench Tools/bench/bench-ascii.txt sort           > /tmp/ours.txt
+DYLD_LIBRARY_PATH=$ICU_BUILD/lib \
+  Tools/bench_icu Tools/bench/bench-ascii.txt sort              > /tmp/icu.txt
+diff /tmp/ours.txt /tmp/icu.txt    # add a 3rd arg (th) to sort under a tailoring
+```
+
+Result (2026-06-14): **byte-identical** sorted output on `ascii`, `latin`,
+`cjk`, and `paths`. On the 32,895-word shuffled Thai corpus under the `th`
+tailoring the two sorts differ at 506 positions — **all of them ties**: the
+words at those positions have identical sort keys, so the difference is only
+how the two unstable sorts (`Array.sorted` / `qsort`) break ties among
+collation-equal words, not a collation disagreement. Confirm with the `keys`
+mode: dump `Bench <ours.txt> keys th` and `Bench <icu.txt> keys th`; the
+key-sequences match position-for-position, and both lists are non-decreasing
+by those keys (i.e. both are correct sorts of the same multiset). Zero genuine
+ordering disagreements over 32k tailored, contraction-dense words.
+
 ## 10. Bottom line
 
 The pure-Swift collator runs comparison within 3–5× of ICU4C and sort-key
