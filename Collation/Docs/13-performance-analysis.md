@@ -439,6 +439,59 @@ random.Random(42).shuffle(ws); \
 open('Tools/bench/bench-thai-shuffled.txt','w',encoding='utf-8').write(chr(10).join(ws)+chr(10))"
 ```
 
+### 6.5 Identified optimization: bounded backward backup (NEXT TASK)
+
+The §6.4 measurements expose a simplification worth reversing. **First, to be
+precise about the cost: the ~335 ns is not something the skip *adds* to Thai —
+it is a saving the skip *fails to capture*.** On an unsafe boundary the skip
+does a quick scan, the safety check says "no", and we fall back to comparing
+from the start — exactly what we would do with no skip at all. So the skip
+mechanism is nearly free on Thai; it simply provides no benefit there. ("Cost"
+in §6.4 means unrealized savings, not added work.)
+
+**Why some context is genuinely mandatory.** The character at the first
+difference can depend on the preceding shared prefix in three ways — all
+correctness, all enforced by ICU's identical `unsafeBackward` set, so this is
+not a Swift-port shortcoming:
+
+1. **Contractions** — the differing character can be the *trailer* of a
+   contraction whose head sits in the shared prefix. Thai's prevowel/consonant
+   ordering is built from contractions, which is why Thai is the worst case.
+2. **Precontext / prefix mappings** — a character whose weight is *defined*
+   relative to the preceding character (the CLDR "prefix" rule: kana voicing
+   marks after specific bases, etc.).
+3. **Canonical reordering** — a boundary combining mark may reorder by
+   combining class with marks at the tail of the prefix (lead-ccc ≠ 0).
+
+Start iterating at such a character in isolation and its weight comes out
+wrong — the §6.4 "skip force-on" run (~900 ns) is exactly that, and it sorts
+incorrectly.
+
+**What is *not* needed is resetting all the way to position 0.** ICU backs up
+only to the nearest *safe* character — usually one or two before the difference
+— then iterates forward from there, rebuilding context as it goes
+(`rulebasedcollator.cpp`: `while(--equalPrefixLength > 0 &&
+isUnsafeBackward(c, numeric))`). Our current code resets fully to 0 (round 5,
+a deliberate simplification: "skipping less is always sound, and it keeps the
+common path free of index arithmetic"). For contraction-dense sorted data that
+throws away most of the available skip.
+
+**The opportunity, bracketed by §6.4:** reset-to-0 (correct) 1235 ns vs
+skip-everything (incorrect) 900 ns. A bounded backward walk — skip everything
+*except* the 1–2 context characters the contraction needs — should land near
+the 900 end, ≈ **950 ns**: ~285 ns recovered, tightening Thai from ~4.3× to
+~3.3× and helping any contraction-dense sorted workload.
+
+**Implementation sketch.** Replace the scalar path's `if unsafe { shared = 0 }`
+with a backward walk over the unsafe run, restarting at the first safe
+character; the CE iterator already maintains `prev1`/`prev2`, so it rebuilds
+the needed context going forward from a safe start. The scalar walk would move
+back to `UnicodeScalarView` indices (to step backward) from the current
+counter+iterator form. Correctness held by the differential matrices and the
+Thai dictionary test. The fast-Latin/byte path is unaffected —
+contraction-dense scripts like Thai are out of its range, and Latin boundary
+characters are already safe. **This is the next task.**
+
 ## 7. Data-format decisions that paid off
 
 A recurring theme: **the data we needed was already in the bundled binaries;
