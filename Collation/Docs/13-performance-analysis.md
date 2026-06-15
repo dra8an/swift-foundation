@@ -12,8 +12,8 @@
 
 ## 1. Executive summary
 
-`compare()` is within **3–5×** of ICU4C on every corpus, after starting the
-optimization effort **~75–94× slower**. Sort keys are within **2.3–4×**.
+`compare()` is within **2.8–5×** of ICU4C across the corpora, after starting the
+optimization effort **~75–94× slower**. Sort keys are within **2.2–4.4×**.
 Every result is byte-identical to ICU's (sort keys) or verdict-identical
 (comparisons), enforced by ~2.8M differential pairs per option set.
 
@@ -30,7 +30,9 @@ code cost rather than scheduler contention; see §2.4):
 
 (CJK and other non-Latin compare improved ~12–35% after removing the
 `left == right` canonical-`==` shortcut — see §6.6, which profiles where the
-non-Latin gap actually goes.)
+non-Latin gap actually goes. The sorted Thai dictionary improved further to
+**2.8×** via prefix-skip iterator reuse — see §6.7, which also records two
+levers that profiled well but failed a wall-clock A/B and were reverted.)
 
 The headline: **ASCII compare went 7437 → ~79 ns over the effort — a 94×
 speedup**, closing the gap to ICU from ~75× to ~4.9×.
@@ -182,6 +184,8 @@ round: doc 11.
 | 9 | fast Latin (scalar) | ~101 ns | mini-CE table compare |
 | 10 | fast Latin (raw UTF-8) | **~79 ns** | byte feed, no scalar decode |
 | 11 | remove `left == right` (canonical `==`) | ~79 ns | ASCII unaffected; **non-Latin −12…35%** (§6.6) |
+| 12 | NFD front-end allocation cuts | ~79 ns | ASCII unaffected; **Thai sortKey −8%** (§6.7) |
+| 13 | reuse prefix-skip iterators (ARC) | ~79 ns | ASCII unaffected; **Thai compare −13%** (§6.7) |
 
 (Round 1 introduced the `if left == right` shortcut as an optimization;
 round 11 removed it after profiling showed Swift's canonical `==` dominates
@@ -380,22 +384,26 @@ Release, ns/op; medians of 3 runs (spreads were tight, ±3%):
 
 | op | ours | ICU 79 | ratio |
 |---|---|---|---|
-| compare | ~975 ns | ~289 ns | **3.4×** |
-| sortKey | ~1020 ns | ~291 ns | **3.5×** |
+| compare | ~820 ns | ~289 ns | **2.8×** |
+| sortKey | ~950 ns | ~291 ns | **3.3×** |
 
 Note: this compare figure is on dictionary-*adjacent* pairs — collation's
 hardest case (minimal pairs; see §6.4). On random Thai pairs the absolute cost
-roughly halves (~465 ns), though the ratio to ICU widens. Both are real; §6.4
-explains the difference. (These are post-§6.6 numbers — the original case study
-measured ~1255 / ~715 before the `left == right` removal.)
+roughly halves (~420 ns), though the ratio to ICU widens. Both are real; §6.4
+explains the difference. (These are post-§6.7 numbers. The progression on
+sorted-Thai compare: ~1255 ns before round 11 → ~975 (remove canonical `==`,
+§6.6) → ~820 (reuse prefix-skip iterators, §6.7). sortKey: ~1130 → ~950 across
+rounds 12–13.)
 
 ### 6.3 Why these numbers — the CJK story, not the Latin one
 
 - Thai is **entirely outside the fast-Latin range** (the U+0E00 block), so
-  every comparison runs the **full CE-iterator pipeline**, exactly like CJK.
-  The 4.3× ratio sits right next to the CJK compare ratio (~5×), nowhere near
-  ASCII/Latin's fast-path numbers. The fast-Latin win is Latin-specific and
-  simply does not apply.
+  every comparison runs the **full CE-iterator pipeline**, exactly like CJK,
+  nowhere near ASCII/Latin's fast-path numbers — the fast-Latin win is
+  Latin-specific and simply does not apply. Sorted-Thai compare (2.8×) now
+  edges *below* the CJK compare ratio (~5×): the round-13 prefix-skip reuse
+  pays off precisely on a sorted dictionary's long shared prefixes, which the
+  CJK corpus does not have.
 - Thai is **contraction-heavy**: prevowel+consonant pairs are contractions, so
   the iterator spends real time in the `UCharsTrie` contraction-matching path
   that ASCII/Latin never enter.
@@ -409,9 +417,11 @@ measured ~1255 / ~715 before the `left == right` removal.)
   holds a uniform ratio regardless of script.
 
 The conclusion: on heavy non-Latin, tailored, contraction-dense work the engine
-is **~3.5–4.3× from ICU4C, matching the CJK profile**. The fast-Latin gains
-were always Latin-specific; this 32k-word dictionary confirms the rest of the
-engine holds its ratio under a genuinely demanding workload.
+is **~2.8–3.3× from ICU4C** (compare on a sorted dictionary now ahead of the
+CJK ratio thanks to prefix-skip reuse; sortKey holds the uniform ~3.3×). The
+fast-Latin gains were always Latin-specific; this 32k-word dictionary confirms
+the rest of the engine holds — and improves — its ratio under a genuinely
+demanding workload.
 
 ### 6.4 Sorted vs shuffled: minimal pairs, not the prefix skip
 
@@ -565,6 +575,71 @@ a one-line fix — but the headline answer to "why 4×" is now concrete: it was
 ~30% Swift canonical `==` (fixed) plus ~40% other Swift value-type overhead,
 and only the remainder is the arithmetic, which does run at ICU's speed.
 
+### 6.7 Chasing the residual: two wins and two honest negatives
+
+§6.6 ended pointing at "the fixed/stack-buffer refactor ICU uses" as the next
+lever. Pursuing it produced a result worth recording in full, because **half of
+what looked promising under the profiler did not survive a wall-clock A/B.**
+
+**The CE-buffer refactor (tried, neutral, reverted).** The headline candidate
+from §6.6 was replacing the growable `[Int64]` CE buffer with a raw-pointer
+fixed buffer (ICU's `int64_t ceBuffer[40]` + heap overflow), eliminating
+copy-on-write probes, exclusivity checks, and bounds checks on every CE
+append/index. It was implemented end-to-end and came out **neutral** — Thai
+sorted compare ~947 → ~915 ns, inside the noise band. The reason: with the
+scratch pool already reusing the array at steady-state capacity, `append` on a
+uniquely-referenced buffer is cheap, and the "~13% Array growth + memmove" line
+in §6.6's table was **not the CE buffer at all** — re-profiling traced it to
+`NFDIterator.refill`. Reverted.
+
+**NFD front-end allocation cuts (round 12, kept).** That re-profiling pointed
+at the real allocator traffic, in the normalization front end:
+- `flushMarks` sorted ≥2 combining marks by building a throwaway
+  `[(ccc, scalar)]`, `insert`-ing into it (a `memmove` per insert), then
+  materializing a *second* array via `.map`. Replaced with an in-place
+  insertion sort on the existing `marks` buffer — zero temporaries.
+- `refill` cleared and refilled a per-scalar `decomposed` scratch buffer for
+  *every* scalar, including the overwhelming majority that map to themselves
+  (bare consonants, marks, CJK). A `hasDecomposition` gate now sends those
+  straight through with no buffer touch.
+
+Both are output-identical (UCA conformance + the Thai dictionary suite stay
+green). sortKey — which always fully decomposes — improved ~8–11%; compare
+(which short-circuits before decomposing much) stayed roughly flat.
+
+**Reuse the prefix-skip iterators (round 13, kept — the real ARC win).**
+Attributing the per-compare ARC by caller showed it concentrated in `compare`
+itself: the identical-prefix skip walks both inputs' scalars to find the shared
+prefix, then **threw those iterators away** and built fresh
+`String.UnicodeScalarView` iterators inside each `CEIterator.reset(skippingFirst:)`
+— retaining `String` storage four times per compare and *re-walking the shared
+prefix*. The skip walk already leaves each iterator positioned past the prefix
+with the first unequal scalar in hand; handing that (pending scalar + iterator)
+straight to the NFD front end via a new `reset(source:first:)` removes two of
+the four iterator builds and the re-walk. Sorted-Thai compare **~947 → ~820 ns
+(~13%)**, consistent across five sequential runs; this is the lever that scales
+with shared-prefix length, i.e. with real sorting workloads. `takeScratch` ARC
+also dropped ~6× in the profile as a side effect.
+
+**The `isUnsafe` bitset (tried, no measurable gain, reverted).** The restart
+check ran up to two binary searches over the unsafe-backward boundary sets per
+compare; profiling put it at ~7% (≈188 leaf samples). A precomputed 8 KB BMP
+bitset cut those samples to **zero** — and yet an interleaved A/B (with vs
+without, run alternately so machine load hits both) showed the wall-clock delta
+hovering at ±2% with the sign flipping between batches: **no reliable win.** The
+binary search ran on small, cache-hot arrays — cheap in real nanoseconds even
+though it sampled frequently — and trading it for an 8 KB (possibly cache-cold)
+bitset is a wash. Reverted: 8 KB/collator + a 64K-iteration init for no gain.
+
+**The meta-lesson.** This codebase fooled the profiler's *leaf self-time* twice
+in the same way — once on the CE array (§6.6's "13%"), once on the
+unsafe-backward search — both times overstating the wall-clock cost of
+memory-latency code that overlaps with other work or lives in cache. The levers
+that actually held removed **allocations** (round 12) and **redundant
+algorithmic work plus real `String`-storage retains** (round 13), not sampled
+hot-spots per se. Operational rule going forward: **A/B every lever before
+trusting it; a sample count going to zero is a hypothesis, not a result.**
+
 ## 7. Data-format decisions that paid off
 
 A recurring theme: **the data we needed was already in the bundled binaries;
@@ -679,16 +754,26 @@ ordering disagreements over 32k tailored, contraction-dense words.
 
 ## 10. Bottom line
 
-The pure-Swift collator runs comparison within ~3.4–4.9× of ICU4C and sort-key
-generation within 2.3–4×, from a starting point of ~75–94× — with results
+The pure-Swift collator runs comparison within ~2.8–4.9× of ICU4C and sort-key
+generation within 2.2–4.4×, from a starting point of ~75–94× — with results
 byte-/verdict-identical to ICU throughout. The collation *arithmetic* is at
 ICU's speed; the residual gap is Swift value-type overhead — refcounting,
-growable-array reallocation, and (until §6.6) a costly canonical `String ==`.
-Profiling, not intuition, is what locates these: §6.6 found that ~30% of the
-non-Latin compare was Swift's `==` doing normalization, removed it for a
-12–35% non-Latin speedup, and showed the remainder is the fixed/stack-buffer
-refactor ICU uses — a real effort with diminishing returns, and partly an
-API-design question for Foundation integration (M8). The structural lesson, now
-twice confirmed: on paths this hot, **Swift value-type overhead — ARC and
-canonical `String` semantics — is the enemy**; measure the actual work before
-believing any one part is cheap.
+allocator traffic, and (until §6.6) a costly canonical `String ==`. Profiling,
+not intuition, is what locates these: §6.6 found that ~30% of the non-Latin
+compare was Swift's `==` doing normalization, removed it for a 12–35% non-Latin
+speedup; §6.7 then cut the NFD front end's per-scalar allocations (sortKey −8%)
+and reused the prefix-skip iterators to drop sorted-Thai compare another ~13%
+(to 2.8×) by removing real `String`-storage retains and a redundant prefix
+re-walk. The remaining gap is the fixed/stack-buffer territory ICU occupies — a
+real effort with diminishing returns, partly an API-design question for
+Foundation integration (M8).
+
+Two structural lessons, both now confirmed more than once. First: on paths this
+hot, **Swift value-type overhead — ARC and canonical `String` semantics — is the
+enemy**, more than the arithmetic. Second, learned the harder way in §6.7:
+**profiler leaf samples are a hypothesis, not a result.** Twice a sampled
+hot-spot (a CE-array memmove, an unsafe-backward binary search) overstated its
+real cost, and the "obvious" structural fix profiled to zero while moving
+wall-clock not at all. The levers that held removed allocations and redundant
+work; the ones that only made a sample count vanish were reverted. A/B every
+lever before believing it.
