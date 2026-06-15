@@ -76,17 +76,32 @@ struct NFDIterator {
             carried.removeAll(keepingCapacity: true)
         }
         if let first {
-            decomposed.removeAll(keepingCapacity: true)
-            if !norm.appendDecomposition(of: first, to: &decomposed) {
-                decomposed.append(first)
+            if norm.hasDecomposition(first) {
+                decomposed.removeAll(keepingCapacity: true)
+                _ = norm.appendDecomposition(of: first, to: &decomposed)
+                for c in decomposed { absorb(c) }
+            } else {
+                absorb(first)
             }
-            for c in decomposed { absorb(c) }
         }
         while let scalar = source.next() {
-            decomposed.removeAll(keepingCapacity: true)
-            if !norm.appendDecomposition(of: scalar.value, to: &decomposed) {
-                decomposed.append(scalar.value)
+            let v = scalar.value
+            // Common case: the scalar maps to itself (no decomposition). Skip
+            // the `decomposed` scratch buffer entirely — no clear, no append,
+            // no copy loop — which is the bulk of refill's per-scalar work.
+            if !norm.hasDecomposition(v) {
+                // A starter begins a new reorderable unit: finish the current
+                // one and carry the scalar over.
+                if (!unit.isEmpty || !marks.isEmpty) && norm.ccc(v) == 0 {
+                    carried.append(v)
+                    flushMarks()
+                    return
+                }
+                absorb(v)
+                continue
             }
+            decomposed.removeAll(keepingCapacity: true)
+            _ = norm.appendDecomposition(of: v, to: &decomposed)
             // A decomposition starting with a starter begins a new reorderable
             // unit: finish the current one and carry the new scalars over.
             if (!unit.isEmpty || !marks.isEmpty) && norm.ccc(decomposed[0]) == 0 {
@@ -116,15 +131,21 @@ struct NFDIterator {
         case 1:
             unit.append(marks[0])
         default:
-            // Insertion sort: stable, and mark runs are short in practice.
-            var sorted: [(ccc: UInt8, scalar: UInt32)] = []
-            for c in marks {
+            // Stable insertion sort by ccc, in place on `marks`. Done with
+            // element shifts (no insert/remove, so no replaceSubrange/memmove)
+            // and no temporary arrays — mark runs are short, so recomputing
+            // ccc during the shift is cheaper than allocating a parallel buffer.
+            for k in 1..<marks.count {
+                let c = marks[k]
                 let cc = norm.ccc(c)
-                var i = sorted.count
-                while i > 0 && sorted[i - 1].ccc > cc { i -= 1 }
-                sorted.insert((cc, c), at: i)
+                var j = k
+                while j > 0 && norm.ccc(marks[j - 1]) > cc {
+                    marks[j] = marks[j - 1]
+                    j -= 1
+                }
+                marks[j] = c
             }
-            unit.append(contentsOf: sorted.map(\.scalar))
+            for c in marks { unit.append(c) }
         }
         marks.removeAll(keepingCapacity: true)
     }
