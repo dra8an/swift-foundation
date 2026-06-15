@@ -205,8 +205,18 @@ public struct RootCollator: @unchecked Sendable {
             // comparison after a few characters.
             let s = takeScratch()
             scratch = s
-            s.left.reset(numeric: options.numeric, scalars: left.unicodeScalars, skippingFirst: shared)
-            s.right.reset(numeric: options.numeric, scalars: right.unicodeScalars, skippingFirst: shared)
+            if fellBack {
+                // The skip was abandoned (unsafe boundary): iterate from start.
+                s.left.reset(numeric: options.numeric, scalars: left.unicodeScalars)
+                s.right.reset(numeric: options.numeric, scalars: right.unicodeScalars)
+            } else {
+                // Reuse the skip-walk iterators, already positioned past the
+                // shared prefix, with the first unequal scalar (lNext/rNext)
+                // pending. Saves two String-iterator builds and re-walking the
+                // prefix that reset(skippingFirst:) would do.
+                s.left.reset(numeric: options.numeric, source: lIter, first: lNext?.value)
+                s.right.reset(numeric: options.numeric, source: rIter, first: rNext?.value)
+            }
             result = try CollationCompare.compareUpToQuaternary(
                 &s.left, &s.right, options: options.icuOptions,
                 variableTopValue: variableTopValue(options), reordering: reordering)

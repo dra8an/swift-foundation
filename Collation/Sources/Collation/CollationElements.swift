@@ -55,6 +55,20 @@ struct CEIterator {
     mutating func reset(numeric: Bool, scalars view: String.UnicodeScalarView, skippingFirst: Int = 0) {
         self.numeric = numeric
         scalars.reset(scalars: view, skippingFirst: skippingFirst)
+        clearState()
+    }
+
+    /// Resets onto an already-positioned scalar iterator plus one scalar the
+    /// caller has already pulled from it — see NFDIterator.reset(source:first:).
+    /// Avoids rebuilding a String iterator and re-walking the skipped prefix.
+    mutating func reset(numeric: Bool, source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
+        self.numeric = numeric
+        scalars.reset(source: iter, first: first)
+        clearState()
+    }
+
+    @inline(__always)
+    private mutating func clearState() {
         // isEmpty guards: see appendMore.
         if !ces.isEmpty { ces.removeAll(keepingCapacity: true) }
         if !lookahead.isEmpty { lookahead.removeAll(keepingCapacity: true) }

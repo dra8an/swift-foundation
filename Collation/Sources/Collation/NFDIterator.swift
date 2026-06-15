@@ -10,6 +10,11 @@
 struct NFDIterator {
     let norm: NormalizationData
     var source: String.UnicodeScalarView.Iterator
+    /// A scalar already pulled from the input (by the caller's identical-prefix
+    /// skip walk) to be yielded before `source`. Lets a compare reuse the skip
+    /// walk's iterator — already positioned past the shared prefix — instead of
+    /// building a fresh String iterator and re-walking that prefix.
+    var pendingFirst: UInt32? = nil
     /// Decomposed scalars of the next input scalar, carried over when it
     /// started a new reorderable unit and ended the previous refill.
     var carried: [UInt32] = []
@@ -31,6 +36,22 @@ struct NFDIterator {
     mutating func reset(scalars: String.UnicodeScalarView, skippingFirst n: Int = 0) {
         source = scalars.makeIterator()
         for _ in 0..<n { _ = source.next() }
+        pendingFirst = nil
+        clearBuffers()
+    }
+
+    /// Rewinds onto an already-positioned scalar iterator plus one scalar the
+    /// caller has already pulled from it (`first`). Equivalent to resetting onto
+    /// the suffix `first` followed by the rest of `iter`, but without building a
+    /// new String iterator or re-walking the skipped prefix.
+    mutating func reset(source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
+        source = iter
+        pendingFirst = first
+        clearBuffers()
+    }
+
+    @inline(__always)
+    private mutating func clearBuffers() {
         // isEmpty guards: removeAll on a never-used array hits the shared
         // empty-singleton storage, which is never uniquely referenced, and
         // takes the copy-on-write slow path every time.
@@ -38,6 +59,17 @@ struct NFDIterator {
         if !unit.isEmpty { unit.removeAll(keepingCapacity: true) }
         unitNext = 0
         if !marks.isEmpty { marks.removeAll(keepingCapacity: true) }
+    }
+
+    /// Next raw scalar of the input: the caller-supplied pending scalar first,
+    /// then the underlying iterator.
+    @inline(__always)
+    private mutating func nextSourceScalar() -> UInt32? {
+        if let p = pendingFirst {
+            pendingFirst = nil
+            return p
+        }
+        return source.next()?.value
     }
 
     /// Scratch buffer for one scalar's decomposition, reused across refills.
@@ -54,8 +86,7 @@ struct NFDIterator {
             // Fast path: between reorderable units, a bare starter with no
             // decomposition can be emitted without any buffering (it is a
             // hard reordering boundary; following marks form the next unit).
-            guard let scalar = source.next() else { return nil }
-            let c = scalar.value
+            guard let c = nextSourceScalar() else { return nil }
             if norm.isInert(c) {
                 return c
             }
@@ -84,8 +115,7 @@ struct NFDIterator {
                 absorb(first)
             }
         }
-        while let scalar = source.next() {
-            let v = scalar.value
+        while let v = nextSourceScalar() {
             // Common case: the scalar maps to itself (no decomposition). Skip
             // the `decomposed` scratch buffer entirely — no clear, no append,
             // no copy loop — which is the bulk of refill's per-scalar work.
