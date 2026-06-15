@@ -1,8 +1,8 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-> Written 2026-06-12 for a fresh session with no conversation context.
-> Read this first, then `04-milestone-plan.md` for status, then the numbered
-> docs as needed.
+> Written 2026-06-12, last updated 2026-06-15, for a fresh session with no
+> conversation context. Read this first, then `04-milestone-plan.md` for
+> status, then the numbered docs as needed.
 
 ## What this project is
 
@@ -46,21 +46,31 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
    against ICU source before "fixing" our code (twice the expectations were
    wrong, not the implementation).
 
-## Current state (2026-06-12)
+## Current state (2026-06-15)
 
 - **Milestones 1–7 complete** (plan + per-milestone reports in `Docs/`):
   full UCA runtime — fused NFD, all strengths/settings, contractions
   (incl. discontiguous S2.1) and prefixes, sort keys **byte-identical to
   ucol_getSortKey**, 15 locale tailorings incl. zh script reordering.
-- **Milestone 7.5 complete** (rounds 1–10): every portable ICU test suite is
-  ported, plus perf rounds. **61 tests / 19 suites, all green.** Suites: official UCA
-  conformance (433k lines), collationtest.txt data-driven, Thai dictionary
-  (31k words), 9 classic locale suites, regcoll (13 cases), cmsccoll
-  (20 cases + extreme compression), g7coll locale rows, apicoll behavioral
-  parts, differential matrices + byte-identical keys (21 option sets × 2
-  data variants), 52k fuzz keys.
-- Pushed through commit `83f085b` (round 6); round 7 may be committed but
-  unpushed — check `git log origin/port/collation..HEAD`.
+- **Milestone 7.5 complete** (perf rounds 1–13): every portable ICU test
+  suite is ported, plus perf rounds. **61 tests / 19 suites, all green.**
+  Suites: official UCA conformance (433k lines), collationtest.txt
+  data-driven, Thai dictionary (31k words), 9 classic locale suites, regcoll
+  (13 cases), cmsccoll (20 cases + extreme compression), g7coll locale rows,
+  apicoll behavioral parts, differential matrices + byte-identical keys
+  (21 option sets × 2 data variants), 52k fuzz keys.
+- **Pushed through `2ab4a58`; `origin/port/collation` is in sync** (verify:
+  `git log origin/port/collation..HEAD` is empty). Recent perf rounds:
+  11 = remove canonical `left == right` shortcut; 12 = NFD front-end
+  allocation cuts (sortKey −8%); 13 = reuse prefix-skip iterators for CE
+  iteration (sorted-Thai compare −13%, the ARC win). All in `Docs/13` §6.6–6.7.
+- **Two perf experiments tried and reverted this session — do not re-attempt
+  blindly** (full record in `Docs/13` §6.7): (a) the CE-buffer fixed-array
+  refactor (ICU's `int64_t ceBuffer[40]`) measured neutral — the array
+  memmove the profile flagged was in `NFDIterator.refill`, not the CE buffer;
+  (b) an unsafe-backward BMP bitset profiled the binary search to zero samples
+  but an interleaved A/B showed no wall-clock change. Lesson recorded: profiler
+  leaf samples are a hypothesis — A/B every lever before trusting it.
 
 ## Deliberate scope cuts (don't re-litigate without reading the docs)
 
@@ -75,11 +85,15 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 ## Open backlog
 
-**M7.5 is complete, including every perf lever; nothing is actionable
-without a new decision.** Parked: rule builder (doc 12); M8 Foundation
-integration (await user). Current perf: compare within 2.7–4.9× of ICU4C
-everywhere (ASCII ~79 ns vs 16, Latin ~79 vs 21, paths ~158 vs 58, CJK
-~365 vs 79); sort keys 2.3–4×; analysis in `11-milestone-7.5-report.md`.
+**M7.5 is complete, including every perf lever pursued so far; nothing is
+actionable without a new decision.** Parked: rule builder (doc 12); M8
+Foundation integration (await user). Current perf: compare within 2.8–4.9× of
+ICU4C across corpora (ASCII ~79 ns vs 16, Latin ~82 vs 20, paths ~163 vs 52,
+CJK ~350 vs 78, sorted-Thai dictionary ~820 vs 289 = 2.8×); sort keys 2.2–4.4×;
+analysis in `13-performance-analysis.md` (the standalone perf doc — newer and
+more complete than doc 11). The residual gap is Swift value-type overhead (ARC,
+allocator traffic), not arithmetic; what remains is fixed/stack-buffer
+territory with diminishing returns, partly an M8 API-design question.
 
 ## How to work
 
