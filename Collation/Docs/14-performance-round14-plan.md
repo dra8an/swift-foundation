@@ -330,3 +330,60 @@ Abandoned. The ~10 ns lock is acceptable overhead on the fast-Latin path
 `withContiguousStorageIfAvailable` closure entry (~17 ns) and the setup-cache
 lock (~10 ns) — both are API-boundary costs intrinsic to Swift's value-type
 String design, not collation work.
+
+## 10. Phase 4 Results: Raw-Pointer Sort-Key Level Buffers — Slower, Reverted
+
+**Implemented, A/B tested, measured slower than baseline, reverted.**
+
+### 10.1 What Was Tried
+
+Replaced the `[UInt8]` inside `SortKeyLevel` with a manually managed
+`UnsafeMutablePointer<UInt8>` + count/capacity. Every `appendByte`,
+`appendWeight16`, `appendWeight32` wrote directly to raw memory with no
+`swift_isUniquelyReferenced` check. Also added `reverseSegment(from:)` for
+backwards-secondary and index-based iteration for the case-level nibble
+packing.
+
+### 10.2 A/B Results
+
+| corpus | baseline | raw-pointer | direction |
+|--------|----------|-------------|-----------|
+| ASCII sortKey (lower cluster) | ~367 ns | ~411 ns | **slower** |
+
+The new version was consistently slower in every low-noise run, by ~10–15%.
+
+### 10.3 Why It Failed
+
+Same mechanism as the CE-buffer refactor in Docs/13 §6.7:
+
+1. **`isUniquelyReferenced` on a known-unique buffer is nearly free.** The
+   scratch pool (now thread-local) ensures the level buffers are always
+   uniquely referenced. The CoW check is a single word load + branch-not-taken
+   — it never triggers a copy. It *samples* frequently because it runs on
+   every append, but its wall-clock cost is ~1 ns (a predictable branch).
+
+2. **Swift's Array `append` is highly optimized.** The compiler specializes
+   `Array<UInt8>.append` with known-layout fast paths, inlined capacity checks,
+   and pre-grown buffers (via `removeAll(keepingCapacity: true)`). Our manual
+   `ensureCapacity` + `unsafelyUnwrapped` store loses these optimizations.
+
+3. **The profiled 9% `isUniquelyReferenced` overstates its real cost.** Just
+   as in §6.7: sampling shows the instruction frequently (it runs per-byte),
+   but it overlaps with other pipeline work and costs almost nothing in real
+   nanoseconds. Removing it doesn't recover wall time — it just shifts the
+   bottleneck to our less-optimized manual code.
+
+### 10.4 Lesson (reinforced)
+
+This is now the **fourth** time `isUniquelyReferenced` has profiled as a
+hot-spot and failed to yield a wall-clock improvement when removed:
+1. CE-buffer fixed-array (Docs/13 §6.7) — neutral
+2. Unsafe-backward bitset (Docs/13 §6.7) — neutral
+3. Fast-Latin cache lock (phase 3 above) — crashed / not viable
+4. Sort-key level buffers (this phase) — **slower**
+
+The pattern is definitive: on uniquely-referenced Swift arrays that are
+reused across calls, the CoW uniqueness check is negligible in wall time.
+Do not attempt to replace Array with raw pointers for this reason alone.
+The profiler lies about `isUniquelyReferenced` — it is a hypothesis that
+has failed A/B four times.
