@@ -255,31 +255,41 @@ public struct RootCollator: @unchecked Sendable {
     public func sortKey(
         for s: String, options: CollationOptions = CollationOptions()
     ) throws -> [UInt8] {
+        var key: [UInt8] = []
+        try sortKey(for: s, into: &key, options: options)
+        return key
+    }
+
+    /// Generates the sort key for a string into a caller-supplied buffer.
+    /// The buffer is cleared and filled with the key bytes (level bytes with
+    /// 01 separators, optional identical level, 00 terminator). Reusing the
+    /// same buffer across calls avoids per-call allocation — the steady-state
+    /// path is zero-alloc after the buffer has grown to working capacity.
+    ///
+    /// This is the ICU `ucol_getSortKey(dest, destCapacity)` model: the caller
+    /// owns the output memory.
+    public func sortKey(
+        for s: String, into key: inout [UInt8], options: CollationOptions = CollationOptions()
+    ) throws {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
         scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
         _ = try scratch.left.collectAll()
-        if !scratch.key.isEmpty { scratch.key.removeAll(keepingCapacity: true) }
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
+        key.removeAll(keepingCapacity: true)
         CollationKeys.writeSortKeyUpToQuaternary(
             ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &scratch.key, reusing: &scratch.levels)
+            reordering: reordering, into: &key, reusing: &scratch.levels)
         if options.strength == .identical {
-            scratch.key.append(1)  // level separator
+            key.append(1)  // level separator
             scratch.left.scalars.reset(scalars: s.unicodeScalars)
             if !scratch.nfdScalars.isEmpty { scratch.nfdScalars.removeAll(keepingCapacity: true) }
             while let c = scratch.left.scalars.next() { scratch.nfdScalars.append(c) }
-            CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &scratch.key)
+            CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
         }
-        scratch.key.append(0)  // terminator
-        // Copy out right-sized; returning the buffer itself would pin its
-        // storage and defeat the reuse.
-        var key: [UInt8] = []
-        key.reserveCapacity(scratch.key.count)
-        key.append(contentsOf: scratch.key)
-        return key
+        key.append(0)  // terminator
     }
 
     private func takeScratch() -> ScratchBuffers {

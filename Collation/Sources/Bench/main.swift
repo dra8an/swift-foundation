@@ -61,9 +61,11 @@ try measure("compare ", ops: (lines.count - 1) * reps) {
 }
 
 try measure("sortKey ", ops: lines.count * reps) {
+    var key: [UInt8] = []
     for _ in 0..<reps {
         for line in lines {
-            sink += try collator.sortKey(for: line, options: options).count
+            try collator.sortKey(for: line, into: &key, options: options)
+            sink += key.count
         }
     }
 }
