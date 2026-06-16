@@ -387,3 +387,84 @@ reused across calls, the CoW uniqueness check is negligible in wall time.
 Do not attempt to replace Array with raw pointers for this reason alone.
 The profiler lies about `isUniquelyReferenced` — it is a hypothesis that
 has failed A/B four times.
+
+## 11. Phase 5 Results: sortKey(for:into:) inout API — Kept (−27% sortKey)
+
+**Implemented and confirmed.** Added `public func sortKey(for:into:options:)`
+that writes directly into a caller-supplied `inout [UInt8]` buffer. The old
+returning variant now delegates to it. The bench harness reuses one buffer
+across all calls (reflecting real sorting workloads).
+
+### 11.1 A/B Results (interleaved, 5000 reps)
+
+| corpus | old (copy-out) | new (inout reuse) | delta |
+|--------|---------------|-------------------|-------|
+| ASCII sortKey | ~374 ns | ~274 ns | **−27%** |
+| CJK sortKey | ~357 ns | ~260 ns | **−27%** |
+| Thai sortKey (th) | ~493 ns | ~391 ns | **−21%** |
+| paths sortKey | ~861 ns | ~828 ns | −4% |
+| compare (all) | unchanged | unchanged | — |
+
+### 11.2 Updated Sort-Key Ratios vs ICU 79
+
+| corpus | ours (inout) | ICU 79 | new ratio | was (§1.2) |
+|--------|-------------|--------|-----------|------------|
+| ASCII | ~274 ns | ~112 ns | **2.4×** | 5.8× |
+| CJK | ~260 ns | ~125 ns | **2.0×** | 2.8× |
+| Thai (th) | ~473 ns | ~167 ns | **2.8×** | 3.1× |
+| paths | ~836 ns | ~378 ns | **2.2×** | 2.6× |
+
+### 11.3 What Changed
+
+The old API allocated a fresh `[UInt8]` per call, `reserveCapacity`'d it, then
+`append(contentsOf:)` from the scratch buffer — a malloc + memcpy every call.
+The new API writes directly into the caller's buffer, which after the first
+call is already at capacity. Steady-state: **zero allocations, zero copies**.
+
+This is the ICU `ucol_getSortKey(dest, destCapacity)` model. The profiled 14%
+"copy-out" cost (§2 profile, ~301 samples) is now eliminated entirely for
+callers using the `inout` variant. The returning variant still exists for
+convenience but now delegates (adds only the final copy).
+
+### 11.4 Why This Worked When Raw Pointers Didn't
+
+The raw-pointer level-buffer refactor (phase 4) tried to eliminate per-byte
+CoW checks *inside* the key-generation loop. That failed because those checks
+are cheap on uniquely-owned arrays. This change instead eliminates the **per-call
+allocation and copy at the API boundary** — a fundamentally different (and
+larger) cost that raw pointers couldn't address.
+
+Lesson: the right API eliminates more overhead than any amount of unsafe
+memory tricks inside the implementation.
+
+## 12. Final State After Round 14
+
+### Compare ratios vs ICU 79 (Apple Silicon)
+
+| corpus | ours | ICU | ratio |
+|--------|------|-----|-------|
+| ASCII | ~33 ns | ~9 ns | 3.7× |
+| Latin | ~32 ns | ~10 ns | 3.2× |
+| CJK | ~145 ns | ~42 ns | 3.5× |
+| paths | ~72 ns | ~31 ns | 2.3× |
+| Thai (th) | ~404 ns | ~197 ns | 2.1× |
+
+### Sort-key ratios vs ICU 79 (inout API, buffer reused)
+
+| corpus | ours | ICU | ratio |
+|--------|------|-----|-------|
+| ASCII | ~274 ns | ~112 ns | 2.4× |
+| CJK | ~260 ns | ~125 ns | 2.0× |
+| Thai (th) | ~473 ns | ~167 ns | 2.8× |
+| paths | ~836 ns | ~378 ns | 2.2× |
+
+### What shipped in round 14
+
+1. **Thread-local scratch buffers** (phase 1) — −19% CJK compare, −10% sortKey
+2. **sortKey(for:into:) inout API** (phase 5) — −27% sortKey
+
+### What was tried and reverted
+
+3. Raw-UTF8 iterator path (phase 2) — −3%, not worth complexity
+4. Lock-free fast-Latin cache (phase 3) — unsafe, crashed
+5. Raw-pointer sort-key level buffers (phase 4) — slower than Array
