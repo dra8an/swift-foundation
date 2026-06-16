@@ -38,9 +38,9 @@ public struct RootCollator: @unchecked Sendable {
     /// The tailoring's default options (e.g. backwards-secondary for fr-CA);
     /// plain defaults for the root collator.
     public let defaultOptions: CollationOptions
-    /// Reusable per-call buffers, shared (thread-safely) by all copies of
-    /// this collator so repeated compares run allocation-free.
-    private let scratchPool = ScratchPool()
+    /// Thread-local buffer stash: each thread caches one ScratchBuffers
+    /// instance, eliminating all locking and ARC on the take/give path.
+    private let threadLocal = ThreadLocalScratch()
     /// The most recently used fast-Latin setup (per options word).
     private let fastLatinCache = FastLatinCache()
     /// The fast Latin table: the tailoring's own, or the base's when the
@@ -196,7 +196,7 @@ public struct RootCollator: @unchecked Sendable {
         }
 
         var scratch: ScratchBuffers?
-        defer { if let scratch { scratchPool.give(scratch) } }
+        defer { if let scratch { giveScratch(scratch) } }
         let result: Int
         if fastResult != CollationFastLatin.bailOutResult {
             result = Int(fastResult)
@@ -256,7 +256,7 @@ public struct RootCollator: @unchecked Sendable {
         for s: String, options: CollationOptions = CollationOptions()
     ) throws -> [UInt8] {
         let scratch = takeScratch()
-        defer { scratchPool.give(scratch) }
+        defer { giveScratch(scratch) }
         scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
         _ = try scratch.left.collectAll()
         if !scratch.key.isEmpty { scratch.key.removeAll(keepingCapacity: true) }
@@ -283,7 +283,11 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     private func takeScratch() -> ScratchBuffers {
-        scratchPool.take() ?? ScratchBuffers(data: data, base: base, norm: norm)
+        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm)
+    }
+
+    private func giveScratch(_ buffers: ScratchBuffers) {
+        threadLocal.give(buffers)
     }
 
     /// True if restarting CE iteration at `c` is not provably equivalent to
