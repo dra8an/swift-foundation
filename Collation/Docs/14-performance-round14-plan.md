@@ -280,3 +280,53 @@ overhead of the `withContiguousStorageIfAvailable` closures themselves** when
 moved to an outer scope. Eliminating the Iterator ARC but adding closure-entry
 cost netted only ~3%. The remaining ARC in the pipeline is spread too thinly
 to attack with a single lever.
+
+## 9. Phase 3 Results: Lock-Free Fast-Latin Cache — Not Viable, Abandoned
+
+**Attempted, crashed under concurrent tests, abandoned.**
+
+### 9.1 What Was Tried
+
+Three variants of a lock-free read path for `FastLatinCache`:
+
+1. **Raw `UnsafeMutablePointer<UInt>` with manual Unmanaged retain/release** —
+   crashed with "Index out of range" in concurrent tests. The `Unmanaged`
+   `takeUnretainedValue()` read returned a setup that was deallocated by
+   another thread's collator teardown between the pointer load and the
+   `primaries` array access.
+
+2. **`var current: Unmanaged<FastLatinSetup>?` property** — "deallocated with
+   non-zero retain count" errors. Swift's ARC manages the `Optional` wrapper,
+   conflicting with the manual retain via `passRetained`.
+
+3. **`UnsafeMutablePointer<UnsafeRawPointer?>` slot** — same use-after-free as
+   (1): the reader must retain the setup for the duration of use, but retain
+   is the very ARC operation the lock was amortizing.
+
+### 9.2 Why It Doesn't Work
+
+The lock serves two purposes:
+- Serializing writers (rare — only on first call or options change)
+- **Ensuring the reader's reference to `FastLatinSetup` is valid** — the lock
+  keeps the setup alive while the reader accesses `setup.primaries`
+
+Removing the read-side lock requires the reader to *retain* the setup to
+prevent a concurrent release. But `swift_retain` is ~5 ns — the same order as
+the `os_unfair_lock` it replaces (~10 ns uncontended on arm64). Net gain:
+~5 ns on a 33 ns path = ~15% of the fast-Latin compare, but the complexity
+and safety risk aren't justified.
+
+A correct lock-free implementation would need Swift's `Atomic` types (Swift
+6.0+ `Synchronization` module's `Atomic<T>` with consume ordering), which
+aren't available in the Swift 6.3.1 toolchain this project targets.
+Alternatively, if the `FastLatinSetup` were stored inline (no heap reference —
+just a pointer+length into the collator's immutable data), no retain would be
+needed. But that's a deeper refactor for minimal gain.
+
+### 9.3 Decision
+
+Abandoned. The ~10 ns lock is acceptable overhead on the fast-Latin path
+(which is already 33 ns total, vs ICU's ~9 ns). The gap there is dominated by
+`withContiguousStorageIfAvailable` closure entry (~17 ns) and the setup-cache
+lock (~10 ns) — both are API-boundary costs intrinsic to Swift's value-type
+String design, not collation work.
