@@ -679,8 +679,34 @@ What they confirm:
   immediately on these short, distinct sequences; sortKey, which always runs
   the full pipeline, holds the usual ~4×.
 
+**Sorted vs shuffled.** All three ship in sorted order — CJK and Khmer in
+code-point order (their native dictionary order), UCA in *collation* order (the
+conformance file lists sequences in sort order by construction). A seed-42
+shuffled variant of each (`*-shuffled.txt`, same shuffle seed as
+`bench-thai-shuffled`) collapses the shared prefix to ~0, isolating the
+sorted-vs-shuffled effect:
+
+| corpus | compare sorted | compare shuffled | direction |
+|---|---|---|---|
+| CJK (`zh`)  | ~411 ns | ~288 ns | sorted **slower** |
+| Khmer (root)| ~542 ns | ~336 ns | sorted **slower** |
+| UCA (root)  | ~234 ns | ~358 ns | sorted **faster** |
+
+CJK and Khmer reproduce the Thai §6.4 result: sorted dictionary words are
+minimal pairs that must be walked deep before a difference appears, so sorted is
+*slower* than shuffled — and ICU shows the same direction (Khmer 120 → 61 ns),
+confirming it is intrinsic to collation, not a Swift artifact. UCA inverts
+because it is short combining-mark sequences in collation order, not words:
+sorted-adjacent sequences are often primary-equal/near-equal and decide quickly,
+while shuffling pairs arbitrary scripts that take longer to resolve (ICU agrees,
+93 → 112 ns). Khmer, with the deepest shared prefix (4.5 scalars), is the
+closest of the three to Thai's minimal-pair stress; CJK and UCA are dominated by
+short strings, so the prefix-skip lever barely engages.
+
 Regenerate (the dict files need the ICU source clone; the UCA file is derived
-from in-repo data):
+from in-repo data; shuffle with `python3 -c "import random,sys; \
+L=open(f).read().splitlines(); random.seed(42); random.shuffle(L); \
+open(f.replace('.txt','-shuffled.txt'),'w').write('\n'.join(L)+'\n')"`):
 ```sh
 ICUDICT=<icu>/icu4c/source/data/brkitr/dictionaries
 grep -vP '^\s*#' "$ICUDICT/cjdict.txt"   | sed '/^[[:space:]]*$/d' | cut -f1 > Tools/bench/bench-cjk-dict.txt
