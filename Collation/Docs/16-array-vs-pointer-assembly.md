@@ -488,3 +488,120 @@ cat /tmp/ptr.s | swift demangle | less
 
 Toolchain: Swift 6.3.1 (swift-DEVELOPMENT-SNAPSHOT-2026-04-27-a),
 target: arm64-apple-macos.
+
+## 8. Discovery: `String.utf8Span` — Closure-Free Byte Access
+
+After documenting the aliasing problem, we discovered that this toolchain
+(Swift 6.3.1, 2026-04-27 snapshot) ships `String.utf8Span` — a **non-closure**
+path to raw UTF-8 bytes:
+
+```swift
+let bytes: Span<UInt8> = someString.utf8Span.span
+bytes[0]   // direct subscript, no closure, no ARC
+```
+
+### 8.1 What It Is
+
+- `String.utf8Span` returns a `UTF8Span` (a non-escaping borrowed view)
+- `UTF8Span.span` yields a `Span<UInt8>` — direct byte-level subscript access
+- `Span<UInt8>` is `~Escapable`: cannot be stored in struct fields or returned
+  from functions, only used in the scope where it's created
+- Two strings' spans can be held simultaneously:
+  ```swift
+  let lBytes = left.utf8Span.span
+  let rBytes = right.utf8Span.span
+  // both valid, no nesting
+  ```
+
+### 8.2 Assembly Comparison: Span vs Closure
+
+A byte-summing loop was compiled both ways:
+
+```swift
+// Via Span (no closure):
+func sumViaSpan(_ s: String) -> Int {
+    let bytes = s.utf8Span.span
+    var sum = 0
+    for i in 0..<bytes.count { sum &+= Int(bytes[i]) }
+    return sum
+}
+
+// Via closure:
+func sumViaClosure(_ s: String) -> Int {
+    s.utf8.withContiguousStorageIfAvailable { buf in
+        var sum = 0
+        for i in 0..<buf.count { sum &+= Int(buf[i]) }
+        return sum
+    } ?? 0
+}
+```
+
+Result: **identical assembly** — both auto-vectorize to the same NEON
+`ldp q28, q29` + `tbl` + `uaddw` pipeline processing 32 bytes per iteration.
+The Span path has no performance penalty vs the closure path, but eliminates
+the closure entry/exit overhead and the nesting problem.
+
+### 8.3 Constraints for the Collation Use Case
+
+`Span<UInt8>` is `~Escapable`, which means:
+- ❌ Cannot be stored as a field in `NFDIterator` or `CEIterator`
+- ❌ Cannot be returned from a function
+- ✅ Can be passed as a function parameter
+- ✅ Can be used with an `inout Int` offset for stateful iteration
+- ✅ Two spans (left + right string) can coexist in the same scope
+
+The collation iteration pattern works with Span:
+```swift
+func iterateScalars(_ bytes: Span<UInt8>, offset: inout Int) -> UInt32? {
+    guard offset < bytes.count else { return nil }
+    let b0 = UInt32(bytes[offset])
+    if b0 < 0x80 { offset += 1; return b0 }
+    if b0 < 0xe0 {
+        let c = ((b0 & 0x1f) << 6) | (UInt32(bytes[offset + 1]) & 0x3f)
+        offset += 2; return c
+    }
+    // ... (3 and 4-byte sequences)
+}
+```
+
+### 8.4 Implications
+
+This is the path to eliminating the `withContiguousStorageIfAvailable` closure
+overhead (~17 ns per compare on the ASCII fast path, §4 of Docs/14). The
+approach would be:
+
+1. At the `RootCollator.compare()` level, acquire both spans flat (no nesting):
+   ```swift
+   let lBytes = left.utf8Span.span
+   let rBytes = right.utf8Span.span
+   ```
+
+2. Pass them down to the iteration layer as parameters (with `inout` offsets),
+   rather than storing `String.UnicodeScalarView.Iterator` in `NFDIterator`.
+
+3. This eliminates:
+   - The `withContiguousStorageIfAvailable` closure entry/exit
+   - The `String.UnicodeScalarView.Iterator` ARC (no iterator object at all)
+   - The nested-closure problem that limited approach (a) to +3%
+
+The challenge: `NFDIterator` and `CEIterator` currently store the iterator as
+a struct field. A Span-based design would need to thread the span through as a
+parameter to every call in the pipeline, or restructure the iteration to be
+driven from the top level. This is a significant refactor but architecturally
+sound — ICU4C's iterators work exactly this way (a pointer + offset passed
+through the call chain).
+
+### 8.5 Reproducing
+
+```swift
+// Requires Swift 6.3+ (2026-04-27 snapshot or later)
+import Swift
+
+let s = "hello"
+let span: UTF8Span = s.utf8Span
+let bytes: Span<UInt8> = span.span
+print(bytes[0])  // 104 ('h')
+```
+
+`Span` is part of the Swift standard library in this toolchain (SE-0447),
+not an import. `UTF8Span` is `String`'s conformance to the span protocol.
