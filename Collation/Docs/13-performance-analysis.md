@@ -129,9 +129,13 @@ Why each matters:
   prefixes (26 of 33 scalars on average). This is where the identical-prefix
   skip pays off and where naive O(prefix) re-iteration would dominate.
 
-A fifth corpus, `bench-thai.txt` (32,895 real Thai dictionary words, run under
-the `th` tailoring), is covered separately in §6 — it is a tailored,
-non-Latin, contraction-dense workload rather than a throughput micro-corpus.
+Five further corpora are **large real-data** sets rather than throughput
+micro-corpora, covered in §6: `bench-thai.txt` (32,895 Thai dictionary words,
+`th`; §6) and three added later — `bench-cjk-dict.txt` (316k CJK words),
+`bench-khmer.txt` (81k Khmer words), and `bench-uca.txt` (206k all-script
+sequences from the UCA conformance data) — all in §6.8. Unlike the four
+micro-corpora, these come straight from ICU's own test data; their provenance
+and the fairness/licensing notes are in §6.8.
 
 ### 2.3 ICU as the reference
 
@@ -639,6 +643,67 @@ that actually held removed **allocations** (round 12) and **redundant
 algorithmic work plus real `String`-storage retains** (round 13), not sampled
 hot-spots per se. Operational rule going forward: **A/B every lever before
 trusting it; a sample count going to zero is a hypothesis, not a result.**
+
+### 6.8 Three more large real-data corpora: CJK, Khmer, the full UCA repertoire
+
+The Thai dictionary (§6) showed that real, large, non-Latin word lists tell a
+different story than the 200-line micro-corpora. Three further corpora extend
+that coverage, all drawn from ICU's own test data so the inputs are real and
+the comparison is apples-to-apples (both engines read the same UTF-8 files):
+
+| corpus | lines | source | run as |
+|---|---|---|---|
+| `bench-cjk-dict.txt` | 315,964 | ICU `brkitr/dictionaries/cjdict.txt`, word column (before the tab), header stripped | `zh` |
+| `bench-khmer.txt` | 81,028 | ICU `brkitr/dictionaries/khmerdict.txt`, words | root |
+| `bench-uca.txt` | 206,273 | ICU `CollationTest_NON_IGNORABLE_SHORT.txt` (already in-repo, `Tests/.../Conformance/`), hex sequences decoded to UTF-8, surrogate-bearing lines skipped | root |
+
+Results (release, ns/op, 20 reps — enough for a stable read on these sizes;
+see the rep-count note in §2.4):
+
+| corpus | compare (ours) | compare (ICU) | ratio | sortKey (ours) | sortKey (ICU) | ratio |
+|---|---|---|---|---|---|---|
+| CJK dict (316k, `zh`)     | ~422 ns | ~93 ns  | **4.5×** | ~631 ns | ~164 ns | 3.8× |
+| Khmer (81k, root)         | ~562 ns | ~120 ns | **4.7×** | ~976 ns | ~268 ns | 3.6× |
+| UCA all-scripts (206k)    | ~236 ns | ~83 ns  | **2.8×** | ~591 ns | ~149 ns | 4.0× |
+
+What they confirm:
+- **CJK at 4.5×** matches the synthetic CJK micro-corpus (§5.1) on *real* Han
+  vocabulary under the `zh` tailoring — the engine holds its ratio when the
+  input stops being random and becomes a 316k-word dictionary.
+- **Khmer at 4.7×** is a script class nothing else here benchmarks (no `km`
+  tailoring is bundled, so it runs under root); it sits in the same ~4–5× band
+  as CJK, evidence the regular pipeline's ratio is script-independent.
+- **UCA all-scripts at 2.8×** is the broadest input — every script, in strict
+  collation order, dominated by short 2–5-code-point sequences (many combining
+  permutations). The low ratio reflects how often the primary level decides
+  immediately on these short, distinct sequences; sortKey, which always runs
+  the full pipeline, holds the usual ~4×.
+
+Regenerate (the dict files need the ICU source clone; the UCA file is derived
+from in-repo data):
+```sh
+ICUDICT=<icu>/icu4c/source/data/brkitr/dictionaries
+grep -vP '^\s*#' "$ICUDICT/cjdict.txt"   | sed '/^[[:space:]]*$/d' | cut -f1 > Tools/bench/bench-cjk-dict.txt
+grep -vP '^\s*#' "$ICUDICT/khmerdict.txt" | sed '/^[[:space:]]*$/d' | cut -f1 > Tools/bench/bench-khmer.txt
+python3 -c "
+out=[]
+for l in open('Tests/CollationTests/Conformance/CollationTest_NON_IGNORABLE_SHORT.txt', encoding='utf-8'):
+    l=l.strip()
+    if not l or l.startswith('#'): continue
+    cps=[int(x,16) for x in l.split()]
+    if any(0xD800<=c<=0xDFFF for c in cps): continue   # Swift String can't hold lone surrogates
+    out.append(''.join(chr(c) for c in cps))
+open('Tools/bench/bench-uca.txt','w',encoding='utf-8').write('\n'.join(out)+'\n')"
+```
+
+**Licensing note.** `bench-khmer.txt` and `bench-uca.txt` derive from
+Unicode/IBM-licensed ICU data (same terms as the conformance fixtures already
+shipped). `bench-cjk-dict.txt` derives from `cjdict.txt`, which carries a
+**Google + IBM** copyright — fine as a local benchmark aid, but flagged here
+because, unlike the others, it would need a license review before being bundled
+toward any Foundation contribution. (To benchmark CJK without it, the synthetic
+`bench-cjk.txt` of §2.2 remains.) `bench_icu.c`'s line cap was raised
+40,000 → 320,000 to hold these corpora.
 
 ## 7. Data-format decisions that paid off
 

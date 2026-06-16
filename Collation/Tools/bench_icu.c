@@ -16,7 +16,7 @@
 #include "unicode/ucol.h"
 #include "unicode/ustring.h"
 
-#define MAX_LINES 40000
+#define MAX_LINES 320000
 #define MAX_LINE 1024
 
 static UCollator *g_sortcoll;
