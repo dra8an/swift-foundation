@@ -109,10 +109,10 @@ but the extra function-call indirection (`compare` → `compareWithSpan` →
 
 ## 4. The Wins That Are Real
 
-1. **Thread-local scratch (concept)** — eliminating the lock + exclusivity
-   checks is a real win. The *original* implementation (before the lifetime
-   fix) showed −19% CJK. The regression came from the lifetime fix changing
-   the struct layout, not from the thread-local concept itself.
+1. **Thread-local scratch (concept + lifetime fix)** — eliminating the lock +
+   exclusivity checks is a real win. The −19% CJK from the original phase 1
+   is confirmed. The lifetime fix (3500ab3) was verified as zero-regression
+   when isolated (6443a35 RootCollator + 3500ab3 ScratchBuffers = neutral).
 
 2. **Span fast-Latin bail (concept)** — non-Latin text skipping closures is
    a real win when delivered without codegen bloat. The −10% CJK measured
