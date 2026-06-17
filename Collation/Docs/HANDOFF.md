@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-> Written 2026-06-12, last updated 2026-06-15, for a fresh session with no
+> Written 2026-06-12, last updated 2026-06-17, for a fresh session with no
 > conversation context. Read this first, then `04-milestone-plan.md` for
 > status, then the numbered docs as needed.
 
@@ -15,13 +15,25 @@ unprompted).
 
 ## Where everything is
 
+This project has been worked on from two machines. Paths differ:
+
+**Machine 2 (Apple Silicon, current as of 2026-06-17):**
+
+| Path | What |
+|---|---|
+| `~/Projects/dra8an/swift-foundation-collation/` | git clone, branch `port/collation` |
+| `.../swift-foundation-collation/Collation/` | **the SwiftPM package root** (name: `Collation`) and these docs (`Docs/`) |
+| `~/Projects/Unicode/icu-DraganBesevic-2/` | ICU4C 79.0.1 source + build (`icu4c/source/lib/`) |
+
+**Machine 1 (Intel iMac, original development):**
+
 | Path | What |
 |---|---|
 | `~/Projects/claude/collation/swift-foundation/` | git worktree, branch `port/collation`, based on `upstream/release/6.3` |
-| `.../swift-foundation/Collation/` | **the SwiftPM package root** (name: `Collation`) and these docs (`Docs/`) |
-| `~/Projects/claude/swift-foundation/` | user's MAIN checkout — calendars project on `port/buddhist` / `port/hebrew`. **Never touch.** |
-| `~/Projects/claude/icu/` | ICU4C 79.0.1 source clone (reference for porting; test data source) |
-| `~/Projects/claude/collation/icu-build/` | local ICU build: differential-reference library + data tools. Machine-local, not in git. Rebuild: `mkdir build && cd build && <icu>/icu4c/source/runConfigureICU MacOSX && make -j8` |
+| `.../swift-foundation/Collation/` | **the SwiftPM package root** |
+| `~/Projects/claude/swift-foundation/` | user's MAIN checkout — calendars project. **Never touch.** |
+| `~/Projects/claude/icu/` | ICU4C 79.0.1 source clone |
+| `~/Projects/claude/collation/icu-build/` | local ICU build |
 
 Remotes: `origin` = github.com/dra8an/swift-foundation (user's fork, push
 target), `upstream` = swiftlang (never push). Branch tracks origin.
@@ -36,17 +48,20 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 2. Push only when the user says push (they always ask explicitly).
 3. Plain terminology: no testing jargon — "ICU reference answers" not
    "oracle", "option set" not "configuration".
-4. Swift 6.4 does NOT compile on this machine; everything bases on
+4. Swift 6.4 does NOT compile on machine 1; everything bases on
    `upstream/release/6.3` (toolchain: Swift 6.3.1).
 5. Transient `.git/worktrees/swift-foundation/index.lock` collisions happen
-   (likely Atom's git polling). Wait a few seconds, re-check for live git
-   processes, remove the zero-byte lock only if stale, retry.
+   on machine 1 (likely Atom's git polling). Wait a few seconds, re-check for
+   live git processes, remove the zero-byte lock only if stale, retry.
 6. The user values: decision records for surprising scope cuts, honest
    skip-counting in tests, investigating failing imported expectations
    against ICU source before "fixing" our code (twice the expectations were
    wrong, not the implementation).
+7. **Git identity for this repo:** `dra8an <chonbey@hotmail.com>` (set via
+   `git config --local`). GPG signing is disabled locally
+   (`commit.gpgsign = false`).
 
-## Current state (2026-06-15)
+## Current state (2026-06-17)
 
 - **Milestones 1–7 complete** (plan + per-milestone reports in `Docs/`):
   full UCA runtime — fused NFD, all strengths/settings, contractions
@@ -59,18 +74,87 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (13 cases), cmsccoll (20 cases + extreme compression), g7coll locale rows,
   apicoll behavioral parts, differential matrices + byte-identical keys
   (21 option sets × 2 data variants), 52k fuzz keys.
-- **Pushed through `2ab4a58`; `origin/port/collation` is in sync** (verify:
-  `git log origin/port/collation..HEAD` is empty). Recent perf rounds:
-  11 = remove canonical `left == right` shortcut; 12 = NFD front-end
-  allocation cuts (sortKey −8%); 13 = reuse prefix-skip iterators for CE
-  iteration (sorted-Thai compare −13%, the ARC win). All in `Docs/13` §6.6–6.7.
-- **Two perf experiments tried and reverted this session — do not re-attempt
-  blindly** (full record in `Docs/13` §6.7): (a) the CE-buffer fixed-array
-  refactor (ICU's `int64_t ceBuffer[40]`) measured neutral — the array
-  memmove the profile flagged was in `NFDIterator.refill`, not the CE buffer;
-  (b) an unsafe-backward BMP bitset profiled the binary search to zero samples
-  but an interleaved A/B showed no wall-clock change. Lesson recorded: profiler
-  leaf samples are a hypothesis — A/B every lever before trusting it.
+- **Performance round 14 complete** (2026-06-16/17, documented in `Docs/14`):
+  three changes shipped, four experiments tried and reverted:
+
+  **Shipped:**
+  1. **Thread-local scratch buffers** — replaced the locked `ScratchPool`
+     with a process-wide pthread TLS key + monotonic collator ID. −19% CJK
+     compare, −10% sort keys. Subsequently fixed for lifetime safety: one
+     process-wide key (never deleted), monotonic IDs (no address reuse),
+     removed dead `ScratchPool` and dead `ScratchBuffers.key` field.
+  2. **`sortKey(for:into:)` inout API** — caller supplies the output buffer,
+     eliminating per-call allocation + memcpy. −27% sort keys. The old
+     returning variant delegates to it.
+  3. **Span-based fast-Latin bail** — uses `String.utf8Span.span` (macOS 26+,
+     `#available`-gated) for the byte-level prefix scan and Latin-eligibility
+     check, so non-Latin text (CJK, Thai) never pays the
+     `withContiguousStorageIfAvailable` closure overhead. −10% CJK compare.
+
+  **Tried and reverted (do not re-attempt without reading `Docs/14`):**
+  - Raw-UTF8 iterator path (approach a: nested closures, +3%; approach b:
+    escaped pointer, UB — crashes)
+  - Lock-free fast-Latin cache (use-after-free in concurrent tests)
+  - Raw-pointer sort-key level buffers (slower than Array — see `Docs/16`)
+  - Span-based prefix skip for full pipeline (+12% CJK regression — must
+    rebuild iterators for CE pipeline, negating the gain)
+
+- **Pushed through `3500ab3`; `origin/port/collation` is in sync.**
+
+### Current performance (Apple Silicon, lower cluster of 5+ runs)
+
+**Compare (ns/op):**
+
+| corpus | ours | ICU 79 | ratio |
+|--------|------|--------|-------|
+| ASCII  | ~33  | ~9     | 3.7×  |
+| Latin  | ~32  | ~10    | 3.2×  |
+| CJK    | ~146 | ~42    | 3.5×  |
+| paths  | ~72  | ~31    | 2.3×  |
+| Thai (th, sorted) | ~408 | ~197 | 2.1× |
+
+**Sort keys (inout API, buffer reused):**
+
+| corpus | ours | ICU 79 | ratio |
+|--------|------|--------|-------|
+| ASCII  | ~274 | ~112   | 2.4×  |
+| CJK    | ~260 | ~125   | 2.0×  |
+| Thai   | ~473 | ~167   | 2.8×  |
+| paths  | ~836 | ~378   | 2.2×  |
+
+ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
+```sh
+cd Collation/Tools
+clang bench_icu.c -O2 -o bench_icu \
+  -I /Users/dragan/Projects/Unicode/icu-DraganBesevic-2/icu4c/source/common \
+  -I /Users/dragan/Projects/Unicode/icu-DraganBesevic-2/icu4c/source/i18n \
+  -L /Users/dragan/Projects/Unicode/icu-DraganBesevic-2/icu4c/source/lib \
+  -licuuc -licui18n -licudata
+DYLD_LIBRARY_PATH=/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/icu4c/source/lib \
+  ./bench_icu Tools/bench/bench-cjk.txt 200
+```
+
+## Key findings from round 14 (read before optimizing further)
+
+1. **`isUniquelyReferenced` is hoisted out of loops.** The profiler shows it
+   as ~9% of samples, but the compiler calls it once before the loop, not per
+   byte. Replacing Array with raw `UnsafeMutablePointer` is **slower** (11
+   instructions/byte vs Array's 7) because the compiler reloads pointer+capacity
+   from memory every iteration due to aliasing uncertainty. Full assembly
+   analysis in `Docs/16`.
+
+2. **`Span<UInt8>` exists in this toolchain** (`String.utf8Span.span`, macOS
+   26+, `#available`-gated). It gives closure-free byte access that compiles
+   to identical assembly as `withContiguousStorageIfAvailable`. BUT: it's
+   `~Escapable` (can't be stored in struct fields), and passing it to a
+   non-inlined function is **3.3× slower** due to lifetime-check overhead.
+   Must use `@inline(__always)` throughout. Detailed benchmarks in `Docs/16` §9.
+
+3. **The residual gap is per-call overhead**, not per-byte arithmetic:
+   - String-access cost (`withContiguousStorageIfAvailable` / iterator ARC)
+   - The fast-Latin cache lock (~10 ns)
+   - CE pipeline function-call boundaries
+   The collation arithmetic itself runs at ICU's speed.
 
 ## Deliberate scope cuts (don't re-litigate without reading the docs)
 
@@ -85,28 +169,28 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 ## Open backlog
 
-**M7.5 is complete, including every perf lever pursued so far; nothing is
-actionable without a new decision.** Parked: rule builder (doc 12); M8
-Foundation integration (await user). Current perf: compare within 2.8–4.9× of
-ICU4C across corpora (ASCII ~79 ns vs 16, Latin ~82 vs 20, paths ~163 vs 52,
-CJK ~350 vs 78, sorted-Thai dictionary ~820 vs 289 = 2.8×); sort keys 2.2–4.4×;
-analysis in `13-performance-analysis.md` (the standalone perf doc — newer and
-more complete than doc 11). The residual gap is Swift value-type overhead (ARC,
-allocator traffic), not arithmetic; what remains is fixed/stack-buffer
-territory with diminishing returns, partly an M8 API-design question.
+- **Rule builder** (doc 12) — parked, awaiting decision.
+- **M8 Foundation integration** — parked, awaiting maintainer input.
+- **Span-based CE pipeline refactor** — the remaining Span opportunity:
+  thread `Span<UInt8>` through the full `CEIterator.appendMore()` →
+  `NFDIterator.next()` chain, replacing `String.UnicodeScalarView.Iterator`
+  entirely. Requires `@inline(__always)` on the entire 5-call-deep chain.
+  Potential −30–40% on CJK/Thai compare but high risk of regressions from
+  inlining failures. Details in `Docs/16` §9.6 and §10.
 
 ## How to work
 
 ```sh
-cd ~/Projects/claude/collation/swift-foundation/Collation
-swift test                      # full suite, ~40s
-swift build -c release && .build/release/Bench Tools/bench/bench-ascii.txt 200
+cd ~/Projects/dra8an/swift-foundation-collation/Collation  # machine 2
+swift test                      # full suite, ~7-20s
+swift build -c release && .build/out/Products/Release/Bench Tools/bench/bench-ascii.txt 200
 ```
 
 Regenerating reference data (only when corpus/locales change; needs icu-build):
 ```sh
 cd Tools
-ICU_SRC=~/Projects/claude/icu ICU_BUILD=~/Projects/claude/collation/icu-build
+ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
+ICU_BUILD=$ICU_SRC/icu4c/source
 clang gen_golden.c -o gen_golden -I $ICU_SRC/icu4c/source/common \
   -I $ICU_SRC/icu4c/source/i18n -L $ICU_BUILD/lib -licuuc -licui18n -licudata
 DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
@@ -134,16 +218,24 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
   only; scalar and raw-UTF-8 variants; bails out to the regular pipeline)
 - `SortKey.swift` — sort key writer + BOCSU identical level
 - `CollationOptions.swift` — public options ↔ ICU options word
-- `RootCollator.swift` — public API: `compare`, `sortKey`,
-  `init(tailoringNamed:)`, `defaultOptions`
+- `ScratchBuffers.swift` — thread-local buffer reuse (process-wide pthread
+  key, monotonic collator IDs), `FastLatinCache`, `FastLatinSetup`
+- `DataStorage.swift` — owns the allocated memory behind `UnsafeBufferPointer`
+  views in `CollationData` and `NormalizationData`
+- `RootCollator.swift` — public API: `compare`, `sortKey`, `sortKey(for:into:)`,
+  `init(tailoringNamed:)`, `defaultOptions`; Span-based fast-Latin bail path
+  (`#available(macOS 26.0)`)
 
 ## Doc index (Docs/)
 
 01 ICU4C investigation · 02 ICU4X strategy · 03 Swift strategy ·
 04 **milestone plan + status table (the spine — keep it updated)** ·
 05–10 milestone reports (2–7) · 11 milestone 7.5 report (tests + perf) ·
-12 rule-builder decision record · 13 performance analysis (standalone) ·
-HANDOFF (this file)
+12 rule-builder decision record · 13 performance analysis (standalone,
+covers rounds 1–13) · 14 **performance round 14** (thread-local, inout
+sortKey, Span bail path; also records four reverted experiments) ·
+15 ICU4C-to-Swift source mapping · 16 **Array vs UnsafePointer assembly
+analysis + Span<UInt8> discovery and benchmarks** · HANDOFF (this file)
 
 Convention: every milestone/round updates doc 04's table + outcome note and
 gets a detailed report; decision records for surprising cuts; commit
