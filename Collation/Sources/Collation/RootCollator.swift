@@ -99,24 +99,25 @@ public struct RootCollator: @unchecked Sendable {
         // needs the NFD pipeline, so it keeps to the scalar path below.
         var triedFastLatin = false
         if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
-            // The closures must capture only trivial values and the cache
-            // reference: capturing self would retain the collator's storage
-            // on every call. The per-options setup is looked up inside, only
-            // after the eligibility checks pass (so ineligible text never
-            // pays for it); a cache miss returns needsSetupResult and is
-            // retried once after computing the setup out here.
             let safety = restartSafety
             let numeric = options.numeric
             let word = options.icuOptions
             let cache = fastLatinCache
             for _ in 0..<2 {
-                let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
-                    right.utf8.withContiguousStorageIfAvailable { rBytes in
-                        RootCollator.fastLatinUTF8(
-                            lBytes, rBytes, table: table, cache: cache, word: word,
-                            numeric: numeric, safety: safety)
+                let fast: Int32?
+                if #available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *) {
+                    fast = RootCollator.fastLatinSpan(
+                        left, right, table: table, cache: cache, word: word,
+                        numeric: numeric, safety: safety)
+                } else {
+                    fast = left.utf8.withContiguousStorageIfAvailable { lBytes in
+                        right.utf8.withContiguousStorageIfAvailable { rBytes in
+                            RootCollator.fastLatinUTF8(
+                                lBytes, rBytes, table: table, cache: cache, word: word,
+                                numeric: numeric, safety: safety)
+                        } ?? nil
                     } ?? nil
-                } ?? nil
+                }
                 guard let fast else { break }
                 if fast == CollationFastLatin.needsSetupResult {
                     _ = resolveFastLatinSetup(word)
@@ -361,6 +362,81 @@ public struct RootCollator: @unchecked Sendable {
         let setup = FastLatinSetup(word: word, packedOptions: packed, primaries: primaries)
         fastLatinCache.store(setup)
         return setup
+    }
+
+    /// Span-based byte fast path: uses String.utf8Span for the prefix scan
+    /// (no closure overhead), then a single withContiguousStorageIfAvailable
+    /// pair for the compareUTF8 call. Net saving vs the old path: eliminates
+    /// the closure overhead from the prefix scan (the most common early-exit
+    /// point for non-Latin text that bails immediately).
+    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @inline(__always)
+    private static func fastLatinSpan(
+        _ left: String, _ right: String,
+        table: UnsafeBufferPointer<UInt16>, cache: FastLatinCache, word: Int32,
+        numeric: Bool, safety: RestartSafety
+    ) -> Int32? {
+        let lSpan = left.utf8Span.span
+        let rSpan = right.utf8Span.span
+        let lLength = lSpan.count
+        let rLength = rSpan.count
+        let minLength = min(lLength, rLength)
+
+        // Identical-prefix scan on bytes (no closure, no decoding).
+        var i = 0
+        while i < minLength, lSpan[i] == rSpan[i] { i += 1 }
+        if i == lLength && i == rLength { return 0 }  // binary equal
+
+        // Back up to the start of a partially-equal code point.
+        if i > 0,
+           (i != lLength && lSpan[i] & 0xc0 == 0x80) || (i != rLength && rSpan[i] & 0xc0 == 0x80) {
+            repeat { i -= 1 } while i > 0 && lSpan[i] & 0xc0 == 0x80
+        }
+        if i > 0 {
+            if (i != lLength && safety.isUnsafe(Self.scalarAtSpan(lSpan, i), numeric: numeric))
+                || (i != rLength && safety.isUnsafe(Self.scalarAtSpan(rSpan, i), numeric: numeric)) {
+                i = 0
+            }
+        }
+
+        // Both sides must resume with fast-path-eligible lead bytes.
+        guard i == lLength || lSpan[i] <= CollationFastLatin.latinMaxUTF8Lead,
+              i == rLength || rSpan[i] <= CollationFastLatin.latinMaxUTF8Lead
+        else { return Int32(CollationFastLatin.bailOutResult) }
+
+        guard let setup = cache.setup(for: word) else {
+            return Int32(CollationFastLatin.needsSetupResult)
+        }
+        guard setup.packedOptions >= 0 else { return Int32(CollationFastLatin.bailOutResult) }
+
+        // The actual mini-CE comparison needs UnsafeBufferPointer (the existing
+        // compareUTF8 API). Use a single closure pair — the prefix scan above
+        // already ran without closures, so bails (CJK etc.) never pay this cost.
+        let startOffset = i
+        return left.utf8.withContiguousStorageIfAvailable { lBytes in
+            right.utf8.withContiguousStorageIfAvailable { rBytes in
+                CollationFastLatin.compareUTF8(
+                    table: table, primaries: setup.primaries, options: setup.packedOptions,
+                    left: lBytes, leftStart: startOffset, right: rBytes, rightStart: startOffset)
+            } ?? CollationFastLatin.bailOutResult
+        } ?? nil
+    }
+
+    /// Decodes the scalar at byte offset `i` from a Span.
+    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @inline(__always)
+    private static func scalarAtSpan(_ bytes: Span<UInt8>, _ i: Int) -> UInt32 {
+        let b0 = UInt32(bytes[i])
+        if b0 < 0x80 { return b0 }
+        if b0 < 0xe0 {
+            return ((b0 & 0x1f) << 6) | (UInt32(bytes[i + 1]) & 0x3f)
+        }
+        if b0 < 0xf0 {
+            return ((b0 & 0x0f) << 12) | ((UInt32(bytes[i + 1]) & 0x3f) << 6)
+                | (UInt32(bytes[i + 2]) & 0x3f)
+        }
+        return ((b0 & 0x07) << 18) | ((UInt32(bytes[i + 1]) & 0x3f) << 12)
+            | ((UInt32(bytes[i + 2]) & 0x3f) << 6) | (UInt32(bytes[i + 3]) & 0x3f)
     }
 
     /// The byte fast path: identical-prefix scan on raw UTF-8, safety check,
