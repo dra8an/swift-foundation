@@ -38,8 +38,6 @@ struct PoolLock {
 final class ScratchBuffers {
     var left: CEIterator
     var right: CEIterator
-    /// sortKey: the key bytes under construction.
-    var key: [UInt8] = []
     /// sortKey: the per-level byte buffers.
     var levels = SortKeyLevelBuffers()
     /// sortKey: NFD scalars for the identical level.
@@ -52,67 +50,94 @@ final class ScratchBuffers {
     }
 }
 
-/// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers
-/// instance, avoiding all locking, exclusivity checks, and ARC traffic on
-/// the take/give path. If a thread re-enters (e.g. compare inside compare,
-/// which doesn't happen in practice but is sound), `take()` returns nil and
-/// the caller allocates a fresh set.
-///
-/// Implementation: a single pthread_key_t holds an UnsafeMutablePointer to
-/// a `ThreadLocalSlot` (which wraps the optional ScratchBuffers). The key's
-/// destructor frees the slot on thread exit.
-final class ThreadLocalScratch: @unchecked Sendable {
-    /// The slot stored in thread-local storage. Wrapping in a struct stored
-    /// via UnsafeMutablePointer avoids ARC on the TLS read path entirely.
-    struct Slot {
-        var buffers: ScratchBuffers?
-    }
+// MARK: - Thread-Local Scratch Cache
 
-    private var key: pthread_key_t
+/// A process-wide, never-deleted pthread key for caching one ScratchBuffers
+/// per thread. The key's destructor runs on thread exit, releasing the slot.
+///
+/// Design:
+/// - ONE key for the entire process (never exhausts the 512-key limit).
+/// - Each thread's slot holds a buffer set tagged with the collator ID that
+///   owns it. On take(), the ID is checked; a mismatch means the buffer was
+///   left by a different (possibly dead) collator — it's discarded.
+/// - Collator IDs are monotonically increasing (never reused), so address
+///   reuse after free cannot cause a stale buffer to match a new collator.
+/// - The slot is a raw struct pointer (no class, no ARC on the read path).
+private let _scratchTLSKey: pthread_key_t = {
+    var key = pthread_key_t()
+    let rc = pthread_key_create(&key) { raw in
+        let slot = raw.assumingMemoryBound(to: TLSSlot.self)
+        slot.deinitialize(count: 1)
+        slot.deallocate()
+    }
+    precondition(rc == 0, "pthread_key_create failed: \(rc)")
+    return key
+}()
+
+/// Monotonically increasing collator ID. Each RootCollator gets a unique ID
+/// that's never reused (even if the collator's memory address is recycled).
+private let _nextCollatorID = LockedCounter()
+
+private final class LockedCounter: @unchecked Sendable {
+    private var value: UInt64 = 0
+    private let lock = PoolLock()
+
+    func next() -> UInt64 {
+        lock.acquire()
+        value += 1
+        let v = value
+        lock.release()
+        return v
+    }
+}
+
+/// The raw struct stored in thread-local storage. No class — no ARC.
+private struct TLSSlot {
+    var collatorID: UInt64
+    var buffers: ScratchBuffers?
+}
+
+/// Thread-local scratch buffer interface. One instance per RootCollator;
+/// each holds a unique monotonic ID. The actual TLS slot is process-wide.
+struct ThreadLocalScratch: @unchecked Sendable {
+    let collatorID: UInt64
 
     init() {
-        var k = pthread_key_t()
-        pthread_key_create(&k) { raw in
-            // Destructor: called on thread exit. Release the slot.
-            let slot = raw.assumingMemoryBound(to: Slot.self)
-            slot.deinitialize(count: 1)
-            slot.deallocate()
-        }
-        key = k
+        collatorID = _nextCollatorID.next()
     }
 
-    deinit {
-        // Note: any thread-local slots still alive at this point will be
-        // cleaned up by their thread's exit destructor. We just destroy the
-        // key itself.
-        pthread_key_delete(key)
-    }
-
-    /// Takes the cached buffer set for this thread, or nil if none is
-    /// stashed (first call on this thread, or re-entrant call).
+    /// Takes the cached buffer set for this thread if it belongs to this
+    /// collator. Returns nil on first call, ID mismatch, or re-entrant call.
     @inline(__always)
     func take() -> ScratchBuffers? {
-        guard let raw = pthread_getspecific(key) else { return nil }
-        let slot = raw.assumingMemoryBound(to: Slot.self)
+        guard let raw = pthread_getspecific(_scratchTLSKey) else { return nil }
+        let slot = raw.assumingMemoryBound(to: TLSSlot.self)
+        guard slot.pointee.collatorID == collatorID else {
+            // Stale buffer from a different collator — discard it.
+            slot.pointee.buffers = nil
+            return nil
+        }
         let buffers = slot.pointee.buffers
         slot.pointee.buffers = nil
         return buffers
     }
 
-    /// Stashes a buffer set back into the thread-local slot. If the slot
-    /// doesn't exist yet (first give on this thread), creates it.
+    /// Stashes a buffer set back into the thread-local slot.
     @inline(__always)
     func give(_ buffers: ScratchBuffers) {
-        if let raw = pthread_getspecific(key) {
-            let slot = raw.assumingMemoryBound(to: Slot.self)
+        if let raw = pthread_getspecific(_scratchTLSKey) {
+            let slot = raw.assumingMemoryBound(to: TLSSlot.self)
+            slot.pointee.collatorID = collatorID
             slot.pointee.buffers = buffers
         } else {
-            let slot = UnsafeMutablePointer<Slot>.allocate(capacity: 1)
-            slot.initialize(to: Slot(buffers: buffers))
-            pthread_setspecific(key, UnsafeRawPointer(slot))
+            let slot = UnsafeMutablePointer<TLSSlot>.allocate(capacity: 1)
+            slot.initialize(to: TLSSlot(collatorID: collatorID, buffers: buffers))
+            pthread_setspecific(_scratchTLSKey, UnsafeRawPointer(slot))
         }
     }
 }
+
+// MARK: - Fast-Latin Setup Cache
 
 /// One immutable fast-Latin setup: the precomputed primaries and packed
 /// options for one options word (packedOptions < 0 = unsupported).
@@ -146,32 +171,6 @@ final class FastLatinCache: @unchecked Sendable {
         lock.acquire()
         defer { lock.release() }
         current = setup
-    }
-
-    deinit {
-        lock.deallocate()
-    }
-}
-
-/// Legacy pool kept as fallback: if thread-local take returns nil (first call
-/// or re-entrant), we try the pool before allocating fresh. In practice the
-/// thread-local handles >99% of calls; this exists only for correctness in
-/// edge cases (and for ScratchBuffers created before the thread-local was
-/// warmed up on that thread).
-final class ScratchPool: @unchecked Sendable {
-    private let lock = PoolLock()
-    private var free: [ScratchBuffers] = []
-
-    func take() -> ScratchBuffers? {
-        lock.acquire()
-        defer { lock.release() }
-        return free.popLast()
-    }
-
-    func give(_ buffers: ScratchBuffers) {
-        lock.acquire()
-        defer { lock.release() }
-        if free.count < 4 { free.append(buffers) }
     }
 
     deinit {
