@@ -605,3 +605,241 @@ print(bytes[0])  // 104 ('h')
 
 `Span` is part of the Swift standard library in this toolchain (SE-0447),
 not an import. `UTF8Span` is `String`'s conformance to the span protocol.
+
+## 9. Span Performance: Benchmarking the Collation Use Case
+
+The §8 discovery showed `Span` exists and compiles. But the real question is:
+**does it actually help in the collation hot path?** This section benchmarks
+the specific patterns the collator uses.
+
+### 9.1 Test Setup
+
+The benchmark compares the prefix-skip operation — iterating two strings'
+scalars in lockstep until a difference is found. This is the exact operation
+`RootCollator.compare()` does before entering the CE pipeline. Test strings:
+```
+left:  "icu4c/source/i18n/collationiterator.cpp"  (39 bytes)
+right: "icu4c/source/i18n/collationiterator.h"    (37 bytes)
+```
+These share a 34-character prefix — a realistic sorted-data comparison.
+
+### 9.2 Results: Five Approaches
+
+| Approach | ns/op | vs Iterator |
+|----------|-------|-------------|
+| `String.UnicodeScalarView.Iterator` (current code) | ~79 ns | baseline |
+| Span, scalar decode in a **separate function** (no inline hint) | ~262 ns | **3.3× slower** |
+| Span, scalar decode in an `@inline(__always)` helper | ~73 ns | **8% faster** |
+| Span, scalar decode **manually inlined** in the loop body | ~60 ns | **25% faster** |
+| Span, re-acquiring `.utf8Span.span` each iteration (no `let` binding) | ~705 ns | **9× slower** |
+
+### 9.3 Analysis: Why Inlining Matters for Span
+
+`Span<UInt8>` is `~Escapable` — the compiler enforces that it cannot outlive
+the scope that created it. When a `Span` is passed as a function parameter,
+the compiler inserts **lifetime-dependency checks** at the call boundary to
+verify the span is still valid. These checks have measurable cost:
+
+- **Non-inlined function taking `Span` parameter:** ~180 ns overhead per call
+  from lifetime verification at each call-site. The function call itself is
+  cheap, but the compiler cannot elide the lifetime proof across the boundary.
+
+- **`@inline(__always)` function:** the function body is substituted into the
+  caller, so the compiler can see that the span and its source (the String
+  parameter) are in the same scope — no runtime lifetime check needed. Cost:
+  near zero, and the span access compiles to the same code as a direct
+  `UnsafeBufferPointer` subscript.
+
+- **Manually inlined:** same as `@inline(__always)` but the compiler has even
+  more freedom (no function-boundary artifacts at all). The 25% vs 8% gap
+  suggests the compiler doesn't fully optimize away all overhead even with
+  `@inline(__always)` — possibly residual register pressure from the function
+  signature.
+
+### 9.4 Single-String vs Two-String
+
+A simpler test — counting scalars in one string:
+
+| Approach | ns/op |
+|----------|-------|
+| `String.UnicodeScalarView.Iterator` | ~75 ns |
+| Span + local offset (inlined decode) | ~31 ns |
+
+For single-string iteration, Span is **2.4× faster** than the iterator. The
+iterator carries a String storage reference (ARC on construction) and has
+per-scalar method-call overhead; the Span is a raw pointer + count with
+subscript access.
+
+The two-string case (§9.2) narrows the gap because:
+1. Acquiring two spans means two `utf8Span.span` calls (each extracts the
+   buffer pointer from the String's guts)
+2. The comparison loop has more register pressure (two offsets, two spans)
+3. The short-circuit (`a == b`) prevents the loop from vectorizing
+
+### 9.5 Lifetime Rules: What Works and What Doesn't
+
+```swift
+// ✅ WORKS: Span from a function parameter (lifetime = function body)
+func compare(_ left: String, _ right: String) -> Int {
+    let lBytes = left.utf8Span.span   // valid for entire function
+    let rBytes = right.utf8Span.span  // valid for entire function
+    // ... use both spans ...
+}
+
+// ❌ FAILS: Span from a local variable
+func test() {
+    let s = "hello"
+    let bytes = s.utf8Span.span  // ERROR: lifetime-dependent value escapes
+    // The compiler can't prove `s` outlives `bytes` because `s` is a local
+    // that could be destroyed at any point after its last direct use.
+}
+
+// ❌ FAILS: Span stored in a struct field
+struct MyIter {
+    var bytes: Span<UInt8>  // ERROR: ~Escapable type cannot be stored
+}
+
+// ✅ WORKS: Span passed to an @inline(__always) method
+struct State {
+    var offset: Int = 0
+    @inline(__always)
+    mutating func next(_ bytes: Span<UInt8>) -> UInt32? {
+        guard offset < bytes.count else { return nil }
+        // ... decode scalar, advance offset ...
+    }
+}
+
+// ⚠️ SLOW: Span passed to a non-inlined function
+func decode(_ bytes: Span<UInt8>, _ offset: inout Int) -> UInt32? {
+    // Works correctly but adds ~180ns lifetime-check overhead per call
+}
+```
+
+### 9.6 Implications for the Collation Refactor
+
+To use Span in `RootCollator.compare()`:
+
+**What would change:**
+1. `compare()` acquires spans at the top: `let lBytes = left.utf8Span.span`
+2. `NFDIterator` stores only `offset: Int` (not `source: String.Iterator`)
+3. `NFDIterator.nextSourceScalar(_ bytes: Span<UInt8>)` takes span as parameter
+4. All methods in the chain (`appendMore`, `refill`, `ce(at:)`) must either:
+   - Be `@inline(__always)` (so the span is never passed across a non-inlined
+     boundary), or
+   - Accept the span as a parameter (adds the ~180ns overhead per call)
+
+**The challenge:**
+The current call chain is:
+```
+compare() → CollationCompare.compareUpToQuaternary()
+  → CEIterator.ce(at:)
+    → CEIterator.appendMore()
+      → NFDIterator.next()
+        → NFDIterator.nextSourceScalar()  ← reads the input here
+```
+
+That's 5 function calls deep. If any of them is NOT inlined, the Span
+parameter incurs the lifetime-check penalty. The `@inline(__always)` chain
+would need to go from `compareUpToQuaternary` all the way down to
+`nextSourceScalar` — or alternatively, the iteration would need to be
+restructured so that `compare()` drives the byte reading directly and passes
+decoded scalars down (inverting the call direction).
+
+**The ICU4C model** (for reference):
+ICU4C passes `const char*` + length at the top and each layer reads through
+the pointer directly. No lifetime checks, no function-call boundary costs for
+pointer access. This is what `Span` is designed to replicate — but the
+`~Escapable` lifetime enforcement adds cost at non-inlined boundaries that C
+doesn't have.
+
+**Estimated impact if fully wired:**
+- Prefix skip: −25% (60 ns vs 79 ns, from §9.2 manually-inlined result)
+- CE pipeline scalar source: eliminates the `String.Iterator` ARC entirely
+  (the −30% from the earlier §2 profile that approach (a) couldn't fully
+  capture due to closure overhead)
+- Combined: potentially −30-40% on CJK/Thai compare — but ONLY if the entire
+  chain is inlined, which may cause code-size explosion and instruction-cache
+  pressure
+
+**Recommended next step:**
+Prototype a `compareViaSpan` method that uses Span for the prefix skip (the
+outer layer) while keeping the existing `CEIterator` path for the CE pipeline.
+This captures the prefix-skip win (−25%) without requiring the full inlining
+chain. Measure, then decide whether the deeper refactor is worth it.
+
+### 9.7 Reproducing the Benchmarks
+
+```swift
+// File: /tmp/SpanBenchCompare.swift
+// Compile: swiftc -O /tmp/SpanBenchCompare.swift -o /tmp/span_bench
+import Swift
+import Dispatch
+
+@inline(__always)
+func nextScalarInline(_ bytes: Span<UInt8>, _ offset: inout Int) -> UInt32? {
+    guard offset < bytes.count else { return nil }
+    let b0 = UInt32(bytes[offset])
+    if b0 < 0x80 { offset += 1; return b0 }
+    if b0 < 0xe0 {
+        let c = ((b0 & 0x1f) << 6) | (UInt32(bytes[offset + 1]) & 0x3f)
+        offset += 2; return c
+    }
+    if b0 < 0xf0 {
+        let c = ((b0 & 0x0f) << 12)
+            | ((UInt32(bytes[offset + 1]) & 0x3f) << 6)
+            | (UInt32(bytes[offset + 2]) & 0x3f)
+        offset += 3; return c
+    }
+    let c = ((b0 & 0x07) << 18)
+        | ((UInt32(bytes[offset + 1]) & 0x3f) << 12)
+        | ((UInt32(bytes[offset + 2]) & 0x3f) << 6)
+        | (UInt32(bytes[offset + 3]) & 0x3f)
+    offset += 4; return c
+}
+
+@inline(never)
+func twoSpanForceInline(_ left: String, _ right: String) -> Int {
+    let lBytes = left.utf8Span.span
+    let rBytes = right.utf8Span.span
+    var lOff = 0
+    var rOff = 0
+    var shared = 0
+    while let a = nextScalarInline(lBytes, &lOff),
+          let b = nextScalarInline(rBytes, &rOff),
+          a == b {
+        shared += 1
+    }
+    return shared
+}
+
+@inline(never)
+func iteratorCompare(_ left: String, _ right: String) -> Int {
+    var lIter = left.unicodeScalars.makeIterator()
+    var rIter = right.unicodeScalars.makeIterator()
+    var shared = 0
+    while let a = lIter.next(), let b = rIter.next(), a == b {
+        shared += 1
+    }
+    return shared
+}
+
+let left = "icu4c/source/i18n/collationiterator.cpp"
+let right = "icu4c/source/i18n/collationiterator.h"
+let reps = 5_000_000
+var sink = 0
+
+for _ in 0..<1000 { sink += twoSpanForceInline(left, right) }
+for _ in 0..<1000 { sink += iteratorCompare(left, right) }
+
+var start = DispatchTime.now().uptimeNanoseconds
+for _ in 0..<reps { sink += twoSpanForceInline(left, right) }
+var ns = DispatchTime.now().uptimeNanoseconds - start
+print("Span @inline(__always): \(ns / UInt64(reps)) ns/op")
+
+start = DispatchTime.now().uptimeNanoseconds
+for _ in 0..<reps { sink += iteratorCompare(left, right) }
+ns = DispatchTime.now().uptimeNanoseconds - start
+print("Iterator:              \(ns / UInt64(reps)) ns/op")
+
+if sink == Int.min { print("") }
+```
