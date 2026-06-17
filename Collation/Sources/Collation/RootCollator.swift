@@ -92,11 +92,18 @@ public struct RootCollator: @unchecked Sendable {
     public func compare(
         _ left: String, _ right: String, options: CollationOptions = CollationOptions()
     ) throws -> Order {
-        // UTF-8 byte fast path (the byte-level identical-prefix scan of
-        // ICU's UTF-8 doCompare + CollationFastLatin::compareUTF8): native
-        // Swift strings expose contiguous UTF-8, so characters are read as
-        // raw bytes with no scalar decoding. The identical strength level
-        // needs the NFD pipeline, so it keeps to the scalar path below.
+        if #available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *) {
+            return try compareWithSpan(left, right, options: options)
+        }
+        return try compareClassic(left, right, options: options)
+    }
+
+    /// Pre-Span compare path. Factored into its own function so the compiler
+    /// optimizes it independently — mixing #available branches in one function
+    /// body bloats codegen and regresses the fallback path.
+    private func compareClassic(
+        _ left: String, _ right: String, options: CollationOptions
+    ) throws -> Order {
         var triedFastLatin = false
         if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
             let safety = restartSafety
@@ -104,20 +111,13 @@ public struct RootCollator: @unchecked Sendable {
             let word = options.icuOptions
             let cache = fastLatinCache
             for _ in 0..<2 {
-                let fast: Int32?
-                if #available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *) {
-                    fast = RootCollator.fastLatinSpan(
-                        left, right, table: table, cache: cache, word: word,
-                        numeric: numeric, safety: safety)
-                } else {
-                    fast = left.utf8.withContiguousStorageIfAvailable { lBytes in
-                        right.utf8.withContiguousStorageIfAvailable { rBytes in
-                            RootCollator.fastLatinUTF8(
-                                lBytes, rBytes, table: table, cache: cache, word: word,
-                                numeric: numeric, safety: safety)
-                        } ?? nil
+                let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
+                    right.utf8.withContiguousStorageIfAvailable { rBytes in
+                        RootCollator.fastLatinUTF8(
+                            lBytes, rBytes, table: table, cache: cache, word: word,
+                            numeric: numeric, safety: safety)
                     } ?? nil
-                }
+                } ?? nil
                 guard let fast else { break }
                 if fast == CollationFastLatin.needsSetupResult {
                     _ = resolveFastLatinSetup(word)
@@ -126,91 +126,80 @@ public struct RootCollator: @unchecked Sendable {
                 if fast != CollationFastLatin.bailOutResult {
                     return fast < 0 ? .ascending : fast == 0 ? .same : .descending
                 }
-                triedFastLatin = true  // ran and bailed; the scalar fast path would too
+                triedFastLatin = true
                 break
             }
         }
+        return try compareBody(left, right, options: options, triedFastLatin: triedFastLatin)
+    }
 
-        // No `if left == right` shortcut here. Swift's String == is canonical
-        // equivalence, which for non-binary-equal strings runs NFC
-        // normalization to prove (in)equality — measured at ~250–400 ns per
-        // call on text with combining marks (Thai, etc.), on *every* non-equal
-        // compare. Canonical equivalence is already handled correctly by the
-        // CE pipeline below (the NFD front end yields equal CEs for equivalent
-        // strings), so the shortcut was pure cost on the non-Latin path. The
-        // byte fast path above still settles binary equality cheaply for
-        // non-identical strengths. (See Docs/13 §6.6.)
-
-        // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar
-        // prefixes produce identical CEs, so iteration can start at the first
-        // difference — when restarting there is provably equivalent to full
-        // iteration (see unsafeStart). On an unsafe boundary we compare from
-        // the start instead; ICU backs up partially, but skipping less is
-        // always sound and keeps the common path free of index arithmetic.
-        //
-        // Span-based byte-level prefix scan (macOS 26+): raw UTF-8 byte
-        // comparison is faster than scalar decode-and-compare (no decoding in
-        // the hot loop). Falls back to scalar iterators on older deployments.
-        let shared: Int
-        let lNextValue: UInt32?
-        let rNextValue: UInt32?
-        let fellBack: Bool
-        if #available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *) {
-            let lSpan = left.utf8Span.span
-            let rSpan = right.utf8Span.span
-            let r = RootCollator.spanPrefixSkip(
-                lSpan, rSpan, numeric: options.numeric, safety: restartSafety)
-            shared = r.shared
-            lNextValue = r.lNext
-            rNextValue = r.rNext
-            fellBack = r.fellBack
-        } else {
-            var lIter = left.unicodeScalars.makeIterator()
-            var rIter = right.unicodeScalars.makeIterator()
-            var count = 0
-            var lScalar = lIter.next()
-            var rScalar = rIter.next()
-            while let a = lScalar, let b = rScalar, a == b {
-                count += 1
-                lScalar = lIter.next()
-                rScalar = rIter.next()
-            }
-            lNextValue = lScalar?.value
-            rNextValue = rScalar?.value
-            if count > 0,
-               (lNextValue.map { unsafeStart($0, numeric: options.numeric) } ?? false)
-                || (rNextValue.map { unsafeStart($0, numeric: options.numeric) } ?? false) {
-                shared = 0
-                fellBack = true
-            } else {
-                shared = count
-                fellBack = false
+    /// Span-based compare path (macOS 26+). Uses String.utf8Span for the
+    /// fast-Latin bail check — non-Latin text skips the closure overhead.
+    /// Shares the prefix skip, CE pipeline, and identical level with
+    /// compareClassic via compareBody() to prevent correctness drift.
+    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    private func compareWithSpan(
+        _ left: String, _ right: String, options: CollationOptions
+    ) throws -> Order {
+        var triedFastLatin = false
+        if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
+            let safety = restartSafety
+            let numeric = options.numeric
+            let word = options.icuOptions
+            let cache = fastLatinCache
+            for _ in 0..<2 {
+                let fast: Int32? = RootCollator.fastLatinSpan(
+                    left, right, table: table, cache: cache, word: word,
+                    numeric: numeric, safety: safety)
+                guard let fast else { break }
+                if fast == CollationFastLatin.needsSetupResult {
+                    _ = resolveFastLatinSetup(word)
+                    continue
+                }
+                if fast != CollationFastLatin.bailOutResult {
+                    return fast < 0 ? .ascending : fast == 0 ? .same : .descending
+                }
+                triedFastLatin = true
+                break
             }
         }
+        return try compareBody(left, right, options: options, triedFastLatin: triedFastLatin)
+    }
 
-        // Fast Latin (CollationFastLatin): when both remainders start within
-        // the mini-CE table's range, compare on the precompiled table with no
-        // iterator pipeline (and no scratch buffers); any unsupported
-        // character or mapping bails out to the regular path. The skip
-        // walk's iterators are reusable unless an unsafe boundary forced the
-        // comparison back to the start.
+    /// Shared compare body: prefix skip, fast-Latin scalar path, CE pipeline,
+    /// identical level. Called by both compareClassic and compareWithSpan
+    /// after each has run its own fast-Latin byte path. Single implementation
+    /// prevents correctness drift.
+    private func compareBody(
+        _ left: String, _ right: String, options: CollationOptions,
+        triedFastLatin: Bool
+    ) throws -> Order {
+        var lIter = left.unicodeScalars.makeIterator()
+        var rIter = right.unicodeScalars.makeIterator()
+        var shared = 0
+        var lNext = lIter.next()
+        var rNext = rIter.next()
+        while let a = lNext, let b = rNext, a == b {
+            shared += 1
+            lNext = lIter.next()
+            rNext = rIter.next()
+        }
+        var fellBack = false
+        if shared > 0,
+           (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
+            || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
+            shared = 0
+            fellBack = true
+        }
+
         var fastResult = CollationFastLatin.bailOutResult
         let table = fastLatinTable
         if !table.isEmpty, !triedFastLatin {
             var lSide: CollationFastLatin.Side
             var rSide: CollationFastLatin.Side
-            if !fellBack {
-                // Build positioned iterators: advance past the shared prefix
-                // plus the first unequal scalar (already decoded into
-                // lNextValue/rNextValue). Side.rest must yield the scalar
-                // AFTER the one in Side.next.
-                var lIter = left.unicodeScalars.makeIterator()
-                var rIter = right.unicodeScalars.makeIterator()
-                for _ in 0..<shared { _ = lIter.next(); _ = rIter.next() }
-                if lNextValue != nil { _ = lIter.next() }
-                if rNextValue != nil { _ = rIter.next() }
-                lSide = CollationFastLatin.Side(next: lNextValue, rest: lIter)
-                rSide = CollationFastLatin.Side(next: rNextValue, rest: rIter)
+            if shared > 0 || !fellBack {
+                lSide = CollationFastLatin.Side(next: lNext?.value, rest: lIter)
+                rSide = CollationFastLatin.Side(next: rNext?.value, rest: rIter)
             } else {
                 var li = left.unicodeScalars.makeIterator()
                 var ri = right.unicodeScalars.makeIterator()
@@ -234,20 +223,14 @@ public struct RootCollator: @unchecked Sendable {
         if fastResult != CollationFastLatin.bailOutResult {
             result = Int(fastResult)
         } else {
-            // CEs are generated lazily: the primary level usually decides the
-            // comparison after a few characters.
             let s = takeScratch()
             scratch = s
             if fellBack {
-                // The skip was abandoned (unsafe boundary): iterate from start.
                 s.left.reset(numeric: options.numeric, scalars: left.unicodeScalars)
                 s.right.reset(numeric: options.numeric, scalars: right.unicodeScalars)
             } else {
-                // Position past the shared prefix. The Span-based skip found
-                // the scalar count; reset(skippingFirst:) advances the internal
-                // iterator so the next read yields the first unequal scalar.
-                s.left.reset(numeric: options.numeric, scalars: left.unicodeScalars, skippingFirst: shared)
-                s.right.reset(numeric: options.numeric, scalars: right.unicodeScalars, skippingFirst: shared)
+                s.left.reset(numeric: options.numeric, source: lIter, first: lNext?.value)
+                s.right.reset(numeric: options.numeric, source: rIter, first: rNext?.value)
             }
             result = try CollationCompare.compareUpToQuaternary(
                 &s.left, &s.right, options: options.icuOptions,
@@ -257,14 +240,10 @@ public struct RootCollator: @unchecked Sendable {
             return result < 0 ? .ascending : .descending
         }
         if options.strength == .identical {
-            // Identical level: compare NFD forms in code point order, with
-            // end-of-string below U+FFFE (merge separator) below all code
-            // points. (compareNFDIter: end = -2, U+FFFE = -1.)
             func rank(_ c: UInt32?) -> Int64 {
                 guard let c else { return -2 }
                 return c == 0xfffe ? -1 : Int64(c)
             }
-            // ICU also runs the identical level from the skip position.
             let s = scratch ?? takeScratch()
             scratch = s
             s.left.scalars.reset(scalars: left.unicodeScalars, skippingFirst: shared)
@@ -280,6 +259,7 @@ public struct RootCollator: @unchecked Sendable {
         }
         return .same
     }
+
 
     /// The sort key for a string: level bytes with 01 separators, optional
     /// identical level (BOCSU over NFD), 00 terminator. Byte-wise comparison
@@ -499,91 +479,6 @@ public struct RootCollator: @unchecked Sendable {
         }
         return ((b0 & 0x07) << 18) | ((UInt32(bytes[i + 1]) & 0x3f) << 12)
             | ((UInt32(bytes[i + 2]) & 0x3f) << 6) | (UInt32(bytes[i + 3]) & 0x3f)
-    }
-
-    /// Result of the Span-based identical-prefix skip.
-    struct PrefixSkipResult {
-        /// Number of shared scalars (0 when fell back due to unsafe boundary).
-        let shared: Int
-        /// First unequal scalar value from the left side, or nil at end.
-        let lNext: UInt32?
-        /// First unequal scalar value from the right side, or nil at end.
-        let rNext: UInt32?
-        /// True when shared bytes existed but an unsafe restart boundary
-        /// forced the comparison back to the start.
-        let fellBack: Bool
-    }
-
-    /// Span-based identical-prefix skip: compares raw UTF-8 bytes without
-    /// scalar decoding in the hot loop, then counts scalars and decodes the
-    /// boundary once. This is 8–25% faster than scalar-iterator comparison
-    /// for strings with common prefixes.
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-    @inline(__always)
-    private static func spanPrefixSkip(
-        _ lSpan: Span<UInt8>, _ rSpan: Span<UInt8>,
-        numeric: Bool, safety: RestartSafety
-    ) -> PrefixSkipResult {
-        let lLen = lSpan.count
-        let rLen = rSpan.count
-        let minLen = min(lLen, rLen)
-
-        // Byte-level prefix scan (the hot loop — no decoding).
-        var i = 0
-        while i < minLen, lSpan[i] == rSpan[i] { i += 1 }
-
-        // Back up to the start of a partially-equal code point: trail bytes
-        // are 10xxxxxx (0x80..0xBF).
-        if i > 0,
-           (i < lLen && lSpan[i] & 0xC0 == 0x80)
-            || (i < rLen && rSpan[i] & 0xC0 == 0x80) {
-            repeat { i -= 1 } while i > 0 && lSpan[i] & 0xC0 == 0x80
-        }
-
-        // Count scalars in the shared byte prefix.
-        var scalarCount = 0
-        var j = 0
-        while j < i {
-            let b = lSpan[j]
-            if b < 0x80 { j += 1 }
-            else if b < 0xE0 { j += 2 }
-            else if b < 0xF0 { j += 3 }
-            else { j += 4 }
-            scalarCount += 1
-        }
-
-        // Decode the first unequal scalar from each side.
-        let lNextVal: UInt32? = i < lLen ? decodeScalarFromSpan(lSpan, at: i) : nil
-        let rNextVal: UInt32? = i < rLen ? decodeScalarFromSpan(rSpan, at: i) : nil
-
-        // Unsafe-start check: if restarting at either boundary scalar is not
-        // provably equivalent to full iteration, fall back to the start.
-        if scalarCount > 0,
-           (lNextVal.map { safety.isUnsafe($0, numeric: numeric) } ?? false)
-            || (rNextVal.map { safety.isUnsafe($0, numeric: numeric) } ?? false) {
-            return PrefixSkipResult(shared: 0, lNext: lNextVal, rNext: rNextVal, fellBack: true)
-        }
-
-        return PrefixSkipResult(shared: scalarCount, lNext: lNextVal, rNext: rNextVal, fellBack: false)
-    }
-
-    /// Decodes a single scalar from a Span at the given byte offset (which
-    /// must be a lead byte of well-formed UTF-8).
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-    @inline(__always)
-    private static func decodeScalarFromSpan(_ span: Span<UInt8>, at i: Int) -> UInt32 {
-        let b0 = UInt32(span[i])
-        if b0 < 0x80 { return b0 }
-        let b1 = UInt32(span[i + 1]) & 0x3F
-        if b0 < 0xE0 {
-            return ((b0 & 0x1F) << 6) | b1
-        }
-        let b2 = UInt32(span[i + 2]) & 0x3F
-        if b0 < 0xF0 {
-            return ((b0 & 0x0F) << 12) | (b1 << 6) | b2
-        }
-        let b3 = UInt32(span[i + 3]) & 0x3F
-        return ((b0 & 0x07) << 18) | (b1 << 12) | (b2 << 6) | b3
     }
 
     /// All CEs of a string, terminated by NO_CE.
