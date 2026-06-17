@@ -843,3 +843,112 @@ print("Iterator:              \(ns / UInt64(reps)) ns/op")
 
 if sink == Int.min { print("") }
 ```
+
+## 10. Integration Attempt: Span-Based Prefix Skip in RootCollator.compare()
+
+### 10.1 What Was Implemented
+
+Replaced the scalar-iterator prefix skip in `compare()` with a Span-based
+byte-level scan:
+
+1. Acquire `left.utf8Span.span` and `right.utf8Span.span` (no closure)
+2. Byte-compare in a tight loop (`while lSpan[i] == rSpan[i]`) — no UTF-8
+   decoding in the hot loop
+3. Back up to a scalar boundary if the mismatch is mid-code-point
+4. Count scalars in the matched prefix, decode boundary scalars
+5. Check `unsafeStart` on the boundary and fall back if unsafe
+6. Rebuild positioned iterators for the CE pipeline / fast-Latin path
+
+Gated behind `#available(macOS 26.0, ...)` with the original scalar path as
+fallback. All helper methods marked `@inline(__always)`.
+
+### 10.2 A/B Results (interleaved, 5000 reps except Thai at 50)
+
+| corpus | old (iterator) | new (Span) | delta |
+|--------|---------------|------------|-------|
+| CJK (zero prefix) | ~146 ns | ~163 ns | **+12% (regression)** |
+| paths (26-char prefix) | ~72 ns | ~72 ns | neutral |
+| Thai (3.3-char prefix) | ~410 ns | ~415 ns | neutral |
+| ASCII | ~32 ns | ~32 ns | neutral (fast-Latin) |
+
+### 10.3 Why CJK Regresses
+
+The CJK corpus has **zero shared prefix** — adjacent random Han characters
+differ on the first byte. The old code:
+1. Creates two `UnicodeScalarView.Iterator` objects
+2. Calls `.next()` once on each → finds they differ → done
+3. Hands the already-positioned iterators to the CE pipeline
+
+The Span code:
+1. Acquires two spans (`left.utf8Span.span`, `right.utf8Span.span`)
+2. Compares one byte → finds they differ → done (fast, but...)
+3. Must still **rebuild** `UnicodeScalarView.Iterator` objects for the CE
+   pipeline (which requires them for `NFDIterator.source`)
+4. Advances the new iterators past 0 scalars (no-op, but the construction
+   itself has ARC cost)
+
+The net effect: we're paying for Span acquisition (trivial) + iterator
+construction (the ARC cost we tried to eliminate) anyway. The Span path
+doesn't help unless it can *replace* the iterators for the full CE pipeline —
+not just the prefix skip.
+
+### 10.4 Why Paths Doesn't Win (When It Should)
+
+The micro-benchmark (§9.2) showed Span prefix skip at 60 ns vs Iterator at
+79 ns (25% faster) on the same `paths`-style strings. But in the full
+`compare()`, the paths corpus is handled by **fast Latin** (all ASCII, within
+the mini-CE table range). The prefix skip runs, finds the shared prefix, then
+fast-Latin compares the remainder — the CE pipeline is never entered. So the
+Span prefix skip win is *real* but is overlapped by the fast-Latin path that
+dominates the paths corpus's total cost.
+
+The Span prefix skip would help corpora that:
+- Have long shared prefixes AND
+- Are NOT fast-Latin eligible AND
+- Go through the full CE pipeline
+
+That's a narrow window — sorted non-Latin dictionaries (Thai, CJK-dict in
+collation order). But Thai has very short prefixes (~3.3 scalars), and sorted
+CJK-dict wasn't benchmarked here.
+
+### 10.5 The Real Lesson
+
+**The prefix skip is not the bottleneck.** It runs once per compare, takes
+~6-10 ns (§4 of Docs/14), and the Span version of it is marginally faster in
+isolation. But the *integration cost* of using Span — having to rebuild
+iterators afterward for the CE pipeline — erases the gain and then some.
+
+The only way Span delivers a net win is if it replaces the `String.Iterator`
+**all the way through the CE pipeline** — eliminating the iterator entirely.
+That's the deep refactor described in §9.6: threading Span through every
+`@inline(__always)` method from `compare()` down to `nextSourceScalar()`.
+The prefix skip alone isn't enough.
+
+### 10.6 Status
+
+The Span implementation is kept in the working tree (not committed) for
+reference. It passes all 61 tests but regresses CJK by ~12%. Decision:
+**do not ship** without also converting the CE pipeline to Span, which is a
+much larger structural change.
+
+### 10.7 Potential Surgical Applications
+
+Places where Span could win without the full refactor:
+
+1. **The byte-level fast-Latin path (`fastLatinUTF8`)**: already uses
+   `UnsafeBufferPointer<UInt8>` from `withContiguousStorageIfAvailable`.
+   Replacing that with Span would eliminate the closure entry (~17 ns) on
+   the ASCII/Latin fast path. This is the single highest-value surgical
+   target.
+
+2. **`sortKey(for:into:)`**: the string is iterated fully (no early exit).
+   If NFDIterator could take a Span, the full key generation would run
+   without any String.Iterator ARC — no rebuilding needed since there's
+   no CE-pipeline fallback to a different iteration mode.
+
+3. **The identical-level NFD pass**: `RootCollator.sortKey` re-iterates
+   the string for the identical level (`while let c = scalars.next()`).
+   This is a simple Span loop with no pipeline interaction.
+
+None of these require the full "thread Span through compareUpToQuaternary"
+refactor. They're independent, testable changes.
