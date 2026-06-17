@@ -90,6 +90,12 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
      `#available`-gated) for the byte-level prefix scan and Latin-eligibility
      check, so non-Latin text (CJK, Thai) never pays the
      `withContiguousStorageIfAvailable` closure overhead. −10% CJK compare.
+     **Fixed after cross-machine review:** inline `#available` in `compare()`
+     bloated codegen and regressed macOS 15 (+26% ASCII, +8% CJK). Fix:
+     split into `compareClassic()` / `compareWithSpan()` / `compareBody()`
+     — each compiled independently, shared tail prevents correctness drift.
+     Buggy Span prefix skip (`spanPrefixSkip`) removed (53 test failures
+     when isolated); Span now only handles the fast-Latin bail check.
 
   **Tried and reverted (do not re-attempt without reading `Docs/14`):**
   - Raw-UTF8 iterator path (approach a: nested closures, +3%; approach b:
@@ -97,30 +103,32 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   - Lock-free fast-Latin cache (use-after-free in concurrent tests)
   - Raw-pointer sort-key level buffers (slower than Array — see `Docs/16`)
   - Span-based prefix skip for full pipeline (+12% CJK regression — must
-    rebuild iterators for CE pipeline, negating the gain)
+    rebuild iterators for CE pipeline, negating the gain; also had a scalar-
+    counting correctness bug)
 
-- **Pushed through `3500ab3`; `origin/port/collation` is in sync.**
+- **Pushed through `631b343`; `origin/port/collation` is in sync.**
 
-### Current performance (Apple Silicon, lower cluster of 5+ runs)
+### Current performance (Apple Silicon, quiet machine, lower cluster)
 
 **Compare (ns/op):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~33  | ~9     | 3.7×  |
-| Latin  | ~32  | ~10    | 3.2×  |
-| CJK    | ~146 | ~42    | 3.5×  |
-| paths  | ~72  | ~31    | 2.3×  |
-| Thai (th, sorted) | ~408 | ~197 | 2.1× |
+| ASCII  | ~46  | ~9     | 5.1×  |
+| Latin  | ~46  | ~10    | 4.6×  |
+| CJK    | ~170 | ~41    | 4.1×  |
+| paths  | ~81  | ~30    | 2.7×  |
+| Thai (th, sorted) | ~425 | ~195 | 2.2× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~274 | ~112   | 2.4×  |
-| CJK    | ~260 | ~125   | 2.0×  |
-| Thai   | ~473 | ~167   | 2.8×  |
-| paths  | ~836 | ~378   | 2.2×  |
+| ASCII  | ~267 | ~107   | 2.5×  |
+| Latin  | ~385 | ~125   | 3.1×  |
+| CJK    | ~253 | ~122   | 2.1×  |
+| paths  | ~712 | ~376   | 1.9×  |
+| Thai   | ~382 | ~164   | 2.3×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
