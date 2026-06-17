@@ -106,29 +106,35 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **Pushed through `631b343`; `origin/port/collation` is in sync.**
+- **Pushed through `0ee7714`; `origin/port/collation` is in sync.**
+  RootCollator.swift reverted to pre-Span state after discovering that
+  `#available` in `compare()` acts as an optimization barrier (+48% ASCII
+  regression). Full analysis in `Docs/17`. Span fast-Latin bail concept is
+  sound but needs a delivery mechanism that keeps `#available` out of the
+  per-call path (closure dispatch resolved at init). Prior Span commits
+  remain in history for reference.
 
-### Current performance (Apple Silicon, quiet machine, lower cluster)
+### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
 
 **Compare (ns/op):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~46  | ~9     | 5.1×  |
-| Latin  | ~46  | ~10    | 4.6×  |
-| CJK    | ~170 | ~41    | 4.1×  |
-| paths  | ~81  | ~30    | 2.7×  |
-| Thai (th, sorted) | ~425 | ~195 | 2.2× |
+| ASCII  | ~32  | ~9     | 3.6×  |
+| Latin  | ~31  | ~10    | 3.1×  |
+| CJK    | ~144 | ~42    | 3.4×  |
+| paths  | ~71  | ~30    | 2.4×  |
+| Thai (th, sorted) | ~403 | ~195 | 2.1× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~267 | ~107   | 2.5×  |
-| Latin  | ~385 | ~125   | 3.1×  |
-| CJK    | ~253 | ~122   | 2.1×  |
-| paths  | ~712 | ~376   | 1.9×  |
-| Thai   | ~382 | ~164   | 2.3×  |
+| ASCII  | ~261 | ~106   | 2.5×  |
+| Latin  | ~377 | ~123   | 3.1×  |
+| CJK    | ~248 | ~120   | 2.1×  |
+| paths  | ~699 | ~369   | 1.9×  |
+| Thai   | ~368 | ~162   | 2.3×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
