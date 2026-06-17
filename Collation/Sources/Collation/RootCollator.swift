@@ -92,6 +92,15 @@ public struct RootCollator: @unchecked Sendable {
     public func compare(
         _ left: String, _ right: String, options: CollationOptions = CollationOptions()
     ) throws -> Order {
+        try compareClassic(left, right, options: options)
+    }
+
+    /// Classic compare entry: the UTF-8 fast-Latin byte path, then compareBody.
+    /// Factored into its own (small) function so the fast-Latin path optimises
+    /// independently of the heavier CE pipeline in compareBody.
+    private func compareClassic(
+        _ left: String, _ right: String, options: CollationOptions
+    ) throws -> Order {
         // UTF-8 byte fast path (the byte-level identical-prefix scan of
         // ICU's UTF-8 doCompare + CollationFastLatin::compareUTF8): native
         // Swift strings expose contiguous UTF-8, so characters are read as
@@ -129,7 +138,14 @@ public struct RootCollator: @unchecked Sendable {
                 break
             }
         }
+        return try compareBody(left, right, options: options, triedFastLatin: triedFastLatin)
+    }
 
+    /// Shared compare body: identical-prefix skip, fast-Latin scalar path, CE
+    /// pipeline, and identical level. Split out so compareClassic stays small.
+    private func compareBody(
+        _ left: String, _ right: String, options: CollationOptions, triedFastLatin: Bool
+    ) throws -> Order {
         // No `if left == right` shortcut here. Swift's String == is canonical
         // equivalence, which for non-binary-equal strings runs NFC
         // normalization to prove (in)equality — measured at ~250–400 ns per
