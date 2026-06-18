@@ -106,13 +106,17 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **Pushed through `0ee7714`; `origin/port/collation` is in sync.**
-  RootCollator.swift reverted to pre-Span state after discovering that
-  `#available` in `compare()` acts as an optimization barrier (+48% ASCII
-  regression). Full analysis in `Docs/17`. Span fast-Latin bail concept is
-  sound but needs a delivery mechanism that keeps `#available` out of the
-  per-call path (closure dispatch resolved at init). Prior Span commits
-  remain in history for reference.
+- **Pushed through `afd645f`; `origin/port/collation` is in sync.**
+  Post-Span-revert optimizations:
+  - Quick-primary CJK compare: bypasses CE pipeline for different CJK
+    characters (−10% CJK).
+  - Pre-baked fast-Latin setup: eliminates the per-call cache lock by
+    storing primaries as UnsafeBufferPointer at init (−22% ASCII, −23%
+    Latin, −16% paths). Full analysis in `Docs/18` §7-§8.
+  - Scaling analysis confirmed: gap to ICU narrows with longer strings
+    (~8-12 ns fixed per-call overhead dominates short strings).
+  - Deletion experiments proved closures are zero-cost on Apple Silicon
+    (compiler inlines them); the real cost was the cache lock.
 
 ### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
 
@@ -120,21 +124,21 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~32  | ~9     | 3.6×  |
-| Latin  | ~32  | ~10    | 3.2×  |
-| CJK    | ~128 | ~41    | 3.1×  |
-| paths  | ~75  | ~30    | 2.5×  |
-| Thai (th, sorted) | ~400 | ~193 | 2.1× |
+| ASCII  | ~25  | ~9     | 2.8×  |
+| Latin  | ~24  | ~10    | 2.4×  |
+| CJK    | ~127 | ~41    | 3.1×  |
+| paths  | ~63  | ~33    | 1.9×  |
+| Thai (th, sorted) | ~399 | ~191 | 2.1× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~260 | ~107   | 2.4×  |
-| Latin  | ~380 | ~126   | 3.0×  |
-| CJK    | ~248 | ~122   | 2.0×  |
-| paths  | ~700 | ~379   | 1.8×  |
-| Thai   | ~367 | ~160   | 2.3×  |
+| ASCII  | ~259 | ~107   | 2.4×  |
+| Latin  | ~377 | ~126   | 3.0×  |
+| CJK    | ~247 | ~122   | 2.0×  |
+| paths  | ~699 | ~379   | 1.8×  |
+| Thai   | ~366 | ~160   | 2.3×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
