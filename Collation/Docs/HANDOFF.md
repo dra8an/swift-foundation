@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-> Written 2026-06-12, last updated 2026-06-17, for a fresh session with no
+> Written 2026-06-12, last updated 2026-06-18, for a fresh session with no
 > conversation context. Read this first, then `04-milestone-plan.md` for
 > status, then the numbered docs as needed.
 
@@ -106,7 +106,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **Pushed through `afd645f`; `origin/port/collation` is in sync.**
+- **Pushed through `2278a07`; `origin/port/collation` is in sync.**
   Post-Span-revert optimizations:
   - Quick-primary CJK compare: bypasses CE pipeline for different CJK
     characters (−10% CJK).
@@ -117,6 +117,10 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     (~8-12 ns fixed per-call overhead dominates short strings).
   - Deletion experiments proved closures are zero-cost on Apple Silicon
     (compiler inlines them); the real cost was the cache lock.
+  - Inline CE pipeline hot path: `@inline(__always)` on
+    `NFDIterator.next()`, `CEIterator.popScalar()`, `appendMore()`.
+    −5% CJK sortKey, −3% Latin/paths, −2% Thai/ASCII. Compare neutral
+    for fast-Latin corpora.
 
 ### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
 
@@ -128,17 +132,17 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 | Latin  | ~24  | ~10    | 2.4×  |
 | CJK    | ~127 | ~41    | 3.1×  |
 | paths  | ~63  | ~33    | 1.9×  |
-| Thai (th, sorted) | ~399 | ~191 | 2.1× |
+| Thai (th, sorted) | ~394 | ~191 | 2.1× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~259 | ~107   | 2.4×  |
-| Latin  | ~377 | ~126   | 3.0×  |
-| CJK    | ~247 | ~122   | 2.0×  |
-| paths  | ~699 | ~379   | 1.8×  |
-| Thai   | ~366 | ~160   | 2.3×  |
+| ASCII  | ~257 | ~107   | 2.4×  |
+| Latin  | ~367 | ~126   | 2.9×  |
+| CJK    | ~238 | ~122   | 2.0×  |
+| paths  | ~676 | ~379   | 1.8×  |
+| Thai   | ~356 | ~160   | 2.2×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
