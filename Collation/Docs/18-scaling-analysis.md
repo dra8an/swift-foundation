@@ -169,3 +169,88 @@ The corpus files are:
 - `bench-sorted-ascii-{4,8,16,32,64}.txt`
 - `bench-sorted-cjk-{4,8,16,32}.txt`
 - `bench-sorted-accented-{4,8,16,32}.txt`
+
+## 7. Deletion Experiments: Per-Component Cost (Apple Silicon)
+
+Measured on this machine by stubbing out components one at a time in release
+builds. Each experiment returns a fixed result at a different point in the
+`compare()` → `compareClassic()` → `fastLatinUTF8()` chain. The delta between
+successive experiments isolates each component's cost.
+
+Test corpus: `bench-ascii.txt` (200 random 7-char ASCII strings), 10000 reps.
+Baseline: 32 ns/op. All runs rock-stable (±0 ns across 5 iterations).
+
+### 7.1 Results
+
+| Experiment | What runs | ns/op |
+|---|---|---|
+| **Full baseline** | Everything | **32** |
+| **Exp 1**: Return -1 before closures | Function-call shell only | **14** |
+| **Exp 2b**: Enter closures, return -1 inside | Shell + closure entry/exit | **14** |
+| **Exp 3**: Closures + byte prefix scan, then return | Shell + closures + scan | **15** |
+| **Exp 4**: Closures + scan + safety + cache, then return | Everything except compareUTF8 | **27** |
+| **Baseline**: Full path including compareUTF8 | Everything | **32** |
+
+### 7.2 Per-Component Breakdown
+
+| Component | Cost (ns) | % of total | Notes |
+|-----------|-----------|-----------|-------|
+| Function-call shell | ~14 | 44% | `compare()` → `compareClassic()`, options check, `for` loop, result mapping |
+| `withContiguousStorageIfAvailable` closures | ~0 | 0% | Compiler inlines them completely — zero runtime cost |
+| Byte prefix scan | ~1 | 3% | One byte comparison (random ASCII, differs immediately) |
+| Safety check + cache lock + cache lookup | ~12 | 38% | `isUnsafe` trie lookup + `os_unfair_lock` + word match |
+| `compareUTF8` mini-CE loop | ~5 | 16% | The actual collation comparison (2-3 characters before difference) |
+
+### 7.3 Key Corrections from Intel Analysis
+
+The Docs/14 §4 analysis (Intel iMac, 79 ns baseline) attributed ~17 ns to
+"contiguous-storage acquisition (closures)". **This was wrong.** On Apple
+Silicon the closures are provably zero-cost — the compiler inlines them
+completely. The ~17 ns on Intel was likely the safety + cache component that
+was mis-attributed.
+
+The ~10 ns "setup-cache lock" from Docs/14 is confirmed here as part of the
+~12 ns safety + cache block. The lock itself is ~5 ns (`os_unfair_lock`
+uncontended); the remaining ~7 ns is the `isUnsafe` trie lookup and the
+cache word comparison.
+
+### 7.4 Implications
+
+1. **Span cannot help the fast-Latin path.** The closures cost zero — replacing
+   them with Span produces identical code (confirmed in the neutral A/B in
+   Docs/16 §10). There is nothing to save here.
+
+2. **The function-call shell (14 ns, 44%) is irreducible** without merging
+   `compare()` and `compareClassic()` into one function. The other machine's
+   split refactor made this worse on Intel by adding a call frame; on Apple
+   Silicon it's neutral. This is the cost of having a `public func compare()`
+   that dispatches to an internal implementation.
+
+3. **The safety + cache block (12 ns, 38%) is the remaining target.** The
+   `isUnsafe` check runs even on ASCII (where it always returns false), and
+   the cache lock runs even when the setup never changes. These could be
+   addressed by:
+   - Skip `isUnsafe` when `i == 0` (no prefix was found, nothing to check) —
+     but on random ASCII, `i` IS 0 almost always, so the check is
+     already short-circuited by the `if i > 0` guard. The 12 ns cost must be
+     predominantly in the cache lookup path (lock + word check + setup access).
+   - Pre-compute the setup at init (attempted, +3 ns regression from
+     extra parameter passing into the closure).
+
+4. **The `compareUTF8` loop itself (5 ns, 16%) is near ICU's speed.** ICU's
+   full ASCII compare is ~9 ns, of which most is the same mini-CE comparison
+   loop. Our 5 ns for the loop portion is comparable — the gap is entirely
+   in the shell + cache overhead.
+
+### 7.5 Reproducing
+
+```swift
+// In fastLatinUTF8(), add `return -1` at the desired point:
+// After the function signature = Exp 2b (closure cost)
+// After the prefix scan loop = Exp 3
+// After the cache lookup = Exp 4
+// No modification = Baseline
+
+// Build release, run:
+// .build/out/Products/Release/Bench Tools/bench/bench-ascii.txt 10000
+```
