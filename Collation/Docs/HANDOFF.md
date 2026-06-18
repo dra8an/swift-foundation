@@ -121,6 +121,10 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     `NFDIterator.next()`, `CEIterator.popScalar()`, `appendMore()`.
     −5% CJK sortKey, −3% Latin/paths, −2% Thai/ASCII. Compare neutral
     for fast-Latin corpora.
+  - Pre-computed `isUnsafe` safe threshold: scan at init finds the lowest
+    unsafe code point (U+0300 for root). Short-circuits trie lookups on
+    the prefix-skip safety check. −5% sorted ASCII 32, −4% sorted ASCII
+    64 compare. Neutral on random corpora (no shared prefix to check).
 
 ### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
 

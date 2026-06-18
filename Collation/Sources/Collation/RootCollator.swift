@@ -66,9 +66,9 @@ public struct RootCollator: @unchecked Sendable {
         self.reordering = nil
         self.defaultOptions = CollationOptions()
         self.fastLatinTable = data.fastLatinTable
+        let opts = CollationOptions()
         self.restartSafety = RestartSafety(data: data, base: nil, norm: norm)
         // Pre-bake the default-options fast-Latin setup.
-        let opts = CollationOptions()
         var prims: [UInt16] = []
         let packed = CollationFastLatin.getOptions(
             table: data.fastLatinTable, scriptsData: data, reordering: nil,
@@ -580,6 +580,8 @@ struct RestartSafety {
     let dataTrie: UTrie2
     let baseTrie: UTrie2?
     let norm: NormalizationDataView
+    let safeBelowCP: UInt32
+    let safeBelowCPNumeric: UInt32
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData) {
         dataUnsafe = data.unsafeBackward
@@ -587,9 +589,44 @@ struct RestartSafety {
         dataTrie = data.trie
         baseTrie = base?.trie
         self.norm = norm.view
+
+        safeBelowCP = Self.computeSafeThreshold(
+            dataUnsafe: dataUnsafe, baseUnsafe: baseUnsafe,
+            dataTrie: dataTrie, baseTrie: baseTrie, norm: norm.view, numeric: false)
+        safeBelowCPNumeric = Self.computeSafeThreshold(
+            dataUnsafe: dataUnsafe, baseUnsafe: baseUnsafe,
+            dataTrie: dataTrie, baseTrie: baseTrie, norm: norm.view, numeric: true)
     }
 
+    private static func computeSafeThreshold(
+        dataUnsafe: UnsafeBufferPointer<UInt32>,
+        baseUnsafe: UnsafeBufferPointer<UInt32>,
+        dataTrie: UTrie2, baseTrie: UTrie2?,
+        norm: NormalizationDataView, numeric: Bool
+    ) -> UInt32 {
+        var cp: UInt32 = 0
+        let limit: UInt32 = 0x0300
+        while cp < limit {
+            if CollationData.boundariesContain(dataUnsafe, cp) { break }
+            if !baseUnsafe.isEmpty, CollationData.boundariesContain(baseUnsafe, cp) { break }
+            if norm.leadCCC(cp) != 0 { break }
+            var ce32 = dataTrie.get(cp)
+            if ce32 == CollationConstants.fallbackCE32, let baseTrie {
+                ce32 = baseTrie.get(cp)
+            }
+            if CollationConstants.isSpecialCE32(ce32) {
+                let tag = CollationConstants.tagFromCE32(ce32)
+                if tag == .prefix || (numeric && tag == .digit) { break }
+            }
+            cp += 1
+        }
+        return cp
+    }
+
+    @inline(__always)
     func isUnsafe(_ c: UInt32, numeric: Bool) -> Bool {
+        let threshold = numeric ? safeBelowCPNumeric : safeBelowCP
+        if c < threshold { return false }
         if CollationData.boundariesContain(dataUnsafe, c) { return true }
         if !baseUnsafe.isEmpty, CollationData.boundariesContain(baseUnsafe, c) { return true }
         if norm.leadCCC(c) != 0 { return true }
