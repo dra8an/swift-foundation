@@ -1,0 +1,147 @@
+diff --git a/Collation/Package.swift b/Collation/Package.swift
+index 45453f4..5e61e95 100644
+--- a/Collation/Package.swift
++++ b/Collation/Package.swift
+@@ -1,9 +1,10 @@
+-// swift-tools-version: 6.0
++// swift-tools-version: 6.2
+ 
+ import PackageDescription
+ 
+ let package = Package(
+     name: "Collation",
++    platforms: [.macOS("26.0")],
+     products: [
+         .library(name: "Collation", targets: ["Collation"])
+     ],
+diff --git a/Collation/Sources/Collation/RootCollator.swift b/Collation/Sources/Collation/RootCollator.swift
+index a0246aa..82111e5 100644
+--- a/Collation/Sources/Collation/RootCollator.swift
++++ b/Collation/Sources/Collation/RootCollator.swift
+@@ -99,24 +99,14 @@ public struct RootCollator: @unchecked Sendable {
+         // needs the NFD pipeline, so it keeps to the scalar path below.
+         var triedFastLatin = false
+         if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
+-            // The closures must capture only trivial values and the cache
+-            // reference: capturing self would retain the collator's storage
+-            // on every call. The per-options setup is looked up inside, only
+-            // after the eligibility checks pass (so ineligible text never
+-            // pays for it); a cache miss returns needsSetupResult and is
+-            // retried once after computing the setup out here.
+             let safety = restartSafety
+             let numeric = options.numeric
+             let word = options.icuOptions
+             let cache = fastLatinCache
+             for _ in 0..<2 {
+-                let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
+-                    right.utf8.withContiguousStorageIfAvailable { rBytes in
+-                        RootCollator.fastLatinUTF8(
+-                            lBytes, rBytes, table: table, cache: cache, word: word,
+-                            numeric: numeric, safety: safety)
+-                    } ?? nil
+-                } ?? nil
++                let fast: Int32? = RootCollator.fastLatinUTF8(
++                    left, right, table: table, cache: cache, word: word,
++                    numeric: numeric, safety: safety)
+                 guard let fast else { break }
+                 if fast == CollationFastLatin.needsSetupResult {
+                     _ = resolveFastLatinSetup(word)
+@@ -125,7 +115,7 @@ public struct RootCollator: @unchecked Sendable {
+                 if fast != CollationFastLatin.bailOutResult {
+                     return fast < 0 ? .ascending : fast == 0 ? .same : .descending
+                 }
+-                triedFastLatin = true  // ran and bailed; the scalar fast path would too
++                triedFastLatin = true
+                 break
+             }
+         }
+@@ -332,55 +322,57 @@ public struct RootCollator: @unchecked Sendable {
+         return setup
+     }
+ 
+-    /// The byte fast path: identical-prefix scan on raw UTF-8, safety check,
+-    /// then CollationFastLatin.compareUTF8 from the restart offset. Returns
+-    /// -1/0/1, or bailOutResult when the regular path must run. Static with
+-    /// trivial parameters: it runs inside the contiguous-storage closures.
++    /// The byte fast path: identical-prefix scan on raw UTF-8 via Span (no
++    /// closures for the scan), safety check, then compareUTF8 from the
++    /// restart offset. Returns -1/0/1, or bailOutResult when the regular
++    /// path must run, or nil if contiguous storage unavailable.
+     /// (RuleBasedCollator::doCompare, UTF-8 variant.)
++    @inline(__always)
+     private static func fastLatinUTF8(
+-        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
++        _ left: String, _ right: String,
+         table: UnsafeBufferPointer<UInt16>, cache: FastLatinCache, word: Int32,
+         numeric: Bool, safety: RestartSafety
+-    ) -> Int32 {
+-        // Identical-prefix scan on bytes.
+-        let lLength = lBytes.count
+-        let rLength = rBytes.count
++    ) -> Int32? {
++        let lSpan = left.utf8Span.span
++        let rSpan = right.utf8Span.span
++        let lLength = lSpan.count
++        let rLength = rSpan.count
+         let minLength = min(lLength, rLength)
+         var i = 0
+-        while i < minLength, lBytes[i] == rBytes[i] { i += 1 }
+-        if i == lLength && i == rLength { return 0 }  // binary equal
+-        // Back up to the start of a partially-equal code point (trail bytes
+-        // are 0x80..0xBF).
++        while i < minLength, lSpan[i] == rSpan[i] { i += 1 }
++        if i == lLength && i == rLength { return 0 }
+         if i > 0,
+-           (i != lLength && lBytes[i] & 0xc0 == 0x80) || (i != rLength && rBytes[i] & 0xc0 == 0x80) {
+-            repeat { i -= 1 } while i > 0 && lBytes[i] & 0xc0 == 0x80
++           (i != lLength && lSpan[i] & 0xc0 == 0x80) || (i != rLength && rSpan[i] & 0xc0 == 0x80) {
++            repeat { i -= 1 } while i > 0 && lSpan[i] & 0xc0 == 0x80
+         }
+         if i > 0 {
+-            // Restarting at an unsafe scalar is not equivalent to full
+-            // iteration: compare from the start instead (ICU backs up
+-            // partially; skipping less is always sound).
+-            if (i != lLength && safety.isUnsafe(scalarAt(lBytes, i), numeric: numeric))
+-                || (i != rLength && safety.isUnsafe(scalarAt(rBytes, i), numeric: numeric)) {
++            if (i != lLength && safety.isUnsafe(scalarAt(lSpan, i), numeric: numeric))
++                || (i != rLength && safety.isUnsafe(scalarAt(rSpan, i), numeric: numeric)) {
+                 i = 0
+             }
+         }
+-        // Both sides must resume with fast-path-eligible lead bytes.
+-        guard i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead,
+-              i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+-        else { return CollationFastLatin.bailOutResult }
++        guard i == lLength || lSpan[i] <= CollationFastLatin.latinMaxUTF8Lead,
++              i == rLength || rSpan[i] <= CollationFastLatin.latinMaxUTF8Lead
++        else { return Int32(CollationFastLatin.bailOutResult) }
+ 
+         guard let setup = cache.setup(for: word) else {
+-            return CollationFastLatin.needsSetupResult
++            return Int32(CollationFastLatin.needsSetupResult)
+         }
+-        guard setup.packedOptions >= 0 else { return CollationFastLatin.bailOutResult }
+-        return CollationFastLatin.compareUTF8(
+-            table: table, primaries: setup.primaries, options: setup.packedOptions,
+-            left: lBytes, leftStart: i, right: rBytes, rightStart: i)
++        guard setup.packedOptions >= 0 else { return Int32(CollationFastLatin.bailOutResult) }
++
++        let startOffset = i
++        return left.utf8.withContiguousStorageIfAvailable { lBytes in
++            right.utf8.withContiguousStorageIfAvailable { rBytes in
++                CollationFastLatin.compareUTF8(
++                    table: table, primaries: setup.primaries, options: setup.packedOptions,
++                    left: lBytes, leftStart: startOffset, right: rBytes, rightStart: startOffset)
++            } ?? CollationFastLatin.bailOutResult
++        } ?? nil
+     }
+ 
+-    /// Decodes the scalar at byte offset `i` (a lead byte of well-formed
+-    /// UTF-8, as produced by String).
+-    private static func scalarAt(_ bytes: UnsafeBufferPointer<UInt8>, _ i: Int) -> UInt32 {
++    /// Decodes the scalar at byte offset `i` from a Span.
++    @inline(__always)
++    private static func scalarAt(_ bytes: Span<UInt8>, _ i: Int) -> UInt32 {
+         let b0 = UInt32(bytes[i])
+         if b0 < 0x80 { return b0 }
+         if b0 < 0xe0 {

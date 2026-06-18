@@ -121,20 +121,20 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
 | ASCII  | ~32  | ~9     | 3.6×  |
-| Latin  | ~31  | ~10    | 3.1×  |
-| CJK    | ~144 | ~42    | 3.4×  |
-| paths  | ~71  | ~30    | 2.4×  |
-| Thai (th, sorted) | ~403 | ~195 | 2.1× |
+| Latin  | ~32  | ~10    | 3.2×  |
+| CJK    | ~128 | ~41    | 3.1×  |
+| paths  | ~75  | ~30    | 2.5×  |
+| Thai (th, sorted) | ~400 | ~193 | 2.1× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~261 | ~106   | 2.5×  |
-| Latin  | ~377 | ~123   | 3.1×  |
-| CJK    | ~248 | ~120   | 2.1×  |
-| paths  | ~699 | ~369   | 1.9×  |
-| Thai   | ~368 | ~162   | 2.3×  |
+| ASCII  | ~260 | ~107   | 2.4×  |
+| Latin  | ~380 | ~126   | 3.0×  |
+| CJK    | ~248 | ~122   | 2.0×  |
+| paths  | ~700 | ~379   | 1.8×  |
+| Thai   | ~367 | ~160   | 2.3×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh

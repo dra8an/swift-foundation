@@ -180,6 +180,22 @@ public struct RootCollator: @unchecked Sendable {
             fellBack = true
         }
 
+        // Quick primary comparison: if both first-differing scalars are in
+        // the CJK Unified Ideographs range and map to OFFSET/IMPLICIT CEs,
+        // the comparison is decided here without the CE pipeline.
+        if !fellBack, let l = lNext, let r = rNext, l != r,
+           options.strength != .identical,
+           Self.isCJKUnified(l.value), Self.isCJKUnified(r.value) {
+            let qp = quickPrimaryCompare(l.value, r.value, options: options)
+            if qp != 0 { return qp < 0 ? .ascending : .descending }
+        }
+        if shared > 0,
+           (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
+            || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
+            shared = 0
+            fellBack = true
+        }
+
         // Fast Latin (CollationFastLatin): when both remainders start within
         // the mini-CE table's range, compare on the precompiled table with no
         // iterator pipeline (and no scratch buffers); any unsupported
@@ -316,10 +332,81 @@ public struct RootCollator: @unchecked Sendable {
         threadLocal.give(buffers)
     }
 
+    /// True for CJK Unified Ideographs — characters that always map to a
+    /// single CE with a unique primary via the OFFSET or IMPLICIT tag, have
+    /// no canonical decomposition, and no canonical equivalents.
+    @inline(__always)
+    private static func isCJKUnified(_ c: UInt32) -> Bool {
+        // CJK Unified Ideographs: U+4E00..U+9FFF
+        // CJK Extension A: U+3400..U+4DBF
+        // CJK Extension B+: U+20000..U+2A6DF (supplementary)
+        // CJK Compatibility Ideographs are NOT included (they decompose).
+        (0x4E00...0x9FFF).contains(c) ||
+        (0x3400...0x4DBF).contains(c) ||
+        (0x20000...0x2A6DF).contains(c)
+    }
+
     /// True if restarting CE iteration at `c` is not provably equivalent to
     /// full iteration (see RestartSafety).
     private func unsafeStart(_ c: UInt32, numeric: Bool) -> Bool {
         restartSafety.isUnsafe(c, numeric: numeric)
+    }
+
+    /// Attempts a quick primary-weight comparison of two scalars without
+    /// entering the CE pipeline. Returns -1/0/1 if the primaries differ and
+    /// the result is conclusive, or 0 if the full pipeline is needed (equal
+    /// primaries, variable CEs, expansions, contractions, etc.).
+    @inline(__always)
+    private func quickPrimaryCompare(_ lc: UInt32, _ rc: UInt32, options: CollationOptions) -> Int {
+        let lp = quickPrimary(lc)
+        guard lp != 0 else { return 0 }
+        let rp = quickPrimary(rc)
+        guard rp != 0 else { return 0 }
+        if lp == rp { return 0 }
+        // Variable-weight check: if alternate=shifted and either primary is
+        // variable, we can't decide at primary level alone.
+        if options.alternate == .shifted {
+            let varTop = scriptsData.lastPrimaryForGroup(
+                CollationData.reorderCodeFirst + options.maxVariable.rawValue) + 1
+            if lp < varTop || rp < varTop { return 0 }
+        }
+        // Script reordering: apply the permutation before comparing.
+        var lFinal = lp
+        var rFinal = rp
+        if let reordering {
+            lFinal = reordering.reorder(lp)
+            rFinal = reordering.reorder(rp)
+        }
+        return lFinal < rFinal ? -1 : 1
+    }
+
+    /// Returns the primary weight for a scalar if it maps to a single CE
+    /// (simple, LONG_PRIMARY, OFFSET, or IMPLICIT). Returns 0 for anything
+    /// that needs the full pipeline (expansions, contractions, prefixes, etc.).
+    @inline(__always)
+    private func quickPrimary(_ c: UInt32) -> UInt32 {
+        var ce32 = data.trie.get(c)
+        var cesSource = data.ces
+        if ce32 == CollationConstants.fallbackCE32 {
+            guard let b = base else { return 0 }
+            ce32 = b.trie.get(c)
+            cesSource = b.ces
+        }
+        // Only handle tags that produce exactly ONE CE with a unique primary
+        // and common secondary/tertiary (CJK characters). Bail on anything
+        // else — simple CE32s can be case variants, Latin expansions, etc.
+        guard CollationConstants.isSpecialCE32(ce32) else { return 0 }
+        switch CollationConstants.tagFromCE32(ce32) {
+        case .offset:
+            let idx = CollationConstants.indexFromCE32(ce32)
+            guard idx < cesSource.count else { return 0 }
+            let dataCE = cesSource[idx]
+            return CollationConstants.threeBytePrimaryForOffsetData(c, dataCE)
+        case .implicit:
+            return CollationConstants.unassignedPrimaryFromCodePoint(c)
+        default:
+            return 0
+        }
     }
 
     private func variableTopValue(_ options: CollationOptions) -> UInt32 {
