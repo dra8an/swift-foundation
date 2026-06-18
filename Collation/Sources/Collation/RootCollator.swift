@@ -41,8 +41,17 @@ public struct RootCollator: @unchecked Sendable {
     /// Thread-local buffer stash: each thread caches one ScratchBuffers
     /// instance, eliminating all locking and ARC on the take/give path.
     private let threadLocal = ThreadLocalScratch()
-    /// The most recently used fast-Latin setup (per options word).
+    /// The most recently used fast-Latin setup (per options word) — fallback
+    /// for non-default options.
     private let fastLatinCache = FastLatinCache()
+    /// Pre-baked fast-Latin setup for the default options: primaries and
+    /// packed options resolved once at init. The fast path reads these
+    /// directly — no lock, no cache, no class reference, no ARC.
+    private let defaultFLPrimaries: UnsafeBufferPointer<UInt16>
+    private let defaultFLPackedOptions: Int32
+    private let defaultFLWord: Int32
+    /// Owns the memory behind defaultFLPrimaries.
+    private let defaultFLStorage: DataStorage
     /// The fast Latin table: the tailoring's own, or the base's when the
     /// tailoring has none (CollationDataReader aliases the same way).
     /// Stored: rebuilding it per compare would retain `base` each time.
@@ -58,6 +67,17 @@ public struct RootCollator: @unchecked Sendable {
         self.defaultOptions = CollationOptions()
         self.fastLatinTable = data.fastLatinTable
         self.restartSafety = RestartSafety(data: data, base: nil, norm: norm)
+        // Pre-bake the default-options fast-Latin setup.
+        let opts = CollationOptions()
+        var prims: [UInt16] = []
+        let packed = CollationFastLatin.getOptions(
+            table: data.fastLatinTable, scriptsData: data, reordering: nil,
+            options: opts.icuOptions, primaries: &prims)
+        let flStorage = DataStorage()
+        self.defaultFLPrimaries = flStorage.store(prims)
+        self.defaultFLPackedOptions = packed
+        self.defaultFLWord = opts.icuOptions
+        self.defaultFLStorage = flStorage
     }
 
     public init() throws {
@@ -83,6 +103,17 @@ public struct RootCollator: @unchecked Sendable {
         self.fastLatinTable = data.fastLatinTable.isEmpty
             ? (base?.fastLatinTable ?? data.fastLatinTable) : data.fastLatinTable
         self.restartSafety = RestartSafety(data: data, base: base, norm: norm)
+        // Pre-bake the default-options fast-Latin setup.
+        let scriptsData = data.scriptStarts.isEmpty ? root : data
+        var prims: [UInt16] = []
+        let packed = CollationFastLatin.getOptions(
+            table: fastLatinTable, scriptsData: scriptsData, reordering: reordering,
+            options: defaultOptions.icuOptions, primaries: &prims)
+        let flStorage = DataStorage()
+        self.defaultFLPrimaries = flStorage.store(prims)
+        self.defaultFLPackedOptions = packed
+        self.defaultFLWord = defaultOptions.icuOptions
+        self.defaultFLStorage = flStorage
     }
 
     // MARK: Comparison
@@ -108,34 +139,51 @@ public struct RootCollator: @unchecked Sendable {
         // needs the NFD pipeline, so it keeps to the scalar path below.
         var triedFastLatin = false
         if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
-            // The closures must capture only trivial values and the cache
-            // reference: capturing self would retain the collator's storage
-            // on every call. The per-options setup is looked up inside, only
-            // after the eligibility checks pass (so ineligible text never
-            // pays for it); a cache miss returns needsSetupResult and is
-            // retried once after computing the setup out here.
             let safety = restartSafety
             let numeric = options.numeric
             let word = options.icuOptions
-            let cache = fastLatinCache
-            for _ in 0..<2 {
+            // Use pre-baked setup if options match (the common case).
+            // No lock, no cache, no class reference.
+            let primaries: UnsafeBufferPointer<UInt16>
+            let packedOptions: Int32
+            if word == defaultFLWord, defaultFLPackedOptions >= 0 {
+                primaries = defaultFLPrimaries
+                packedOptions = defaultFLPackedOptions
+            } else {
+                let setup = resolveFastLatinSetup(word)
+                if setup.packedOptions >= 0 {
+                    let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
+                        right.utf8.withContiguousStorageIfAvailable { rBytes in
+                            setup.primaries.withUnsafeBufferPointer { pBuf in
+                                RootCollator.fastLatinUTF8(
+                                    lBytes, rBytes, table: table, primaries: pBuf,
+                                    options: setup.packedOptions, numeric: numeric, safety: safety)
+                            }
+                        } ?? nil
+                    } ?? nil
+                    if let fast {
+                        if fast != CollationFastLatin.bailOutResult {
+                            return fast < 0 ? .ascending : fast == 0 ? .same : .descending
+                        }
+                        triedFastLatin = true
+                    }
+                }
+                return try compareBody(left, right, options: options, triedFastLatin: triedFastLatin)
+            }
+            if packedOptions >= 0 {
                 let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
                     right.utf8.withContiguousStorageIfAvailable { rBytes in
                         RootCollator.fastLatinUTF8(
-                            lBytes, rBytes, table: table, cache: cache, word: word,
-                            numeric: numeric, safety: safety)
+                            lBytes, rBytes, table: table, primaries: primaries,
+                            options: packedOptions, numeric: numeric, safety: safety)
                     } ?? nil
                 } ?? nil
-                guard let fast else { break }
-                if fast == CollationFastLatin.needsSetupResult {
-                    _ = resolveFastLatinSetup(word)
-                    continue
+                if let fast {
+                    if fast != CollationFastLatin.bailOutResult {
+                        return fast < 0 ? .ascending : fast == 0 ? .same : .descending
+                    }
+                    triedFastLatin = true
                 }
-                if fast != CollationFastLatin.bailOutResult {
-                    return fast < 0 ? .ascending : fast == 0 ? .same : .descending
-                }
-                triedFastLatin = true  // ran and bailed; the scalar fast path would too
-                break
             }
         }
         return try compareBody(left, right, options: options, triedFastLatin: triedFastLatin)
@@ -442,7 +490,8 @@ public struct RootCollator: @unchecked Sendable {
     /// (RuleBasedCollator::doCompare, UTF-8 variant.)
     private static func fastLatinUTF8(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
-        table: UnsafeBufferPointer<UInt16>, cache: FastLatinCache, word: Int32,
+        table: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>,
+        options packedOptions: Int32,
         numeric: Bool, safety: RestartSafety
     ) -> Int32 {
         // Identical-prefix scan on bytes.
@@ -472,12 +521,8 @@ public struct RootCollator: @unchecked Sendable {
               i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
         else { return CollationFastLatin.bailOutResult }
 
-        guard let setup = cache.setup(for: word) else {
-            return CollationFastLatin.needsSetupResult
-        }
-        guard setup.packedOptions >= 0 else { return CollationFastLatin.bailOutResult }
         return CollationFastLatin.compareUTF8(
-            table: table, primaries: setup.primaries, options: setup.packedOptions,
+            table: table, primaries: primaries, options: packedOptions,
             left: lBytes, leftStart: i, right: rBytes, rightStart: i)
     }
 

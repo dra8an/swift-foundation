@@ -535,7 +535,7 @@ enum CollationFastLatin {
     /// (CollationFastLatin::compareUTF8; kept in sync with compare() above,
     /// like ICU keeps compareUTF16 and compareUTF8 in sync.)
     static func compareUTF8(
-        table fullTable: UnsafeBufferPointer<UInt16>, primaries: [UInt16], options optionsIn: Int32,
+        table fullTable: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>, options optionsIn: Int32,
         left: UnsafeBufferPointer<UInt8>, leftStart: Int,
         right: UnsafeBufferPointer<UInt8>, rightStart: Int
     ) -> Int32 {

@@ -123,9 +123,11 @@ import Testing
         var bb = b
         return aa.withUTF8 { lBytes in
             bb.withUTF8 { rBytes in
-                CollationFastLatin.compareUTF8(
-                    table: table, primaries: primaries, options: packed,
-                    left: lBytes, leftStart: 0, right: rBytes, rightStart: 0)
+                primaries.withUnsafeBufferPointer { pBuf in
+                    CollationFastLatin.compareUTF8(
+                        table: table, primaries: pBuf, options: packed,
+                        left: lBytes, leftStart: 0, right: rBytes, rightStart: 0)
+                }
             }
         }
     }

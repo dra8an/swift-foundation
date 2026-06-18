@@ -254,3 +254,86 @@ cache word comparison.
 // Build release, run:
 // .build/out/Products/Release/Bench Tools/bench/bench-ascii.txt 10000
 ```
+
+## 8. Pre-Baked Fast-Latin Setup: Eliminating the Cache Lock (−22% ASCII)
+
+### 8.1 The Problem
+
+The deletion experiments (§7) identified ~12 ns in "safety + cache lock"
+on the ASCII fast path. The `FastLatinCache` is a class holding a locked
+`FastLatinSetup?`:
+
+```swift
+// Per-call path (inside the closures):
+guard let setup = cache.setup(for: word) else { return needsSetupResult }
+// cache.setup does: lock → check word → return → unlock = ~10 ns
+```
+
+In practice, the options word NEVER changes between calls (the benchmark and
+real sorting always use the same options). The cache always hits. The lock
+always succeeds uncontended. We're paying ~10 ns per call to confirm something
+that's been true since the first call.
+
+### 8.2 The Fix
+
+Pre-compute the fast-Latin setup (primaries + packedOptions) at `init` and
+store it directly on the collator as trivial fields:
+
+```swift
+private let defaultFLPrimaries: UnsafeBufferPointer<UInt16>  // owned by defaultFLStorage
+private let defaultFLPackedOptions: Int32
+private let defaultFLWord: Int32
+private let defaultFLStorage: DataStorage  // owns the primaries memory
+```
+
+The fast path checks `word == defaultFLWord` (one integer compare, ~0 ns)
+and uses the stored primaries directly — **no lock, no class reference, no
+ARC, no Optional unwrap**.
+
+Key design choices:
+- Primaries stored as `UnsafeBufferPointer<UInt16>` (not `[UInt16]`) so the
+  closure capture is trivial (pointer + count, no Array ARC). This was
+  critical: an `[UInt16]` capture added +4% CJK regression; the
+  UnsafeBufferPointer capture is zero-cost.
+- Owned by a dedicated `DataStorage` instance (same pattern as the trie data).
+- Fallback for non-default options still goes through the locked cache
+  (rare path — non-default options are uncommon in real sorting).
+- `CollationFastLatin.compareUTF8` signature changed to take
+  `UnsafeBufferPointer<UInt16>` instead of `[UInt16]` to match.
+
+### 8.3 Results
+
+| corpus | before | after | delta | ICU | new ratio |
+|--------|--------|-------|-------|-----|-----------|
+| ASCII compare | 32 ns | 25 ns | **−22%** | 9 ns | **2.8×** |
+| Latin compare | 31 ns | 24 ns | **−23%** | 10 ns | **2.4×** |
+| paths compare | 75 ns | 63 ns | **−16%** | 33 ns | **1.9×** |
+| CJK compare | 128 ns | 127 ns | neutral | 41 ns | 3.1× |
+| Thai compare | 401 ns | 399 ns | neutral | 191 ns | 2.1× |
+| All sort keys | — | — | neutral | — | — |
+
+The saving is a constant ~8-12 ns regardless of string length (confirmed via
+sorted corpora at lengths 4–64). It's a fixed per-call saving that benefits
+short strings proportionally more.
+
+### 8.4 Why This Works (and why earlier attempts failed)
+
+Previous attempt: resolve setup before closures and pass `[UInt16]` primaries
+into the closure. Result: −9% ASCII but +5% CJK — the Array capture triggered
+a retain/release in the closure, adding ARC cost for CJK text that bails
+before using the primaries.
+
+This version: store primaries as `UnsafeBufferPointer<UInt16>` (trivial value
+type — just a pointer + count). The closure captures it as two integers,
+zero ARC. CJK text that bails from fast-Latin pays nothing extra because
+the UnsafeBufferPointer capture doesn't retain anything.
+
+### 8.5 Architectural Lesson
+
+ICU bakes everything at `ucol_open()` — options, primaries, setup are all
+pre-resolved once and stored as struct fields on the collator. Our API takes
+`options:` per call, so we previously needed a per-call cache lookup. But
+since the common case is always the same options, pre-baking the default
+options' setup at init is the Swift equivalent of ICU's model: pay once at
+init, read for free on every call.
+
