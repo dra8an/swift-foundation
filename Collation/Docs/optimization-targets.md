@@ -147,3 +147,25 @@ Only benefits sort keys (compare uses fast-Latin mini-CEs which already
 bypass the CE pipeline). CJK/Thai neutral (all above 127).
 
 ---
+
+### 9. CJK direct CE computation (skip trie for offset-tag characters)
+
+**Status:** tried, reverted (neutral to slightly worse)
+
+Pre-resolve the `dataCE` offset base at init for CJK Unified (U+4E00–U+9FFF)
+and Extension A (U+3400–U+4DBF). In `appendMore()`, range-check and compute
+the CE via `threeBytePrimaryForOffsetData()` directly — no trie lookup, no
+tag dispatch.
+
+**Result:** neutral on short CJK strings (4-char bench), slightly WORSE on
+32-char sorted CJK (800→816 ns). The offset formula has two integer divisions
+(mod 254, mod 251) which cost more than the trie lookup it replaces (one
+indexed memory read). The trie is already a direct table for BMP characters.
+
+**Lesson:** trie lookups for in-range characters are essentially free (one
+indexed array read). Only worth bypassing the trie when the downstream
+computation is cheaper than a table lookup — the ASCII CE table works
+because it replaces trie + tag dispatch + ceFromCE32 with a single load.
+For CJK, the offset math itself is the bottleneck.
+
+---
