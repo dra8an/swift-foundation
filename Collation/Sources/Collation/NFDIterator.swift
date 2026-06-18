@@ -76,6 +76,7 @@ struct NFDIterator {
     private var decomposed: [UInt32] = []
 
     /// Next scalar of the NFD form of the input, or nil at the end.
+    @inline(__always)
     mutating func next() -> UInt32? {
         if unitNext < unit.count {
             let c = unit[unitNext]

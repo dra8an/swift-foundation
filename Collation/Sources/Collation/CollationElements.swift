@@ -141,6 +141,7 @@ struct CEIterator {
 
     /// Pops the next scalar, bypassing the lookahead buffer when it is empty
     /// (the common case — the buffer fills only during context matching).
+    @inline(__always)
     private mutating func popScalar() -> UInt32? {
         if lookaheadStart < lookahead.count {
             let c = lookahead[lookaheadStart]
@@ -153,6 +154,7 @@ struct CEIterator {
     /// Appends the CEs of the next character, or the NO_CE terminator at the
     /// end of input. Returns false once terminated. Enables lazy comparison:
     /// the primary level usually decides without generating all CEs.
+    @inline(__always)
     mutating func appendMore() throws -> Bool {
         guard !terminated else { return false }
         guard let c = popScalar() else {
