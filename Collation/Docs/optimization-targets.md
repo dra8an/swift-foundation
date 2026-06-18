@@ -31,7 +31,7 @@ already).
 
 ### 2. Pre-resolve options dispatch at init
 
-**Status:** untried
+**Status:** try later
 
 `compare()` checks the options word per call to decide which path to take
 (strength, alternate handling, case-first, etc.). In practice the options
@@ -42,7 +42,9 @@ implementation to use" so the per-call branch is a direct call, not a
 multi-field check.
 
 **Expected gain:** 1–3 ns (branch prediction probably handles this well
-already, so may be negligible).
+already, so may be negligible). Analysis suggests the `icuOptions` computed
+property is ~5 bitwise ops and the conditionals are perfectly predicted —
+likely sub-nanosecond total. Low priority.
 
 ---
 
@@ -61,30 +63,38 @@ copying two integers instead of going through the struct.
 
 ### 4. Avoid CEIterator/NFDIterator reset cost
 
-**Status:** untried
+**Status:** investigated, partially confirmed, blocked
 
 `CEIterator.reset()` clears 3 arrays + resets state, and `NFDIterator.reset()`
 clears 3 more arrays + calls `String.UnicodeScalarView.makeIterator()`. The
 `isEmpty` guards mean the array clears are cheap when buffers were never used,
 but `makeIterator()` is a per-call cost.
 
-Where it matters:
-- **Sort keys:** every call hits full `reset(scalars:)` with `makeIterator()`.
-- **CJK/Thai compare:** when fast-Latin bails, reset fires before entering
-  the CE pipeline. (The non-`fellBack` path already avoids this by reusing
-  the prefix-scan iterator via `reset(source:first:)`.)
-- **ASCII/Latin compare:** fast-Latin succeeds → reset never runs.
+**Deletion experiment (2026-06-18):** reset costs 22 ns per sort key call
+(47 ns total for TLS+reset+key.clear vs 25 ns for TLS+key.clear alone).
+Inlining the reset functions with `@inline(__always)` gives only ~1-2 ns
+(borderline noise) — the compiler already inlines them with WMO. The 22 ns
+is the actual work of `makeIterator()` + `ces.removeAll(keepingCapacity:)`.
 
-Possible approaches:
-- Store a "rewound" iterator state at init or at closure entry so sort keys
-  can reset without rebuilding from `String.UnicodeScalarView`.
-- For the CJK compare bail path: pass the byte pointer directly instead of
-  reconstructing a scalar iterator (ties into the Span pipeline refactor).
-- Measure `makeIterator()` cost in isolation via deletion experiment (return
-  immediately after reset, before any CE work).
+**Byte-pointer experiment (2026-06-18):** Added a `useBytes` mode to
+NFDIterator that decodes UTF-8 from an `UnsafeBufferPointer<UInt8>` instead
+of using `String.UnicodeScalarView.Iterator`. Sort key path runs
+`collectAll()` inside `withContiguousStorageIfAvailable` to keep the pointer
+valid. Results:
+  ASCII sortKey: 260→255 ns (−2%, ~5 ns)
+  CJK sortKey: 240→237 ns (−1%, ~3 ns)
+  Paths sortKey: 677→670 ns (−1%, ~7 ns)
+The win is modest because: (1) the `if useBytes` branch in
+`nextSourceScalar()` adds overhead per scalar, (2) the byte decoder does
+the same UTF-8 decoding the iterator does internally. The theoretical 22 ns
+ceiling isn't reached because we're replacing one decoding method with another
+of similar cost — only saving the `makeIterator()` setup (~5 ns).
 
-**Expected gain:** 2–5 ns on sort keys and CJK compare (the `makeIterator()`
-portion; array clears are already guarded).
+**Verdict:** ~5 ns gain is real but small. The byte-pointer approach works
+today but adds complexity (dual-mode NFDIterator, closure wrapping). When
+Span becomes storable (`~Escapable` lifted), the byte-pointer mode becomes
+the ONLY mode and the `if useBytes` branch disappears — expected to recover
+the full 22 ns. Until then, not worth the code complexity for 5 ns.
 
 ---
 
@@ -119,5 +129,21 @@ in the CE production chain.
 
 Store fast-Latin primaries as `UnsafeBufferPointer<UInt16>` at init. Eliminates
 per-call cache lock, ARC, and Optional unwrap.
+
+---
+
+### 8. Pre-computed ASCII CE table for sort keys
+
+**Status:** shipped (−14% ASCII, −6% Latin, −21% paths sortKey)
+
+Build a 128-entry table of full 64-bit CEs for ASCII (0–127) at init. In
+`appendMore()`, characters below 128 with a non-zero table entry skip the
+trie lookup + `isSpecialCE32` check + tag dispatch entirely — one indexed
+load + one array append. Characters that need full processing (digits in
+numeric mode, U+0000, expansions) have a 0 sentinel and fall through.
+
+Cost: 1 KB memory (128 × 8 bytes), one `DataStorage` allocation at init.
+Only benefits sort keys (compare uses fast-Latin mini-CEs which already
+bypass the CE pipeline). CJK/Thai neutral (all above 127).
 
 ---

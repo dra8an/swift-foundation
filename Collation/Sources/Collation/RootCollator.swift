@@ -52,6 +52,11 @@ public struct RootCollator: @unchecked Sendable {
     private let defaultFLWord: Int32
     /// Owns the memory behind defaultFLPrimaries.
     private let defaultFLStorage: DataStorage
+    /// Pre-computed full 64-bit CEs for ASCII (0–127). Entry is 0 for
+    /// characters needing full pipeline (digits, U+0000). Eliminates trie
+    /// lookup + tag dispatch for common characters in the sort key path.
+    let simpleCEs: UnsafeBufferPointer<Int64>
+    private let simpleCEsStorage: DataStorage
     /// The fast Latin table: the tailoring's own, or the base's when the
     /// tailoring has none (CollationDataReader aliases the same way).
     /// Stored: rebuilding it per compare would retain `base` each time.
@@ -78,6 +83,10 @@ public struct RootCollator: @unchecked Sendable {
         self.defaultFLPackedOptions = packed
         self.defaultFLWord = opts.icuOptions
         self.defaultFLStorage = flStorage
+        // Pre-compute ASCII CE table.
+        let ceStorage = DataStorage()
+        self.simpleCEs = Self.buildSimpleCEs(data: data, base: nil, storage: ceStorage)
+        self.simpleCEsStorage = ceStorage
     }
 
     public init() throws {
@@ -114,6 +123,10 @@ public struct RootCollator: @unchecked Sendable {
         self.defaultFLPackedOptions = packed
         self.defaultFLWord = defaultOptions.icuOptions
         self.defaultFLStorage = flStorage
+        // Pre-compute ASCII CE table.
+        let ceStorage = DataStorage()
+        self.simpleCEs = Self.buildSimpleCEs(data: data, base: base, storage: ceStorage)
+        self.simpleCEsStorage = ceStorage
     }
 
     // MARK: Comparison
@@ -373,7 +386,7 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     private func takeScratch() -> ScratchBuffers {
-        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm)
+        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm, simpleCEs: simpleCEs)
     }
 
     private func giveScratch(_ buffers: ScratchBuffers) {
@@ -392,6 +405,36 @@ public struct RootCollator: @unchecked Sendable {
         (0x4E00...0x9FFF).contains(c) ||
         (0x3400...0x4DBF).contains(c) ||
         (0x20000...0x2A6DF).contains(c)
+    }
+
+    /// Builds a 128-entry table of pre-computed CEs for ASCII. Characters that
+    /// map to a single simple CE (no expansion, no contraction, no prefix) get
+    /// their full 64-bit CE stored; others get 0 (sentinel for "use full pipeline").
+    private static func buildSimpleCEs(
+        data: CollationData, base: CollationData?, storage: DataStorage
+    ) -> UnsafeBufferPointer<Int64> {
+        var table: [Int64] = Array(repeating: 0, count: 128)
+        for c: UInt32 in 0..<128 {
+            var ce32 = data.trie.get(c)
+            if ce32 == CollationConstants.fallbackCE32, let base {
+                ce32 = base.trie.get(c)
+            }
+            // Only handle the simple cases: non-special CE32s and long-primary/
+            // long-secondary tags that produce exactly one CE.
+            if !CollationConstants.isSpecialCE32(ce32) {
+                table[Int(c)] = CollationConstants.ceFromCE32(ce32)
+            } else {
+                let tag = CollationConstants.tagFromCE32(ce32)
+                switch tag {
+                case .longPrimary, .longSecondary:
+                    table[Int(c)] = CollationConstants.ceFromCE32(ce32)
+                default:
+                    // Expansions, contractions, digits, prefixes, u0000 — leave as 0.
+                    break
+                }
+            }
+        }
+        return storage.store(table)
     }
 
     /// True if restarting CE iteration at `c` is not provably equivalent to

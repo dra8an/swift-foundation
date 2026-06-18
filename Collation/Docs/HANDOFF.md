@@ -125,6 +125,10 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     unsafe code point (U+0300 for root). Short-circuits trie lookups on
     the prefix-skip safety check. −5% sorted ASCII 32, −4% sorted ASCII
     64 compare. Neutral on random corpora (no shared prefix to check).
+  - Pre-computed ASCII CE table: 128-entry lookup of full 64-bit CEs,
+    built at init. Sort key's `appendMore()` skips trie lookup + tag
+    dispatch for simple ASCII characters. −14% ASCII, −6% Latin, −21%
+    paths sortKey. Compare and CJK/Thai neutral.
 
 ### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
 
@@ -142,11 +146,11 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~257 | ~107   | 2.4×  |
-| Latin  | ~367 | ~126   | 2.9×  |
+| ASCII  | ~223 | ~107   | 2.1×  |
+| Latin  | ~345 | ~126   | 2.7×  |
 | CJK    | ~238 | ~122   | 2.0×  |
-| paths  | ~676 | ~379   | 1.8×  |
-| Thai   | ~356 | ~160   | 2.2×  |
+| paths  | ~534 | ~379   | 1.4×  |
+| Thai   | ~346 | ~160   | 2.2×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh

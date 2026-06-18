@@ -24,6 +24,9 @@ struct CEIterator {
     /// ARC-free views used by the per-scalar dispatch (see CollationDataView).
     private let dataView: CollationDataView
     private let baseView: CollationDataView?
+    /// Pre-computed CEs for ASCII (0–127). Entry is 0 for characters that
+    /// need full pipeline processing (digits in numeric mode, U+0000, etc.).
+    let simpleCEs: UnsafeBufferPointer<Int64>
     var ces: [Int64] = []
 
     /// Normalized scalars read ahead of the current position.
@@ -39,7 +42,8 @@ struct CEIterator {
     private var consumedExtras: [UInt32] = []
 
     init(data: CollationData, base: CollationData? = nil, norm: NormalizationData,
-         numeric: Bool, scalars: String.UnicodeScalarView) {
+         numeric: Bool, scalars: String.UnicodeScalarView,
+         simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         self.data = data
         self.base = base
         self.norm = norm
@@ -47,6 +51,7 @@ struct CEIterator {
         self.scalars = NFDIterator(norm: norm, scalars: scalars)
         self.dataView = CollationDataView(data)
         self.baseView = base.map(CollationDataView.init)
+        self.simpleCEs = simpleCEs
     }
 
     /// Rewinds onto a new input, keeping all buffer storage so that reuse
@@ -161,6 +166,15 @@ struct CEIterator {
             ces.append(CollationConstants.noCE)
             terminated = true
             return false
+        }
+        // Fast path: pre-computed CE for simple ASCII characters.
+        if c < 128, !simpleCEs.isEmpty {
+            let ce = simpleCEs[Int(c)]
+            if ce != 0 {
+                ces.append(ce)
+                pushHistory(c)
+                return true
+            }
         }
         // isEmpty guards: removeAll on a never-used array hits the shared
         // empty-singleton storage, which is never uniquely referenced, and
