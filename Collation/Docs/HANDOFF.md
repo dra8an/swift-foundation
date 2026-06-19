@@ -106,7 +106,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **Pushed through `2278a07`; `origin/port/collation` is in sync.**
+- **Pushed through `bbc4d5f`; `origin/port/collation` is in sync.**
   Post-Span-revert optimizations:
   - Quick-primary CJK compare: bypasses CE pipeline for different CJK
     characters (−10% CJK).
@@ -141,19 +141,19 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 |--------|------|--------|-------|
 | ASCII  | ~25  | ~9     | 2.8×  |
 | Latin  | ~25  | ~10    | 2.5×  |
-| CJK    | ~129 | ~41    | 3.1×  |
-| paths  | ~63  | ~33    | 1.9×  |
-| Thai (th, sorted) | ~355 | ~191 | 1.9× |
+| CJK    | ~129 | ~42    | 3.1×  |
+| paths  | ~65  | ~30    | 2.2×  |
+| Thai (th, sorted) | ~362 | ~174 | 2.1× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~225 | ~107   | 2.1×  |
-| Latin  | ~302 | ~126   | 2.4×  |
-| CJK    | ~242 | ~122   | 2.0×  |
-| paths  | ~534 | ~379   | 1.4×  |
-| Thai   | ~327 | ~160   | 2.0×  |
+| ASCII  | ~225 | ~108   | 2.1×  |
+| Latin  | ~302 | ~130   | 2.3×  |
+| CJK    | ~241 | ~121   | 2.0×  |
+| paths  | ~541 | ~375   | 1.4×  |
+| Thai   | ~321 | ~155   | 2.1×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
