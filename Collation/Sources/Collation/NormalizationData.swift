@@ -146,6 +146,26 @@ public struct NormalizationData: @unchecked Sendable {
         out.append(contentsOf: buffer[offset..<(offset + length)])
         return true
     }
+
+    /// Quick decomposition for the common Latin case: a precomposed character
+    /// that decomposes to exactly [starter, one-combining-mark]. Returns the
+    /// two scalars directly from one trie lookup, or nil if the decomposition
+    /// is longer, the lead scalar is a non-starter, or the character has no
+    /// decomposition. Allows NFDIterator to skip the full refill machinery.
+    @inline(__always)
+    func quickDecomp(_ c: UInt32) -> (base: UInt32, mark: UInt32)? {
+        let v = value(c)
+        let length = Int((v >> 16) & 7)
+        guard length == 2 else { return nil }
+        let offset = Int(v >> 19)
+        let base = buffer[offset]
+        let mark = buffer[offset + 1]
+        // Only valid if the base is a starter (ccc=0) and the mark has ccc>0.
+        // For length-2 Latin decompositions this is always true, but check to
+        // be safe against exotic cases.
+        guard ccc(base) == 0, ccc(mark) != 0 else { return nil }
+        return (base, mark)
+    }
 }
 
 /// Trivial view of the normalization trie: the lookups the byte fast path's

@@ -190,3 +190,22 @@ Benefits any text with combining marks: Latin (accents), Thai (vowels/tones),
 Khmer, Devanagari, etc. Pure ASCII/CJK neutral (carried is never populated).
 
 ---
+
+### 11. Quick decomposition for simple [starter, mark] pairs
+
+**Status:** shipped (−7% Latin sortKey on top of carry-cascade fix)
+
+Inside `refill()`, the common Latin case (precomposed → [starter, one-mark])
+previously went through: `hasDecomposition` trie lookup → `decomposed` array
+clear → `appendDecomposition` (trie + buffer copy into array) → `for c in
+decomposed { absorb(c) }`. Three trie lookups + array operations.
+
+`quickDecomp(c)` does one trie lookup and returns both scalars directly from
+the normalization buffer — no intermediate array, no clear, no copy loop.
+Guarded by `ccc(base)==0 && ccc(mark)!=0` to ensure correctness (rejects
+exotic decompositions like Tibetan U+0F73 → [non-starter, non-starter]).
+
+Also applied in the while-loop decomposition path within `refill()` for
+back-to-back accented characters.
+
+---

@@ -117,7 +117,10 @@ struct NFDIterator {
             carried.removeAll(keepingCapacity: true)
         }
         if let first {
-            if norm.hasDecomposition(first) {
+            if let quick = norm.quickDecomp(first) {
+                absorb(quick.base)
+                absorb(quick.mark)
+            } else if norm.hasDecomposition(first) {
                 decomposed.removeAll(keepingCapacity: true)
                 _ = norm.appendDecomposition(of: first, to: &decomposed)
                 for c in decomposed { absorb(c) }
@@ -138,6 +141,19 @@ struct NFDIterator {
                     return
                 }
                 absorb(v)
+                continue
+            }
+            if let quick = norm.quickDecomp(v) {
+                // Common Latin case: [starter, mark]. The starter begins a new
+                // reorderable unit if we already have content.
+                if (!unit.isEmpty || !marks.isEmpty) {
+                    carried.append(quick.base)
+                    carried.append(quick.mark)
+                    flushMarks()
+                    return
+                }
+                absorb(quick.base)
+                absorb(quick.mark)
                 continue
             }
             decomposed.removeAll(keepingCapacity: true)

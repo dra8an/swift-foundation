@@ -132,6 +132,9 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   - NFDIterator carry-cascade fix: single inert carried scalar emitted
     directly instead of triggering a full refill chain. −14% Latin sortKey,
     −7% Thai sortKey, −8% Thai compare. ASCII/CJK neutral.
+  - Quick decomposition for [starter, mark] pairs: `quickDecomp()` returns
+    both scalars from one trie lookup, skipping the `decomposed` array.
+    −7% Latin sortKey (stacks with carry fix). ASCII/CJK/paths neutral.
 
 ### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
 
@@ -150,10 +153,10 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
 | ASCII  | ~225 | ~108   | 2.1×  |
-| Latin  | ~302 | ~130   | 2.3×  |
+| Latin  | ~281 | ~130   | 2.2×  |
 | CJK    | ~241 | ~121   | 2.0×  |
 | paths  | ~541 | ~375   | 1.4×  |
-| Thai   | ~321 | ~155   | 2.1×  |
+| Thai   | ~324 | ~155   | 2.1×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
