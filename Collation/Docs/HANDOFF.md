@@ -153,7 +153,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
 | ASCII  | ~225 | ~108   | 2.1×  |
-| Latin  | ~281 | ~130   | 2.2×  |
+| Latin  | ~278 | ~130   | 2.1×  |
 | CJK    | ~241 | ~121   | 2.0×  |
 | paths  | ~541 | ~375   | 1.4×  |
 | Thai   | ~324 | ~155   | 2.1×  |

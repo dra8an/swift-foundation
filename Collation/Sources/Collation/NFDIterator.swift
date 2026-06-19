@@ -118,8 +118,11 @@ struct NFDIterator {
         }
         if let first {
             if let quick = norm.quickDecomp(first) {
-                absorb(quick.base)
-                absorb(quick.mark)
+                // Fast path for simple [starter, mark]: build unit directly
+                // without absorb/flushMarks calls. We know base is CCC=0 and
+                // mark is CCC>0 from quickDecomp's guard.
+                unit.append(quick.base)
+                marks.append(quick.mark)
             } else if norm.hasDecomposition(first) {
                 decomposed.removeAll(keepingCapacity: true)
                 _ = norm.appendDecomposition(of: first, to: &decomposed)

@@ -208,6 +208,11 @@ exotic decompositions like Tibetan U+0F73 → [non-starter, non-starter]).
 Also applied in the while-loop decomposition path within `refill()` for
 back-to-back accented characters.
 
+Additionally, the `quickDecomp` fast path inside `refill()` inlines the
+absorb logic: places base directly in `unit` and mark directly in `marks`,
+skipping two `absorb()` function calls and their redundant `ccc` checks
+(quickDecomp already verified CCC values). Saves ~5 ns per accent.
+
 ---
 
 ### 12. Combining mark CE table (extend simpleCEs to U+036F)
