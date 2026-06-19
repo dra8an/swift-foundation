@@ -209,3 +209,21 @@ Also applied in the while-loop decomposition path within `refill()` for
 back-to-back accented characters.
 
 ---
+
+### 12. Combining mark CE table (extend simpleCEs to U+036F)
+
+**Status:** tried, rejected (−2-3% Latin sortKey, but +6 KB memory)
+
+Expanded the ASCII CE table from 128 entries to 880 (covering 0x000–0x36F)
+to include combining marks (U+0300–U+036F). Each mark produces a single CE
+with only secondary/tertiary weight — ideal for pre-computation.
+
+**Result:** Latin sortKey 282→277 ns (−2%), one-accent 260→254 ns (−3%,
+~7 ns per accent). The trie lookup for the mark costs ~7 ns; the table
+eliminates it. But the table grows from 1 KB to 7 KB for a marginal win.
+
+**Verdict:** not worth the memory. The remaining per-accent cost (~54 ns)
+is dominated by the `refill()` structural overhead (entering the function,
+array ops, while-loop peeking ahead), not the mark's trie lookup.
+
+---
