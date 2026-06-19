@@ -104,6 +104,15 @@ struct NFDIterator {
         unit.removeAll(keepingCapacity: true)
         unitNext = 0
         if !carried.isEmpty {
+            // Fast exit: single inert carried scalar — emit it directly as a
+            // one-element unit without consuming the next source scalar into
+            // carried (breaks the cascade where every post-accent starter
+            // triggers a full refill).
+            if carried.count == 1, norm.isInert(carried[0]) {
+                unit.append(carried[0])
+                carried.removeAll(keepingCapacity: true)
+                return
+            }
             for c in carried { absorb(c) }
             carried.removeAll(keepingCapacity: true)
         }

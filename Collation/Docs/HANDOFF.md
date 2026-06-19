@@ -129,6 +129,9 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     built at init. Sort key's `appendMore()` skips trie lookup + tag
     dispatch for simple ASCII characters. −14% ASCII, −6% Latin, −21%
     paths sortKey. Compare and CJK/Thai neutral.
+  - NFDIterator carry-cascade fix: single inert carried scalar emitted
+    directly instead of triggering a full refill chain. −14% Latin sortKey,
+    −7% Thai sortKey, −8% Thai compare. ASCII/CJK neutral.
 
 ### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
 
@@ -137,20 +140,20 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
 | ASCII  | ~25  | ~9     | 2.8×  |
-| Latin  | ~24  | ~10    | 2.4×  |
-| CJK    | ~127 | ~41    | 3.1×  |
+| Latin  | ~25  | ~10    | 2.5×  |
+| CJK    | ~129 | ~41    | 3.1×  |
 | paths  | ~63  | ~33    | 1.9×  |
-| Thai (th, sorted) | ~394 | ~191 | 2.1× |
+| Thai (th, sorted) | ~355 | ~191 | 1.9× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~223 | ~107   | 2.1×  |
-| Latin  | ~345 | ~126   | 2.7×  |
-| CJK    | ~238 | ~122   | 2.0×  |
+| ASCII  | ~225 | ~107   | 2.1×  |
+| Latin  | ~302 | ~126   | 2.4×  |
+| CJK    | ~242 | ~122   | 2.0×  |
 | paths  | ~534 | ~379   | 1.4×  |
-| Thai   | ~346 | ~160   | 2.2×  |
+| Thai   | ~327 | ~160   | 2.0×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh

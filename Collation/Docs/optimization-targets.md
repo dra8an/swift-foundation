@@ -166,6 +166,27 @@ indexed memory read). The trie is already a direct table for BMP characters.
 indexed array read). Only worth bypassing the trie when the downstream
 computation is cheaper than a table lookup — the ASCII CE table works
 because it replaces trie + tag dispatch + ceFromCE32 with a single load.
-For CJK, the offset math itself is the bottleneck.
+For CJK, the offset math itself is the bottleneck. Pre-computing all CJK
+CEs (20k+ entries, 160+ KB) is not acceptable memory-wise.
+
+---
+
+### 10. Break NFDIterator carried-scalar cascade
+
+**Status:** shipped (−14% Latin sortKey, −7% Thai sortKey, −8% Thai compare)
+
+After `refill()` processes a combining-mark sequence, the next starter gets
+"carried" to the following refill call. Previously, that refill would absorb
+the carried scalar, read the NEXT source scalar, see it starts a new unit,
+carry IT over, and so on — cascading through all remaining characters.
+One accented character could add ~110 ns to a 6-char sort key.
+
+Fix: at the top of `refill(startingWith: nil)`, check if carried is a single
+inert scalar. If so, emit it directly as a one-element unit — no source read,
+no carry propagation, no cascade. Correct because an inert scalar is by
+definition a complete reorderable unit (CCC=0, no decomposition).
+
+Benefits any text with combining marks: Latin (accents), Thai (vowels/tones),
+Khmer, Devanagari, etc. Pure ASCII/CJK neutral (carried is never populated).
 
 ---
