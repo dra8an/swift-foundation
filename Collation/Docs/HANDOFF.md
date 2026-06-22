@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-> Written 2026-06-12, last updated 2026-06-18, for a fresh session with no
+> Written 2026-06-12, last updated 2026-06-19, for a fresh session with no
 > conversation context. Read this first, then `04-milestone-plan.md` for
 > status, then the numbered docs as needed.
 
@@ -106,8 +106,9 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **Pushed through `bbc4d5f`; `origin/port/collation` is in sync.**
-  Post-Span-revert optimizations:
+- **Pushed through `86578c1`; `origin/port/collation` is in sync.**
+  (Cross-machine confirmed on Intel/macOS 15, 2026-06-19 — see the Intel
+  performance subsection below.) Post-Span-revert optimizations:
   - Quick-primary CJK compare: bypasses CE pipeline for different CJK
     characters (−10% CJK).
   - Pre-baked fast-Latin setup: eliminates the per-call cache lock by
@@ -136,7 +137,14 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     both scalars from one trie lookup, skipping the `decomposed` array.
     −7% Latin sortKey (stacks with carry fix). ASCII/CJK/paths neutral.
 
-### Current performance (Apple Silicon, quiet machine, 10000 reps, lower cluster)
+### Current performance
+
+Two machines, two CPU/OS regimes. **Keep each machine's numbers in its own
+subsection** so cross-machine runs don't overwrite each other. Absolute ratios
+differ by hardware (ICU is faster on Apple Silicon too); the *improvements* hold
+on both. State the corpus, reps, and how the time was taken in each section.
+
+#### Apple Silicon (macOS 26, quiet machine, 10000 reps, lower cluster)
 
 **Compare (ns/op):**
 
@@ -169,6 +177,51 @@ clang bench_icu.c -O2 -o bench_icu \
 DYLD_LIBRARY_PATH=/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/icu4c/source/lib \
   ./bench_icu Tools/bench/bench-cjk.txt 200
 ```
+
+#### Intel iMac (macOS 15, Swift 6.3.1 release) — confirmed 2026-06-19
+
+min ns/op (best wall-clock pass; Bench takes the min over 9 internal passes,
+interleaved across many invocations). This run **confirms the post-`620be9d`
+optimizations port to Intel/macOS 15** — every metric improved, nothing
+regressed. **base** = `620be9d` (fork point, before the optimization run);
+**new** = `86578c1` (current tip).
+
+**Compare:**
+
+| corpus | ICU 79 | base (×ICU) | new (×ICU) | Δ new vs base |
+|--------|-------:|-------------|------------|--------------:|
+| ASCII  | 16  | 65 (4.06×)  | 50 (3.12×)  | −23% |
+| Latin  | 17  | 65 (3.82×)  | 50 (2.94×)  | −23% |
+| CJK    | 72  | 247 (3.43×) | 239 (3.32×) | −3%  |
+| paths  | 49  | 134 (2.73×) | 109 (2.22×) | −19% |
+| Thai (th) | 289 | 763 (2.64×) | 720 (2.49×) | −6% |
+
+**Sort keys (inout API, buffer reused):**
+
+| corpus | ICU 79 | base (×ICU) | new (×ICU) | Δ new vs base |
+|--------|-------:|-------------|------------|--------------:|
+| ASCII  | 196 | 447 (2.28×)  | 381 (1.94×)  | −15% |
+| Latin  | 210 | 663 (3.16×)  | 478 (2.28×)  | −28% |
+| CJK    | 224 | 428 (1.91×)  | 410 (1.83×)  | −4%  |
+| paths  | 684 | 1259 (1.84×) | 1010 (1.48×) | −20% |
+| Thai   | 293 | 671 (2.29×)  | 592 (2.02×)  | −12% |
+
+ICU 79 built locally (machine 1):
+```sh
+cd Collation/Tools
+ICU_SRC=~/Projects/claude/icu
+ICU_BUILD=~/Projects/claude/collation/icu-build
+clang bench_icu.c -O2 -o bench_icu \
+  -I $ICU_SRC/icu4c/source/common -I $ICU_SRC/icu4c/source/i18n \
+  -L $ICU_BUILD/lib -licuuc -licui18n -licudata
+DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./bench_icu Tools/bench/bench-cjk.txt 300
+```
+Per-corpus reps equalize work (thai is ~33k lines vs ~200): ASCII/Latin/CJK 300,
+paths 150, thai 3. Caveat: ICU's bench truncates input at 64 UTF-16 units, so the
+**paths sortKey** ICU figure may be slightly optimistic (some paths are longer) —
+the base→new improvement is ours-vs-ours and unaffected. These numbers used a
+local min-of-9-passes tweak to `Sources/Bench/main.swift` (low measurement noise;
+not committed).
 
 ## Key findings from round 14 (read before optimizing further)
 
