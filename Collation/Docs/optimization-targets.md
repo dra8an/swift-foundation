@@ -387,17 +387,25 @@ encoding (breaking change), this ratio is a hard floor.
 
 ---
 
-### 19. Sort key writer: batch primary appends
+### 19. Sort key: fast collectAll for ASCII (bypass NFDIterator)
 
-**Status:** untried
+**Status:** tried, reverted (−4% ASCII but +4-9% Latin/CJK/paths)
 
-The writer appends primary bytes one at a time (`key.append` per byte,
-2-3 times per CE). For sequences of compressible primaries with the same lead
-byte (common for ASCII), only bytes 2-3 change. Could accumulate a run of
-primary bytes in a stack buffer and append them all at once, reducing the
-per-CE `key.append` overhead (capacity check + count increment per call).
+Inside `sortKey(for:into:)`, added a fast path using
+`withContiguousStorageIfAvailable` to read UTF-8 bytes and build the ces
+array directly from the simpleCE table — no NFDIterator, no appendMore().
+Bails at the first non-ASCII byte or missing table entry.
 
-**Expected gain:** 1-3 ns/CE × ~8 CEs = 8-24 ns on ASCII/paths. Modest but
-affects all sort key corpora.
+**Result:** ASCII sortKey 211→202 ns (−4%, ~9 ns saved from avoiding
+makeIterator + NFDIterator overhead). But Latin (+6%), CJK (+4%), paths
+(+9%) all regressed — the added code bloats the function body and disrupts
+the compiler's inlining decisions for non-ASCII paths. Even with an
+early-bail guard, the closure entry adds measurable overhead.
+
+**Lesson:** at this stage, adding any code to the sort key hot path risks
+regressing other corpora through codegen butterfly effects. Future
+improvements need to either: (a) make existing code cheaper without adding
+branches, or (b) use separate compilation units (@_silgen_name or similar)
+to isolate codegen.
 
 ---
