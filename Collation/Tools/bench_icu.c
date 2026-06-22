@@ -74,8 +74,9 @@ int main(int argc, char **argv) {
 
     volatile long sink = 0;
 
-    /* warmup + measure compare */
-    for (int r = 0; r < 2; r++) {
+    /* warmup + min over 9 timed passes (matches the Swift bench) */
+    uint64_t best_cmp = UINT64_MAX;
+    for (int r = 0; r < 10; r++) {
         uint64_t start = now_ns();
         for (int rep = 0; rep < reps; rep++) {
             for (int i = 1; i < n; i++) {
@@ -84,12 +85,14 @@ int main(int argc, char **argv) {
             }
         }
         uint64_t ns = now_ns() - start;
-        if (r == 1) printf("compare : %llu ns/op (%d ops)\n",
-                           (unsigned long long)(ns / ((uint64_t)(n - 1) * reps)), (n - 1) * reps);
+        if (r > 0 && ns < best_cmp) best_cmp = ns;
     }
+    printf("compare : %llu ns/op (%d ops)\n",
+           (unsigned long long)(best_cmp / ((uint64_t)(n - 1) * reps)), (n - 1) * reps);
 
-    /* warmup + measure sort keys (UTF-16 input, like the public API) */
-    for (int r = 0; r < 2; r++) {
+    /* warmup + min over 9 timed passes for sort keys */
+    uint64_t best_sk = UINT64_MAX;
+    for (int r = 0; r < 10; r++) {
         uint64_t start = now_ns();
         for (int rep = 0; rep < reps; rep++) {
             for (int i = 0; i < n; i++) {
@@ -98,9 +101,10 @@ int main(int argc, char **argv) {
             }
         }
         uint64_t ns = now_ns() - start;
-        if (r == 1) printf("sortKey : %llu ns/op (%d ops)\n",
-                           (unsigned long long)(ns / ((uint64_t)n * reps)), n * reps);
+        if (r > 0 && ns < best_sk) best_sk = ns;
     }
+    printf("sortKey : %llu ns/op (%d ops)\n",
+           (unsigned long long)(best_sk / ((uint64_t)n * reps)), n * reps);
 
     ucol_close(coll);
     return sink == -1 ? 1 : 0;
