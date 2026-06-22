@@ -369,18 +369,21 @@ decode + trie lookup inside fastLatinUTF8 (see §18).
 
 ### 18. Quick-primary in the byte path for CJK (avoid compareBody entirely)
 
-**Status:** untried
+**Status:** tried, neutral (−2 ns, not worth the code)
 
-When the byte-level prefix scan identifies different CJK lead bytes (0xE4-0xE9),
-we know both characters are ≥ U+4E00. Currently: bail from fastLatinUTF8 →
-enter compareBody → build scalar iterators → scalar prefix scan → quickPrimary.
-If we could do the quickPrimary check directly on the byte-decoded scalars
-inside fastLatinUTF8 (or a new CJK fast path), we'd skip iterator construction
-and the scalar prefix scan entirely.
+Moved quickPrimaryCompare into the `withContiguousStorageIfAvailable` closure
+right after fastLatinUTF8 bails. Decoded CJK scalars from raw bytes, did the
+trie lookup + offset math inline.
 
-Challenge: quickPrimary needs the full scalar (3-byte UTF-8 decode) + 2 trie
-lookups + offset math. The math has divisions which are expensive. But avoiding
-2× makeIterator + the function-call boundary could save 30-60 ns.
+**Result:** 130→127 ns (noise-level). The offset math (`threeBytePrimaryForOffsetData`
+with 2 integer divisions per character) costs ~40 ns and dominates regardless
+of where it's called from. Moving it into the byte path saves ~3 ns of
+function-call overhead but doesn't reduce the math cost.
+
+**Lesson:** CJK compare at 3.1× is bottlenecked on the offset formula's
+integer divisions, not on the function-call structure. Same finding as §9.
+Without pre-computing primaries (rejected — 160 KB) or changing the data
+encoding (breaking change), this ratio is a hard floor.
 
 ---
 
