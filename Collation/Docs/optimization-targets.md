@@ -213,6 +213,8 @@ absorb logic: places base directly in `unit` and mark directly in `marks`,
 skipping two `absorb()` function calls and their redundant `ccc` checks
 (quickDecomp already verified CCC values). Saves ~5 ns per accent.
 
+**Further:** bypass `refill()` entirely (shipped separately, see §16 below).
+
 ---
 
 ### 12. Combining mark CE table (extend simpleCEs to U+036F)
@@ -312,5 +314,25 @@ valid — and clearly slower:
 Two tight, independently-optimized loops with a small hot buffer between them
 beat one fat fused loop. The writer's remaining wins are inside its own loop
 (§14), not in removing the CE array.
+
+---
+
+### 16. Bypass refill() for Latin precomposed characters
+
+**Status:** shipped (−11% Latin sortKey, per-accent cost 56→24 ns)
+
+For precomposed characters below U+0300, when `quickDecomp` succeeds AND the
+following source character has `leadCCC == 0` (its NFD starts with a starter),
+emit base directly and stash mark in `pendingMark` — bypassing `refill()`
+entirely. No arrays, no loops, no carry, no flushMarks.
+
+The `leadCCC` check is the critical safety guard: it catches characters like
+U+0F73 (own CCC=0 but decomposes to [CCC=129, CCC=130]) whose NFD lead could
+reorder with the emitted mark. The `< 0x300` fast test for `following` is safe
+because all characters below U+0300 are guaranteed `leadCCC == 0`.
+
+This stacks with §10 (carry-cascade fix), §11 (quickDecomp), and the inline
+absorb optimization. Together they reduced per-accent overhead from +110 ns
+(start of session) to +24 ns (now). ICU pays +11 ns.
 
 ---

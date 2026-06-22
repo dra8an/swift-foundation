@@ -142,8 +142,12 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     key's write phase is ~56% of sortKey; `SortKeyLevel.appendTo`
     (`Array.replaceSubrange`) was its largest callee. Skip the copy for
     levels that compress to nothing, and copy the rest through an
-    `UnsafeBufferPointer` (memcpy fast path). −3 to −5% sortKey on every
+    `UnsafeBufferPointer` (memcpy fast path). −3 to −6% sortKey on every
     corpus, compare unaffected.
+  - Bypass `refill()` for Latin precomposed chars: for `c < 0x0300` with
+    `quickDecomp` success and `leadCCC(following) == 0`, emit base + mark
+    directly via `pendingMark` — no arrays, no loops, no carry. −11% Latin
+    sortKey, per-accent cost 56→24 ns. ASCII/CJK/paths/Thai neutral.
 
 ### Current performance
 
@@ -160,19 +164,19 @@ on both. State the corpus, reps, and how the time was taken in each section.
 |--------|------|--------|-------|
 | ASCII  | ~25  | ~9     | 2.8×  |
 | Latin  | ~25  | ~10    | 2.5×  |
-| CJK    | ~127 | ~42    | 3.0×  |
-| paths  | ~67  | ~30    | 2.2×  |
-| Thai (th, sorted) | ~356 | ~176 | 2.0× |
+| CJK    | ~130 | ~42    | 3.1×  |
+| paths  | ~65  | ~30    | 2.2×  |
+| Thai (th, sorted) | ~359 | ~176 | 2.0× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~209 | ~108   | 1.9×  |
-| Latin  | ~261 | ~124   | 2.1×  |
-| CJK    | ~226 | ~121   | 1.9×  |
-| paths  | ~526 | ~375   | 1.4×  |
-| Thai   | ~309 | ~160   | 1.9×  |
+| ASCII  | ~217 | ~108   | 2.0×  |
+| Latin  | ~239 | ~124   | 1.9×  |
+| CJK    | ~232 | ~121   | 1.9×  |
+| paths  | ~533 | ~375   | 1.4×  |
+| Thai   | ~313 | ~160   | 2.0×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
