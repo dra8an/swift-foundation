@@ -15,6 +15,9 @@ struct NFDIterator {
     /// walk's iterator — already positioned past the shared prefix — instead of
     /// building a fresh String iterator and re-walking that prefix.
     var pendingFirst: UInt32? = nil
+    /// A combining mark stashed by the Latin fast path — returned on the next
+    /// call to next() before resuming normal source reading.
+    var pendingMark: UInt32? = nil
     /// Decomposed scalars of the next input scalar, carried over when it
     /// started a new reorderable unit and ended the previous refill.
     var carried: [UInt32] = []
@@ -37,6 +40,7 @@ struct NFDIterator {
         source = scalars.makeIterator()
         for _ in 0..<n { _ = source.next() }
         pendingFirst = nil
+        pendingMark = nil
         clearBuffers()
     }
 
@@ -47,6 +51,7 @@ struct NFDIterator {
     mutating func reset(source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
         source = iter
         pendingFirst = first
+        pendingMark = nil
         clearBuffers()
     }
 
@@ -78,6 +83,10 @@ struct NFDIterator {
     /// Next scalar of the NFD form of the input, or nil at the end.
     @inline(__always)
     mutating func next() -> UInt32? {
+        if let mark = pendingMark {
+            pendingMark = nil
+            return mark
+        }
         if unitNext < unit.count {
             let c = unit[unitNext]
             unitNext += 1
@@ -90,6 +99,20 @@ struct NFDIterator {
             guard let c = nextSourceScalar() else { return nil }
             if norm.isInert(c) {
                 return c
+            }
+            // Fast path for Latin precomposed characters (U+00C0..U+02FF):
+            // decompose to [starter, mark] and emit directly if the following
+            // character is a starter (no canonical reordering possible).
+            // Bypasses refill() entirely — no arrays, no loops, no carry.
+            if c < 0x0300, let quick = norm.quickDecomp(c) {
+                let following = nextSourceScalar()
+                if following == nil || (following! < 0x300 || norm.leadCCC(following!) == 0) {
+                    pendingFirst = following
+                    pendingMark = quick.mark
+                    return quick.base
+                }
+                // Rare: combining mark follows — fall through to refill.
+                pendingFirst = following
             }
             refill(startingWith: c)
         } else {
