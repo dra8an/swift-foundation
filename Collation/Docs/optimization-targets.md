@@ -339,26 +339,31 @@ absorb optimization. Together they reduced per-accent overhead from +110 ns
 
 ### 17. CJK compare path investigation (3.1× — worst ratio)
 
-**Status:** untried
+**Status:** under investigation
 
-Random CJK compare is 130 ns (vs ICU 42 ns = 3.1×). For 4-char strings that
-differ on the first character, `quickPrimaryCompare` should resolve immediately
-without entering the CE pipeline. Expected cost: shell (14 ns) + byte scan
-(1 ns, differs immediately) + fast-Latin bail (1 ns) + scalar iterator ×2
-(~20 ns?) + scalar compare (1 ns) + quickPrimary (2 trie lookups + offset
-math, ~20 ns). That's ~57 ns — but we measure 130 ns. Something is expensive.
+Random CJK compare is 130 ns (vs ICU 42 ns = 3.1×). Deletion experiments:
+- Return `.ascending` at top of compareBody: **20 ns** (shell + bail)
+- Return at quickPrimaryCompare exit: **36 ns** (shell + iterators + quickPrimary)
 
-Possible sources of hidden overhead:
-- `compareBody` builds 2 `String.UnicodeScalarView.Iterator` even when the
-  first chars differ and quickPrimary resolves — maybe iterator construction
-  is ~30 ns each?
-- The fast-Latin bail path does more work than expected (safety check,
-  Latin-eligibility check) before reaching compareBody.
-- `quickPrimary` itself: 2 trie lookups + 2 offset computations (with
-  divisions) might be ~40 ns, not ~20 ns.
+This suggests quickPrimary resolves at ~36 ns total. But the full path is
+130 ns, implying 94 ns is spent AFTER quickPrimary. Debug prints confirmed
+quickPrimary IS firing and resolving (no fallback prints). The discrepancy
+is likely a **codegen artifact**: when compareBody is small (deletion
+experiment), the compiler inlines it into compareClassic, eliminating the
+function-call boundary. At full size, compareBody is a separate call frame
+and the overhead compounds.
 
-Approach: deletion experiments at successive points in the compare path to
-isolate per-component costs (same technique as Docs/18 §7).
+The real cost breakdown is likely:
+- Shell + fast-Latin bail: 20 ns
+- compareBody function-call overhead: ~30 ns (non-inlined entry/exit)
+- Iterator construction (2× makeIterator): ~40 ns
+- quickPrimary (2 trie lookups + offset math): ~30 ns
+- Result mapping + return: ~10 ns
+
+The function-call boundary + iterator construction dominate. Moving the
+quickPrimary check BEFORE iterators (into the byte path where we already
+have the UTF-8 bytes) could save ~70 ns — but requires byte-level scalar
+decode + trie lookup inside fastLatinUTF8 (see §18).
 
 ---
 
