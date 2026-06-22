@@ -57,7 +57,13 @@ struct SortKeyLevel {
     /// Appends all but the last byte (the trailing 01 from NO_CE) to the key.
     func appendTo(_ key: inout [UInt8]) {
         assert(bytes.last == 1)
-        key.append(contentsOf: bytes.dropLast())
+        let n = bytes.count - 1
+        if n <= 0 { return }  // level compressed to nothing — skip the copy entirely
+        // Copy from a contiguous buffer pointer so the append takes Array's
+        // memcpy fast path, not the slice/Collection iteration path.
+        bytes.withUnsafeBufferPointer { p in
+            key.append(contentsOf: UnsafeBufferPointer(start: p.baseAddress, count: n))
+        }
     }
 }
 
