@@ -277,3 +277,40 @@ branching + multiple key.append calls. A batch approach (accumulate primary
 bytes in a stack buffer, flush once) could help.
 
 ---
+
+### 15. Fuse CE production with the sort-key writer (REJECTED — regresses)
+
+**Status:** tried, reverted (Intel) — significant regression on every corpus.
+
+Distinct from §14's "batch primary bytes" idea: this attacked the intermediate
+`[Int64]` CE array itself. Instead of `collectAll()` materializing all CEs and
+the writer reading them back, a streaming `CEIterator.nextCE()` (produces on
+demand, compacts `ces` so it never grows past one character's batch) fed the
+writer directly. Byte-identical output (61 tests green), so the experiment is
+valid — and clearly slower:
+
+| corpus | sortKey vs two-pass |
+|--------|--------------------:|
+| ASCII  | +20% |
+| Latin  | +15% |
+| CJK    | +11% |
+| paths  | **+44%** |
+| Thai   | +11% |
+
+**Why the two-pass design wins:**
+1. **Inlining blow-up.** `appendMore()` is `@inline(__always)`. Two-pass: it
+   inlines into `collectAll()`'s tight loop while the writer stays lean. Fused:
+   the writer pulls `nextCE()` → `appendMore()`, so the *entire* CE pipeline
+   (tag dispatch, contraction/prefix/expansion, numeric) inlines into the
+   already-large writer body → register spills + i-cache pressure slow both
+   halves. The +44% on paths (most CEs) is exactly this.
+2. **The round-trip was already nearly free.** The `ces` array is reused across
+   calls (scratch, `keepingCapacity`) and stays L1-resident at these string
+   lengths, so reading it back costs almost nothing — while streaming *adds*
+   per-CE overhead (the refill/compact branch in `nextCE`).
+
+Two tight, independently-optimized loops with a small hot buffer between them
+beat one fat fused loop. The writer's remaining wins are inside its own loop
+(§14), not in removing the CE array.
+
+---
