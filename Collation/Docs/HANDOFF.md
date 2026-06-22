@@ -148,6 +148,9 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     `quickDecomp` success and `leadCCC(following) == 0`, emit base + mark
     directly via `pendingMark` — no arrays, no loops, no carry. −11% Latin
     sortKey, per-accent cost 56→24 ns. ASCII/CJK/paths/Thai neutral.
+  - Inline `collectAll()`: `@inline(__always)` gives the compiler full
+    visibility into the CE loop from sortKey. −12% Latin sortKey (enables
+    better register allocation for the refill/quickDecomp path).
 
 ### Current performance
 
@@ -173,7 +176,7 @@ on both. State the corpus, reps, and how the time was taken in each section.
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
 | ASCII  | ~217 | ~108   | 2.0×  |
-| Latin  | ~239 | ~124   | 1.9×  |
+| Latin  | ~232 | ~124   | 1.9×  |
 | CJK    | ~232 | ~121   | 1.9×  |
 | paths  | ~533 | ~375   | 1.4×  |
 | Thai   | ~313 | ~160   | 2.0×  |
