@@ -336,3 +336,60 @@ absorb optimization. Together they reduced per-accent overhead from +110 ns
 (start of session) to +24 ns (now). ICU pays +11 ns.
 
 ---
+
+### 17. CJK compare path investigation (3.1× — worst ratio)
+
+**Status:** untried
+
+Random CJK compare is 130 ns (vs ICU 42 ns = 3.1×). For 4-char strings that
+differ on the first character, `quickPrimaryCompare` should resolve immediately
+without entering the CE pipeline. Expected cost: shell (14 ns) + byte scan
+(1 ns, differs immediately) + fast-Latin bail (1 ns) + scalar iterator ×2
+(~20 ns?) + scalar compare (1 ns) + quickPrimary (2 trie lookups + offset
+math, ~20 ns). That's ~57 ns — but we measure 130 ns. Something is expensive.
+
+Possible sources of hidden overhead:
+- `compareBody` builds 2 `String.UnicodeScalarView.Iterator` even when the
+  first chars differ and quickPrimary resolves — maybe iterator construction
+  is ~30 ns each?
+- The fast-Latin bail path does more work than expected (safety check,
+  Latin-eligibility check) before reaching compareBody.
+- `quickPrimary` itself: 2 trie lookups + 2 offset computations (with
+  divisions) might be ~40 ns, not ~20 ns.
+
+Approach: deletion experiments at successive points in the compare path to
+isolate per-component costs (same technique as Docs/18 §7).
+
+---
+
+### 18. Quick-primary in the byte path for CJK (avoid compareBody entirely)
+
+**Status:** untried
+
+When the byte-level prefix scan identifies different CJK lead bytes (0xE4-0xE9),
+we know both characters are ≥ U+4E00. Currently: bail from fastLatinUTF8 →
+enter compareBody → build scalar iterators → scalar prefix scan → quickPrimary.
+If we could do the quickPrimary check directly on the byte-decoded scalars
+inside fastLatinUTF8 (or a new CJK fast path), we'd skip iterator construction
+and the scalar prefix scan entirely.
+
+Challenge: quickPrimary needs the full scalar (3-byte UTF-8 decode) + 2 trie
+lookups + offset math. The math has divisions which are expensive. But avoiding
+2× makeIterator + the function-call boundary could save 30-60 ns.
+
+---
+
+### 19. Sort key writer: batch primary appends
+
+**Status:** untried
+
+The writer appends primary bytes one at a time (`key.append` per byte,
+2-3 times per CE). For sequences of compressible primaries with the same lead
+byte (common for ASCII), only bytes 2-3 change. Could accumulate a run of
+primary bytes in a stack buffer and append them all at once, reducing the
+per-CE `key.append` overhead (capacity check + count increment per call).
+
+**Expected gain:** 1-3 ns/CE × ~8 CEs = 8-24 ns on ASCII/paths. Modest but
+affects all sort key corpora.
+
+---
