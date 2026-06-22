@@ -39,7 +39,7 @@ is not C++→Swift translation; it is the **dependency closure** (tries, normali
 3. **The builder is half the codebase — skip it.** `CollationBuilder` + `CollationDataBuilder`
    + `CanonicalIterator` + rule parser ≈ 6–8k lines, dragging in writable tries and full
    canonical-closure machinery. ICU4X's answer: compile tailorings offline with ICU's own
-   tools; the runtime only reads. Unless runtime `&a < x` rule parsing in pure Swift is a
+   tools; the runtime only reads. Unless runtime `&a < x` rule parsing in Swift is a
    product requirement, cut it. Runtime-only port ≈ **8–10k lines of C++ → comparable Swift**.
 4. **Swift-specific performance traps** (solvable; this is where tuning effort goes):
    - Work on `UTF8View`/raw code units, never `Character` — grapheme segmentation would
@@ -68,7 +68,7 @@ Essentials clients avoid it.
 - Bitmap scalar sets (`BuiltInUnicodeScalarSet.swift`): `.canonicalDecomposable`,
   `.hfsPlusDecomposable`, `.graphemeExtend`, case sets — O(1) membership via embedded
   CF bitmap data.
-- A pure-Swift options-based comparison engine (`String+Comparison.swift`): case-, diacritic-,
+- A Swift options-based comparison engine (`String+Comparison.swift`): case-, diacritic-,
   width-insensitive, numeric, literal — scalar-transformation based, **no collation weights**.
 
 **The catches:**
@@ -112,17 +112,17 @@ Essentials clients avoid it.
 | Option | Effort | Trade-off |
 |---|---|---|
 | Wrap system ICU (`ucol_*` via `_FoundationICU`) | days | No port; ties to platform ICU; matches current FoundationInternationalization philosophy; gets Linux `localizedCompare` working fastest |
-| Runtime-only Swift port, offline data (recommended) | months | The ICU4X model: full UCA conformance, tailorings compiled offline, pure Swift |
+| Runtime-only Swift port, offline data (recommended) | months | The ICU4X model: full UCA conformance, tailorings compiled offline, Swift implementation |
 | Full port including builder | many months | Only if runtime rule strings are a requirement |
 
 ### Open question to settle with Foundation maintainers first
 
 Where does this live?
-- **FoundationEssentials**: pure Swift, embedded root data, no locale tailorings — gives
+- **FoundationEssentials**: Swift implementation, embedded root data, no locale tailorings — gives
   UCA-root-correct comparison without ICU; aligns with the Essentials "no ICU" rule but adds
   embedded data size.
 - **FoundationInternationalization**: full CLDR tailorings — but then "why not just wrap
-  `ucol_strcoll`?" must be answered. The honest pitch for pure Swift there is making
+  `ucol_strcoll`?" must be answered. The honest pitch for a Swift implementation there is making
   `localizedStandardCompare` work on Linux without ICU, or as a staged path
   (wrap-ICU first, swap in the Swift engine behind the same API later).
 

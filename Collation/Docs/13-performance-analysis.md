@@ -845,7 +845,7 @@ ordering disagreements over 32k tailored, contraction-dense words.
 
 ## 10. Bottom line
 
-The pure-Swift collator runs comparison within ~2.8–4.9× of ICU4C and sort-key
+The Swift collator runs comparison within ~2.8–4.9× of ICU4C and sort-key
 generation within 2.2–4.4×, from a starting point of ~75–94× — with results
 byte-/verdict-identical to ICU throughout. The collation *arithmetic* is at
 ICU's speed; the residual gap is Swift value-type overhead — refcounting,

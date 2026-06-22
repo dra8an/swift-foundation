@@ -11,7 +11,7 @@ string comparison on non-Darwin platforms. Currently:
 - **Non-Darwin/Linux (`#else`):** Falls back to `_unlocalizedCompare` — locale is
   IGNORED. The TODO is at `String+SortComparator.swift:154`.
 
-Our `Collation/` package fills the gap: pure-Swift UCA with 15 locale tailorings,
+Our `Collation/` package fills the gap: Swift UCA with 15 locale tailorings,
 byte-identical sort keys to ICU, 61 tests green, 1.4-2.0× ICU performance.
 
 ## The integration point

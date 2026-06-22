@@ -169,13 +169,26 @@ let package = Package(
             swiftSettings: availabilityMacros + featureSettings + testOnlySwiftSettings
         ),
 
+        // Collation (Swift UCA implementation)
+        .target(
+            name: "Collation",
+            path: "Collation/Sources/Collation",
+            resources: [
+                .copy("Resources/ucadata.icu"),
+                .copy("Resources/ucadata-icu4x.icu"),
+                .copy("Resources/nfd.bin"),
+                .copy("Resources/tailorings"),
+            ]
+        ),
+
         // FoundationInternationalization
         .target(
             name: "FoundationInternationalization",
             dependencies: [
                 .target(name: "FoundationEssentials"),
                 .target(name: "_FoundationCShims"),
-                .product(name: "_FoundationICU", package: "swift-foundation-icu")
+                .product(name: "_FoundationICU", package: "swift-foundation-icu"),
+                .target(name: "Collation"),
             ],
             exclude: [
                 "String/CMakeLists.txt",
@@ -189,7 +202,8 @@ let package = Package(
             ],
             cSettings: wasiLibcCSettings,
             swiftSettings: [
-                .enableExperimentalFeature("AccessLevelOnImport")
+                .enableExperimentalFeature("AccessLevelOnImport"),
+                .define("FOUNDATION_COLLATION"),
             ] + availabilityMacros + featureSettings
         ),
         
@@ -199,7 +213,9 @@ let package = Package(
                 "TestSupport",
                 "FoundationInternationalization",
             ],
-            swiftSettings: availabilityMacros + featureSettings + testOnlySwiftSettings
+            swiftSettings: [
+                .define("FOUNDATION_COLLATION"),
+            ] + availabilityMacros + featureSettings + testOnlySwiftSettings
         ),
         
         // FoundationMacros

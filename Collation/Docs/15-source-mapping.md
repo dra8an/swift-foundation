@@ -1,7 +1,7 @@
 # ICU4C → Swift Port: Source Mapping
 
 > A comprehensive map of how the ICU4C collation implementation was ported
-> to this pure-Swift library, showing the relationship between C source files,
+> to this Swift library, showing the relationship between C source files,
 > APIs, and functions on both sides.
 
 ## 1. High-Level Architecture Diagram

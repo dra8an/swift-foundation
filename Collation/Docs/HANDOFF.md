@@ -6,7 +6,7 @@
 
 ## What this project is
 
-A pure-Swift implementation of the Unicode Collation Algorithm (UTS #10 /
+A Swift implementation of the Unicode Collation Algorithm (UTS #10 /
 CLDR root + tailorings), ported from ICU4C's "collation v2" design following
 the ICU4X architectural model (always-on fused NFD decomposition, no FCD, no
 canonical closure in data). Target: eventual contribution to swift-foundation
