@@ -9,9 +9,9 @@
 A Swift implementation of the Unicode Collation Algorithm (UTS #10 /
 CLDR root + tailorings), ported from ICU4C's "collation v2" design following
 the ICU4X architectural model (always-on fused NFD decomposition, no FCD, no
-canonical closure in data). Target: eventual contribution to swift-foundation
-(milestone 8, ON HOLD awaiting maintainer/community input — do not start it
-unprompted).
+canonical closure in data). Target: contribution to swift-foundation
+(milestone 8 integration implemented, awaiting maintainer/community input
+before proposing upstream).
 
 ## Where everything is
 
@@ -106,9 +106,14 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `f0dcec5`. Latest session (2026-06-22)
-  added: inline collectAll (−12% Latin sortKey), bypass-refill for Latin
-  precomposed chars (−11% Latin sortKey), ICU bench min-over-9 parity.
+- **`origin/port/collation` in sync** at `de4cb88`. Milestone 8 Foundation
+  integration landed (2026-06-22): Collation wired into
+  FoundationInternationalization behind `FOUNDATION_COLLATION` compile flag.
+  `localizedCompare`, `localizedStandardCompare`, `String.Comparator` with
+  locale, and `String.StandardComparator.localizedStandard` all route through
+  `RootCollator` on non-Darwin. 941 tests pass (40 suites). Previous sync
+  (`f0dcec5`) added: inline collectAll (−12% Latin sortKey), bypass-refill
+  for Latin precomposed chars (−11% Latin sortKey), ICU bench min-over-9 parity.
   Cross-machine confirmed on Intel/macOS 15 (2026-06-19/22 — see the Intel
   performance subsection below).
   Post-Span-revert optimizations:
@@ -284,7 +289,10 @@ not committed).
 ## Open backlog
 
 - **Rule builder** (doc 12) — parked, awaiting decision.
-- **M8 Foundation integration** — parked, awaiting maintainer input.
+- **M8 Foundation integration** — implemented (`de4cb88`), awaiting
+  maintainer input before proposing upstream. Remaining gaps: substring
+  search (`localizedStandardContains`), `.widthInsensitive`, predicate
+  support, Darwin opt-in.
 - **Span-based CE pipeline refactor** — the remaining Span opportunity:
   thread `Span<UInt8>` through the full `CEIterator.appendMore()` →
   `NFDIterator.next()` chain, replacing `String.UnicodeScalarView.Iterator`
