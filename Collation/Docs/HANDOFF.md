@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-> Written 2026-06-12, last updated 2026-06-19, for a fresh session with no
+> Written 2026-06-12, last updated 2026-06-22, for a fresh session with no
 > conversation context. Read this first, then `04-milestone-plan.md` for
 > status, then the numbered docs as needed.
 
@@ -106,9 +106,11 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **Pushed through `86578c1`; `origin/port/collation` is in sync.**
-  (Cross-machine confirmed on Intel/macOS 15, 2026-06-19 — see the Intel
-  performance subsection below.) Post-Span-revert optimizations:
+- **`origin/port/collation` in sync** through the SortKey level-buffer memcpy
+  (the `+appendTo` write-path win) and this HANDOFF update, rebased on the other
+  machine's writer-profiling doc commit. Cross-machine confirmed on Intel/macOS
+  15 (2026-06-19/22 — see the Intel performance subsection below).
+  Post-Span-revert optimizations:
   - Quick-primary CJK compare: bypasses CE pipeline for different CJK
     characters (−10% CJK).
   - Pre-baked fast-Latin setup: eliminates the per-call cache lock by
@@ -136,6 +138,12 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   - Quick decomposition for [starter, mark] pairs: `quickDecomp()` returns
     both scalars from one trie lookup, skipping the `decomposed` array.
     −7% Latin sortKey (stacks with carry fix). ASCII/CJK/paths neutral.
+  - SortKey level-buffer memcpy (the `+appendTo` win): the sort
+    key's write phase is ~56% of sortKey; `SortKeyLevel.appendTo`
+    (`Array.replaceSubrange`) was its largest callee. Skip the copy for
+    levels that compress to nothing, and copy the rest through an
+    `UnsafeBufferPointer` (memcpy fast path). −3 to −5% sortKey on every
+    corpus, compare unaffected.
 
 ### Current performance
 
@@ -178,33 +186,42 @@ DYLD_LIBRARY_PATH=/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/icu4c/sourc
   ./bench_icu Tools/bench/bench-cjk.txt 200
 ```
 
-#### Intel iMac (macOS 15, Swift 6.3.1 release) — confirmed 2026-06-19
+#### Intel iMac (macOS 15, Swift 6.3.1 release) — confirmed 2026-06-19, updated 2026-06-22
 
 min ns/op (best wall-clock pass; Bench takes the min over 9 internal passes,
-interleaved across many invocations). This run **confirms the post-`620be9d`
-optimizations port to Intel/macOS 15** — every metric improved, nothing
-regressed. **base** = `620be9d` (fork point, before the optimization run);
-**new** = `86578c1` (current tip).
+interleaved across many invocations). One coherent run across all columns.
+Three reference points: **`620be9d`** = fork point, before the optimization
+run; **`86578c1`** = the post-Span optimization tip (cross-machine confirmed
+here); **`+appendTo`** = `86578c1` plus the SortKey level-buffer memcpy (this
+machine). Δ = `+appendTo` vs `620be9d`. Every metric improved over the fork
+point; nothing regressed.
 
 **Compare:**
 
-| corpus | ICU 79 | base (×ICU) | new (×ICU) | Δ new vs base |
-|--------|-------:|-------------|------------|--------------:|
-| ASCII  | 16  | 65 (4.06×)  | 50 (3.12×)  | −23% |
-| Latin  | 17  | 65 (3.82×)  | 50 (2.94×)  | −23% |
-| CJK    | 72  | 247 (3.43×) | 239 (3.32×) | −3%  |
-| paths  | 49  | 134 (2.73×) | 109 (2.22×) | −19% |
-| Thai (th) | 289 | 763 (2.64×) | 720 (2.49×) | −6% |
+| corpus | ICU 79 | `620be9d` | `86578c1` | `+appendTo` | Δ total |
+|--------|-------:|-----------|-----------|-------------|--------:|
+| ASCII  | 16  | 64 (4.00×)  | 50 (3.12×) | 51 (3.19×) | −20% |
+| Latin  | 17  | 64 (3.76×)  | 50 (2.94×) | 50 (2.94×) | −22% |
+| CJK    | 72  | 243 (3.38×) | 235 (3.26×)| 233 (3.24×)| −4%  |
+| paths  | 48  | 133 (2.77×) | 109 (2.27×)| 108 (2.25×)| −19% |
+| Thai (th) | 284 | 753 (2.65×) | 705 (2.48×)| 700 (2.46×)| −7% |
 
 **Sort keys (inout API, buffer reused):**
 
-| corpus | ICU 79 | base (×ICU) | new (×ICU) | Δ new vs base |
-|--------|-------:|-------------|------------|--------------:|
-| ASCII  | 196 | 447 (2.28×)  | 381 (1.94×)  | −15% |
-| Latin  | 210 | 663 (3.16×)  | 478 (2.28×)  | −28% |
-| CJK    | 224 | 428 (1.91×)  | 410 (1.83×)  | −4%  |
-| paths  | 684 | 1259 (1.84×) | 1010 (1.48×) | −20% |
-| Thai   | 293 | 671 (2.29×)  | 592 (2.02×)  | −12% |
+| corpus | ICU 79 | `620be9d` | `86578c1` | `+appendTo` | Δ total |
+|--------|-------:|-----------|-----------|-------------|--------:|
+| ASCII  | 196 | 443 (2.26×)  | 375 (1.91×) | 359 (1.83×) | −19% |
+| Latin  | 208 | 645 (3.10×)  | 470 (2.26×) | 453 (2.18×) | −30% |
+| CJK    | 219 | 419 (1.91×)  | 403 (1.84×) | 384 (1.75×) | −8%  |
+| paths  | 661 | 1237 (1.87×) | 994 (1.50×) | 961 (1.45×) | −22% |
+| Thai   | 289 | 662 (2.29×)  | 581 (2.01×) | 566 (1.96×) | −15% |
+
+The `+appendTo` step (sortKey write path) is −3 to −5% sortKey on every corpus
+vs `86578c1`, compare unaffected — profiling showed `writeSortKeyUpToQuaternary`
+is ~56% of sortKey, and `SortKeyLevel.appendTo` (Array.replaceSubrange) its
+biggest callee. Next lever in the write phase: fuse CE production with key
+writing to drop the intermediate `[Int64]` CE-array round-trip (bigger, riskier;
+compare still needs the array).
 
 ICU 79 built locally (machine 1):
 ```sh
