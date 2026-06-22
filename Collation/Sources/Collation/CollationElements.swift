@@ -139,6 +139,7 @@ struct CEIterator {
     private(set) var terminated = false
 
     /// All CEs of the string, terminated by NO_CE.
+    @inline(__always)
     mutating func collectAll() throws -> [Int64] {
         while try appendMore() {}
         return ces
