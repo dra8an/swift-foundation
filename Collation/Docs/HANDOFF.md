@@ -106,10 +106,11 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** through the SortKey level-buffer memcpy
-  (the `+appendTo` write-path win) and this HANDOFF update, rebased on the other
-  machine's writer-profiling doc commit. Cross-machine confirmed on Intel/macOS
-  15 (2026-06-19/22 — see the Intel performance subsection below).
+- **`origin/port/collation` in sync** at `f0dcec5`. Latest session (2026-06-22)
+  added: inline collectAll (−12% Latin sortKey), bypass-refill for Latin
+  precomposed chars (−11% Latin sortKey), ICU bench min-over-9 parity.
+  Cross-machine confirmed on Intel/macOS 15 (2026-06-19/22 — see the Intel
+  performance subsection below).
   Post-Span-revert optimizations:
   - Quick-primary CJK compare: bypasses CE pipeline for different CJK
     characters (−10% CJK).
