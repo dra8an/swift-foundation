@@ -160,19 +160,19 @@ on both. State the corpus, reps, and how the time was taken in each section.
 |--------|------|--------|-------|
 | ASCII  | ~25  | ~9     | 2.8×  |
 | Latin  | ~25  | ~10    | 2.5×  |
-| CJK    | ~129 | ~42    | 3.1×  |
-| paths  | ~65  | ~30    | 2.2×  |
-| Thai (th, sorted) | ~362 | ~174 | 2.1× |
+| CJK    | ~127 | ~42    | 3.0×  |
+| paths  | ~67  | ~30    | 2.2×  |
+| Thai (th, sorted) | ~356 | ~176 | 2.0× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~225 | ~108   | 2.1×  |
-| Latin  | ~278 | ~130   | 2.1×  |
-| CJK    | ~241 | ~121   | 2.0×  |
-| paths  | ~541 | ~375   | 1.4×  |
-| Thai   | ~324 | ~155   | 2.1×  |
+| ASCII  | ~209 | ~108   | 1.9×  |
+| Latin  | ~261 | ~124   | 2.1×  |
+| CJK    | ~226 | ~121   | 1.9×  |
+| paths  | ~526 | ~375   | 1.4×  |
+| Thai   | ~309 | ~160   | 1.9×  |
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh

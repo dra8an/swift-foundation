@@ -249,7 +249,7 @@ the `try` to zero cost.
 
 ### 14. Sort key writer (`writeSortKeyUpToQuaternary`) optimization
 
-**Status:** investigating
+**Status:** partially shipped (appendTo memcpy fix: −6% ASCII/CJK, −3% paths)
 
 **Deletion experiment (2026-06-22):** skipping the writer entirely shows it
 accounts for 58% of ASCII sort key time and 59% of paths:
@@ -261,15 +261,19 @@ accounts for 58% of ASCII sort key time and 59% of paths:
 | **writeSortKeyUpToQuaternary** | **131** | **114** | **322** |
 | Total | 225 | 241 | 541 |
 
-For 7 ASCII characters (~8 CEs), the writer spends ~16 ns/CE iterating,
-extracting primary/secondary/tertiary bytes, handling compression, and
-appending to multiple level buffers. This is the single largest remaining
-component — bigger than CE generation itself.
+**Shipped (3e6caf2):** `SortKeyLevel.appendTo` was the largest callee — 
+`key.append(contentsOf: bytes.dropLast())` forced slice iteration instead of
+memcpy. Fix: skip empty levels entirely, and copy through UnsafeBufferPointer
+for the memcpy fast path. −6% ASCII/CJK, −3% paths on Apple Silicon.
 
-Potential targets inside the writer:
-- The swap-based level buffer management (4 swaps in + 4 swaps out)
-- Per-CE branching for compression state (common weight counting)
-- Multiple `key.append` calls per CE (could batch)
-- The `compressibleBytes[Int(p >> 24)]` lookup per primary
+**Tried, reverted:** Specialized `writeSortKeyTertiary` for default options
+(eliminate all flag/variable/quaternary/case branches). Hit correctness issues
+with the NO_CE termination flush — the common-weight compression uses "low"
+vs "high" flush variants depending on whether the terminator is below or above
+the common value. Needs careful parity study with ICU's writer before retrying.
+
+Remaining potential: the per-CE loop still has ~10 ns/CE overhead from
+branching + multiple key.append calls. A batch approach (accumulate primary
+bytes in a stack buffer, flush once) could help.
 
 ---
