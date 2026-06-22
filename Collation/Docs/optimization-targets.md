@@ -232,3 +232,44 @@ is dominated by the `refill()` structural overhead (entering the function,
 array ops, while-loop peeking ahead), not the mark's trie lookup.
 
 ---
+
+### 13. Remove `throws` from CE pipeline hot path
+
+**Status:** tried, neutral
+
+Made `appendMore()`, `appendCEs()`, `appendHangulCEs()`, `appendNumericCEs()`
+non-throwing by storing errors in a field and checking after `collectAll()`.
+Only 3 throw sites exist (all for malformed data that never occurs).
+
+**Result:** no measurable difference on any corpus. The compiler with WMO
+already proves the throw sites are dead code on the hot path and optimizes
+the `try` to zero cost.
+
+---
+
+### 14. Sort key writer (`writeSortKeyUpToQuaternary`) optimization
+
+**Status:** investigating
+
+**Deletion experiment (2026-06-22):** skipping the writer entirely shows it
+accounts for 58% of ASCII sort key time and 59% of paths:
+
+| Component | ASCII (ns) | CJK (ns) | Paths (ns) |
+|-----------|-----------|----------|------------|
+| TLS + reset + key.clear | 25 | 25 | 25 |
+| collectAll (CE generation) | 69 | 102 | 194 |
+| **writeSortKeyUpToQuaternary** | **131** | **114** | **322** |
+| Total | 225 | 241 | 541 |
+
+For 7 ASCII characters (~8 CEs), the writer spends ~16 ns/CE iterating,
+extracting primary/secondary/tertiary bytes, handling compression, and
+appending to multiple level buffers. This is the single largest remaining
+component — bigger than CE generation itself.
+
+Potential targets inside the writer:
+- The swap-based level buffer management (4 swaps in + 4 swaps out)
+- Per-CE branching for compression state (common weight counting)
+- Multiple `key.append` calls per CE (could batch)
+- The `compressibleBytes[Int(p >> 24)]` lookup per primary
+
+---
