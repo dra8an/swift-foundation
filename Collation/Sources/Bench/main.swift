@@ -42,12 +42,16 @@ if arguments.count > 2 && arguments[2] == "keys" {
 }
 
 func measure(_ name: String, ops: Int, _ body: () throws -> Void) rethrows {
-    // Warmup.
+    // Warmup, then take the min over several timed passes — the min reflects the
+    // least OS-perturbed pass, which is the stable estimator for throughput.
     try body()
-    let start = DispatchTime.now().uptimeNanoseconds
-    try body()
-    let ns = DispatchTime.now().uptimeNanoseconds - start
-    print("\(name): \(ns / UInt64(ops)) ns/op (\(ops) ops)")
+    var best = UInt64.max
+    for _ in 0..<9 {
+        let start = DispatchTime.now().uptimeNanoseconds
+        try body()
+        best = min(best, DispatchTime.now().uptimeNanoseconds - start)
+    }
+    print("\(name): \(best / UInt64(ops)) ns/op (\(ops) ops)")
 }
 
 var sink = 0
