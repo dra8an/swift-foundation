@@ -12,7 +12,6 @@
 import Dispatch
 import FoundationEssentials
 import FoundationInternationalization
-import Collation
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {

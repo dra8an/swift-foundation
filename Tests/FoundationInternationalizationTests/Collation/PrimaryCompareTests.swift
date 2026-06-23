@@ -1,5 +1,5 @@
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Behavioral tests at primary strength (the milestone-1 suite).
 @Suite struct PrimaryCompareTests {

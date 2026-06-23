@@ -1,5 +1,5 @@
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Unit tests for the fast Latin path (CollationFastLatin). The end-to-end
 /// correctness evidence is the existing suites — the differential matrices

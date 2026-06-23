@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Ports of the non-rule test cases from ICU4C's cintltst/cmsccoll.c
 /// (miscellaneous collation regressions), extracted by

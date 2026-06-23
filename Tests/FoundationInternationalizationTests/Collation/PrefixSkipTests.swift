@@ -1,5 +1,5 @@
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Targeted tests for the identical-prefix skip in compare(): pairs whose
 /// shared prefix ends right where restarting iteration is dangerous —

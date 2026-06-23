@@ -12,73 +12,56 @@ Same Foundation APIs, two backends:
 
 ## Results (ns/op)
 
-### compare(_:locale:)
-
-| Corpus | Swift | System ICU | Ratio |
-|--------|-------|-----------|-------|
-| ASCII  | 521   | 311       | 1.7×  |
-| Latin  | 516   | 482       | 1.1×  |
-| CJK    | 653   | 487       | 1.3×  |
-| Paths  | 570   | 409       | 1.4×  |
-
 ### localizedCompare(_:)
 
-| Corpus | Swift | System ICU | Ratio |
-|--------|-------|-----------|-------|
-| ASCII  | 1337  | 195       | 6.9×  |
-| Latin  | 1322  | 364       | 3.6×  |
-| CJK    | 1462  | 366       | 4.0×  |
-| Paths  | 1365  | 298       | 4.6×  |
+| Corpus | Swift | System ICU | Speedup |
+|--------|-------|-----------|---------|
+| ASCII  | 128   | 195       | **1.5× faster** |
+| Latin  | 128   | 358       | **2.8× faster** |
+| CJK    | 238   | 368       | **1.5× faster** |
+| Paths  | 165   | 299       | **1.8× faster** |
 
 ### localizedStandardCompare(_:)
 
-| Corpus | Swift | System ICU | Ratio |
-|--------|-------|-----------|-------|
-| ASCII  | 1354  | 196       | 6.9×  |
-| Latin  | 1332  | 351       | 3.8×  |
-| CJK    | 1477  | 361       | 4.1×  |
-| Paths  | 1386  | 321       | 4.3×  |
+| Corpus | Swift | System ICU | Speedup |
+|--------|-------|-----------|---------|
+| ASCII  | 136   | 197       | **1.4× faster** |
+| Latin  | 136   | 349       | **2.6× faster** |
+| CJK    | 242   | 358       | **1.5× faster** |
+| Paths  | 185   | 318       | **1.7× faster** |
+
+### compare(_:locale:)
+
+| Corpus | Swift | System ICU | Speedup |
+|--------|-------|-----------|---------|
+| ASCII  | 298   | 313       | **1.1× faster** |
+| Latin  | 298   | 482       | **1.6× faster** |
+| CJK    | 448   | 487       | **1.1× faster** |
+| Paths  | 342   | 412       | **1.2× faster** |
 
 ### localizedStandardContains(_:)
 
-| Corpus | Swift | System ICU | Ratio |
-|--------|-------|-----------|-------|
-| ASCII  | 2596  | 994       | 2.6×  |
-| Latin  | 2688  | 1441      | 1.9×  |
-| CJK    | 2398  | 1287      | 1.9×  |
-| Paths  | 4141  | 980       | 4.2×  |
+| Corpus | Swift | System ICU | Speedup |
+|--------|-------|-----------|---------|
+| ASCII  | 1383  | 1009      | 0.7× (slower) |
+| Latin  | 1476  | 1437      | 1.0× (parity) |
+| CJK    | 1174  | 1273      | **1.1× faster** |
+| Paths  | 2963  | 972       | 0.3× (slower) |
 
 ## Analysis
 
-**`compare(_:locale:)`** is the best ratio (1.1–1.7×). The caller provides the
-Locale directly, so there's no `Locale.current` resolution per call.
+**`localizedCompare` and `localizedStandardCompare`** are 1.4–2.8× faster
+than system ICU across all corpora. Our collator avoids the ObjC bridge
+overhead (NSString → CoreFoundation → ICU) that the system path pays.
 
-**`localizedCompare` and `localizedStandardCompare`** are much worse (3.6–6.9×).
-The per-call overhead comes from:
+**`compare(_:locale:)`** is 1.1–1.6× faster. Slightly less improvement
+because this path goes through Foundation's `StringProtocol.compare`
+generic dispatch which adds overhead on both sides.
 
-1. **`Locale.current`** — resolved every call (~36 ns standalone, but may be
-   higher under contention with the collator cache lock)
-2. **`CollatorCache.shared.collator(for:)`** — LockedState lock + dictionary
-   lookup every call
-3. **`String(self)` / `String(aString)`** — creates String copies from the
-   StringProtocol generic parameters
-4. **`try?`** — existential error boxing overhead
-
-The system ICU path for `localizedCompare` is faster because NSString's
-`localizedCompare:` is a single ObjC message send → direct C function call
-into ICU, with no intermediate allocations or lock acquisition.
-
-## Optimization opportunities
-
-- **Cache `Locale.current` resolution** — resolve once per sort operation
-  rather than per comparison
-- **Avoid String copies** — accept StringProtocol directly in the collator,
-  or use `withContiguousStorageIfAvailable` to avoid allocation
-- **Lock-free cache hit** — the common case (same locale, same collator) could
-  use an atomic read rather than acquiring the LockedState lock
-- **Inline the collator call** — the `localizedCompare` → `CollatorCache` →
-  `RootCollator.compare()` call chain has several layers that could be
-  flattened for the hot path
+**`localizedStandardContains`** is mixed — faster on CJK, slower on
+ASCII/paths. Our v1 search implementation (linear CE scan with full
+text pre-processing) is less optimized than ICU's `usearch` (ring buffer,
+on-demand CE production). Search optimization is a separate effort.
 
 ## How to reproduce
 

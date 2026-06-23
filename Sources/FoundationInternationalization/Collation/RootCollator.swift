@@ -133,16 +133,8 @@ public struct RootCollator: @unchecked Sendable {
 
     /// Compares two strings under root collation.
     /// Defaults to tertiary strength with all options off, like ICU.
-    @inlinable
     public func compare(
         _ left: String, _ right: String, options: CollationOptions = CollationOptions()
-    ) throws -> Order {
-        try _compare(left, right, options: options)
-    }
-
-    @usableFromInline
-    func _compare(
-        _ left: String, _ right: String, options: CollationOptions
     ) throws -> Order {
         try compareClassic(left, right, options: options)
     }

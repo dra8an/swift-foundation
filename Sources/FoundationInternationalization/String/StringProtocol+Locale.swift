@@ -89,9 +89,6 @@ extension StringProtocol {
     }
 }
 
-#if FOUNDATION_COLLATION
-import Collation
-
 @available(macOS 10.10, iOS 8.0, watchOS 2.0, tvOS 9.0, *)
 extension StringProtocol {
     /// Compares the string with another using a localized comparison
@@ -235,4 +232,3 @@ extension StringProtocol {
         return start..<end
     }
 }
-#endif

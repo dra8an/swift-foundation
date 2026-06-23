@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Randomized differential testing: Golden/fuzz-corpus.txt holds 2000 seeded
 /// random strings weighted toward collation trouble spots (see

@@ -102,26 +102,27 @@ collator.
 
 ## Performance
 
-Tested on Apple Silicon (macOS 26) against system ICU (via NSString bridge):
-
-**Direct collation (RootCollator.compare):**
-
-| Operation | Ratio vs ICU |
-|-----------|-------------|
-| Sort keys (ASCII/Latin/CJK) | 1.4–1.9× |
-| Compare (ASCII/Latin) | 2.5–2.8× |
-| Compare (CJK/Thai) | 2.0–3.1× |
+Tested on Apple Silicon (macOS 26) against system ICU (via NSString bridge).
 
 **Foundation API integration (what users actually call):**
 
 | API | ASCII | Latin | CJK | Paths |
 |-----|-------|-------|-----|-------|
-| `localizedCompare` | **0.69×** | **0.37×** | **0.66×** | **0.58×** |
-| `localizedStandardCompare` | **0.72×** | **0.41×** | **0.69×** | **0.59×** |
+| `localizedCompare` | **1.5× faster** | **2.8× faster** | **1.5× faster** | **1.8× faster** |
+| `localizedStandardCompare` | **1.4× faster** | **2.6× faster** | **1.5× faster** | **1.7× faster** |
+| `compare(_:locale:)` | **1.1× faster** | **1.6× faster** | **1.1× faster** | **1.2× faster** |
 
-Ratios < 1.0 mean **faster than system ICU**. The cross-module inlining
-fix (`@inlinable` on `RootCollator.compare`) eliminated the module
-boundary overhead. See `Docs/22` for the full analysis.
+**Direct collation (RootCollator.compare, no Foundation overhead):**
+
+| Operation | Ratio vs ICU |
+|-----------|-------------|
+| Sort keys (ASCII/Latin/CJK) | 1.4–1.9× slower |
+| Compare (ASCII/Latin) | 2.5–2.8× slower |
+| Compare (CJK/Thai) | 2.0–3.1× slower |
+
+Direct collation arithmetic is slower than ICU (C vs Swift overhead), but
+the Foundation API layer is faster because system ICU pays the ObjC bridge
+cost (NSString → CoreFoundation → ICU) that we avoid entirely.
 
 ## Remaining gaps
 

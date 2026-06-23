@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Runner for ICU's data-driven collation test file
 /// (test/testdata/collationtest.txt), following CollationTest::TestDataDriven:

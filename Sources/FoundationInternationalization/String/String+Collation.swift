@@ -9,23 +9,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if FOUNDATION_COLLATION
-
 #if canImport(FoundationEssentials)
 import FoundationEssentials
 #endif
-
-import Collation
 
 #if FOUNDATION_FRAMEWORK
 internal import _ForSwiftFoundation
 
 internal func foundation_swift_collation_feature_enabled() -> Bool {
-    // System feature flag — Apple can flip this to route Darwin string
-    // comparison through the Swift collator instead of the ObjC/ICU bridge.
-    // Until _foundation_swift_collation_feature_enabled() exists in
-    // _ForSwiftFoundation, this defaults to false.
-    // _foundation_swift_collation_feature_enabled()
     false
 }
 #else
@@ -225,5 +216,3 @@ extension RootCollator.Order {
         }
     }
 }
-
-#endif // FOUNDATION_COLLATION

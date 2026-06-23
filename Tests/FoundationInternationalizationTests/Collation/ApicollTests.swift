@@ -1,5 +1,5 @@
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Ports of the behavioral parts of ICU4C's CollationAPITest
 /// (intltest/apicoll.cpp). Most of that suite exercises the C++ API surface

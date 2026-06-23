@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Port of ICU4C's G7CollationTest::TestG7Locales (intltest/g7coll.cpp): a
 /// fixed set of 15 strings with their expected order for each of the eight

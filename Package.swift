@@ -169,18 +169,6 @@ let package = Package(
             swiftSettings: availabilityMacros + featureSettings + testOnlySwiftSettings
         ),
 
-        // Collation (Swift UCA implementation)
-        .target(
-            name: "Collation",
-            path: "Collation/Sources/Collation",
-            resources: [
-                .copy("Resources/ucadata.icu"),
-                .copy("Resources/ucadata-icu4x.icu"),
-                .copy("Resources/nfd.bin"),
-                .copy("Resources/tailorings"),
-            ]
-        ),
-
         // FoundationInternationalization
         .target(
             name: "FoundationInternationalization",
@@ -188,7 +176,6 @@ let package = Package(
                 .target(name: "FoundationEssentials"),
                 .target(name: "_FoundationCShims"),
                 .product(name: "_FoundationICU", package: "swift-foundation-icu"),
-                .target(name: "Collation"),
             ],
             exclude: [
                 "String/CMakeLists.txt",
@@ -200,22 +187,29 @@ let package = Package(
                 "CMakeLists.txt",
                 "Predicate/CMakeLists.txt"
             ],
+            resources: [
+                .copy("Collation/Resources/ucadata.icu"),
+                .copy("Collation/Resources/ucadata-icu4x.icu"),
+                .copy("Collation/Resources/nfd.bin"),
+                .copy("Collation/Resources/tailorings"),
+            ],
             cSettings: wasiLibcCSettings,
             swiftSettings: [
                 .enableExperimentalFeature("AccessLevelOnImport"),
-                .define("FOUNDATION_COLLATION"),
             ] + availabilityMacros + featureSettings
         ),
-        
+
         .testTarget(
             name: "FoundationInternationalizationTests",
             dependencies: [
                 "TestSupport",
                 "FoundationInternationalization",
             ],
-            swiftSettings: [
-                .define("FOUNDATION_COLLATION"),
-            ] + availabilityMacros + featureSettings + testOnlySwiftSettings
+            resources: [
+                .copy("Collation/Golden"),
+                .copy("Collation/Conformance"),
+            ],
+            swiftSettings: availabilityMacros + featureSettings + testOnlySwiftSettings
         ),
 
         // BenchFoundation — benchmarks Foundation string APIs with collation
@@ -223,12 +217,9 @@ let package = Package(
             name: "BenchFoundation",
             dependencies: [
                 "FoundationInternationalization",
-                "Collation",
             ],
             path: "Collation/Sources/BenchFoundation",
-            swiftSettings: [
-                .define("FOUNDATION_COLLATION"),
-            ] + availabilityMacros + featureSettings
+            swiftSettings: availabilityMacros + featureSettings
         ),
 
         // FoundationMacros

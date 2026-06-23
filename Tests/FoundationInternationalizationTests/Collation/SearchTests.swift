@@ -1,5 +1,5 @@
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 @Suite("Collation Search")
 struct CollationSearchTests {

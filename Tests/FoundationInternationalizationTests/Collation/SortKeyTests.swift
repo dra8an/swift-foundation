@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Sort key tests: byte-for-byte identity with ICU's ucol_getSortKey
 /// (Golden/keys-<option-set>.txt), and the defining invariant that byte-wise

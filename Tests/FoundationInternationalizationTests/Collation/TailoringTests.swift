@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Locale tailoring tests: each locale collator is built from the bundled
 /// %%CollationBin extracted from ICU's compiled resources, runs with the

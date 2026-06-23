@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Ports of ICU4C's classic per-locale collation suites (cintltst/encoll.c,
 /// cdetst.c, cestst.c, cfrtst.c, cjaptst.c, cturtst.c; intltest/ficoll.cpp,

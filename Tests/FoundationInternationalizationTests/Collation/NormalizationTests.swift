@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 @Suite struct NormalizationTests {
     static let collator = try! RootCollator()

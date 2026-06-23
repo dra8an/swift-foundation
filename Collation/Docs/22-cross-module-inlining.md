@@ -134,39 +134,43 @@ The compiler can now:
 
 Measured on Apple Silicon (macOS 26), min of 9 passes, release builds.
 
+**Update:** After moving Collation sources into FoundationInternationalization
+(same module), the `@inlinable`/`@usableFromInline` annotations were removed —
+WMO handles inlining automatically within a module. Performance is identical.
+
 ### localizedCompare (ns/op)
 
-| Corpus | Before | After | System ICU | Ratio vs ICU |
-|--------|--------|-------|-----------|-------------|
-| ASCII  | 1337   | 135   | 195       | 0.69× |
-| Latin  | 1322   | 135   | 364       | 0.37× |
-| CJK    | 1462   | 242   | 366       | 0.66× |
-| Paths  | 1365   | 173   | 298       | 0.58× |
+| Corpus | Before | After | System ICU | Speedup vs ICU |
+|--------|--------|-------|-----------|---------------|
+| ASCII  | 1337   | 128   | 195       | **1.5× faster** |
+| Latin  | 1322   | 128   | 358       | **2.8× faster** |
+| CJK    | 1462   | 238   | 368       | **1.5× faster** |
+| Paths  | 1365   | 165   | 299       | **1.8× faster** |
 
 ### localizedStandardCompare (ns/op)
 
-| Corpus | Before | After | System ICU | Ratio vs ICU |
-|--------|--------|-------|-----------|-------------|
-| ASCII  | 1354   | 142   | 196       | 0.72× |
-| Latin  | 1332   | 143   | 351       | 0.41× |
-| CJK    | 1477   | 248   | 361       | 0.69× |
-| Paths  | 1386   | 188   | 321       | 0.59× |
+| Corpus | Before | After | System ICU | Speedup vs ICU |
+|--------|--------|-------|-----------|---------------|
+| ASCII  | 1354   | 136   | 197       | **1.4× faster** |
+| Latin  | 1332   | 136   | 349       | **2.6× faster** |
+| CJK    | 1477   | 242   | 358       | **1.5× faster** |
+| Paths  | 1386   | 185   | 318       | **1.7× faster** |
 
 ### compare(_:locale:) (ns/op)
 
-| Corpus | Before | After | System ICU |
-|--------|--------|-------|-----------|
-| ASCII  | 521    | 330   | 311       |
-| Latin  | 516    | 329   | 482       |
-| CJK    | 653    | 405   | 487       |
-| Paths  | 570    | 338   | 409       |
+| Corpus | Before | After | System ICU | Speedup vs ICU |
+|--------|--------|-------|-----------|---------------|
+| ASCII  | 521    | 298   | 313       | **1.1× faster** |
+| Latin  | 516    | 298   | 482       | **1.6× faster** |
+| CJK    | 653    | 448   | 487       | **1.1× faster** |
+| Paths  | 570    | 342   | 412       | **1.2× faster** |
 
 ### RootCollator.compare (direct, ns/op) — unchanged
 
 | Corpus | After | Standalone Bench |
 |--------|-------|-----------------|
 | ASCII  | 25    | 25              |
-| Latin  | 25    | 25              |
+| Latin  | 24    | 25              |
 | CJK    | 127   | 125             |
 | Paths  | 62    | 62              |
 

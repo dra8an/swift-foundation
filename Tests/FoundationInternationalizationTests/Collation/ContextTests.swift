@@ -1,5 +1,5 @@
 import Testing
-@testable import Collation
+@testable import FoundationInternationalization
 
 /// Targeted tests that the context-dependent paths (prefix and contraction
 /// matching) actually fire — the reference matrices prove agreement with ICU,
