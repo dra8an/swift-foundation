@@ -102,7 +102,9 @@ collator.
 
 ## Performance
 
-Tested on Apple Silicon (macOS 26) against ICU 79:
+Tested on Apple Silicon (macOS 26) against system ICU (via NSString bridge):
+
+**Direct collation (RootCollator.compare):**
 
 | Operation | Ratio vs ICU |
 |-----------|-------------|
@@ -110,8 +112,16 @@ Tested on Apple Silicon (macOS 26) against ICU 79:
 | Compare (ASCII/Latin) | 2.5–2.8× |
 | Compare (CJK/Thai) | 2.0–3.1× |
 
-The gap is per-call overhead (String access model, closure ARC), not
-per-byte arithmetic. On longer strings the ratio converges toward 2.0×.
+**Foundation API integration (what users actually call):**
+
+| API | ASCII | Latin | CJK | Paths |
+|-----|-------|-------|-----|-------|
+| `localizedCompare` | **0.69×** | **0.37×** | **0.66×** | **0.58×** |
+| `localizedStandardCompare` | **0.72×** | **0.41×** | **0.69×** | **0.59×** |
+
+Ratios < 1.0 mean **faster than system ICU**. The cross-module inlining
+fix (`@inlinable` on `RootCollator.compare`) eliminated the module
+boundary overhead. See `Docs/22` for the full analysis.
 
 ## Remaining gaps
 
@@ -119,7 +129,4 @@ per-byte arithmetic. On longer strings the ratio converges toward 2.0×.
   fullwidth→halfwidth transformation handled by FoundationEssentials before
   comparison. On non-Darwin it's unimplemented (`_toHalfWidth()` is a
   `fatalError` TODO). The fix belongs in FoundationEssentials, not our module.
-- Benchmark the integrated path — measure cache/options overhead vs direct
-  `RootCollator.compare()`
-- Darwin opt-in — replacing the ObjC bridge (gated on community acceptance)
-- Search performance benchmarking
+- Darwin opt-in — feature flag added, defaults off. Ready for Apple to flip.

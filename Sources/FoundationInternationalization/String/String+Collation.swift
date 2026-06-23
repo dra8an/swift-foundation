@@ -37,26 +37,17 @@ struct CollatorCache: Sendable {
 
     private let lock = LockedState(initialState: [String: RootCollator]())
 
-    /// Fast path for Locale.current — avoids lock + locale resolution on
-    /// repeat calls when the locale hasn't changed.
-    private let currentCache = LockedState(initialState: CurrentCache())
-
-    private struct CurrentCache {
-        var localeId: String = ""
-        var language: String = ""
-        var collator: RootCollator?
-    }
+    /// Fast path for Locale.current — caches the collator for the current
+    /// locale. Resolved once on first use; RootCollator is immutable and
+    /// Sendable so sharing is safe.
+    private let currentCache = LockedState(initialState: RootCollator?(nil))
 
     func collatorForCurrentLocale() -> RootCollator? {
-        let current = Locale.current
-        let localeId = current.identifier
-        return currentCache.withLock { cc in
-            if cc.localeId == localeId, let c = cc.collator { return c }
-            let lang = Self.resolveLanguage(for: current)
+        return currentCache.withLock { cached in
+            if let c = cached { return c }
+            let lang = Self.resolveLanguage(for: Locale.current)
             let c = collator(forLanguage: lang)
-            cc.localeId = localeId
-            cc.language = lang ?? ""
-            cc.collator = c
+            cached = c
             return c
         }
     }

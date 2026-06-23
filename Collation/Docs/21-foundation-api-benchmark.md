@@ -1,7 +1,9 @@
 # Foundation API Benchmark: Swift Collator vs System ICU
 
 Measured 2026-06-23 on Apple Silicon (macOS 26), min of 9 passes, release
-builds. Same Foundation APIs, two backends:
+builds. **Updated after cross-module inlining fix (Docs/22).**
+
+Same Foundation APIs, two backends:
 
 - **Swift Collator**: `swift run -c release BenchFoundation` (SwiftPM build,
   routes through CollatorCache → RootCollator)

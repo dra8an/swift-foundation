@@ -223,6 +223,7 @@ let package = Package(
             name: "BenchFoundation",
             dependencies: [
                 "FoundationInternationalization",
+                "Collation",
             ],
             path: "Collation/Sources/BenchFoundation",
             swiftSettings: [

@@ -106,7 +106,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `d7d718e`. Milestone 8 Foundation
+- **`origin/port/collation` in sync** at latest push. Milestone 8 Foundation
   integration (2026-06-22/23): Collation wired into FoundationInternationalization
   behind `FOUNDATION_COLLATION` compile flag. Full-string comparison:
   `localizedCompare`, `localizedStandardCompare`, `String.Comparator` with
@@ -116,7 +116,10 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   `localizedStandardRange(of:)`, `range(of:options:range:locale:)` (incl.
   `.backwards`), `RootCollator.search(for:in:options:)` and
   `.searchBackwards(for:in:options:)`. Predicates: both `StringLocalizedCompare`
-  and `StringLocalizedStandardContains` enabled. Czech (cs) tailoring added.
+  and `StringLocalizedStandardContains` enabled. 98 locale tailorings bundled
+  (full ICU coverage). Darwin opt-in feature flag added (defaults off).
+  Cross-module inlining fix (`@inlinable` on `compare`): `localizedCompare`
+  went from 6.9× slower than ICU to 0.7× (30% faster). See `Docs/22`.
   123 Collation tests (21 suites), 941 Foundation tests (40 suites) — all pass.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
@@ -296,9 +299,12 @@ not committed).
 ## Open backlog
 
 - **Rule builder** (doc 12) — parked, awaiting decision.
-- **M8 Foundation integration** — implemented (`d7d718e`), awaiting
-  maintainer input before proposing upstream. Remaining gaps:
-  benchmarking the integrated path, Darwin opt-in.
+- **M8 Foundation integration** — implemented, awaiting maintainer input
+  before proposing upstream. Benchmarked: `localizedCompare` is 0.7× ICU
+  (30% faster) after cross-module inlining fix. Darwin opt-in feature flag
+  added (defaults off, ready for Apple to flip). Remaining gap:
+  `compare(_:locale:)` at 1.1× ICU (overhead from Foundation's
+  `StringProtocol.compare` generic dispatch path — not our code).
 - **`.widthInsensitive`** — NOT a collation feature. It's a scalar-level
   transformation (fullwidth U+FF00–U+FFEF → halfwidth) done before
   comparison. On Darwin, `_toHalfWidth()` calls `CFUniCharCompatibilityDecompose`;
@@ -375,7 +381,9 @@ sortKey, Span bail path; also records four reverted experiments) ·
 15 ICU4C-to-Swift source mapping · 16 **Array vs UnsafePointer assembly
 analysis + Span<UInt8> discovery and benchmarks** · 19 **Foundation
 integration plan (implemented)** · 20 **Integration quick reference
-(5-min pitch)** · HANDOFF (this file)
+(5-min pitch)** · 21 **Foundation API benchmark** (localizedCompare vs
+system ICU, before/after numbers) · 22 **Cross-module inlining**
+(the 10× improvement — detailed analysis for review) · HANDOFF (this file)
 
 Convention: every milestone/round updates doc 04's table + outcome note and
 gets a detailed report; decision records for surprising cuts; commit

@@ -12,6 +12,7 @@
 import Dispatch
 import FoundationEssentials
 import FoundationInternationalization
+import Collation
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
@@ -24,6 +25,8 @@ let lines = try String(contentsOfFile: arguments[1], encoding: .utf8)
 let reps = arguments.count > 2 ? (Int(arguments[2]) ?? 200) : 200
 
 let locale = Locale(identifier: "en")
+let collator = try! RootCollator()
+let defaultOpts = collator.defaultOptions
 
 func measure(_ name: String, ops: Int, _ body: () -> Void) {
     body()
@@ -38,7 +41,16 @@ func measure(_ name: String, ops: Int, _ body: () -> Void) {
 
 var sink = 0
 
-// 1. compare(_:locale:) — the core API that was the TODO
+// 0. Direct RootCollator.compare — cross-module baseline
+measure("RootCollator.cmp  ", ops: (lines.count - 1) * reps) {
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            sink += (try! collator.compare(lines[i - 1], lines[i], options: defaultOpts)).rawValue
+        }
+    }
+}
+
+// 1. compare(_:locale:)
 measure("compare(locale:)  ", ops: (lines.count - 1) * reps) {
     for _ in 0..<reps {
         for i in 1..<lines.count {
@@ -47,7 +59,7 @@ measure("compare(locale:)  ", ops: (lines.count - 1) * reps) {
     }
 }
 
-// 2. localizedCompare — convenience method
+// 2. localizedCompare
 measure("localizedCompare  ", ops: (lines.count - 1) * reps) {
     for _ in 0..<reps {
         for i in 1..<lines.count {
@@ -56,7 +68,7 @@ measure("localizedCompare  ", ops: (lines.count - 1) * reps) {
     }
 }
 
-// 3. localizedStandardCompare — Finder-style (case-insensitive + numeric)
+// 3. localizedStandardCompare
 measure("localizedStdCmp   ", ops: (lines.count - 1) * reps) {
     for _ in 0..<reps {
         for i in 1..<lines.count {
@@ -65,7 +77,7 @@ measure("localizedStdCmp   ", ops: (lines.count - 1) * reps) {
     }
 }
 
-// 4. localizedStandardContains — substring search
+// 4. localizedStandardContains
 let needle = lines.count > 1 ? String(lines[1].prefix(4)) : "test"
 measure("localizedStdContns", ops: lines.count * reps) {
     for _ in 0..<reps {
