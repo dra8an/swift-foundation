@@ -12,15 +12,22 @@
 
 import Testing
 
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
+@testable import FoundationInternationalization
+#else
+@testable import Foundation
+#endif
+
 @Suite("Predicate (Internationalization)")
 private struct PredicateInternationalizationTests {
-    
+
     struct Object {
         var string: String = ""
     }
-    
+
     #if FOUNDATION_FRAMEWORK
-    
+
     @Test(arguments: [
         ("ABC", "ABC", ComparisonResult.orderedSame),
         ("ABC", "abc", .orderedDescending),
@@ -31,10 +38,10 @@ private struct PredicateInternationalizationTests {
         let predicate = #Predicate<String, String, ComparisonResult> {
             $0.localizedCompare($1) == $2
         }
-        
+
         #expect(try predicate.evaluate(input.0, input.1, input.2), "Comparison failed for inputs '\(input.0)', '\(input.1)' - expected \(input.2.rawValue)")
     }
-    
+
     @Test(arguments: ["ABCDEF", "abcdef", "ÁḄÇDEF"])
     func testLocalizedStandardContains(value: String) throws {
         let predicate = #Predicate<Object> {
@@ -42,7 +49,33 @@ private struct PredicateInternationalizationTests {
         }
         #expect(try predicate.evaluate(Object(string: value)))
     }
-    
+
+    #elseif FOUNDATION_COLLATION
+
+    @Test(arguments: [
+        ("ABC", "ABC", ComparisonResult.orderedSame),
+        ("ABC", "abc", .orderedDescending),
+        ("abc", "ABC", .orderedAscending),
+        ("ABC", "ÁḄÇ", .orderedAscending)
+    ])
+    func testLocalizedCompare(input: (String, String, ComparisonResult)) throws {
+        let predicate = #Predicate<String, String, ComparisonResult> {
+            $0.localizedCompare($1) == $2
+        }
+
+        #expect(try predicate.evaluate(input.0, input.1, input.2), "Comparison failed for inputs '\(input.0)', '\(input.1)' - expected \(input.2.rawValue)")
+    }
+
+    @Test func testLocalizedCompareOrdering() throws {
+        let ascending = ComparisonResult.orderedAscending
+        let predicate = #Predicate<String, String, ComparisonResult> {
+            $0.localizedCompare($1) == $2
+        }
+        #expect(try predicate.evaluate("apple", "banana", ascending))
+        #expect(try !predicate.evaluate("banana", "apple", ascending))
+        #expect(try !predicate.evaluate("same", "same", ascending))
+    }
+
     #endif
-    
+
 }
