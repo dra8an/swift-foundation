@@ -342,6 +342,26 @@ public struct RootCollator: @unchecked Sendable {
         return .same
     }
 
+    // MARK: Search
+
+    /// Searches for `pattern` within `text` at the given collation strength.
+    /// Returns the range of the first match, or nil if not found.
+    public func search(
+        for pattern: String, in text: String, options: CollationOptions = CollationOptions()
+    ) -> Range<String.Index>? {
+        let searcher = CollationSearch(
+            data: data, base: base, norm: norm, options: options
+        )
+        return searcher.search(for: pattern, in: text)
+    }
+
+    /// Returns true if `text` contains `pattern` at the given collation strength.
+    public func contains(
+        pattern: String, in text: String, options: CollationOptions = CollationOptions()
+    ) -> Bool {
+        return search(for: pattern, in: text, options: options) != nil
+    }
+
     /// The sort key for a string: level bytes with 01 separators, optional
     /// identical level (BOCSU over NFD), 00 terminator. Byte-wise comparison
     /// of two sort keys equals compare() at the same options.
