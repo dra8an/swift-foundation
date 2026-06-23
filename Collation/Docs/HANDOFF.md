@@ -106,18 +106,17 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `17d384c`. Milestone 8 Foundation
+- **`origin/port/collation` in sync** at `d7d718e`. Milestone 8 Foundation
   integration (2026-06-22/23): Collation wired into FoundationInternationalization
   behind `FOUNDATION_COLLATION` compile flag. Full-string comparison:
   `localizedCompare`, `localizedStandardCompare`, `String.Comparator` with
   locale, `String.StandardComparator.localizedStandard` all route through
-  `RootCollator` on non-Darwin. Substring search: `localizedStandardContains`,
-  `localizedCaseInsensitiveContains`, `localizedStandardRange(of:)`,
-  `range(of:options:range:locale:)`, `RootCollator.search(for:in:options:)`
-  and `.searchBackwards(for:in:options:)` — linear scan in CE space with
-  strength masking, NFD position tracking, boundary validation, forward and
-  backward. Predicates: both `StringLocalizedCompare` and
-  `StringLocalizedStandardContains` enabled. Czech (cs) tailoring added.
+  `RootCollator` on non-Darwin. Substring search (forward and backward):
+  `localizedStandardContains`, `localizedCaseInsensitiveContains`,
+  `localizedStandardRange(of:)`, `range(of:options:range:locale:)` (incl.
+  `.backwards`), `RootCollator.search(for:in:options:)` and
+  `.searchBackwards(for:in:options:)`. Predicates: both `StringLocalizedCompare`
+  and `StringLocalizedStandardContains` enabled. Czech (cs) tailoring added.
   123 Collation tests (21 suites), 941 Foundation tests (40 suites) — all pass.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
@@ -297,10 +296,16 @@ not committed).
 ## Open backlog
 
 - **Rule builder** (doc 12) — parked, awaiting decision.
-- **M8 Foundation integration** — implemented (`17d384c`), awaiting
+- **M8 Foundation integration** — implemented (`d7d718e`), awaiting
   maintainer input before proposing upstream. Remaining gaps:
-  `.widthInsensitive`, backwards search not wired into Foundation's
-  `range(of:options:.backwards, locale:)`, Darwin opt-in, benchmarking.
+  benchmarking the integrated path, Darwin opt-in.
+- **`.widthInsensitive`** — NOT a collation feature. It's a scalar-level
+  transformation (fullwidth U+FF00–U+FFEF → halfwidth) done before
+  comparison. On Darwin, `_toHalfWidth()` calls `CFUniCharCompatibilityDecompose`;
+  on non-Darwin, it's a `fatalError` TODO in FoundationEssentials
+  (`Sources/FoundationEssentials/String/UnicodeScalar.swift:20`). ICU
+  collation doesn't handle it either — it uses NFD, not NFKD. The fix is
+  a simple offset table in FoundationEssentials, not in our collation module.
 - **Span-based CE pipeline refactor** — the remaining Span opportunity:
   thread `Span<UInt8>` through the full `CEIterator.appendMore()` →
   `NFDIterator.next()` chain, replacing `String.UnicodeScalarView.Iterator`

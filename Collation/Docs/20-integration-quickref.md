@@ -115,6 +115,11 @@ per-byte arithmetic. On longer strings the ratio converges toward 2.0×.
 
 ## Remaining gaps
 
-- `.widthInsensitive` — halfwidth/fullwidth CJK (rare)
+- `.widthInsensitive` — not a collation feature. It's a scalar-level
+  fullwidth→halfwidth transformation handled by FoundationEssentials before
+  comparison. On non-Darwin it's unimplemented (`_toHalfWidth()` is a
+  `fatalError` TODO). The fix belongs in FoundationEssentials, not our module.
+- Benchmark the integrated path — measure cache/options overhead vs direct
+  `RootCollator.compare()`
 - Darwin opt-in — replacing the ObjC bridge (gated on community acceptance)
 - Search performance benchmarking
