@@ -355,6 +355,17 @@ public struct RootCollator: @unchecked Sendable {
         return searcher.search(for: pattern, in: text)
     }
 
+    /// Searches backwards for `pattern` in `text`. Returns the range of the
+    /// last match, or nil if not found.
+    public func searchBackwards(
+        for pattern: String, in text: String, options: CollationOptions = CollationOptions()
+    ) -> Range<String.Index>? {
+        let searcher = CollationSearch(
+            data: data, base: base, norm: norm, options: options
+        )
+        return searcher.searchBackwards(for: pattern, in: text)
+    }
+
     /// Returns true if `text` contains `pattern` at the given collation strength.
     public func contains(
         pattern: String, in text: String, options: CollationOptions = CollationOptions()

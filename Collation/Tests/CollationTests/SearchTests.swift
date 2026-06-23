@@ -144,6 +144,53 @@ struct CollationSearchTests {
         #expect(result == nil, "Punctuation is not ignorable at default (non-shifted) strength")
     }
 
+    // MARK: - Backwards search
+
+    @Test func backwardsFindsLast() {
+        let text = "abc abc abc"
+        let first = collator.search(for: "abc", in: text)
+        let last = collator.searchBackwards(for: "abc", in: text)
+        #expect(first != nil)
+        #expect(last != nil)
+        #expect(first!.lowerBound < last!.lowerBound, "Backwards should find last occurrence")
+        #expect(text[last!] == "abc")
+    }
+
+    @Test func backwardsSingleOccurrence() {
+        let text = "hello world"
+        let forward = collator.search(for: "world", in: text)
+        let backward = collator.searchBackwards(for: "world", in: text)
+        #expect(forward == backward, "Single occurrence: forward and backward should match")
+    }
+
+    @Test func backwardsNoMatch() {
+        let result = collator.searchBackwards(for: "xyz", in: "hello world")
+        #expect(result == nil)
+    }
+
+    @Test func backwardsCaseInsensitive() {
+        var opts = CollationOptions()
+        opts.strength = .secondary
+        let text = "Hello hello HELLO"
+        let last = collator.searchBackwards(for: "hello", in: text, options: opts)
+        #expect(last != nil)
+        #expect(text[last!] == "HELLO")
+    }
+
+    @Test func backwardsAccentInsensitive() {
+        var opts = CollationOptions()
+        opts.strength = .primary
+        let text = "cafe café CAFÉ"
+        let last = collator.searchBackwards(for: "cafe", in: text, options: opts)
+        #expect(last != nil)
+        #expect(text[last!] == "CAFÉ")
+    }
+
+    @Test func backwardsEmpty() {
+        let result = collator.searchBackwards(for: "", in: "hello")
+        #expect(result != nil)
+    }
+
     // MARK: - Cross-starter contractions
 
     @Test func koreanSyllableSearch() {

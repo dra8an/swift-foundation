@@ -31,6 +31,21 @@ struct CollationSearch {
     /// Searches for `pattern` in `text` at the configured collation strength.
     /// Returns the range in `text` of the first match, or nil.
     func search(for pattern: String, in text: String) -> Range<String.Index>? {
+        return findMatch(for: pattern, in: text, backwards: false)
+    }
+
+    /// Searches backwards for `pattern` in `text` at the configured collation
+    /// strength. Returns the range of the last match, or nil.
+    func searchBackwards(for pattern: String, in text: String) -> Range<String.Index>? {
+        return findMatch(for: pattern, in: text, backwards: true)
+    }
+
+    /// Returns true if `pattern` appears anywhere in `text`.
+    func contains(pattern: String, in text: String) -> Bool {
+        return search(for: pattern, in: text) != nil
+    }
+
+    private func findMatch(for pattern: String, in text: String, backwards: Bool) -> Range<String.Index>? {
         if pattern.isEmpty { return text.startIndex..<text.startIndex }
         if text.isEmpty { return nil }
 
@@ -44,9 +59,13 @@ struct CollationSearch {
         if annotated.isEmpty { return nil }
 
         let patCount = patternCEs.count
+        guard patCount <= annotated.count else { return nil }
 
-        var targetIx = 0
-        while targetIx + patCount <= annotated.count {
+        let range = backwards
+            ? stride(from: annotated.count - patCount, through: 0, by: -1)
+            : stride(from: 0, through: annotated.count - patCount, by: 1)
+
+        for targetIx in range {
             var matched = true
             for patIx in 0..<patCount {
                 if annotated[targetIx + patIx].ce != patternCEs[patIx] {
@@ -68,16 +87,9 @@ struct CollationSearch {
                     return startIdx..<endIdx
                 }
             }
-
-            targetIx += 1
         }
 
         return nil
-    }
-
-    /// Returns true if `pattern` appears anywhere in `text`.
-    func contains(pattern: String, in text: String) -> Bool {
-        return search(for: pattern, in: text) != nil
     }
 
     // MARK: - CE production (pattern)

@@ -7,6 +7,37 @@ Commits `de4cb88`..`3d32ec3` on `port/collation`. 941 tests pass.
 
 ---
 
+## Platform terminology: Darwin vs non-Darwin
+
+**Darwin** is Apple's OS kernel — the base of macOS, iOS, tvOS, watchOS.
+On Darwin, Foundation is a system framework backed by Objective-C runtime,
+CoreFoundation, and a system-bundled ICU. String methods like
+`compare(_:options:locale:)` and `localizedStandardContains` work by
+bridging through `NSString` → CoreFoundation → ICU. The code in this repo
+doesn't control that path — it lives in the OS.
+
+**Non-Darwin** means Linux, Windows, WASI — any platform where Swift runs
+but there is no Apple system framework. On these platforms, `swift-foundation`
+(this repo) IS the Foundation implementation, built entirely from source.
+There is no NSString, no CoreFoundation, no system ICU. Before our work,
+`compare(_:options:locale:)` simply ignored the locale on these platforms.
+
+The compile-time guards in the code:
+
+| Guard | Meaning |
+|-------|---------|
+| `#if FOUNDATION_FRAMEWORK` | Darwin system framework build (NSString bridge available) |
+| `#if FOUNDATION_COLLATION` | Our collation is linked in (currently non-Darwin only) |
+| `#else` | Neither — the old unlocalized fallback |
+
+`FOUNDATION_COLLATION` compiles on Darwin too (the Collation module builds
+fine), but the `#if FOUNDATION_FRAMEWORK` branch takes priority in the
+`#if / #elseif / #else` chain, so Darwin still uses the system ICU path.
+The flag exists so non-Darwin gets locale-aware comparison without touching
+the Darwin code path.
+
+---
+
 ## Context
 
 The `swift-foundation` codebase has a TODO (GitHub issue #284) for locale-aware
