@@ -157,5 +157,31 @@ extension StringProtocol {
         if let range { substr = substr[range] }
         return String(substr).compare(Substring(aString), options: mask)
     }
+
+    /// Returns true if the string contains the given string using a
+    /// case-insensitive, diacritic-insensitive, locale-aware search
+    /// (Finder-style matching).
+    public func localizedStandardContains<T: StringProtocol>(_ string: T) -> Bool {
+        let collator = CollatorCache.shared.collator(for: .current)
+        if let collator {
+            var opts = CollationOptions()
+            opts.strength = .primary
+            opts.numeric = true
+            return collator.contains(pattern: String(string), in: String(self), options: opts)
+        }
+        return String(self).localizedCaseInsensitiveContains(String(string))
+    }
+
+    /// Returns true if the string contains the given string using a
+    /// case-insensitive, locale-aware search.
+    public func localizedCaseInsensitiveContains<T: StringProtocol>(_ string: T) -> Bool {
+        let collator = CollatorCache.shared.collator(for: .current)
+        if let collator {
+            var opts = CollationOptions()
+            opts.strength = .secondary
+            return collator.contains(pattern: String(string), in: String(self), options: opts)
+        }
+        return String(self).contains(String(string))
+    }
 }
 #endif

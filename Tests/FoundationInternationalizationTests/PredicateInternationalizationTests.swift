@@ -76,6 +76,21 @@ private struct PredicateInternationalizationTests {
         #expect(try !predicate.evaluate("same", "same", ascending))
     }
 
+    @Test(arguments: ["ABCDEF", "abcdef", "ÁḄÇDEF"])
+    func testLocalizedStandardContains(value: String) throws {
+        let predicate = #Predicate<Object> {
+            $0.string.localizedStandardContains("ABC")
+        }
+        #expect(try predicate.evaluate(Object(string: value)))
+    }
+
+    @Test func testLocalizedStandardContainsNoMatch() throws {
+        let predicate = #Predicate<Object> {
+            $0.string.localizedStandardContains("XYZ")
+        }
+        #expect(try !predicate.evaluate(Object(string: "hello world")))
+    }
+
     #endif
 
 }

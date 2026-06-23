@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if FOUNDATION_FRAMEWORK
+#if FOUNDATION_FRAMEWORK || FOUNDATION_COLLATION
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials
@@ -79,14 +79,6 @@ extension PredicateExpressions.StringLocalizedStandardContains : Codable where R
 
 @available(macOS 14, iOS 17, tvOS 17, watchOS 10, *)
 extension PredicateExpressions.StringLocalizedStandardContains : Sendable where Root : Sendable, Other : Sendable {}
-
-#endif // FOUNDATION_FRAMEWORK
-
-#if FOUNDATION_FRAMEWORK || FOUNDATION_COLLATION
-
-#if canImport(FoundationEssentials)
-import FoundationEssentials
-#endif
 
 @available(macOS 14, iOS 17, tvOS 17, watchOS 10, *)
 extension PredicateExpressions {
