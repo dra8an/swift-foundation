@@ -183,5 +183,60 @@ extension StringProtocol {
         }
         return String(self).contains(String(string))
     }
+
+    /// Returns the range of the first occurrence of the given string using a
+    /// case-insensitive, diacritic-insensitive, locale-aware search
+    /// (Finder-style matching).
+    public func localizedStandardRange<T: StringProtocol>(of string: T) -> Range<Index>? {
+        let collator = CollatorCache.shared.collator(for: .current)
+        if let collator {
+            var opts = CollationOptions()
+            opts.strength = .primary
+            opts.numeric = true
+            if let range = collator.search(for: String(string), in: String(self), options: opts) {
+                return rebaseRange(range, from: String(self))
+            }
+        }
+        return nil
+    }
+
+    /// Returns the range of the first occurrence of the given string,
+    /// searching with the specified options and locale.
+    public func range<T: StringProtocol>(of aString: T, options mask: String.CompareOptions = [], range searchRange: Range<Index>? = nil, locale: Locale?) -> Range<Index>? {
+        guard let locale else { return nil }
+        if mask.contains(.literal) { return nil }
+        let collator = CollatorCache.shared.collator(for: locale)
+        let opts = CollationOptions.from(foundationOptions: mask)
+        let text: String
+        if let searchRange {
+            text = String(self[searchRange])
+        } else {
+            text = String(self)
+        }
+        if let collator, let range = collator.search(for: String(aString), in: text, options: opts) {
+            if let searchRange {
+                return rebaseRange(range, from: text, offsetBy: searchRange.lowerBound, in: String(self))
+            }
+            return rebaseRange(range, from: text)
+        }
+        return nil
+    }
+
+    private func rebaseRange(_ range: Range<String.Index>, from source: String) -> Range<Index>? {
+        let startOffset = source.distance(from: source.startIndex, to: range.lowerBound)
+        let endOffset = source.distance(from: source.startIndex, to: range.upperBound)
+        let selfStr = String(self)
+        let start = selfStr.index(selfStr.startIndex, offsetBy: startOffset)
+        let end = selfStr.index(selfStr.startIndex, offsetBy: endOffset)
+        return start..<end
+    }
+
+    private func rebaseRange(_ range: Range<String.Index>, from source: String, offsetBy base: Index, in original: String) -> Range<Index>? {
+        let startOffset = source.distance(from: source.startIndex, to: range.lowerBound)
+        let endOffset = source.distance(from: source.startIndex, to: range.upperBound)
+        let start = original.index(base, offsetBy: startOffset)
+        let end = original.index(base, offsetBy: endOffset)
+        return start..<end
+    }
 }
 #endif

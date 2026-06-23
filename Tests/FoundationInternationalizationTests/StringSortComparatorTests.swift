@@ -115,5 +115,41 @@ private struct StringSortComparatorTests {
         #expect(reversed.compare("a", "b") == .orderedDescending)
         #expect(reversed.compare("b", "a") == .orderedAscending)
     }
+
+    @Test func localizedStandardRange() {
+        let text = "the café is open"
+        let range = text.localizedStandardRange(of: "cafe")
+        #expect(range != nil, "Should find 'cafe' in 'café' at primary strength")
+        if let r = range {
+            #expect(text[r] == "café")
+        }
+    }
+
+    @Test func localizedStandardRangeNoMatch() {
+        let range = "hello world".localizedStandardRange(of: "xyz")
+        #expect(range == nil)
+    }
+
+    @Test func rangeWithLocale() {
+        let sv = Locale(identifier: "sv")
+        let text = "hello world"
+        let range = text.range(of: "world", locale: sv)
+        #expect(range != nil)
+        if let r = range {
+            #expect(text[r] == "world")
+        }
+    }
+
+    @Test func rangeWithLocaleCaseInsensitive() {
+        let en = Locale(identifier: "en")
+        var opts = String.CompareOptions()
+        opts.insert(.caseInsensitive)
+        let text = "Hello World"
+        let range = text.range(of: "hello", options: opts, locale: en)
+        #expect(range != nil)
+        if let r = range {
+            #expect(text[r] == "Hello")
+        }
+    }
 #endif
 }
