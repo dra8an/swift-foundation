@@ -217,7 +217,19 @@ let package = Package(
                 .define("FOUNDATION_COLLATION"),
             ] + availabilityMacros + featureSettings + testOnlySwiftSettings
         ),
-        
+
+        // BenchFoundation — benchmarks Foundation string APIs with collation
+        .executableTarget(
+            name: "BenchFoundation",
+            dependencies: [
+                "FoundationInternationalization",
+            ],
+            path: "Collation/Sources/BenchFoundation",
+            swiftSettings: [
+                .define("FOUNDATION_COLLATION"),
+            ] + availabilityMacros + featureSettings
+        ),
+
         // FoundationMacros
         .macro(
             name: "FoundationMacros",
