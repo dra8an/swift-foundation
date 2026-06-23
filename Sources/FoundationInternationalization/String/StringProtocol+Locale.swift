@@ -97,18 +97,15 @@ extension StringProtocol {
     /// Compares the string with another using a localized comparison
     /// in the current locale.
     public func localizedCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        let collator = CollatorCache.shared.collator(for: .current)
-        if let collator, let result = try? collator.compare(String(self), String(aString)) {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale(),
+           let result = try? collator.compare(String(self), String(aString)) {
             return result.comparisonResult
         }
         return String(self).compare(aString)
     }
 
-    /// Compares the string with another using a case-insensitive, localized
-    /// comparison in the current locale.
     public func localizedCaseInsensitiveCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        let collator = CollatorCache.shared.collator(for: .current)
-        if let collator {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
             var opts = CollationOptions()
             opts.strength = .secondary
             if let result = try? collator.compare(String(self), String(aString), options: opts) {
@@ -118,11 +115,8 @@ extension StringProtocol {
         return String(self).compare(aString, options: .caseInsensitive)
     }
 
-    /// Compares the string with another using a localized, numeric comparison
-    /// in the current locale (Finder-style ordering).
     public func localizedStandardCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        let collator = CollatorCache.shared.collator(for: .current)
-        if let collator {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
             var opts = CollationOptions()
             opts.strength = .secondary
             opts.numeric = true
@@ -162,8 +156,7 @@ extension StringProtocol {
     /// case-insensitive, diacritic-insensitive, locale-aware search
     /// (Finder-style matching).
     public func localizedStandardContains<T: StringProtocol>(_ string: T) -> Bool {
-        let collator = CollatorCache.shared.collator(for: .current)
-        if let collator {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
             var opts = CollationOptions()
             opts.strength = .primary
             opts.numeric = true
@@ -172,11 +165,8 @@ extension StringProtocol {
         return String(self).localizedCaseInsensitiveContains(String(string))
     }
 
-    /// Returns true if the string contains the given string using a
-    /// case-insensitive, locale-aware search.
     public func localizedCaseInsensitiveContains<T: StringProtocol>(_ string: T) -> Bool {
-        let collator = CollatorCache.shared.collator(for: .current)
-        if let collator {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
             var opts = CollationOptions()
             opts.strength = .secondary
             return collator.contains(pattern: String(string), in: String(self), options: opts)
@@ -188,7 +178,7 @@ extension StringProtocol {
     /// case-insensitive, diacritic-insensitive, locale-aware search
     /// (Finder-style matching).
     public func localizedStandardRange<T: StringProtocol>(of string: T) -> Range<Index>? {
-        let collator = CollatorCache.shared.collator(for: .current)
+        let collator = CollatorCache.shared.collatorForCurrentLocale()
         if let collator {
             var opts = CollationOptions()
             opts.strength = .primary

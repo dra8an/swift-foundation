@@ -37,8 +37,34 @@ struct CollatorCache: Sendable {
 
     private let lock = LockedState(initialState: [String: RootCollator]())
 
+    /// Fast path for Locale.current — avoids lock + locale resolution on
+    /// repeat calls when the locale hasn't changed.
+    private let currentCache = LockedState(initialState: CurrentCache())
+
+    private struct CurrentCache {
+        var identifier: String = ""
+        var collator: RootCollator?
+    }
+
+    func collatorForCurrentLocale() -> RootCollator? {
+        let id = Locale.current.language.languageCode?.identifier ?? ""
+        return currentCache.withLock { cc in
+            if cc.identifier == id, let c = cc.collator { return c }
+            let c = collator(forLanguage: id)
+            cc.identifier = id
+            cc.collator = c
+            return c
+        }
+    }
+
     func collator(for locale: Locale?) -> RootCollator? {
-        let tailoring = Self.tailoringName(for: locale)
+        guard let locale else { return collator(forLanguage: nil) }
+        let lang = Self.resolveLanguage(for: locale)
+        return collator(forLanguage: lang)
+    }
+
+    private func collator(forLanguage lang: String?) -> RootCollator? {
+        let tailoring = lang.flatMap { Self.tailoringMap[$0] }
         let key = tailoring ?? "_root_"
         return lock.withLock { cache in
             if let cached = cache[key] {
@@ -55,6 +81,15 @@ struct CollatorCache: Sendable {
             }
             return collator
         }
+    }
+
+    private static func resolveLanguage(for locale: Locale) -> String? {
+        let id = locale.identifier
+        if tailoringMap[id] != nil { return id }
+        if id.hasPrefix("de") && id.contains("phonebook") { return "de" }
+        if id.hasPrefix("zh") && id.contains("stroke") { return "zh-stroke" }
+        if id.hasPrefix("fr") && (id.contains("CA") || id.contains("_CA")) { return "fr_CA" }
+        return locale.language.languageCode?.identifier
     }
 
     private static let tailoringMap: [String: String] = [
@@ -156,23 +191,9 @@ struct CollatorCache: Sendable {
         "yo": "yo",
         "zh": "zh",
         "zh-Hans": "zh",
+        "zh-stroke": "zh-stroke",
         "zu": "zu",
     ]
-
-    static func tailoringName(for locale: Locale?) -> String? {
-        guard let locale else { return nil }
-        let id = locale.identifier
-        if let name = tailoringMap[id] { return name }
-        let language = locale.language.languageCode?.identifier ?? ""
-        if let name = tailoringMap[language] { return name }
-        if id.hasPrefix("de") && id.contains("phonebook") {
-            return "de-phonebook"
-        }
-        if id.hasPrefix("zh") && id.contains("stroke") {
-            return "zh-stroke"
-        }
-        return tailoringMap[language]
-    }
 }
 
 extension CollationOptions {
