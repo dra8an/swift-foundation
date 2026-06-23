@@ -1,4 +1,11 @@
-# Integration Plan: Replace ICU Collation with Pure-Swift RootCollator
+# Integration Plan: Replace ICU Collation with Swift RootCollator
+
+## Status: IMPLEMENTED (2026-06-22)
+
+All steps complete. Gated behind `FOUNDATION_COLLATION` compile-time flag.
+Commits `de4cb88`..`3d32ec3` on `port/collation`. 941 tests pass.
+
+---
 
 ## Context
 
@@ -12,41 +19,61 @@ string comparison on non-Darwin platforms. Currently:
   IGNORED. The TODO is at `String+SortComparator.swift:154`.
 
 Our `Collation/` package fills the gap: Swift UCA with 15 locale tailorings,
-byte-identical sort keys to ICU, 61 tests green, 1.4-2.0× ICU performance.
+byte-identical sort keys to ICU, 71 tests green, 1.4-2.0× ICU performance.
 
-## The integration point
+## What was implemented
 
-```swift
-// String+SortComparator.swift:144-156
-public func compare(_ lhs: String, _ rhs: String) -> ComparisonResult {
-#if FOUNDATION_FRAMEWORK
-    if isLocalized {
-        return lhs.compare(rhs, options: options, locale: Locale.current).withOrder(order)
-    } else {
-        return lhs.compare(rhs, options: options).withOrder(order)
-    }
-#else
-    // TODO: Until compare(_:options:locale:) is ported — THIS IS US
-    return lhs.compare(rhs, options: options).withOrder(order)
-#endif
-}
-```
+### Package structure (Step 1) ✓
 
-Also need to handle `String.Comparator` (lines 241-249) which has a specific
-locale and options.
+Added `Collation` as a target in the root `Package.swift` with explicit path
+(`Collation/Sources/Collation/`) and resources. FoundationInternationalization
+depends on it. Feature flag `.define("FOUNDATION_COLLATION")` on both the main
+target and test target.
 
-## Architecture
+### Collator cache (Step 2) ✓
 
-### What we replace
+`CollatorCache` in `String+Collation.swift`: thread-safe via `LockedState`,
+lazy per-locale. Tailoring loaded on first use only. Maps Foundation `Locale`
+→ tailoring name via a static dictionary covering all 14 bundled tailorings.
 
-The `#else` path. Our collator provides `compare(_:_:options:) -> Order` which
-maps directly to `ComparisonResult`.
+### Full-string compare (Steps 3–4) ✓
 
-### What stays unchanged
+`String.StandardComparator.compare` and `String.Comparator.compare` both route
+through `RootCollator.compare()` when a locale is present. The `.localizedStandard`
+and `.localized` comparators are now available on non-Darwin.
 
-- The `#if FOUNDATION_FRAMEWORK` path (Darwin system bridge)
-- All locale/collation IDENTIFIER handling (`Locale.Collation`, `ucol_getKeywordValues`)
-- The unlocalized `_unlocalizedCompare` path (used when no locale specified)
+### StringProtocol methods (Step 5) ✓
+
+Added to `StringProtocol+Locale.swift` under `#if FOUNDATION_COLLATION`:
+- `localizedCompare(_:)`
+- `localizedCaseInsensitiveCompare(_:)`
+- `localizedStandardCompare(_:)`
+- `compare(_:options:range:locale:)`
+- `localizedStandardContains(_:)` — collation-aware substring search
+- `localizedCaseInsensitiveContains(_:)` — collation-aware substring search
+
+### Substring search ✓
+
+`CollationSearch.swift` in the Collation module: linear scan in CE space with
+strength masking, NFD position annotation, and boundary validation. Public API:
+`RootCollator.search(for:in:options:) → Range<String.Index>?` and
+`.contains(pattern:in:options:) → Bool`.
+
+### Predicate support ✓
+
+Both `StringLocalizedCompare` and `StringLocalizedStandardContains` predicate
+expressions enabled under `FOUNDATION_COLLATION`.
+
+### Tests (Step 6) ✓
+
+- `StringSortComparatorTests`: 10 tests (locale, nil-locale, standard, numeric,
+  reverse, localizedCompare, localizedCaseInsensitive, localizedStandard,
+  compareWithLocale, compareOptions)
+- `PredicateInternationalizationTests`: 4 tests (parametric compare, ordering,
+  standardContains × 3 cases, no-match)
+- `CollationSearchTests` (standalone): 10 tests (exact, start, no-match, empty,
+  case-insensitive, accent-insensitive, NFD equivalence, contains API, CJK)
+- Full suite: 941 tests, 40 suites — all green
 
 ### Options mapping
 
@@ -56,104 +83,44 @@ maps directly to `ComparisonResult`.
 | `.diacriticInsensitive` | `strength = .primary` |
 | `.numeric` | `numeric = true` |
 | `.literal` | Skip collation — use binary/scalar comparison |
-| `.forcedOrdering` | Use `.identical` strength as tiebreaker |
-| `.widthInsensitive` | NOT SUPPORTED yet — document gap |
-| locale ("sv", "de@collation=phonebook", etc.) | `RootCollator(tailoringNamed:)` |
+| `.forcedOrdering` | `strength = .identical` |
+| `.widthInsensitive` | NOT SUPPORTED — documented gap |
 
-### Locale to tailoring name mapping
+### Locale to tailoring mapping
 
-Our 15 bundled tailorings: sv, de-phonebook, fr-CA, ja, zh, ko, th, ar, he,
-da, fi, nb, nn, es, tr. Map from Foundation's `Locale.identifier` or
-`Locale.collation.identifier` to our tailoring name. Locales without a
-tailoring use the root collator.
+Static dictionary in `CollatorCache`: sv, de-phonebook, fr-CA, fr, ja, zh,
+zh-stroke, ko, th, ar, he, da, fi, nb, nn, no→nb, es, tr, lt. Locales
+without a bundled tailoring use root collation (correct per UCA).
 
-## Implementation steps
+## Remaining gaps
 
-### Step 1: Package structure
+1. **`.widthInsensitive`** — halfwidth/fullwidth CJK. Not in our port. Low priority.
 
-Move or reference Collation sources so FoundationInternationalization can
-import them. Options:
-- **(a)** Add as a local package dependency in Package.swift
-- **(b)** Copy sources into `Sources/FoundationInternationalization/Collation/`
-- **(c)** Keep separate module, import with `@_exported`
+2. **`localizedStandardRange`** — range-returning search. The search
+   infrastructure exists (`RootCollator.search` returns `Range<String.Index>?`)
+   but it's not yet wired into Foundation's `range(of:options:locale:)` API.
 
-Decision needed from the user.
+3. **Search v1 limitations** — no ignorable skipping (spaces/punctuation at
+   weak strengths), no cross-starter contraction handling, no backwards search.
 
-### Step 2: Collator cache
+4. **Darwin opt-in** — currently non-Darwin only. Replacing the ObjC bridge
+   is gated on community acceptance.
 
-Create a thread-safe singleton cache (per locale identifier → RootCollator).
-RootCollator is `Sendable` and immutable after init, so it can be shared.
+5. **Benchmark (Step 7)** — not yet done. Need A/B of the integrated path
+   vs direct `RootCollator.compare()` to measure cache/options overhead.
 
-```swift
-// StringCollator.swift (new file)
-final class CollatorCache: @unchecked Sendable {
-    static let shared = CollatorCache()
-    func collator(for locale: Locale) -> RootCollator { ... }
-}
-```
+## Files changed
 
-### Step 3: Wire into compare
-
-Replace the `#else` TODO:
-
-```swift
-#else
-if isLocalized {
-    let collator = CollatorCache.shared.collator(for: .current)
-    let opts = CollationOptions.from(foundationOptions: options)
-    let result = try? collator.compare(lhs, rhs, options: opts)
-    return (result ?? .same).withOrder(order)
-} else {
-    return lhs.compare(rhs, options: options).withOrder(order)
-}
-#endif
-```
-
-### Step 4: Handle `String.Comparator` (specific locale)
-
-Same pattern but uses the comparator's stored locale instead of `.current`.
-
-### Step 5: Handle the `localizedCompare`, `localizedStandardCompare` methods
-
-These are in `StringProtocol+Locale.swift` and currently gate on
-`FOUNDATION_FRAMEWORK`. Add `#else` implementations using our collator.
-
-### Step 6: Run tests
-
-Target tests:
-- `StringSortComparatorTests` (locale, standardLocalized)
-- `StringTests` (localizedCompare, localizedStandardCompare, localizedCaseInsensitiveCompare)
-- `PredicateInternationalizationTests` (testLocalizedCompare)
-- `SortDescriptorConversionTests` (selector conversions)
-
-### Step 7: Benchmark
-
-- Compare our `String.compare(_:_:locale:)` vs the Darwin NSString path
-- Profile with the same bench corpora (ASCII, Latin, CJK, paths, Thai)
-
-## Gaps to address
-
-1. **`.widthInsensitive`** — halfwidth/fullwidth CJK. Not in our port. Low priority
-   (rare option in practice).
-
-2. **`localizedStandardContains` / `localizedStandardRange`** — substring search
-   with collation. Our port only does full-string compare, not substring search.
-   This is a significant gap — may need a separate search implementation or
-   fallback to the existing diacritics-stripping approach.
-
-3. **Dutch locale (nl)** — tested in `capitalize_localized` but that's case mapping,
-   not collation. Root collation should work for Dutch comparison.
-
-4. **Greek locale (el)** — same as Dutch, tested for case mapping only.
-
-5. **Darwin path replacement** — longer-term goal. Would eliminate the ObjC bridge
-   overhead on macOS/iOS. Gated on community acceptance.
-
-## Verification
-
-1. Build: `swift build` with FoundationInternationalization importing Collation
-2. Tests: `swift test --filter FoundationInternationalizationTests` — all green
-3. Benchmark: A/B against existing `_unlocalizedCompare` and against Darwin path
-4. Conformance: our 61-test Collation suite still passes
-5. Cross-validate: sort 10k strings with our path vs ICU, compare output
-
+| File | What |
+|------|------|
+| `Package.swift` | Collation target, dependency, feature flag |
+| `Sources/.../String/String+Collation.swift` | NEW: CollatorCache, options mapping, locale mapping |
+| `Sources/.../String/String+SortComparator.swift` | Comparator wiring |
+| `Sources/.../String/StringProtocol+Locale.swift` | localizedCompare/Contains methods |
+| `Sources/.../Predicate/LocalizedString.swift` | Predicate expressions enabled |
+| `Sources/.../Formatting/Number/NumberFormatStyleConfiguration.swift` | Pre-existing toolchain fix |
+| `Collation/Sources/Collation/CollationSearch.swift` | NEW: substring search |
+| `Collation/Sources/Collation/RootCollator.swift` | search/contains public API |
+| `Tests/.../StringSortComparatorTests.swift` | 10 tests |
+| `Tests/.../PredicateInternationalizationTests.swift` | 4 tests |
+| `Collation/Tests/CollationTests/SearchTests.swift` | NEW: 10 tests |
