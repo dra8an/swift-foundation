@@ -106,14 +106,19 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `de4cb88`. Milestone 8 Foundation
-  integration landed (2026-06-22): Collation wired into
-  FoundationInternationalization behind `FOUNDATION_COLLATION` compile flag.
+- **`origin/port/collation` in sync** at `3d32ec3`. Milestone 8 Foundation
+  integration (2026-06-22): Collation wired into FoundationInternationalization
+  behind `FOUNDATION_COLLATION` compile flag. Full-string comparison:
   `localizedCompare`, `localizedStandardCompare`, `String.Comparator` with
-  locale, and `String.StandardComparator.localizedStandard` all route through
-  `RootCollator` on non-Darwin. 941 tests pass (40 suites). Previous sync
-  (`f0dcec5`) added: inline collectAll (−12% Latin sortKey), bypass-refill
-  for Latin precomposed chars (−11% Latin sortKey), ICU bench min-over-9 parity.
+  locale, `String.StandardComparator.localizedStandard` all route through
+  `RootCollator` on non-Darwin. Substring search (v1): `localizedStandardContains`,
+  `localizedCaseInsensitiveContains`, `RootCollator.search(for:in:options:)` —
+  linear scan in CE space with strength masking, NFD position tracking, and
+  boundary validation. Predicates: both `StringLocalizedCompare` and
+  `StringLocalizedStandardContains` enabled. 941 tests pass (40 suites).
+  Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
+  bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
+  min-over-9 parity.
   Cross-machine confirmed on Intel/macOS 15 (2026-06-19/22 — see the Intel
   performance subsection below).
   Post-Span-revert optimizations:
@@ -289,10 +294,11 @@ not committed).
 ## Open backlog
 
 - **Rule builder** (doc 12) — parked, awaiting decision.
-- **M8 Foundation integration** — implemented (`de4cb88`), awaiting
-  maintainer input before proposing upstream. Remaining gaps: substring
-  search (`localizedStandardContains`), `.widthInsensitive`, predicate
-  support, Darwin opt-in.
+- **M8 Foundation integration** — implemented (`3d32ec3`), awaiting
+  maintainer input before proposing upstream. Remaining gaps:
+  `.widthInsensitive`, `localizedStandardRange` (range-returning search),
+  Darwin opt-in. Search v1 limitations: no ignorable skipping, no
+  cross-starter contraction handling, no backwards search.
 - **Span-based CE pipeline refactor** — the remaining Span opportunity:
   thread `Span<UInt8>` through the full `CEIterator.appendMore()` →
   `NFDIterator.next()` chain, replacing `String.UnicodeScalarView.Iterator`
@@ -340,11 +346,14 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
   only; scalar and raw-UTF-8 variants; bails out to the regular pipeline)
 - `SortKey.swift` — sort key writer + BOCSU identical level
 - `CollationOptions.swift` — public options ↔ ICU options word
+- `CollationSearch.swift` — collation-aware substring search: linear CE-space
+  scan with strength masking, NFD position annotation, boundary validation
 - `ScratchBuffers.swift` — thread-local buffer reuse (process-wide pthread
   key, monotonic collator IDs), `FastLatinCache`, `FastLatinSetup`
 - `DataStorage.swift` — owns the allocated memory behind `UnsafeBufferPointer`
   views in `CollationData` and `NormalizationData`
 - `RootCollator.swift` — public API: `compare`, `sortKey`, `sortKey(for:into:)`,
+  `search(for:in:options:)`, `contains(pattern:in:options:)`,
   `init(tailoringNamed:)`, `defaultOptions`; Span-based fast-Latin bail path
   (`#available(macOS 26.0)`)
 
