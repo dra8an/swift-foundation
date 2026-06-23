@@ -207,17 +207,23 @@ extension StringProtocol {
         if mask.contains(.literal) { return nil }
         let collator = CollatorCache.shared.collator(for: locale)
         let opts = CollationOptions.from(foundationOptions: mask)
+        let backwards = mask.contains(.backwards)
         let text: String
         if let searchRange {
             text = String(self[searchRange])
         } else {
             text = String(self)
         }
-        if let collator, let range = collator.search(for: String(aString), in: text, options: opts) {
-            if let searchRange {
-                return rebaseRange(range, from: text, offsetBy: searchRange.lowerBound, in: String(self))
+        if let collator {
+            let range = backwards
+                ? collator.searchBackwards(for: String(aString), in: text, options: opts)
+                : collator.search(for: String(aString), in: text, options: opts)
+            if let range {
+                if let searchRange {
+                    return rebaseRange(range, from: text, offsetBy: searchRange.lowerBound, in: String(self))
+                }
+                return rebaseRange(range, from: text)
             }
-            return rebaseRange(range, from: text)
         }
         return nil
     }

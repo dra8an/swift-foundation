@@ -151,5 +151,31 @@ private struct StringSortComparatorTests {
             #expect(text[r] == "Hello")
         }
     }
+
+    @Test func rangeWithLocaleBackwards() {
+        let en = Locale(identifier: "en")
+        var opts = String.CompareOptions()
+        opts.insert(.backwards)
+        let text = "abc abc abc"
+        let range = text.range(of: "abc", options: opts, locale: en)
+        #expect(range != nil)
+        if let r = range {
+            #expect(text[r] == "abc")
+            #expect(r.lowerBound == text.index(text.startIndex, offsetBy: 8))
+        }
+    }
+
+    @Test func rangeWithLocaleBackwardsCaseInsensitive() {
+        let en = Locale(identifier: "en")
+        var opts = String.CompareOptions()
+        opts.insert(.backwards)
+        opts.insert(.caseInsensitive)
+        let text = "Hello hello HELLO"
+        let range = text.range(of: "hello", options: opts, locale: en)
+        #expect(range != nil)
+        if let r = range {
+            #expect(text[r] == "HELLO")
+        }
+    }
 #endif
 }
