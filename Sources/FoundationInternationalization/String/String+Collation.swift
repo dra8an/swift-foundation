@@ -17,6 +17,21 @@ import FoundationEssentials
 
 import Collation
 
+#if FOUNDATION_FRAMEWORK
+internal import _ForSwiftFoundation
+
+internal func foundation_swift_collation_feature_enabled() -> Bool {
+    // System feature flag — Apple can flip this to route Darwin string
+    // comparison through the Swift collator instead of the ObjC/ICU bridge.
+    // Until _foundation_swift_collation_feature_enabled() exists in
+    // _ForSwiftFoundation, this defaults to false.
+    // _foundation_swift_collation_feature_enabled()
+    false
+}
+#else
+internal func foundation_swift_collation_feature_enabled() -> Bool { true }
+#endif
+
 struct CollatorCache: Sendable {
     static let shared = CollatorCache()
 

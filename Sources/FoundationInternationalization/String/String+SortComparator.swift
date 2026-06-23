@@ -175,9 +175,17 @@ extension String {
         }
 
         public func compare(_ lhs: String, _ rhs: String) -> ComparisonResult {
-#if FOUNDATION_FRAMEWORK
-            // https://github.com/apple/swift-foundation/issues/284
-
+#if FOUNDATION_FRAMEWORK && FOUNDATION_COLLATION
+            if isLocalized && foundation_swift_collation_feature_enabled() {
+                if options.contains(.literal) {
+                    return lhs.compare(rhs, options: options).withOrder(order)
+                }
+                let collator = CollatorCache.shared.collator(for: .current)
+                let opts = CollationOptions.from(foundationOptions: options)
+                if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
+                    return result.comparisonResult.withOrder(order)
+                }
+            }
             if isLocalized {
                 return lhs.compare(rhs, options: options, locale: Locale.current).withOrder(order)
             } else {
@@ -197,8 +205,13 @@ extension String {
             } else {
                 return lhs.compare(rhs, options: options).withOrder(order)
             }
+#elseif FOUNDATION_FRAMEWORK
+            if isLocalized {
+                return lhs.compare(rhs, options: options, locale: Locale.current).withOrder(order)
+            } else {
+                return lhs.compare(rhs, options: options).withOrder(order)
+            }
 #else
-            // TODO: Until compare(_:options:locale:) is ported to FoundationInternationalization, only support unlocalized
             return lhs.compare(rhs, options: options).withOrder(order)
 #endif
         }
@@ -302,7 +315,17 @@ extension String {
         }
 
         public func compare(_ lhs: String, _ rhs: String) -> ComparisonResult {
-#if FOUNDATION_FRAMEWORK
+#if FOUNDATION_FRAMEWORK && FOUNDATION_COLLATION
+            if let locale, foundation_swift_collation_feature_enabled() {
+                if options.contains(.literal) {
+                    return lhs.compare(rhs, options: options).withOrder(order)
+                }
+                let collator = CollatorCache.shared.collator(for: locale)
+                let opts = CollationOptions.from(foundationOptions: options)
+                if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
+                    return result.comparisonResult.withOrder(order)
+                }
+            }
             return lhs.compare(rhs, options: options, locale: locale).withOrder(order)
 #elseif FOUNDATION_COLLATION
             if let locale {
@@ -316,9 +339,9 @@ extension String {
                 }
             }
             return lhs.compare(rhs, options: options).withOrder(order)
+#elseif FOUNDATION_FRAMEWORK
+            return lhs.compare(rhs, options: options, locale: locale).withOrder(order)
 #else
-            // TODO: Until we support String.compare(_:options:locale:) in FoundationInternationalization, only support unlocalized comparisons
-            // https://github.com/apple/swift-foundation/issues/284
             return lhs.compare(rhs, options: options).withOrder(order)
 #endif
         }
