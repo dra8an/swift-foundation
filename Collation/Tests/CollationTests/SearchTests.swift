@@ -143,4 +143,34 @@ struct CollationSearchTests {
         let result = collator.search(for: "ab", in: "a.b")
         #expect(result == nil, "Punctuation is not ignorable at default (non-shifted) strength")
     }
+
+    // MARK: - Cross-starter contractions
+
+    @Test func koreanSyllableSearch() {
+        // 가 (U+AC00) = Jamo L ㄱ (U+1100) + V ㅏ (U+1161), composed Hangul
+        // Search for the syllable in text containing the composed form
+        let result = collator.search(for: "가", in: "나는 가수입니다")
+        #expect(result != nil, "Should find composed Hangul syllable")
+    }
+
+    @Test func koreanJamoSequenceSearch() {
+        // Search for decomposed Jamo sequence
+        let decomposed = "\u{1100}\u{1161}"  // ㄱ + ㅏ = 가
+        let result = collator.search(for: decomposed, in: "나는 가수입니다")
+        #expect(result != nil, "Should find decomposed Jamo matching composed Hangul")
+    }
+
+    @Test func koreanSearchInDecomposed() {
+        // Search for composed syllable in decomposed text
+        let decomposedText = "\u{1102}\u{1161}\u{1102}\u{1173}\u{11AB} \u{1100}\u{1161}\u{1109}\u{116E}"
+        let result = collator.search(for: "가", in: decomposedText)
+        #expect(result != nil, "Should find composed syllable in decomposed Jamo text")
+    }
+
+    @Test func lithuanianChContraction() throws {
+        // Lithuanian has ch contraction — test with lt tailoring
+        let lt = try RootCollator(tailoringNamed: "lt")
+        let result = lt.search(for: "ch", in: "archery")
+        #expect(result != nil, "Should find 'ch' in text with lt tailoring")
+    }
 }
