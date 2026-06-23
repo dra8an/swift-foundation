@@ -106,16 +106,19 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `3d32ec3`. Milestone 8 Foundation
-  integration (2026-06-22): Collation wired into FoundationInternationalization
+- **`origin/port/collation` in sync** at `17d384c`. Milestone 8 Foundation
+  integration (2026-06-22/23): Collation wired into FoundationInternationalization
   behind `FOUNDATION_COLLATION` compile flag. Full-string comparison:
   `localizedCompare`, `localizedStandardCompare`, `String.Comparator` with
   locale, `String.StandardComparator.localizedStandard` all route through
-  `RootCollator` on non-Darwin. Substring search (v1): `localizedStandardContains`,
-  `localizedCaseInsensitiveContains`, `RootCollator.search(for:in:options:)` —
-  linear scan in CE space with strength masking, NFD position tracking, and
-  boundary validation. Predicates: both `StringLocalizedCompare` and
-  `StringLocalizedStandardContains` enabled. 941 tests pass (40 suites).
+  `RootCollator` on non-Darwin. Substring search: `localizedStandardContains`,
+  `localizedCaseInsensitiveContains`, `localizedStandardRange(of:)`,
+  `range(of:options:range:locale:)`, `RootCollator.search(for:in:options:)`
+  and `.searchBackwards(for:in:options:)` — linear scan in CE space with
+  strength masking, NFD position tracking, boundary validation, forward and
+  backward. Predicates: both `StringLocalizedCompare` and
+  `StringLocalizedStandardContains` enabled. Czech (cs) tailoring added.
+  123 Collation tests (21 suites), 941 Foundation tests (40 suites) — all pass.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
   min-over-9 parity.
@@ -294,11 +297,10 @@ not committed).
 ## Open backlog
 
 - **Rule builder** (doc 12) — parked, awaiting decision.
-- **M8 Foundation integration** — implemented (`3d32ec3`), awaiting
+- **M8 Foundation integration** — implemented (`17d384c`), awaiting
   maintainer input before proposing upstream. Remaining gaps:
-  `.widthInsensitive`, `localizedStandardRange` (range-returning search),
-  Darwin opt-in. Search v1 limitations: no ignorable skipping, no
-  cross-starter contraction handling, no backwards search.
+  `.widthInsensitive`, backwards search not wired into Foundation's
+  `range(of:options:.backwards, locale:)`, Darwin opt-in, benchmarking.
 - **Span-based CE pipeline refactor** — the remaining Span opportunity:
   thread `Span<UInt8>` through the full `CEIterator.appendMore()` →
   `NFDIterator.next()` chain, replacing `String.UnicodeScalarView.Iterator`
@@ -366,7 +368,9 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
 covers rounds 1–13) · 14 **performance round 14** (thread-local, inout
 sortKey, Span bail path; also records four reverted experiments) ·
 15 ICU4C-to-Swift source mapping · 16 **Array vs UnsafePointer assembly
-analysis + Span<UInt8> discovery and benchmarks** · HANDOFF (this file)
+analysis + Span<UInt8> discovery and benchmarks** · 19 **Foundation
+integration plan (implemented)** · 20 **Integration quick reference
+(5-min pitch)** · HANDOFF (this file)
 
 Convention: every milestone/round updates doc 04's table + outcome note and
 gets a detailed report; decision records for surprising cuts; commit
