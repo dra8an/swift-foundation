@@ -29,6 +29,10 @@ struct CEIterator {
     let simpleCEs: UnsafeBufferPointer<Int64>
     var ces: [Int64] = []
 
+    /// Number of NFD scalars consumed so far (via popScalar + consumeAhead).
+    /// Used by CollationSearch for position tracking.
+    private(set) var scalarsConsumed = 0
+
     /// Normalized scalars read ahead of the current position.
     private var lookahead: [UInt32] = []
     private var lookaheadStart = 0
@@ -82,6 +86,7 @@ struct CEIterator {
         prev2 = nil
         if !consumedExtras.isEmpty { consumedExtras.removeAll(keepingCapacity: true) }
         terminated = false
+        scalarsConsumed = 0
     }
 
     /// Looks up the CE32 for a code point, falling back from the tailoring to
@@ -111,6 +116,7 @@ struct CEIterator {
         for k in 0..<n {
             consumedExtras.append(lookahead[lookaheadStart + k])
         }
+        scalarsConsumed += n
         discardAhead(n)
     }
 
@@ -152,9 +158,14 @@ struct CEIterator {
         if lookaheadStart < lookahead.count {
             let c = lookahead[lookaheadStart]
             discardAhead(1)
+            scalarsConsumed += 1
             return c
         }
-        return scalars.next()
+        if let c = scalars.next() {
+            scalarsConsumed += 1
+            return c
+        }
+        return nil
     }
 
     /// Appends the CEs of the next character, or the NO_CE terminator at the

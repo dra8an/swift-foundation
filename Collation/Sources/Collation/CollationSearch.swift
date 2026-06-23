@@ -107,11 +107,12 @@ struct CollationSearch {
     // MARK: - Annotated CE production (text)
 
     /// Produces CEs for the text with source position annotations.
-    /// Uses the standard CE pipeline (appendMore) and tracks which source
-    /// scalar offset each CE came from by counting NFD scalars consumed.
+    /// Uses the standard CE pipeline (appendMore) and tracks source positions
+    /// via CEIterator.scalarsConsumed, which counts every NFD scalar consumed
+    /// including contraction suffixes.
     private func produceAnnotatedCEs(for text: String, mask: Int64) -> [AnnotatedCE] {
-        let scalars = Array(text.unicodeScalars.map { $0.value })
-        let nfdMap = buildNFDSourceMap(scalars: scalars)
+        let nfdMap = buildNFDSourceMap(for: text)
+        let scalarCount = text.unicodeScalars.count
 
         var iter = CEIterator(
             data: data, base: base, norm: norm,
@@ -120,36 +121,43 @@ struct CollationSearch {
         )
 
         var result: [AnnotatedCE] = []
-        var nfdPosition = 0
+        var prevCECount = 0
+        var prevScalarsConsumed = 0
 
         do {
             while try iter.appendMore() {
-                let cesCount = iter.ces.count
-                let prevCount = result.count + countIgnored(in: iter.ces, from: result.count, mask: mask)
+                let curScalarsConsumed = iter.scalarsConsumed
+                let nfdStart = prevScalarsConsumed
+                let nfdEnd = curScalarsConsumed
 
                 let srcStart: Int
                 let srcEnd: Int
-                if nfdPosition < nfdMap.count {
-                    srcStart = nfdMap[nfdPosition]
-                    // Find the end: next NFD position's source, or end of scalars
-                    srcEnd = (nfdPosition + 1 < nfdMap.count)
-                        ? max(nfdMap[nfdPosition + 1], srcStart + 1)
-                        : scalars.count
+                if nfdStart < nfdMap.count {
+                    srcStart = nfdMap[nfdStart]
+                    srcEnd = (nfdEnd < nfdMap.count)
+                        ? nfdMap[nfdEnd]
+                        : scalarCount
+                    // Ensure end > start
                 } else {
-                    srcStart = scalars.count - 1
-                    srcEnd = scalars.count
+                    srcStart = max(scalarCount - 1, 0)
+                    srcEnd = scalarCount
                 }
 
-                for i in prevCount..<cesCount {
+                for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
                     let masked = ce & mask
                     if masked != 0 {
-                        result.append(AnnotatedCE(ce: masked, sourceStart: srcStart, sourceEnd: srcEnd))
+                        result.append(AnnotatedCE(
+                            ce: masked,
+                            sourceStart: srcStart,
+                            sourceEnd: max(srcEnd, srcStart + 1)
+                        ))
                     }
                 }
 
-                nfdPosition += 1
+                prevCECount = iter.ces.count
+                prevScalarsConsumed = curScalarsConsumed
             }
         } catch {
             return []
@@ -158,24 +166,15 @@ struct CollationSearch {
         return result
     }
 
-    private func countIgnored(in ces: [Int64], from start: Int, mask: Int64) -> Int {
-        var count = 0
-        for i in start..<ces.count {
-            if ces[i] == CollationConstants.noCE { break }
-            if (ces[i] & mask) == 0 { count += 1 }
-        }
-        return count
-    }
-
     /// Maps each NFD scalar position to its original source scalar index.
     /// NFD can expand one source scalar into multiple — all map to the same source.
-    private func buildNFDSourceMap(scalars: [UInt32]) -> [Int] {
+    private func buildNFDSourceMap(for text: String) -> [Int] {
         var map: [Int] = []
-        for (i, scalar) in scalars.enumerated() {
-            if norm.hasDecomposition(scalar) {
+        for (i, scalar) in text.unicodeScalars.enumerated() {
+            let c = scalar.value
+            if norm.hasDecomposition(c) {
                 var decomposed: [UInt32] = []
-                _ = norm.appendDecomposition(of: scalar, to: &decomposed)
-                // Recursively decompose (for full NFD)
+                _ = norm.appendDecomposition(of: c, to: &decomposed)
                 var fullyDecomposed: [UInt32] = []
                 for d in decomposed {
                     if norm.hasDecomposition(d) {
