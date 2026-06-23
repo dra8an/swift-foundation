@@ -42,16 +42,20 @@ struct CollatorCache: Sendable {
     private let currentCache = LockedState(initialState: CurrentCache())
 
     private struct CurrentCache {
-        var identifier: String = ""
+        var localeId: String = ""
+        var language: String = ""
         var collator: RootCollator?
     }
 
     func collatorForCurrentLocale() -> RootCollator? {
-        let id = Locale.current.language.languageCode?.identifier ?? ""
+        let current = Locale.current
+        let localeId = current.identifier
         return currentCache.withLock { cc in
-            if cc.identifier == id, let c = cc.collator { return c }
-            let c = collator(forLanguage: id)
-            cc.identifier = id
+            if cc.localeId == localeId, let c = cc.collator { return c }
+            let lang = Self.resolveLanguage(for: current)
+            let c = collator(forLanguage: lang)
+            cc.localeId = localeId
+            cc.language = lang ?? ""
             cc.collator = c
             return c
         }
@@ -89,7 +93,13 @@ struct CollatorCache: Sendable {
         if id.hasPrefix("de") && id.contains("phonebook") { return "de" }
         if id.hasPrefix("zh") && id.contains("stroke") { return "zh-stroke" }
         if id.hasPrefix("fr") && (id.contains("CA") || id.contains("_CA")) { return "fr_CA" }
-        return locale.language.languageCode?.identifier
+        let lang: String
+        if let sep = id.firstIndex(where: { $0 == "_" || $0 == "-" }) {
+            lang = String(id[id.startIndex..<sep])
+        } else {
+            lang = id
+        }
+        return tailoringMap[lang] != nil ? lang : nil
     }
 
     private static let tailoringMap: [String: String] = [
