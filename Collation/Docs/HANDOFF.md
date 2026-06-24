@@ -106,7 +106,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `32e88da`. Milestone 8 Foundation
+- **`origin/port/collation` in sync** at `24d84b0`. Milestone 8 Foundation
   integration (2026-06-22/23): Collation sources moved into
   `Sources/FoundationInternationalization/Collation/` (same module — no
   separate Collation target, no `FOUNDATION_COLLATION` flag, no
@@ -196,6 +196,30 @@ on both. State the corpus, reps, and how the time was taken in each section.
 | CJK    | ~232 | ~121   | 1.9×  |
 | paths  | ~533 | ~375   | 1.4×  |
 | Thai   | ~313 | ~160   | 2.0×  |
+
+**Foundation API integration vs system ICU (ns/op, Apple Silicon):**
+
+What users actually call — our collator through Foundation APIs vs the
+system NSString → CoreFoundation → ICU bridge:
+
+| API | corpus | ours | system ICU | speedup |
+|-----|--------|------|-----------|---------|
+| `localizedCompare` | ASCII | 128 | 195 | **1.5× faster** |
+| `localizedCompare` | Latin | 128 | 358 | **2.8× faster** |
+| `localizedCompare` | CJK | 238 | 368 | **1.5× faster** |
+| `localizedCompare` | paths | 165 | 299 | **1.8× faster** |
+| `localizedStandardCompare` | ASCII | 136 | 197 | **1.4× faster** |
+| `localizedStandardCompare` | Latin | 136 | 349 | **2.6× faster** |
+| `localizedStandardCompare` | CJK | 242 | 358 | **1.5× faster** |
+| `localizedStandardCompare` | paths | 185 | 318 | **1.7× faster** |
+| `compare(_:locale:)` | ASCII | 298 | 313 | **1.1× faster** |
+| `compare(_:locale:)` | Latin | 298 | 482 | **1.6× faster** |
+| `compare(_:locale:)` | CJK | 448 | 487 | **1.1× faster** |
+| `compare(_:locale:)` | paths | 342 | 412 | **1.2× faster** |
+
+Direct collation is 2–3× slower than ICU's C code (Swift value-type
+overhead), but through Foundation APIs we're faster because the system
+path pays the ObjC bridge cost that we avoid entirely.
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
