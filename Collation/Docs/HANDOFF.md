@@ -106,21 +106,21 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at latest push. Milestone 8 Foundation
-  integration (2026-06-22/23): Collation wired into FoundationInternationalization
-  behind `FOUNDATION_COLLATION` compile flag. Full-string comparison:
-  `localizedCompare`, `localizedStandardCompare`, `String.Comparator` with
-  locale, `String.StandardComparator.localizedStandard` all route through
-  `RootCollator` on non-Darwin. Substring search (forward and backward):
+- **`origin/port/collation` in sync** at `32e88da`. Milestone 8 Foundation
+  integration (2026-06-22/23): Collation sources moved into
+  `Sources/FoundationInternationalization/Collation/` (same module — no
+  separate Collation target, no `FOUNDATION_COLLATION` flag, no
+  `@inlinable` needed). Full-string comparison: `localizedCompare`,
+  `localizedStandardCompare`, `String.Comparator` with locale,
+  `String.StandardComparator.localizedStandard` all route through
+  `RootCollator`. Substring search (forward and backward):
   `localizedStandardContains`, `localizedCaseInsensitiveContains`,
   `localizedStandardRange(of:)`, `range(of:options:range:locale:)` (incl.
-  `.backwards`), `RootCollator.search(for:in:options:)` and
-  `.searchBackwards(for:in:options:)`. Predicates: both `StringLocalizedCompare`
-  and `StringLocalizedStandardContains` enabled. 98 locale tailorings bundled
+  `.backwards`). Predicates: both `StringLocalizedCompare` and
+  `StringLocalizedStandardContains` enabled. 98 locale tailorings bundled
   (full ICU coverage). Darwin opt-in feature flag added (defaults off).
-  Cross-module inlining fix (`@inlinable` on `compare`): `localizedCompare`
-  went from 6.9× slower than ICU to 0.7× (30% faster). See `Docs/22`.
-  123 Collation tests (21 suites), 941 Foundation tests (40 suites) — all pass.
+  Performance: `localizedCompare` 1.5–2.8× faster than system ICU.
+  941 tests pass (40 suites).
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
   min-over-9 parity.
@@ -300,11 +300,10 @@ not committed).
 
 - **Rule builder** (doc 12) — parked, awaiting decision.
 - **M8 Foundation integration** — implemented, awaiting maintainer input
-  before proposing upstream. Benchmarked: `localizedCompare` is 0.7× ICU
-  (30% faster) after cross-module inlining fix. Darwin opt-in feature flag
-  added (defaults off, ready for Apple to flip). Remaining gap:
-  `compare(_:locale:)` at 1.1× ICU (overhead from Foundation's
-  `StringProtocol.compare` generic dispatch path — not our code).
+  before proposing upstream. Benchmarked: `localizedCompare` 1.5–2.8×
+  faster than system ICU (same-module WMO, no `@inlinable` needed after
+  refactor). Darwin opt-in feature flag added (defaults off, ready for
+  Apple to flip).
 - **`.widthInsensitive`** — NOT a collation feature. It's a scalar-level
   transformation (fullwidth U+FF00–U+FFEF → halfwidth) done before
   comparison. On Darwin, `_toHalfWidth()` calls `CFUniCharCompatibilityDecompose`;
@@ -322,9 +321,13 @@ not committed).
 ## How to work
 
 ```sh
-cd ~/Projects/dra8an/swift-foundation-collation/Collation  # machine 2
-swift test                      # full suite, ~7-20s
-swift build -c release && .build/out/Products/Release/Bench Tools/bench/bench-ascii.txt 200
+cd ~/Projects/dra8an/swift-foundation-collation  # repo root
+swift test                      # full suite (941 tests), ~5-10s
+swift build -c release          # build everything incl. BenchFoundation
+
+# Foundation API benchmark (our collator vs system ICU):
+swift run -c release BenchFoundation Collation/Tools/bench/bench-ascii.txt 200
+swift -O Collation/Tools/bench_system_foundation.swift Collation/Tools/bench/bench-ascii.txt 200
 ```
 
 Regenerating reference data (only when corpus/locales change; needs icu-build):
@@ -342,7 +345,7 @@ DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
 #   extract_cmsccoll.py / extract_g7coll.py
 ```
 
-## Code map (Sources/Collation/)
+## Code map (Sources/FoundationInternationalization/Collation/)
 
 - `CollationConstants.swift` — CE32/CE bit layouts, tags, implicit/OFFSET
   primaries (renamed from `Collation` to avoid module/type name collision)
@@ -382,8 +385,9 @@ sortKey, Span bail path; also records four reverted experiments) ·
 analysis + Span<UInt8> discovery and benchmarks** · 19 **Foundation
 integration plan (implemented)** · 20 **Integration quick reference
 (5-min pitch)** · 21 **Foundation API benchmark** (localizedCompare vs
-system ICU, before/after numbers) · 22 **Cross-module inlining**
-(the 10× improvement — detailed analysis for review) · HANDOFF (this file)
+system ICU) · 22 **Cross-module inlining** (the 10× improvement —
+detailed analysis) · 23 **Refactoring plan** (move Collation into
+FoundationInternationalization) · HANDOFF (this file)
 
 Convention: every milestone/round updates doc 04's table + outcome note and
 gets a detailed report; decision records for surprising cuts; commit
