@@ -167,7 +167,7 @@ faster and supports the full API surface (search, predicates, all options)."
 | Performance | Creates/destroys collator per call (slow) | Cached, 1.5–2.8× faster than system ICU |
 | Options coverage | 3 options | 5 options + search + predicates |
 | ICU dependency | Requires `_FoundationICU` | Self-contained, no ICU needed |
-| Behavioral consistency | Matches ICU behavior (same bugs as system) | Byte-identical sort keys to ICU (verified by 123 conformance tests) |
+| Behavioral consistency | Matches ICU behavior (same bugs as system) | Verified identical to ICU for both sort keys (byte-identical to `ucol_getSortKey`, 52k golden keys across 21 option sets) AND compare (matrix-identical to `ucol_strcoll`, full NxN for 21 option sets + 8 tailored locales). Also passes UCA official conformance (433k lines) and Thai dictionary (31k words). 123 tests, zero disagreements with ICU. |
 | Feature flag | `FOUNDATION_ICU_STRING_COMPARE` (off by default) | Darwin runtime flag (same pattern as Hebrew calendar) |
 | Path to Darwin | Could enable flag on Darwin eventually | Darwin feature flag already wired, ready to flip |
 
