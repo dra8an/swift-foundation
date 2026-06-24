@@ -43,10 +43,10 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 1383  | 1009      | 0.7× (slower) |
-| Latin  | 1476  | 1437      | 1.0× (parity) |
-| CJK    | 1174  | 1273      | **1.1× faster** |
-| Paths  | 2963  | 972       | 0.3× (slower) |
+| ASCII  | 1325  | 997       | 0.8× (slower) |
+| Latin  | 1449  | 1433      | 1.0× (parity) |
+| CJK    | 1153  | 1279      | **1.1× faster** |
+| Paths  | 2040  | 975       | 0.5× (slower) |
 
 ## Analysis
 
