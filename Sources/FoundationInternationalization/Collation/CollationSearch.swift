@@ -73,8 +73,14 @@ struct CollationSearch {
             numeric: numeric,
             scalars: text.unicodeScalars
         )
+        // A fresh iterator/buffers are built per search call; pre-size the CE and
+        // annotated buffers to the scalar count (CEs ≈ scalars) so the append
+        // loop over long text doesn't repeatedly reallocate — Array growth
+        // reallocation was the dominant cost on the paths corpus.
+        iter.ces.reserveCapacity(scalarCount + 1)
 
         var buffer: [AnnotatedCE] = []
+        buffer.reserveCapacity(scalarCount)
         var prevCECount = 0
         var prevScalarsConsumed = 0
         var nextMatchStart = 0
@@ -232,8 +238,10 @@ struct CollationSearch {
             numeric: numeric,
             scalars: text.unicodeScalars
         )
+        iter.ces.reserveCapacity(scalarCount + 1)
 
         var result: [AnnotatedCE] = []
+        result.reserveCapacity(scalarCount)
         var prevCECount = 0
         var prevScalarsConsumed = 0
 
@@ -281,6 +289,7 @@ struct CollationSearch {
     /// Maps each NFD scalar position to its original source scalar index.
     private func buildNFDSourceMap(for text: String) -> [Int] {
         var map: [Int] = []
+        map.reserveCapacity(text.unicodeScalars.count)
         for (i, scalar) in text.unicodeScalars.enumerated() {
             let c = scalar.value
             if norm.hasDecomposition(c) {
@@ -330,6 +339,7 @@ struct CollationSearch {
 
     private func buildIndexTable(for text: String) -> [String.Index] {
         var indices: [String.Index] = []
+        indices.reserveCapacity(text.unicodeScalars.count)
         for idx in text.unicodeScalars.indices {
             indices.append(idx)
         }
