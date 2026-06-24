@@ -21,7 +21,7 @@ extension String {
         public typealias Compared = String
 #if FOUNDATION_FRAMEWORK
         // https://github.com/apple/swift-foundation/issues/284
-
+        
         /// Compares `String`s as compared by the Finder.
         ///
         /// Uses a localized, numeric comparison in the current locale.
@@ -231,7 +231,7 @@ extension String {
 
 #if FOUNDATION_FRAMEWORK
         // https://github.com/apple/swift-foundation/issues/284
-
+        
         /// Creates a `String.Comparator` with the given `CompareOptions` and
         /// `Locale`.
         ///

@@ -168,14 +168,14 @@ let package = Package(
             ],
             swiftSettings: availabilityMacros + featureSettings + testOnlySwiftSettings
         ),
-
+        
         // FoundationInternationalization
         .target(
             name: "FoundationInternationalization",
             dependencies: [
                 .target(name: "FoundationEssentials"),
                 .target(name: "_FoundationCShims"),
-                .product(name: "_FoundationICU", package: "swift-foundation-icu"),
+                .product(name: "_FoundationICU", package: "swift-foundation-icu")
             ],
             exclude: [
                 "String/CMakeLists.txt",
@@ -211,7 +211,7 @@ let package = Package(
             ],
             swiftSettings: availabilityMacros + featureSettings + testOnlySwiftSettings
         ),
-
+        
         // BenchFoundation — benchmarks Foundation string APIs with collation
         .executableTarget(
             name: "BenchFoundation",
