@@ -106,7 +106,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `24d84b0`. Milestone 8 Foundation
+- **`origin/port/collation` in sync** at `c683653`. Milestone 8 Foundation
   integration (2026-06-22/23): Collation sources moved into
   `Sources/FoundationInternationalization/Collation/` (same module — no
   separate Collation target, no `FOUNDATION_COLLATION` flag, no
@@ -204,22 +204,28 @@ system NSString → CoreFoundation → ICU bridge:
 
 | API | corpus | ours | system ICU | speedup |
 |-----|--------|------|-----------|---------|
-| `localizedCompare` | ASCII | 128 | 195 | **1.5× faster** |
-| `localizedCompare` | Latin | 128 | 358 | **2.8× faster** |
-| `localizedCompare` | CJK | 238 | 368 | **1.5× faster** |
-| `localizedCompare` | paths | 165 | 299 | **1.8× faster** |
-| `localizedStandardCompare` | ASCII | 136 | 197 | **1.4× faster** |
-| `localizedStandardCompare` | Latin | 136 | 349 | **2.6× faster** |
-| `localizedStandardCompare` | CJK | 242 | 358 | **1.5× faster** |
-| `localizedStandardCompare` | paths | 185 | 318 | **1.7× faster** |
-| `compare(_:locale:)` | ASCII | 298 | 313 | **1.1× faster** |
-| `compare(_:locale:)` | Latin | 298 | 482 | **1.6× faster** |
-| `compare(_:locale:)` | CJK | 448 | 487 | **1.1× faster** |
-| `compare(_:locale:)` | paths | 342 | 412 | **1.2× faster** |
+| `localizedCompare` | ASCII | 127 | 195 | **1.5× faster** |
+| `localizedCompare` | Latin | 128 | 360 | **2.8× faster** |
+| `localizedCompare` | CJK | 232 | 364 | **1.6× faster** |
+| `localizedCompare` | paths | 164 | 297 | **1.8× faster** |
+| `localizedStandardCompare` | ASCII | 137 | 196 | **1.4× faster** |
+| `localizedStandardCompare` | Latin | 137 | 346 | **2.5× faster** |
+| `localizedStandardCompare` | CJK | 243 | 357 | **1.5× faster** |
+| `localizedStandardCompare` | paths | 186 | 320 | **1.7× faster** |
+| `compare(_:locale:)` | ASCII | 297 | 311 | **1.0× (parity)** |
+| `compare(_:locale:)` | Latin | 310 | 485 | **1.6× faster** |
+| `compare(_:locale:)` | CJK | 406 | 483 | **1.2× faster** |
+| `compare(_:locale:)` | paths | 337 | 409 | **1.2× faster** |
+| `localizedStdContains` | ASCII | 912 | 995 | **1.1× faster** |
+| `localizedStdContains` | Latin | 928 | 1441 | **1.6× faster** |
+| `localizedStdContains` | CJK | 837 | 1277 | **1.5× faster** |
+| `localizedStdContains` | paths | 968 | 962 | **1.0× (parity)** |
 
-Direct collation is 2–3× slower than ICU's C code (Swift value-type
-overhead), but through Foundation APIs we're faster because the system
-path pays the ObjC bridge cost that we avoid entirely.
+Every Foundation string comparison and search API is now equal to or
+faster than system ICU across all corpora. Direct collation arithmetic
+is 2–3× slower than ICU's C code (Swift value-type overhead), but
+through Foundation APIs we're faster because the system path pays the
+ObjC bridge cost that we avoid entirely.
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
