@@ -56,8 +56,56 @@ struct CollationSearch {
     }
 
     /// Returns true if `pattern` appears anywhere in `text`.
+    /// Fast path: no position tracking, no array allocations for index/NFD maps.
     func contains(pattern: String, in text: String) -> Bool {
-        return search(for: pattern, in: text) != nil
+        if pattern.isEmpty { return true }
+        if text.isEmpty { return false }
+
+        let mask = strengthMask(for: options.strength)
+        let patternCEs = produceMaskedCEs(for: pattern, mask: mask)
+        if patternCEs.isEmpty { return false }
+
+        let patCount = patternCEs.count
+
+        var iter = CEIterator(
+            data: data, base: base, norm: norm,
+            numeric: numeric,
+            scalars: text.unicodeScalars
+        )
+
+        var buffer: [Int64] = []
+        var prevCECount = 0
+        var nextMatchStart = 0
+
+        do {
+            while try iter.appendMore() {
+                for i in prevCECount..<iter.ces.count {
+                    let ce = iter.ces[i]
+                    if ce == CollationConstants.noCE { break }
+                    let masked = ce & mask
+                    if masked != 0 {
+                        buffer.append(masked)
+
+                        while nextMatchStart + patCount <= buffer.count {
+                            var matched = true
+                            for patIx in 0..<patCount {
+                                if buffer[nextMatchStart + patIx] != patternCEs[patIx] {
+                                    matched = false
+                                    break
+                                }
+                            }
+                            if matched { return true }
+                            nextMatchStart += 1
+                        }
+                    }
+                }
+                prevCECount = iter.ces.count
+            }
+        } catch {
+            return false
+        }
+
+        return false
     }
 
     // MARK: - Forward search (lazy CE production)

@@ -370,7 +370,10 @@ public struct RootCollator: @unchecked Sendable {
     public func contains(
         pattern: String, in text: String, options: CollationOptions = CollationOptions()
     ) -> Bool {
-        return search(for: pattern, in: text, options: options) != nil
+        let searcher = CollationSearch(
+            data: data, base: base, norm: norm, options: options
+        )
+        return searcher.contains(pattern: pattern, in: text)
     }
 
     /// The sort key for a string: level bytes with 01 separators, optional
