@@ -111,7 +111,7 @@ Tested 2026-06-25 on Apple Silicon (macOS 26) against system ICU (via NSString b
 | `localizedCompare` | **1.5× faster** | **2.8× faster** | **1.5× faster** | **1.8× faster** | **1.0×** |
 | `localizedStandardCompare` | **1.4× faster** | **2.5× faster** | **1.5× faster** | **1.7× faster** | **1.0×** |
 | `compare(_:locale:)` | **1.0×** | **1.6× faster** | **1.2× faster** | **1.2× faster** | **1.0×** |
-| `localizedStdContains` | **1.3× faster** | **1.9× faster** | **1.7× faster** | **1.0×** | **1.7× faster** |
+| `localizedStdContains` | **2.2× faster** | **3.2× faster** | **2.7× faster** | **1.6× faster** | **2.7× faster** |
 
 **Direct collation (RootCollator.compare, no Foundation overhead):**
 

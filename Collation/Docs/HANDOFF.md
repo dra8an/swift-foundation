@@ -219,11 +219,11 @@ system NSString → CoreFoundation → ICU bridge:
 | `compare(_:locale:)` | CJK | 421 | 493 | **1.2× faster** |
 | `compare(_:locale:)` | paths | 354 | 418 | **1.2× faster** |
 | `compare(_:locale:)` | Thai | 671 | 642 | **1.0× (parity)** |
-| `localizedStdContains` | ASCII | 757 | 1011 | **1.3× faster** |
-| `localizedStdContains` | Latin | 759 | 1474 | **1.9× faster** |
-| `localizedStdContains` | CJK | 753 | 1292 | **1.7× faster** |
-| `localizedStdContains` | paths | 976 | 991 | **1.0× (parity)** |
-| `localizedStdContains` | Thai | 822 | 1367 | **1.7× faster** |
+| `localizedStdContains` | ASCII | 453 | 1011 | **2.2× faster** |
+| `localizedStdContains` | Latin | 458 | 1474 | **3.2× faster** |
+| `localizedStdContains` | CJK | 483 | 1292 | **2.7× faster** |
+| `localizedStdContains` | paths | 618 | 991 | **1.6× faster** |
+| `localizedStdContains` | Thai | 499 | 1367 | **2.7× faster** |
 
 Every Foundation string comparison and search API is now equal to or
 faster than system ICU across all corpora. Direct collation arithmetic

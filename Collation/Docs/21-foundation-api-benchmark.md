@@ -47,11 +47,11 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 757   | 1011      | **1.3× faster** |
-| Latin  | 759   | 1474      | **1.9× faster** |
-| CJK    | 753   | 1292      | **1.7× faster** |
-| Paths  | 976   | 991       | **1.0× (parity)** |
-| Thai   | 822   | 1367      | **1.7× faster** |
+| ASCII  | 453   | 1011      | **2.2× faster** |
+| Latin  | 458   | 1474      | **3.2× faster** |
+| CJK    | 483   | 1292      | **2.7× faster** |
+| Paths  | 618   | 991       | **1.6× faster** |
+| Thai   | 499   | 1367      | **2.7× faster** |
 
 ### Direct RootCollator (standalone, no Foundation overhead)
 
@@ -73,12 +73,12 @@ overhead (NSString → CoreFoundation → ICU) that the system path pays.
 because this path goes through Foundation's `StringProtocol.compare`
 generic dispatch which adds overhead on both sides.
 
-**`localizedStandardContains`** is 1.3–1.9× faster on short strings and
-at parity on long paths. Three stacked optimizations got us here: lazy CE
-production for forward search (7648b1d), buffer capacity reservation on
-the range-returning path (e1cd576), and a short-string threshold (≤32
-UTF-8 bytes) on the Bool fast path that avoids wasted allocation on
-longer strings where search bails early.
+**`localizedStandardContains`** is 1.6–3.2× faster across all corpora.
+Four stacked optimizations: lazy CE production for forward search
+(7648b1d), buffer capacity reservation on the range-returning path
+(e1cd576), a short-string threshold (≤32 UTF-8 bytes) on the Bool fast
+path, and thread-local scratch iterator reuse that eliminates per-call
+CEIterator allocation entirely (b93b549).
 
 **Direct collation arithmetic** is 1.9–3.2× slower than ICU's C (Swift
 value-type + function-call overhead). Through Foundation APIs the ObjC
