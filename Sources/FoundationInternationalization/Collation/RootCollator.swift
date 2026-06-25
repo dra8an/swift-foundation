@@ -370,10 +370,15 @@ public struct RootCollator: @unchecked Sendable {
     public func contains(
         pattern: String, in text: String, options: CollationOptions = CollationOptions()
     ) -> Bool {
+        // Reuse the thread-local scratch iterator across calls — searching one
+        // pattern over many strings (the localizedStandardContains case) then
+        // allocates no per-call CEIterator or CE buffer.
+        let scratch = takeScratch()
+        defer { giveScratch(scratch) }
         let searcher = CollationSearch(
             data: data, base: base, norm: norm, options: options
         )
-        return searcher.contains(pattern: pattern, in: text)
+        return searcher.contains(pattern: pattern, in: text, iter: &scratch.left)
     }
 
     /// The sort key for a string: level bytes with 01 separators, optional

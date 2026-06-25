@@ -57,21 +57,34 @@ struct CollationSearch {
 
     /// Returns true if `pattern` appears anywhere in `text`.
     /// Fast path: no position tracking, no array allocations for index/NFD maps.
+    ///
+    /// Direct/test entry: allocates a one-off iterator. The hot path
+    /// (`RootCollator.contains`) calls the iter-reusing overload below with the
+    /// collator's thread-local scratch iterator.
     func contains(pattern: String, in text: String) -> Bool {
+        var iter = CEIterator(
+            data: data, base: base, norm: norm,
+            numeric: numeric, scalars: text.unicodeScalars
+        )
+        return contains(pattern: pattern, in: text, iter: &iter)
+    }
+
+    /// Reuses a caller-owned `CEIterator` for both the pattern and the text —
+    /// no per-call `CEIterator` or CE-array allocation. `localizedStandard-
+    /// Contains` over many strings reuses one scratch iterator across all calls
+    /// (profiling showed fresh per-call iterators dominated `contains`).
+    func contains(pattern: String, in text: String, iter: inout CEIterator) -> Bool {
         if pattern.isEmpty { return true }
         if text.isEmpty { return false }
 
         let mask = strengthMask(for: options.strength)
-        let patternCEs = produceMaskedCEs(for: pattern, mask: mask)
+        // Pattern CEs first, reusing `iter`; then `iter` is reset onto the text.
+        let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
         if patternCEs.isEmpty { return false }
 
         let patCount = patternCEs.count
 
-        var iter = CEIterator(
-            data: data, base: base, norm: norm,
-            numeric: numeric,
-            scalars: text.unicodeScalars
-        )
+        iter.reset(numeric: numeric, scalars: text.unicodeScalars)
         let textUTF8Count = text.utf8.count
         if textUTF8Count <= 32 {
             iter.ces.reserveCapacity(textUTF8Count + 1)
@@ -266,6 +279,13 @@ struct CollationSearch {
             numeric: numeric,
             scalars: string.unicodeScalars
         )
+        return produceMaskedCEs(for: string, mask: mask, iter: &iter)
+    }
+
+    /// As above, but reuses a caller-owned iterator (reset onto `string`) — no
+    /// per-call iterator allocation for the pattern.
+    private func produceMaskedCEs(for string: String, mask: Int64, iter: inout CEIterator) -> [Int64] {
+        iter.reset(numeric: numeric, scalars: string.unicodeScalars)
         var result: [Int64] = []
         do {
             let allCEs = try iter.collectAll()
