@@ -25,17 +25,29 @@ per call with no caching.
 
 ## What this is NOT
 
-An ICU port. ICU4C's collation is ~50,000 lines of C++ with:
+An ICU port. ICU4C's collation is ~33,000 lines of C/C++ (27,772 in
+collation proper + 5,442 in usearch):
 
-- Runtime rule compilation (`RuleBasedCollator`)
-- Canonical closure tables
-- FCD normalization (separate from NFD)
-- Backwards-compatibility layers spanning 25 years
-- Builder, serializer, and runtime all in one
+| Category | Lines | What |
+|----------|-------|------|
+| Rule builder + data builder | ~4,000 | `collationbuilder`, `collationdatabuilder`, `collationruleparser` |
+| Public API / RuleBasedCollator | ~4,700 | `rulebasedcollator`, `coll`, `ucol`, `ucol_res`, `ucol_sit`, headers |
+| Iterator variants (UTF-16, UTF-8, UCharIter) | ~2,500 | Three separate iterator implementations |
+| Fast Latin + builder | ~2,200 | Runtime + builder (we only have the runtime) |
+| Core runtime (data, compare, keys, settings) | ~3,500 | The part we actually implement |
+| Collation element sets, weights, FCD | ~1,800 | FCD we don't need; sets/weights are for the builder |
+| Search (usearch) | ~5,400 | Our 416 lines covers this |
+| Headers (public + internal) | ~5,000 | API surface, documentation |
+
+We implement the equivalent of their core runtime (~3,500) + fast latin
+runtime (~1,100) + search (~5,400) = ~10,000 lines of ICU functionality
+in 5,651 lines of Swift. The remaining ~23,000 lines are builder/parser,
+API compat layers, FCD, and multiple iterator variants — none of which
+we need.
 
 ## What this IS
 
-5,600 lines of Swift implementing UTS #10 following the ICU4X
+5,651 lines of Swift implementing UTS #10 following the ICU4X
 architectural model:
 
 - Pre-compiled tailoring binaries (no runtime rule builder)
