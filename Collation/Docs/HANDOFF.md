@@ -181,21 +181,21 @@ on both. State the corpus, reps, and how the time was taken in each section.
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~25  | ~9     | 2.8×  |
+| ASCII  | ~24  | ~9     | 2.7×  |
 | Latin  | ~25  | ~10    | 2.5×  |
-| CJK    | ~130 | ~42    | 3.1×  |
-| paths  | ~65  | ~30    | 2.2×  |
-| Thai (th, sorted) | ~359 | ~176 | 2.0× |
+| CJK    | ~130 | ~41    | 3.2×  |
+| paths  | ~63  | ~30    | 2.1×  |
+| Thai (th, sorted) | ~362 | ~190 | 1.9× |
 
 **Sort keys (inout API, buffer reused):**
 
 | corpus | ours | ICU 79 | ratio |
 |--------|------|--------|-------|
-| ASCII  | ~217 | ~108   | 2.0×  |
-| Latin  | ~232 | ~124   | 1.9×  |
-| CJK    | ~232 | ~121   | 1.9×  |
-| paths  | ~533 | ~375   | 1.4×  |
-| Thai   | ~313 | ~160   | 2.0×  |
+| ASCII  | ~216 | ~103   | 2.1×  |
+| Latin  | ~237 | ~123   | 1.9×  |
+| CJK    | ~232 | ~124   | 1.9×  |
+| paths  | ~546 | ~373   | 1.5×  |
+| Thai   | ~316 | ~161   | 2.0×  |
 
 **Foundation API integration vs system ICU (ns/op, Apple Silicon):**
 
@@ -204,22 +204,26 @@ system NSString → CoreFoundation → ICU bridge:
 
 | API | corpus | ours | system ICU | speedup |
 |-----|--------|------|-----------|---------|
-| `localizedCompare` | ASCII | 127 | 195 | **1.5× faster** |
-| `localizedCompare` | Latin | 128 | 360 | **2.8× faster** |
-| `localizedCompare` | CJK | 232 | 364 | **1.6× faster** |
-| `localizedCompare` | paths | 164 | 297 | **1.8× faster** |
-| `localizedStandardCompare` | ASCII | 137 | 196 | **1.4× faster** |
-| `localizedStandardCompare` | Latin | 137 | 346 | **2.5× faster** |
-| `localizedStandardCompare` | CJK | 243 | 357 | **1.5× faster** |
-| `localizedStandardCompare` | paths | 186 | 320 | **1.7× faster** |
-| `compare(_:locale:)` | ASCII | 297 | 311 | **1.0× (parity)** |
-| `compare(_:locale:)` | Latin | 310 | 485 | **1.6× faster** |
-| `compare(_:locale:)` | CJK | 406 | 483 | **1.2× faster** |
-| `compare(_:locale:)` | paths | 337 | 409 | **1.2× faster** |
-| `localizedStdContains` | ASCII | 912 | 995 | **1.1× faster** |
-| `localizedStdContains` | Latin | 928 | 1441 | **1.6× faster** |
-| `localizedStdContains` | CJK | 837 | 1277 | **1.5× faster** |
-| `localizedStdContains` | paths | 968 | 962 | **1.0× (parity)** |
+| `localizedCompare` | ASCII | 133 | 200 | **1.5× faster** |
+| `localizedCompare` | Latin | 132 | 367 | **2.8× faster** |
+| `localizedCompare` | CJK | 243 | 375 | **1.5× faster** |
+| `localizedCompare` | paths | 172 | 304 | **1.8× faster** |
+| `localizedCompare` | Thai | 483 | 496 | **1.0× (parity)** |
+| `localizedStandardCompare` | ASCII | 141 | 201 | **1.4× faster** |
+| `localizedStandardCompare` | Latin | 142 | 352 | **2.5× faster** |
+| `localizedStandardCompare` | CJK | 251 | 366 | **1.5× faster** |
+| `localizedStandardCompare` | paths | 194 | 326 | **1.7× faster** |
+| `localizedStandardCompare` | Thai | 494 | 484 | **1.0× (parity)** |
+| `compare(_:locale:)` | ASCII | 325 | 317 | **1.0× (parity)** |
+| `compare(_:locale:)` | Latin | 309 | 484 | **1.6× faster** |
+| `compare(_:locale:)` | CJK | 421 | 493 | **1.2× faster** |
+| `compare(_:locale:)` | paths | 354 | 418 | **1.2× faster** |
+| `compare(_:locale:)` | Thai | 671 | 642 | **1.0× (parity)** |
+| `localizedStdContains` | ASCII | 757 | 1011 | **1.3× faster** |
+| `localizedStdContains` | Latin | 759 | 1474 | **1.9× faster** |
+| `localizedStdContains` | CJK | 753 | 1292 | **1.7× faster** |
+| `localizedStdContains` | paths | 976 | 991 | **1.0× (parity)** |
+| `localizedStdContains` | Thai | 822 | 1367 | **1.7× faster** |
 
 Every Foundation string comparison and search API is now equal to or
 faster than system ICU across all corpora. Direct collation arithmetic

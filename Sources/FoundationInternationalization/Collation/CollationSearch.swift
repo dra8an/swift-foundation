@@ -66,21 +66,21 @@ struct CollationSearch {
         if patternCEs.isEmpty { return false }
 
         let patCount = patternCEs.count
-        let scalarCount = text.unicodeScalars.count
 
         var iter = CEIterator(
             data: data, base: base, norm: norm,
             numeric: numeric,
             scalars: text.unicodeScalars
         )
-        // Pre-size the CE and match buffers (CEs ≈ scalars) so a full no-match
-        // scan over long text doesn't repeatedly reallocate. This is the same
-        // Array-growth realloc that dominated the range-returning path (e1cd576);
-        // the Bool fast path grows fresh buffers from empty too.
-        iter.ces.reserveCapacity(scalarCount + 1)
+        let textUTF8Count = text.utf8.count
+        if textUTF8Count <= 32 {
+            iter.ces.reserveCapacity(textUTF8Count + 1)
+        }
 
         var buffer: [Int64] = []
-        buffer.reserveCapacity(scalarCount)
+        if textUTF8Count <= 32 {
+            buffer.reserveCapacity(textUTF8Count)
+        }
         var prevCECount = 0
         var nextMatchStart = 0
 

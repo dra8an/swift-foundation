@@ -1,7 +1,8 @@
 # Foundation API Benchmark: Swift Collator vs System ICU
 
-Measured 2026-06-23 on Apple Silicon (macOS 26), min of 9 passes, release
-builds. **Updated after cross-module inlining fix (Docs/22).**
+Measured 2026-06-25 on Apple Silicon (macOS 26), min of 9 passes, release
+builds. Includes all search optimizations (lazy CE production, buffer
+capacity reservation with short-string threshold, fast-path contains).
 
 Same Foundation APIs, two backends:
 
@@ -16,37 +17,51 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 128   | 195       | **1.5× faster** |
-| Latin  | 128   | 358       | **2.8× faster** |
-| CJK    | 238   | 368       | **1.5× faster** |
-| Paths  | 165   | 299       | **1.8× faster** |
+| ASCII  | 133   | 200       | **1.5× faster** |
+| Latin  | 132   | 367       | **2.8× faster** |
+| CJK    | 243   | 375       | **1.5× faster** |
+| Paths  | 172   | 304       | **1.8× faster** |
+| Thai   | 483   | 496       | **1.0× (parity)** |
 
 ### localizedStandardCompare(_:)
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 136   | 197       | **1.4× faster** |
-| Latin  | 136   | 349       | **2.6× faster** |
-| CJK    | 242   | 358       | **1.5× faster** |
-| Paths  | 185   | 318       | **1.7× faster** |
+| ASCII  | 141   | 201       | **1.4× faster** |
+| Latin  | 142   | 352       | **2.5× faster** |
+| CJK    | 251   | 366       | **1.5× faster** |
+| Paths  | 194   | 326       | **1.7× faster** |
+| Thai   | 494   | 484       | **1.0× (parity)** |
 
 ### compare(_:locale:)
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 298   | 313       | **1.1× faster** |
-| Latin  | 298   | 482       | **1.6× faster** |
-| CJK    | 448   | 487       | **1.1× faster** |
-| Paths  | 342   | 412       | **1.2× faster** |
+| ASCII  | 325   | 317       | **1.0× (parity)** |
+| Latin  | 309   | 484       | **1.6× faster** |
+| CJK    | 421   | 493       | **1.2× faster** |
+| Paths  | 354   | 418       | **1.2× faster** |
+| Thai   | 671   | 642       | **1.0× (parity)** |
 
 ### localizedStandardContains(_:)
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 1325  | 997       | 0.8× (slower) |
-| Latin  | 1449  | 1433      | 1.0× (parity) |
-| CJK    | 1153  | 1279      | **1.1× faster** |
-| Paths  | 2040  | 975       | 0.5× (slower) |
+| ASCII  | 757   | 1011      | **1.3× faster** |
+| Latin  | 759   | 1474      | **1.9× faster** |
+| CJK    | 753   | 1292      | **1.7× faster** |
+| Paths  | 976   | 991       | **1.0× (parity)** |
+| Thai   | 822   | 1367      | **1.7× faster** |
+
+### Direct RootCollator (standalone, no Foundation overhead)
+
+| Corpus | compare | ICU 79 | ratio | sortKey | ICU 79 | ratio |
+|--------|---------|--------|-------|---------|--------|-------|
+| ASCII  | 24      | 9      | 2.7×  | 216     | 103    | 2.1×  |
+| Latin  | 25      | 10     | 2.5×  | 237     | 123    | 1.9×  |
+| CJK    | 130     | 41     | 3.2×  | 232     | 124    | 1.9×  |
+| Paths  | 63      | 30     | 2.1×  | 546     | 373    | 1.5×  |
+| Thai   | 362     | 190    | 1.9×  | 316     | 161    | 2.0×  |
 
 ## Analysis
 
@@ -54,14 +69,20 @@ Same Foundation APIs, two backends:
 than system ICU across all corpora. Our collator avoids the ObjC bridge
 overhead (NSString → CoreFoundation → ICU) that the system path pays.
 
-**`compare(_:locale:)`** is 1.1–1.6× faster. Slightly less improvement
+**`compare(_:locale:)`** is 1.0–1.6× faster. Slightly less improvement
 because this path goes through Foundation's `StringProtocol.compare`
 generic dispatch which adds overhead on both sides.
 
-**`localizedStandardContains`** is mixed — faster on CJK, slower on
-ASCII/paths. Our v1 search implementation (linear CE scan with full
-text pre-processing) is less optimized than ICU's `usearch` (ring buffer,
-on-demand CE production). Search optimization is a separate effort.
+**`localizedStandardContains`** is 1.3–1.9× faster on short strings and
+at parity on long paths. Three stacked optimizations got us here: lazy CE
+production for forward search (7648b1d), buffer capacity reservation on
+the range-returning path (e1cd576), and a short-string threshold (≤32
+UTF-8 bytes) on the Bool fast path that avoids wasted allocation on
+longer strings where search bails early.
+
+**Direct collation arithmetic** is 1.9–3.2× slower than ICU's C (Swift
+value-type + function-call overhead). Through Foundation APIs the ObjC
+bridge cost offsets this entirely.
 
 ## How to reproduce
 
