@@ -48,6 +48,12 @@ struct CollationSearch {
         if pattern.isEmpty { return text.startIndex..<text.startIndex }
         if text.isEmpty { return nil }
 
+        if options.strength.rawValue >= CollationOptions.Strength.tertiary.rawValue && !numeric {
+            if let range = asciiSearch(for: pattern, in: text) {
+                return range
+            }
+        }
+
         let mask = strengthMask(for: options.strength)
         let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
         if patternCEs.isEmpty { return nil }
@@ -151,6 +157,48 @@ struct CollationSearch {
         }
 
         return false
+    }
+
+    // MARK: - ASCII fast path
+
+    /// Direct byte scan when both strings are ASCII and strength >= tertiary.
+    /// Returns nil if either string is not ASCII (caller falls through to CE path).
+    private func asciiSearch(for pattern: String, in text: String) -> Range<String.Index>?? {
+        guard text.isContiguousUTF8, pattern.isContiguousUTF8 else { return nil }
+        var patternIsASCII = true
+        var textIsASCII = true
+        pattern.utf8.withContiguousStorageIfAvailable { buf in
+            for b in buf where b >= 0x80 { patternIsASCII = false; break }
+        }
+        guard patternIsASCII else { return nil }
+        text.utf8.withContiguousStorageIfAvailable { buf in
+            for b in buf where b >= 0x80 { textIsASCII = false; break }
+        }
+        guard textIsASCII else { return nil }
+
+        let patLen = pattern.utf8.count
+        let textLen = text.utf8.count
+        guard patLen <= textLen else { return .some(nil) }
+
+        return text.utf8.withContiguousStorageIfAvailable { textBuf -> Range<String.Index>? in
+            pattern.utf8.withContiguousStorageIfAvailable { patBuf -> Range<String.Index>? in
+                for i in 0...(textLen - patLen) {
+                    var matched = true
+                    for j in 0..<patLen {
+                        if textBuf[i + j] != patBuf[j] {
+                            matched = false
+                            break
+                        }
+                    }
+                    if matched {
+                        let start = text.index(text.startIndex, offsetBy: i)
+                        let end = text.index(start, offsetBy: patLen)
+                        return start..<end
+                    }
+                }
+                return nil
+            }!
+        }!
     }
 
     // MARK: - Forward search (lazy CE production)
