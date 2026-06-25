@@ -42,6 +42,19 @@ struct CollationSearch {
         return searchForward(patternCEs: patternCEs, in: text, mask: mask)
     }
 
+    /// Reuses a caller-owned iterator for pattern CE production, then resets it
+    /// for the text scan — no per-call iterator allocation.
+    func search(for pattern: String, in text: String, iter: inout CEIterator) -> Range<String.Index>? {
+        if pattern.isEmpty { return text.startIndex..<text.startIndex }
+        if text.isEmpty { return nil }
+
+        let mask = strengthMask(for: options.strength)
+        let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
+        if patternCEs.isEmpty { return nil }
+
+        return searchForward(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
+    }
+
     /// Searches backwards for `pattern` in `text` at the configured collation
     /// strength. Returns the range of the last match, or nil.
     func searchBackwards(for pattern: String, in text: String) -> Range<String.Index>? {
@@ -53,6 +66,18 @@ struct CollationSearch {
         if patternCEs.isEmpty { return nil }
 
         return searchBackwardFull(patternCEs: patternCEs, in: text, mask: mask)
+    }
+
+    /// Reuses a caller-owned iterator for backwards search.
+    func searchBackwards(for pattern: String, in text: String, iter: inout CEIterator) -> Range<String.Index>? {
+        if pattern.isEmpty { return text.startIndex..<text.startIndex }
+        if text.isEmpty { return nil }
+
+        let mask = strengthMask(for: options.strength)
+        let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
+        if patternCEs.isEmpty { return nil }
+
+        return searchBackwardFull(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
     }
 
     /// Returns true if `pattern` appears anywhere in `text`.
@@ -131,20 +156,21 @@ struct CollationSearch {
     // MARK: - Forward search (lazy CE production)
 
     private func searchForward(patternCEs: [Int64], in text: String, mask: Int64) -> Range<String.Index>? {
-        let textIndices = buildIndexTable(for: text)
-        let scalarCount = text.unicodeScalars.count
-        let nfdMap = buildNFDSourceMap(for: text)
-        let patCount = patternCEs.count
-
         var iter = CEIterator(
             data: data, base: base, norm: norm,
             numeric: numeric,
             scalars: text.unicodeScalars
         )
-        // A fresh iterator/buffers are built per search call; pre-size the CE and
-        // annotated buffers to the scalar count (CEs ≈ scalars) so the append
-        // loop over long text doesn't repeatedly reallocate — Array growth
-        // reallocation was the dominant cost on the paths corpus.
+        return searchForward(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
+    }
+
+    private func searchForward(patternCEs: [Int64], in text: String, mask: Int64, iter: inout CEIterator) -> Range<String.Index>? {
+        let textIndices = buildIndexTable(for: text)
+        let scalarCount = text.unicodeScalars.count
+        let nfdMap = buildNFDSourceMap(for: text)
+        let patCount = patternCEs.count
+
+        iter.reset(numeric: numeric, scalars: text.unicodeScalars)
         iter.ces.reserveCapacity(scalarCount + 1)
 
         var buffer: [AnnotatedCE] = []
@@ -241,6 +267,19 @@ struct CollationSearch {
         let annotated = produceAnnotatedCEs(for: text, mask: mask)
         if annotated.isEmpty { return nil }
 
+        return searchBackwardMatch(patternCEs: patternCEs, annotated: annotated, text: text, textIndices: textIndices)
+    }
+
+    private func searchBackwardFull(patternCEs: [Int64], in text: String, mask: Int64, iter: inout CEIterator) -> Range<String.Index>? {
+        let textIndices = buildIndexTable(for: text)
+        let annotated = produceAnnotatedCEs(for: text, mask: mask, iter: &iter)
+        if annotated.isEmpty { return nil }
+
+        return searchBackwardMatch(patternCEs: patternCEs, annotated: annotated, text: text, textIndices: textIndices)
+    }
+
+    private func searchBackwardMatch(patternCEs: [Int64], annotated: [AnnotatedCE], text: String, textIndices: [String.Index]) -> Range<String.Index>? {
+
         let patCount = patternCEs.count
         guard patCount <= annotated.count else { return nil }
 
@@ -305,14 +344,19 @@ struct CollationSearch {
     // MARK: - Annotated CE production (full, for backwards search)
 
     private func produceAnnotatedCEs(for text: String, mask: Int64) -> [AnnotatedCE] {
-        let nfdMap = buildNFDSourceMap(for: text)
-        let scalarCount = text.unicodeScalars.count
-
         var iter = CEIterator(
             data: data, base: base, norm: norm,
             numeric: numeric,
             scalars: text.unicodeScalars
         )
+        return produceAnnotatedCEs(for: text, mask: mask, iter: &iter)
+    }
+
+    private func produceAnnotatedCEs(for text: String, mask: Int64, iter: inout CEIterator) -> [AnnotatedCE] {
+        let nfdMap = buildNFDSourceMap(for: text)
+        let scalarCount = text.unicodeScalars.count
+
+        iter.reset(numeric: numeric, scalars: text.unicodeScalars)
         iter.ces.reserveCapacity(scalarCount + 1)
 
         var result: [AnnotatedCE] = []

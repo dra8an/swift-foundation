@@ -349,10 +349,12 @@ public struct RootCollator: @unchecked Sendable {
     public func search(
         for pattern: String, in text: String, options: CollationOptions = CollationOptions()
     ) -> Range<String.Index>? {
+        let scratch = takeScratch()
+        defer { giveScratch(scratch) }
         let searcher = CollationSearch(
             data: data, base: base, norm: norm, options: options
         )
-        return searcher.search(for: pattern, in: text)
+        return searcher.search(for: pattern, in: text, iter: &scratch.left)
     }
 
     /// Searches backwards for `pattern` in `text`. Returns the range of the
@@ -360,10 +362,12 @@ public struct RootCollator: @unchecked Sendable {
     public func searchBackwards(
         for pattern: String, in text: String, options: CollationOptions = CollationOptions()
     ) -> Range<String.Index>? {
+        let scratch = takeScratch()
+        defer { giveScratch(scratch) }
         let searcher = CollationSearch(
             data: data, base: base, norm: norm, options: options
         )
-        return searcher.searchBackwards(for: pattern, in: text)
+        return searcher.searchBackwards(for: pattern, in: text, iter: &scratch.left)
     }
 
     /// Returns true if `text` contains `pattern` at the given collation strength.

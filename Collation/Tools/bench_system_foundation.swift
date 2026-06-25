@@ -68,4 +68,24 @@ measure("localizedStdContns", ops: lines.count * reps) {
     }
 }
 
+measure("localizedStdRange ", ops: lines.count * reps) {
+    for _ in 0..<reps {
+        for line in lines {
+            if let r = line.localizedStandardRange(of: needle) {
+                sink += line.distance(from: r.lowerBound, to: r.upperBound)
+            }
+        }
+    }
+}
+
+measure("range(of:locale:) ", ops: lines.count * reps) {
+    for _ in 0..<reps {
+        for line in lines {
+            if let r = line.range(of: needle, options: [], locale: locale) {
+                sink += line.distance(from: r.lowerBound, to: r.upperBound)
+            }
+        }
+    }
+}
+
 if sink == Int.min { print("") }
