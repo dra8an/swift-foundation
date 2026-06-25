@@ -49,6 +49,17 @@ measure("RootCollator.cmp  ", ops: (lines.count - 1) * reps) {
     }
 }
 
+// 0b. Direct RootCollator.sortKey — pure-engine baseline vs ucol_getSortKey
+measure("RootCollator.sk   ", ops: lines.count * reps) {
+    var key: [UInt8] = []
+    for _ in 0..<reps {
+        for line in lines {
+            try! collator.sortKey(for: line, into: &key, options: defaultOpts)
+            sink += key.count
+        }
+    }
+}
+
 // 1. compare(_:locale:)
 measure("compare(locale:)  ", ops: (lines.count - 1) * reps) {
     for _ in 0..<reps {
