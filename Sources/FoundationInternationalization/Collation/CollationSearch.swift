@@ -49,7 +49,7 @@ struct CollationSearch {
         if text.isEmpty { return nil }
 
         if options.strength.rawValue >= CollationOptions.Strength.tertiary.rawValue && !numeric {
-            if let range = asciiSearch(for: pattern, in: text) {
+            if let range = byteScanSearch(for: pattern, in: text) {
                 return range
             }
         }
@@ -159,43 +159,60 @@ struct CollationSearch {
         return false
     }
 
-    // MARK: - ASCII fast path
+    // MARK: - Byte-scan fast path
 
-    /// Direct byte scan when both strings are ASCII and strength >= tertiary.
-    /// Returns nil if either string is not ASCII (caller falls through to CE path).
-    private func asciiSearch(for pattern: String, in text: String) -> Range<String.Index>?? {
+    /// Direct UTF-8 byte scan when strength >= tertiary and no numeric mode.
+    /// For pure ASCII text: a definitive search (byte equality = collation equality,
+    /// "not found" is conclusive). For non-ASCII: only returns early on match
+    /// (byte match implies collation match), falls through on no-match since
+    /// normalization could still produce a collation match via the CE path.
+    private func byteScanSearch(for pattern: String, in text: String) -> Range<String.Index>?? {
         guard text.isContiguousUTF8, pattern.isContiguousUTF8 else { return nil }
-        var patternIsASCII = true
-        var textIsASCII = true
-        pattern.utf8.withContiguousStorageIfAvailable { buf in
-            for b in buf where b >= 0x80 { patternIsASCII = false; break }
-        }
-        guard patternIsASCII else { return nil }
-        text.utf8.withContiguousStorageIfAvailable { buf in
-            for b in buf where b >= 0x80 { textIsASCII = false; break }
-        }
-        guard textIsASCII else { return nil }
 
         let patLen = pattern.utf8.count
         let textLen = text.utf8.count
-        guard patLen <= textLen else { return .some(nil) }
+        guard patLen <= textLen else {
+            // Pattern longer than text — check if ASCII for definitive answer
+            var isASCII = true
+            text.utf8.withContiguousStorageIfAvailable { buf in
+                for b in buf where b >= 0x80 { isASCII = false; break }
+            }
+            if isASCII {
+                pattern.utf8.withContiguousStorageIfAvailable { buf in
+                    for b in buf where b >= 0x80 { isASCII = false; break }
+                }
+            }
+            return isASCII ? .some(nil) : nil
+        }
 
-        return text.utf8.withContiguousStorageIfAvailable { textBuf -> Range<String.Index>? in
-            pattern.utf8.withContiguousStorageIfAvailable { patBuf -> Range<String.Index>? in
+        return text.utf8.withContiguousStorageIfAvailable { textBuf -> Range<String.Index>?? in
+            pattern.utf8.withContiguousStorageIfAvailable { patBuf -> Range<String.Index>?? in
+                var allASCII = true
+                for j in 0..<patLen {
+                    if patBuf[j] >= 0x80 { allASCII = false; break }
+                }
+
                 for i in 0...(textLen - patLen) {
+                    if textBuf[i] != patBuf[0] {
+                        if textBuf[i] >= 0x80 { allASCII = false }
+                        continue
+                    }
                     var matched = true
-                    for j in 0..<patLen {
+                    for j in 1..<patLen {
                         if textBuf[i + j] != patBuf[j] {
                             matched = false
                             break
                         }
                     }
                     if matched {
-                        let start = text.index(text.startIndex, offsetBy: i)
-                        let end = text.index(start, offsetBy: patLen)
-                        return start..<end
+                        let startIdx = text.utf8.index(text.startIndex, offsetBy: i)
+                        let endIdx = text.utf8.index(startIdx, offsetBy: patLen)
+                        return .some(startIdx..<endIdx)
                     }
                 }
+                // No byte match found. If all bytes were ASCII, that's conclusive.
+                if allASCII { return .some(nil) }
+                // Non-ASCII present — can't rule out normalization match.
                 return nil
             }!
         }!
