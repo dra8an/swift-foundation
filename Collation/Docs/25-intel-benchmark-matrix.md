@@ -6,11 +6,13 @@
 > Absolute ns differ by hardware (ICU is faster on Apple Silicon too); read the
 > *ratios* within this doc, not cross-machine deltas.
 >
-> Measured 2026-06-24, at `port/collation` (`78729ac`) — after the
-> FoundationInternationalization module move and the four stacked search
-> optimizations: lazy CE production (`7648b1d`), buffer `reserveCapacity` on the
-> range path (`e1cd576`), the `contains()` Bool fast path (`c683653`), and
-> `reserveCapacity` on that fast path too (`78729ac`).
+> Measured 2026-06-26, at `port/collation` (`7c742c0`) — after the
+> FoundationInternationalization module move and the full search-optimization
+> stack: lazy CE production (`7648b1d`), buffer `reserveCapacity` (`e1cd576`),
+> the `contains()` Bool fast path (`c683653` / `78729ac` / `843b4d8`),
+> **thread-local scratch-iterator reuse** for `contains` (`b93b549`) and the
+> range-returning search (`a56b5a3`), and **ASCII / UTF-8 byte-scan fast paths**
+> for `range(of:locale:)` (`6e214ff` / `7c742c0`).
 
 ## Build note — the `-no-WMO` workaround (required on this machine)
 
@@ -54,7 +56,8 @@ trip, so its numbers there are full-WMO.)
   - **System ICU via Foundation:** `Collation/Tools/bench_system_foundation.swift`
     (`swift -O`, NSString → system ICU).
   - **Ours via Foundation:** `BenchFoundation` measures `compare(locale:)`,
-    `localizedCompare`, `localizedStandardCompare`, `localizedStandardContains`.
+    `localizedCompare`, `localizedStandardCompare`, `localizedStandardContains`,
+    `localizedStandardRange`, and `range(of:options:locale:)`.
 
 ## Table 1 — Pure collator engine
 
@@ -62,11 +65,11 @@ Our pure-Swift `RootCollator` vs ICU's C library. ratio = ours / ICU.
 
 | corpus | compare ICU | compare ours | ratio | sortKey ICU | sortKey ours | ratio |
 |--------|------------:|-------------:|------:|------------:|-------------:|------:|
-| ascii  | 16  | 51   | 3.19× | 193 | 424  | 2.20× |
-| latin  | 17  | 51   | 3.00× | 208 | 464  | 2.23× |
-| cjk    | 72  | 284  | 3.94× | 217 | 487  | 2.24× |
-| paths  | 49  | 120  | 2.45× | 659 | 1146 | 1.74× |
-| thai   | 258 | 816  | 3.16× | 267 | 663  | 2.48× |
+| ascii  | 16  | 51   | 3.19× | 193 | 420  | 2.18× |
+| latin  | 17  | 53   | 3.12× | 208 | 464  | 2.23× |
+| cjk    | 72  | 288  | 4.00× | 219 | 501  | 2.29× |
+| paths  | 49  | 122  | 2.49× | 662 | 1113 | 1.68× |
+| thai   | 260 | 819  | 3.15× | 268 | 679  | 2.53× |
 
 Pure-Swift vs hand-tuned C: ~2.5–3.9× on compare, ~1.7–2.5× on sortKey. This is
 the expected gap for a from-scratch Swift implementation against ICU's C engine.
@@ -78,19 +81,23 @@ the other to our Swift collator. ratio = ours / system-ICU. **<1 = ours faster.*
 
 | API | ascii | latin | cjk | paths | thai |
 |-----|------:|------:|----:|------:|-----:|
-| `compare(locale:)`          | 0.76× | 0.49× | 0.66× | 0.67× | 1.00× |
-| `localizedCompare`          | 0.61× | 0.30× | 0.54× | 0.49× | 0.97× |
-| `localizedStandardCompare`  | 0.66× | 0.33× | 0.55× | 0.56× | 1.02× |
-| `localizedStandardContains` | 1.49× | 0.93× | 0.96× | 2.00× | 0.92× |
+| `compare(locale:)`          | 0.75× | 0.49× | 0.67× | 0.67× | 0.94× |
+| `localizedCompare`          | 0.62× | 0.30× | 0.54× | 0.48× | 0.92× |
+| `localizedStandardCompare`  | 0.67× | 0.33× | 0.56× | 0.54× | 0.98× |
+| `localizedStandardContains` | 0.77× | 0.46× | 0.57× | 1.11× | 0.49× |
+| `localizedStandardRange`    | 1.16× | 0.83× | 0.78× | 2.18× | 0.81× |
+| `range(of:options:locale:)` | 0.96× | 1.50× | 1.46× | 1.13× | 1.30× |
 
 Raw ns/op behind the ratios:
 
 | API | corpus | sysICU | ours |
 |-----|--------|-------:|-----:|
-| compare(locale:)   | ascii/latin/cjk/paths/thai | 779 / 1198 / 1254 / 1016 / 1422 | 591 / 583 / 829 / 684 / 1418 |
-| localizedCompare   | ascii/latin/cjk/paths/thai | 434 / 881 / 921 / 669 / 1076   | 263 / 263 / 496 / 329 / 1042 |
-| localizedStdCmp    | ascii/latin/cjk/paths/thai | 432 / 871 / 933 / 681 / 1045   | 284 / 285 / 517 / 382 / 1067 |
-| localizedStdContns | ascii/latin/cjk/paths/thai | 1410 / 2428 / 2189 / 1365 / 2318 | 2099 / 2249 / 2097 / 2727 / 2127 |
+| compare(locale:)   | ascii/latin/cjk/paths/thai | 785 / 1206 / 1270 / 1042 / 1516 | 587 / 587 / 845 / 693 / 1426 |
+| localizedCompare   | ascii/latin/cjk/paths/thai | 426 / 866 / 932 / 682 / 1130   | 263 / 263 / 505 / 330 / 1039 |
+| localizedStdCmp    | ascii/latin/cjk/paths/thai | 425 / 867 / 933 / 704 / 1095   | 283 / 284 / 526 / 382 / 1074 |
+| localizedStdContns | ascii/latin/cjk/paths/thai | 1411 / 2436 / 2218 / 1384 / 2468 | 1081 / 1125 / 1268 / 1538 / 1210 |
+| localizedStdRange  | ascii/latin/cjk/paths/thai | 1400 / 2423 / 2216 / 1417 / 2611 | 1625 / 2001 / 1732 / 3094 / 2110 |
+| range(of:locale:)  | ascii/latin/cjk/paths/thai | 726 / 1769 / 1472 / 750 / 1777   | 697 / 2653 / 2147 / 846 / 2308 |
 
 ## Findings
 
@@ -102,32 +109,42 @@ Raw ns/op behind the ratios:
    `compare(locale:)` get faster results from the Swift collator despite the
    slower engine. Latin is the standout — **3.3× faster** on `localizedCompare`.
    Thai is ≈ parity (the dictionary corpus is the heaviest case for both).
-3. **`localizedStandardContains` — at or near ICU parity after four stacked
-   search optimizations.** (a) lazy CE production (`7648b1d`, return on first
-   match); (b) buffer `reserveCapacity` on the range path (`e1cd576`, kill the
-   per-call Array-growth realloc that profiling showed was ~44% of the time);
-   (c) a dedicated `contains()` Bool fast path (`c683653`) that skips the index
-   table, NFD map, `AnnotatedCE` structs, and boundary validation entirely —
-   `contains` needs only yes/no, not the range; (d) `reserveCapacity` on the fast
-   path's own buffers (`78729ac`, the same realloc fix — the fast path grew fresh
-   buffers from empty too). Result vs the pre-optimization matrix:
+3. **`localizedStandardContains` — now beats system ICU on 4 of 5 corpora.**
+   The optimization chain: lazy CE production (`7648b1d`) → buffer
+   `reserveCapacity` (`e1cd576`) → a dedicated `contains()` Bool fast path that
+   skips the index table, NFD map, `AnnotatedCE` structs, and boundary validation
+   (`c683653`, since `contains` needs only yes/no) → fast-path `reserveCapacity`
+   with a short-string threshold (`78729ac` / `843b4d8`) → **thread-local
+   scratch-iterator reuse** (`b93b549`). The last step was decisive: profiling
+   showed ~half the time was per-call allocation/ARC — every call built two fresh
+   `CEIterator`s (one re-deriving the *same* pattern's CEs) plus their arrays.
+   Reusing one scratch iterator for pattern + text, across calls, removed it.
 
    | corpus | before (×ICU) | now (×ICU) | ours ns: before → now |
    |--------|--------------:|-----------:|----------------------:|
-   | ascii  | 2.80× | 1.49× | 3951 → 2099 |
-   | latin  | 1.71× | **0.93×** | 4125 → 2249 |
-   | cjk    | 1.51× | **0.96×** | 3325 → 2097 |
-   | paths  | 5.88× | 2.00× | 8252 → 2727 |
-   | thai   | 1.71× | **0.92×** | 3993 → 2127 |
+   | ascii  | 2.80× | **0.77×** | 3951 → 1081 |
+   | latin  | 1.71× | **0.46×** | 4125 → 1125 |
+   | cjk    | 1.51× | **0.57×** | 3325 → 1268 |
+   | paths  | 5.88× | 1.11× | 8252 → 1538 |
+   | thai   | 1.71× | **0.49×** | 3993 → 1210 |
 
-   **Latin, CJK, and Thai now match or beat system ICU** on contains; ASCII
-   (1.49×) and paths (2.00×) remain behind. Step (d) was a clear Intel win on
-   ASCII/Latin/CJK/Thai (−12 to −21% on top of the fast path) but ~neutral on
-   paths — paths' benchmark needle (a prefix of line 1) matches many same-prefixed
-   lines *early*, so the fast path returns before the buffer grows and the reserve
-   slightly over-allocates. The deeper remaining lever (mainly for ASCII/paths) is
-   reusing CE buffers across calls (scratch-pool, like the main collator) or
-   CE-space skipping (ICU's ring-buffer `usearch` model).
+   ASCII/Latin/CJK/Thai now **beat** system ICU (0.46–0.77×); paths is at near
+   parity (1.11×), down from 5.9×.
+
+4. **Range-returning search is mixed, by API.** Both `search`/`searchBackwards`
+   got the same scratch-iterator reuse (`a56b5a3`), and `range(of:locale:)`
+   additionally got ASCII / UTF-8 byte-scan fast paths (`6e214ff` / `7c742c0`).
+   - **`localizedStandardRange`** (strength `.primary`, numeric on → CE path, no
+     byte-scan): Latin/CJK/Thai **beat** ICU (0.78–0.83×); ASCII (1.16×) and
+     paths (2.18×) remain behind — these still build the index table + NFD map +
+     `AnnotatedCE` buffer for position reporting, which iterator reuse doesn't
+     remove (that's the next lever).
+   - **`range(of:options:locale:)`** (default options → strength `.tertiary`,
+     non-numeric → byte-scan fast path applies): ASCII **0.96×** (near parity,
+     the byte-scan win) and paths 1.13×, but non-ASCII (Latin/CJK/Thai) falls
+     through to the CE path and is 1.3–1.5× behind. The byte-scan fast path only
+     fires for tertiary/non-numeric, so `localizedStandardRange` (primary+numeric)
+     does not benefit from it.
 
 ## Cross-reference
 
