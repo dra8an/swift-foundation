@@ -409,3 +409,53 @@ branches, or (b) use separate compilation units (@_silgen_name or similar)
 to isolate codegen.
 
 ---
+
+### 20. Collation-aware search (`contains` / `range`) optimization chain
+
+**Status:** shipped. `localizedStandardContains` went from 1.5–5.9× *slower*
+than system ICU to **beating it on most corpora**; the range APIs are partway
+there. Full Intel numbers and per-API breakdown: `Docs/25-intel-benchmark-matrix.md`.
+
+The starting point (`CollationSearch`) produced *all* text CEs into arrays with
+position annotations, built a `[String.Index]` table + NFD source map, then did
+a linear CE-space scan — fine for correctness, heavy per call. The chain that
+fixed it:
+
+1. **Lazy CE production** (`7648b1d`): produce CEs incrementally and match as
+   each arrives; return on first match. Avoids processing the whole text when
+   the pattern hits early.
+2. **`contains()` Bool fast path** (`c683653`): `localizedStandardContains`
+   returns Bool, not a range — so skip the index table, NFD map, `AnnotatedCE`
+   structs, and boundary validation entirely. Produce only masked `Int64` CEs
+   and match. (Boundary validation isn't needed without range reporting.)
+3. **`reserveCapacity`** on the CE/match buffers (`e1cd576` range path;
+   `78729ac` fast path), gated on `utf8.count <= 32` (`843b4d8`) — short strings
+   get the realloc-avoidance win; long strings (where search bails early) skip
+   the over-allocation.
+4. **Thread-local scratch-iterator reuse** (`b93b549` contains, `a56b5a3`
+   range) — **the decisive step.** Profiling `localizedStandardContains` showed
+   ~half the time was per-call allocation/ARC: every call built two fresh
+   `CEIterator`s (one re-deriving the *same* pattern's CEs) plus their arrays,
+   then freed them. Route `RootCollator.contains`/`search`/`searchBackwards`
+   through `takeScratch()` and reuse `scratch.left`/`scratch.right` (reset per
+   call). Searching one pattern over many strings now allocates no per-call
+   iterator or CE buffer. Intel: contains −37 to −46%, range −26 to −39%.
+5. **ASCII / UTF-8 byte-scan fast path** for `range(of:options:locale:)`
+   (`6e214ff`, `7c742c0`): at strength ≥ tertiary with numeric off, byte
+   equality implies collation equality, so do a direct byte scan (mirrors
+   CoreFoundation's `CFStringFindWithOptionsAndLocale`). ASCII near-parity with
+   ICU. Does **not** apply to `localizedStandardRange` (primary + numeric).
+
+**Results.** `contains`: Apple Silicon 1.6–3.2× faster than system ICU
+(`2268a0e`); Intel beats ICU on ASCII/Latin/CJK/Thai (0.46–0.77×), paths near
+parity (1.11×). The range APIs are mixed — `localizedStandardRange` beats ICU on
+Latin/CJK/Thai but still pays the index-table/NFD-map/`AnnotatedCE` overhead on
+ASCII/paths; `range(of:locale:)` is at ASCII parity via the byte scan but the
+non-ASCII CE path is still behind.
+
+**Remaining levers (range):** apply the same lazy/Bool-style trimming to the
+range path's position-reporting arrays (compute only the two needed
+`String.Index`es instead of a full table; reuse the NFD/annotated buffers via
+scratch), and extend CE-space skipping. See `Docs/25` finding #4.
+
+---

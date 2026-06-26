@@ -106,7 +106,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `c683653`. Milestone 8 Foundation
+- **`origin/port/collation` in sync** at `6b34806`. Milestone 8 Foundation
   integration (2026-06-22/23): Collation sources moved into
   `Sources/FoundationInternationalization/Collation/` (same module — no
   separate Collation target, no `FOUNDATION_COLLATION` flag, no
@@ -121,6 +121,11 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (full ICU coverage). Darwin opt-in feature flag added (defaults off).
   Performance: `localizedCompare` 1.5–2.8× faster than system ICU.
   941 tests pass (40 suites).
+  Since `c683653`, the search APIs were optimized (thread-local scratch-iterator
+  reuse for `contains`/`search`/`searchBackwards`, plus ASCII/UTF-8 byte-scan
+  fast paths for `range(of:locale:)`): `localizedStandardContains` now beats
+  system ICU on most corpora. Technique log: `optimization-targets.md` §20;
+  Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
   min-over-9 parity.
