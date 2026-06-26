@@ -45,7 +45,12 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
    verify messages (`git log --format=%B | grep -ci 'claude\|co-authored\|anthropic'`
    must be 0) and author/committer identity (must be dra8an), and show the
    user the verification.
-2. Push only when the user says push (they always ask explicitly).
+2. **Push ONLY when the user explicitly says "push" in that same request** — a
+   prior "push it" authorizes that one push only, never the next task/commit.
+   Commit when done, then STOP and ask. This is enforced two ways: a `deny` rule
+   on `Bash(git push:*)` in `.claude/settings.local.json` (the harness blocks the
+   push; the user runs it themselves via the `! git push …` prefix), and a
+   feedback memory. Do not try to work around either.
 3. Plain terminology: no testing jargon — "ICU reference answers" not
    "oracle", "option set" not "configuration".
 4. Swift 6.4 does NOT compile on machine 1; everything bases on
@@ -106,7 +111,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
     rebuild iterators for CE pipeline, negating the gain; also had a scalar-
     counting correctness bug)
 
-- **`origin/port/collation` in sync** at `6b34806`. Milestone 8 Foundation
+- **`origin/port/collation` in sync** at `99a7a67`. Milestone 8 Foundation
   integration (2026-06-22/23): Collation sources moved into
   `Sources/FoundationInternationalization/Collation/` (same module — no
   separate Collation target, no `FOUNDATION_COLLATION` flag, no
@@ -360,14 +365,27 @@ not committed).
 ## How to work
 
 ```sh
-cd ~/Projects/dra8an/swift-foundation-collation  # repo root
-swift test                      # full suite (941 tests), ~5-10s
+cd ~/Projects/dra8an/swift-foundation-collation  # repo root (machine 2)
+# machine 1 (Intel iMac): cd ~/Projects/claude/collation/swift-foundation
+swift test                      # full suite, ~5-20s (machine 1 reports 1488 tests / 119 suites)
 swift build -c release          # build everything incl. BenchFoundation
 
 # Foundation API benchmark (our collator vs system ICU):
 swift run -c release BenchFoundation Collation/Tools/bench/bench-ascii.txt 200
 swift -O Collation/Tools/bench_system_foundation.swift Collation/Tools/bench/bench-ascii.txt 200
 ```
+
+> **MACHINE 1 (Intel iMac, Swift 6.3.1) — required for release benchmarks:**
+> `swift run -c release BenchFoundation …` **crashes with SIGILL at startup**
+> (before any output) on this toolchain. Root cause: `Locale(identifier:)` →
+> the `dynamic` `_localeICUClass()` whose `@_dynamicReplacement` is not applied
+> in a release **whole-module-optimized executable**, so it jumps into data.
+> Not a collation bug, not stale artifacts; debug builds are fine. **Workaround:
+> add `-Xswiftc -no-whole-module-optimization`** to the release build/run, e.g.
+> `swift build -c release -Xswiftc -no-whole-module-optimization --product BenchFoundation`
+> then run the built binary. Numbers are then slightly pessimistic vs true WMO.
+> Full root-cause + the Intel benchmark matrix: `Docs/25-intel-benchmark-matrix.md`.
+> (Machine 2 / Apple Silicon uses a newer toolchain and does not hit this.)
 
 Regenerating reference data (only when corpus/locales change; needs icu-build):
 ```sh
