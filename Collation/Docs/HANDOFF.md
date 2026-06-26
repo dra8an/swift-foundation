@@ -369,23 +369,29 @@ cd ~/Projects/dra8an/swift-foundation-collation  # repo root (machine 2)
 # machine 1 (Intel iMac): cd ~/Projects/claude/collation/swift-foundation
 swift test                      # full suite, ~5-20s (machine 1 reports 1488 tests / 119 suites)
 swift build -c release          # build everything incl. BenchFoundation
-
-# Foundation API benchmark (our collator vs system ICU):
-swift run -c release BenchFoundation Collation/Tools/bench/bench-ascii.txt 200
-swift -O Collation/Tools/bench_system_foundation.swift Collation/Tools/bench/bench-ascii.txt 200
 ```
 
-> **MACHINE 1 (Intel iMac, Swift 6.3.1) — required for release benchmarks:**
-> `swift run -c release BenchFoundation …` **crashes with SIGILL at startup**
-> (before any output) on this toolchain. Root cause: `Locale(identifier:)` →
-> the `dynamic` `_localeICUClass()` whose `@_dynamicReplacement` is not applied
-> in a release **whole-module-optimized executable**, so it jumps into data.
-> Not a collation bug, not stale artifacts; debug builds are fine. **Workaround:
-> add `-Xswiftc -no-whole-module-optimization`** to the release build/run, e.g.
-> `swift build -c release -Xswiftc -no-whole-module-optimization --product BenchFoundation`
-> then run the built binary. Numbers are then slightly pessimistic vs true WMO.
-> Full root-cause + the Intel benchmark matrix: `Docs/25-intel-benchmark-matrix.md`.
-> (Machine 2 / Apple Silicon uses a newer toolchain and does not hit this.)
+### Benchmarking — run the script, DO NOT reconstruct it
+
+This kept getting guessed wrong on cold starts. The procedure is a committed,
+verified script. Run it; don't write a one-off harness or hand-build commands:
+
+```sh
+Collation/Tools/run_benchmarks.sh        # builds all 3 harnesses, prints the matrix
+Collation/Tools/run_benchmarks.sh 3      # faster, K=3
+```
+
+Full explanation, per-machine ICU paths, and how to read the tables:
+**`Docs/27-benchmark-runbook.md`**. Recorded numbers: `Docs/25` (Intel),
+`Docs/21` (Apple Silicon).
+
+> **MACHINE 1 (Intel iMac, Swift 6.3.1) gotcha** (the script already handles it):
+> a release `BenchFoundation` built with whole-module optimization **SIGILLs at
+> startup** — `Locale(identifier:)` → the `dynamic` `_localeICUClass()` whose
+> `@_dynamicReplacement` isn't applied under WMO, so it jumps into data. Always
+> build with `-Xswiftc -no-whole-module-optimization`. Not a collation bug, not
+> stale artifacts; debug is fine. Root cause: `Docs/25`. (Machine 2 / newer
+> toolchain doesn't hit this.)
 
 Regenerating reference data (only when corpus/locales change; needs icu-build):
 ```sh
