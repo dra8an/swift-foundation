@@ -234,17 +234,38 @@ system NSString → CoreFoundation → ICU bridge:
 | `compare(_:locale:)` | CJK | 421 | 493 | **1.2× faster** |
 | `compare(_:locale:)` | paths | 354 | 418 | **1.2× faster** |
 | `compare(_:locale:)` | Thai | 671 | 642 | **1.0× (parity)** |
-| `localizedStdContains` | ASCII | 453 | 1011 | **2.2× faster** |
-| `localizedStdContains` | Latin | 458 | 1474 | **3.2× faster** |
-| `localizedStdContains` | CJK | 483 | 1292 | **2.7× faster** |
-| `localizedStdContains` | paths | 618 | 991 | **1.6× faster** |
+| `localizedStdContains` | ASCII | 444 | 999 | **2.2× faster** |
+| `localizedStdContains` | Latin | 455 | 1445 | **3.2× faster** |
+| `localizedStdContains` | CJK | 482 | 1280 | **2.7× faster** |
+| `localizedStdContains` | paths | 623 | 963 | **1.5× faster** |
 | `localizedStdContains` | Thai | 499 | 1367 | **2.7× faster** |
+| `localizedCaseICmp` | ASCII | 137 | 198 | **1.4× faster** |
+| `localizedCaseICmp` | Latin | 137 | 347 | **2.5× faster** |
+| `localizedCaseICmp` | CJK | 244 | 364 | **1.5× faster** |
+| `localizedCaseICmp` | paths | 176 | 308 | **1.8× faster** |
+| `localizedCaseIContains` | ASCII | 445 | 1013 | **2.3× faster** |
+| `localizedCaseIContains` | Latin | 455 | 1496 | **3.3× faster** |
+| `localizedCaseIContains` | CJK | 483 | 1297 | **2.7× faster** |
+| `localizedCaseIContains` | paths | 460 | 976 | **2.1× faster** |
+| `localizedStdRange` | ASCII | 464 | 998 | **2.2× faster** |
+| `localizedStdRange` | Latin | 479 | 1441 | **3.0× faster** |
+| `localizedStdRange` | CJK | 504 | 1277 | **2.5× faster** |
+| `localizedStdRange` | paths | 884 | 989 | **1.1× faster** |
+| `range(of:locale:)` | ASCII | 358 | 323 | **0.9× (parity)** |
+| `range(of:locale:)` | Latin | 679 | 790 | **1.2× faster** |
+| `range(of:locale:)` | CJK | 724 | 585 | **0.8× (behind)** |
+| `range(of:locale:)` | paths | 436 | 313 | **0.7× (behind)** |
+| `range(backwards)` | ASCII | 648 | 324 | **0.5× (behind)** |
+| `range(backwards)` | Latin | 669 | 830 | **1.2× faster** |
+| `range(backwards)` | CJK | 718 | 596 | **0.8× (behind)** |
+| `range(backwards)` | paths | 1337 | 506 | **0.4× (behind)** |
 
-Every Foundation string comparison and search API is now equal to or
-faster than system ICU across all corpora. Direct collation arithmetic
-is 2–3× slower than ICU's C code (Swift value-type overhead), but
-through Foundation APIs we're faster because the system path pays the
-ObjC bridge cost that we avoid entirely.
+Most Foundation string APIs are faster than system ICU. The two behind
+are `range(of:locale:)` on CJK/paths (system uses Latin-1 byte encoding
+advantage) and backward search (our implementation pre-produces all CEs
+with no lazy bail-out). Direct collation arithmetic is 2–3× slower than
+ICU's C code (Swift value-type overhead), but through Foundation APIs
+we're faster because the system path pays the ObjC bridge cost.
 
 ICU bench built against `/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/`:
 ```sh
