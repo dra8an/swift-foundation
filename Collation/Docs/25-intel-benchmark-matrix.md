@@ -21,6 +21,12 @@
 > across several APIs versus the 06-26 script-mode numbers, so ratios are not
 > comparable across the harness change — ours-vs-ours raw ns are (the 06-26
 > "ours" rows are preserved below for that comparison).
+>
+> The same day, the harness gained **four previously unmeasured metrics** —
+> the allocating sortKey variant (`skRet`, Table 1), the case-insensitive
+> compare/contains pair, and **backward search** (`range(backwards)`) — and
+> the tables below are from the full run including them. Backward search is
+> the standout: 2.6×/3.5× behind system ICU on ascii/paths (finding #5).
 
 ## Build note — the `-no-WMO` workaround (required on this machine)
 
@@ -69,20 +75,29 @@ trip, so its numbers there are full-WMO.)
     ns/op ASCII), so that API's ratios shifted against us across the change
     with no change in our code.
   - **Ours via Foundation:** `BenchFoundation` measures `compare(locale:)`,
-    `localizedCompare`, `localizedStandardCompare`, `localizedStandardContains`,
-    `localizedStandardRange`, and `range(of:options:locale:)`.
+    `localizedCompare`, `localizedStandardCompare`,
+    `localizedCaseInsensitiveCompare`, `localizedStandardContains`,
+    `localizedCaseInsensitiveContains`, `localizedStandardRange`,
+    `range(of:options:locale:)`, and `range(of:options:.backwards,locale:)`;
+    plus the engine-only allocating sortKey variant (`RootCollator.skRet`).
 
 ## Table 1 — Pure collator engine
 
 Our pure-Swift `RootCollator` vs ICU's C library. ratio = ours / ICU.
 
-| corpus | compare ICU | compare ours | ratio | sortKey ICU | sortKey ours | ratio |
-|--------|------------:|-------------:|------:|------------:|-------------:|------:|
-| ascii  | 16  | 50   | 3.12× | 192 | 421  | 2.19× |
-| latin  | 16  | 50   | 3.12× | 202 | 473  | 2.34× |
-| cjk    | 73  | 284  | 3.89× | 217 | 495  | 2.28× |
-| paths  | 49  | 124  | 2.53× | 659 | 1136 | 1.72× |
-| thai   | 284 | 844  | 2.97× | 288 | 671  | 2.33× |
+`sortKey` is the inout API (caller-supplied buffer, the ICU
+`ucol_getSortKey` model); `skRet` is the allocating variant returning a
+fresh `[UInt8]` per call — the difference (~150–450 ns) is the per-call
+allocation+copy the inout API avoids. Both are measured against the same
+ICU reference.
+
+| corpus | compare ICU | compare ours | ratio | sortKey ICU | sortKey ours | ratio | skRet ours | ratio |
+|--------|------------:|-------------:|------:|------------:|-------------:|------:|-----------:|------:|
+| ascii  | 16  | 51   | 3.19× | 195 | 421  | 2.16× | 569  | 2.92× |
+| latin  | 17  | 50   | 2.94× | 209 | 463  | 2.22× | 598  | 2.86× |
+| cjk    | 73  | 285  | 3.90× | 226 | 485  | 2.15× | 708  | 3.13× |
+| paths  | 48  | 120  | 2.50× | 668 | 1133 | 1.70× | 1583 | 2.37× |
+| thai   | 284 | 836  | 2.94× | 288 | 668  | 2.32× | 854  | 2.97× |
 
 Pure-Swift vs hand-tuned C: ~2.5–3.9× on compare, ~1.7–2.5× on sortKey. This is
 the expected gap for a from-scratch Swift implementation against ICU's C engine.
@@ -94,29 +109,37 @@ the other to our Swift collator. ratio = ours / system-ICU. **<1 = ours faster.*
 
 | API | ascii | latin | cjk | paths | thai |
 |-----|------:|------:|----:|------:|-----:|
-| `compare(locale:)`          | 0.90× | 0.54× | 0.77× | 0.76× | 1.12× |
-| `localizedCompare`          | 0.62× | 0.31× | 0.56× | 0.50× | 0.99× |
-| `localizedStandardCompare`  | 0.66× | 0.33× | 0.59× | 0.57× | 1.06× |
-| `localizedStandardContains` | 0.76× | 0.48× | 0.59× | 1.14× | 0.52× |
-| `localizedStandardRange`    | 0.86× | 0.52× | 0.64× | 1.46× | 0.74× |
-| `range(of:options:locale:)` | 1.18× | 1.05× | 1.40× | 1.37× | 1.32× |
+| `compare(locale:)`               | 0.90× | 0.55× | 0.76× | 0.76× | 1.11× |
+| `localizedCompare`               | 0.61× | 0.31× | 0.55× | 0.49× | 0.98× |
+| `localizedStandardCompare`       | 0.67× | 0.33× | 0.56× | 0.55× | 1.06× |
+| `localizedCaseInsensitiveCompare`| 0.66× | 0.33× | 0.56× | 0.53× | 1.01× |
+| `localizedStandardContains`      | 0.76× | 0.46× | 0.57× | 1.13× | 0.51× |
+| `localizedCaseInsensitiveContains`| 0.75× | 0.45× | 0.56× | 0.81× | 0.48× |
+| `localizedStandardRange`         | 0.85× | 0.51× | 0.62× | 1.42× | 0.71× |
+| `range(of:options:locale:)`      | 1.15× | 1.04× | 1.35× | 1.37× | 1.31× |
+| `range(of:.backwards,locale:)`   | 2.61× | 0.95× | 1.30× | 3.45× | 1.13× |
 
 Raw ns/op behind the ratios (2026-07-06 run), with the 2026-06-26 "ours"
-rows kept for the ours-vs-ours comparison across the lazy-position change:
+rows kept for the ours-vs-ours comparison across the lazy-position change
+(the case-insensitive and backwards rows are first-time baselines — no
+06-26 numbers exist):
 
 | API | corpus | sysICU | ours | ours 06-26 |
 |-----|--------|-------:|-----:|-----------:|
-| compare(locale:)   | ascii/latin/cjk/paths/thai | 648 / 1089 / 1106 / 915 / 1306 | 582 / 587 / 852 / 691 / 1462 | 587 / 587 / 845 / 693 / 1426 |
-| localizedCompare   | ascii/latin/cjk/paths/thai | 424 / 847 / 906 / 676 / 1089   | 263 / 262 / 506 / 338 / 1081 | 263 / 263 / 505 / 330 / 1039 |
-| localizedStdCmp    | ascii/latin/cjk/paths/thai | 428 / 849 / 913 / 694 / 1050   | 284 / 283 / 537 / 395 / 1108 | 283 / 284 / 526 / 382 / 1074 |
-| localizedStdContns | ascii/latin/cjk/paths/thai | 1401 / 2416 / 2148 / 1396 / 2346 | 1062 / 1152 / 1263 / 1586 / 1214 | 1081 / 1125 / 1268 / 1538 / 1210 |
-| localizedStdRange  | ascii/latin/cjk/paths/thai | 1391 / 2430 / 2177 / 1416 / 2430 | 1190 / 1271 / 1403 / 2072 / 1787 | 1625 / 2001 / 1732 / 3094 / 2110 |
-| range(of:locale:)  | ascii/latin/cjk/paths/thai | 585 / 1618 / 1308 / 603 / 1524   | 690 / 1702 / 1825 / 828 / 2009 | 697 / 2653 / 2147 / 846 / 2308 |
+| compare(locale:)   | ascii/latin/cjk/paths/thai | 642 / 1069 / 1114 / 895 / 1302 | 579 / 585 / 843 / 684 / 1441 | 587 / 587 / 845 / 693 / 1426 |
+| localizedCompare   | ascii/latin/cjk/paths/thai | 426 / 846 / 918 / 669 / 1085   | 261 / 262 / 501 / 327 / 1058 | 263 / 263 / 505 / 330 / 1039 |
+| localizedStdCmp    | ascii/latin/cjk/paths/thai | 420 / 846 / 927 / 688 / 1052   | 281 / 282 / 521 / 379 / 1115 | 283 / 284 / 526 / 382 / 1074 |
+| localizedCaseICmp  | ascii/latin/cjk/paths/thai | 423 / 849 / 932 / 673 / 1072   | 281 / 282 / 521 / 354 / 1087 | — |
+| localizedStdContns | ascii/latin/cjk/paths/thai | 1408 / 2415 / 2181 / 1372 / 2373 | 1072 / 1112 / 1248 / 1544 / 1200 | 1081 / 1125 / 1268 / 1538 / 1210 |
+| localizedCaseICnt  | ascii/latin/cjk/paths/thai | 1429 / 2512 / 2214 / 1398 / 2461 | 1077 / 1125 / 1238 / 1136 / 1186 | — |
+| localizedStdRange  | ascii/latin/cjk/paths/thai | 1403 / 2409 / 2185 / 1408 / 2467 | 1193 / 1235 / 1351 / 1994 / 1747 | 1625 / 2001 / 1732 / 3094 / 2110 |
+| range(of:locale:)  | ascii/latin/cjk/paths/thai | 591 / 1620 / 1320 / 599 / 1518   | 681 / 1684 / 1784 / 818 / 1982 | 697 / 2653 / 2147 / 846 / 2308 |
+| range(backwards)   | ascii/latin/cjk/paths/thai | 595 / 1682 / 1349 / 912 / 1644   | 1555 / 1591 / 1749 / 3149 / 1862 | — |
 
 Ours-vs-ours, the lazy-position change (07-06 vs 06-26 "ours" columns):
-`localizedStandardRange` −15 to −36% on every corpus (ascii 1625→1190,
-paths 3094→2072); `range(of:locale:)` −1 to −36% (latin 2653→1702,
-thai 2308→2009). Compare and contains within noise of unchanged.
+`localizedStandardRange` −17 to −38% on every corpus (ascii 1625→1193,
+paths 3094→1994); `range(of:locale:)` −2 to −37% (latin 2653→1684,
+thai 2308→1982). Compare and contains within noise of unchanged.
 
 ## Findings
 
@@ -167,9 +190,29 @@ thai 2308→2009). Compare and contains within noise of unchanged.
      strings).
    - **`range(of:options:locale:)`** (default options → strength `.tertiary`,
      non-numeric → byte-scan applies): our raw ns improved on every corpus
-     (latin 2653→1702), but the precompiled bench_system also lowered the
-     system reference, so ratios read 1.05–1.40× — ASCII/Latin at parity, the
+     (latin 2653→1684), but the precompiled bench_system also lowered the
+     system reference, so ratios read 1.04–1.37× — ASCII/Latin at parity, the
      non-ASCII CE fall-through still the frontier.
+
+5. **First-time baselines (2026-07-06) expose backward search as the worst
+   API and confirm the numeric-mode cost.**
+   - **`range(of:.backwards,locale:)`: 2.61× (ascii) / 3.45× (paths) behind
+     system ICU** — by far the weakest numbers in the matrix. The backward
+     search has no byte-scan fast path and no lazy early exit: it pre-produces
+     *all* of the text's annotated CEs, then scans candidates from the end.
+     The system side presumably runs a reverse literal scan for these corpora.
+     Latin (0.95×), thai (1.13×), cjk (1.30×) are close because CE production
+     dominates there for both sides. Clear next optimization target.
+   - **`localizedCaseInsensitiveContains` beats system ICU on all five
+     corpora** (0.45–0.81×) — including paths (0.81×), where
+     `localizedStandardContains` is 1.13×. Same search machinery; the
+     difference is numeric mode (`localizedStandard*` turns it on): digits
+     leave the pre-computed ASCII CE table and take the slow numeric path,
+     and the paths corpus is digit-heavy. The numeric-mode digit path is
+     therefore a measurable cost worth a look.
+   - **Allocating sortKey (`skRet`, Table 1)** costs ~150–450 ns/op over the
+     inout variant (ascii 421→569, paths 1133→1583) — the per-call
+     allocation+copy, as designed; recorded so the delta is tracked.
 
 ## Cross-reference
 

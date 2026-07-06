@@ -60,6 +60,16 @@ measure("RootCollator.sk   ", ops: lines.count * reps) {
     }
 }
 
+// 0c. Direct RootCollator.sortKey (allocating variant) — returns a fresh
+// [UInt8] per call; measures the allocation+copy the inout API avoids.
+measure("RootCollator.skRet", ops: lines.count * reps) {
+    for _ in 0..<reps {
+        for line in lines {
+            sink += (try! collator.sortKey(for: line, options: defaultOpts)).count
+        }
+    }
+}
+
 // 1. compare(_:locale:)
 measure("compare(locale:)  ", ops: (lines.count - 1) * reps) {
     for _ in 0..<reps {
@@ -87,12 +97,30 @@ measure("localizedStdCmp   ", ops: (lines.count - 1) * reps) {
     }
 }
 
+// 3b. localizedCaseInsensitiveCompare — secondary strength, non-numeric
+measure("localizedCaseICmp ", ops: (lines.count - 1) * reps) {
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            sink += lines[i - 1].localizedCaseInsensitiveCompare(lines[i]).rawValue
+        }
+    }
+}
+
 // 4. localizedStandardContains
 let needle = lines.count > 1 ? String(lines[1].prefix(4)) : "test"
 measure("localizedStdContns", ops: lines.count * reps) {
     for _ in 0..<reps {
         for line in lines {
             sink += line.localizedStandardContains(needle) ? 1 : 0
+        }
+    }
+}
+
+// 4b. localizedCaseInsensitiveContains — secondary strength search
+measure("localizedCaseICnt ", ops: lines.count * reps) {
+    for _ in 0..<reps {
+        for line in lines {
+            sink += line.localizedCaseInsensitiveContains(needle) ? 1 : 0
         }
     }
 }
@@ -113,6 +141,17 @@ measure("range(of:locale:) ", ops: lines.count * reps) {
     for _ in 0..<reps {
         for line in lines {
             if let r = line.range(of: needle, options: [], locale: locale) {
+                sink += line.distance(from: r.lowerBound, to: r.upperBound)
+            }
+        }
+    }
+}
+
+// 7. range(of:options:.backwards) — backward search (full CE pre-production)
+measure("range(backwards)  ", ops: lines.count * reps) {
+    for _ in 0..<reps {
+        for line in lines {
+            if let r = line.range(of: needle, options: [.backwards], locale: locale) {
                 sink += line.distance(from: r.lowerBound, to: r.upperBound)
             }
         }

@@ -59,7 +59,24 @@ measure("localizedStdCmp   ", ops: (lines.count - 1) * reps) {
     }
 }
 
+measure("localizedCaseICmp ", ops: (lines.count - 1) * reps) {
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            sink += lines[i - 1].localizedCaseInsensitiveCompare(lines[i]).rawValue
+        }
+    }
+}
+
 let needle = lines.count > 1 ? String(lines[1].prefix(4)) : "test"
+
+measure("localizedCaseICnt ", ops: lines.count * reps) {
+    for _ in 0..<reps {
+        for line in lines {
+            sink += line.localizedCaseInsensitiveContains(needle) ? 1 : 0
+        }
+    }
+}
+
 measure("localizedStdContns", ops: lines.count * reps) {
     for _ in 0..<reps {
         for line in lines {
@@ -82,6 +99,16 @@ measure("range(of:locale:) ", ops: lines.count * reps) {
     for _ in 0..<reps {
         for line in lines {
             if let r = line.range(of: needle, options: [], locale: locale) {
+                sink += line.distance(from: r.lowerBound, to: r.upperBound)
+            }
+        }
+    }
+}
+
+measure("range(backwards)  ", ops: lines.count * reps) {
+    for _ in 0..<reps {
+        for line in lines {
+            if let r = line.range(of: needle, options: [.backwards], locale: locale) {
                 sink += line.distance(from: r.lowerBound, to: r.upperBound)
             }
         }

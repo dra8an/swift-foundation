@@ -65,18 +65,22 @@ for label, corpus, loc, reps in CORPORA:
 
 print(f"\nK={K}  min ns/op over interleaved runs. (no-WMO build on Intel — see Docs/27.)")
 print("\n================ TABLE 1: PURE COLLATOR ENGINE (ours vs ICU C) ================")
-print(f"{'corpus':6} | {'cmp ICU':>7} {'ours':>5} {'ratio':>6} | {'sk ICU':>7} {'ours':>6} {'ratio':>6}")
-print("-" * 64)
+print(f"{'corpus':6} | {'cmp ICU':>7} {'ours':>5} {'ratio':>6} | {'sk ICU':>7} {'ours':>6} {'ratio':>6} | {'skRet':>6} {'ratio':>6}")
+print("-" * 80)
 for label, _, _, _ in CORPORA:
     r = results[label]
     ic, oc = r["icu"].get("compare"), r["ours"].get("RootCollator.cmp")
     isk, osk = r["icu"].get("sortKey"), r["ours"].get("RootCollator.sk")
+    # skRet = the allocating sortKey variant, vs the same ICU reference
+    osr = r["ours"].get("RootCollator.skRet")
     print(f"{label:6} | {ic or '-':>7} {oc or '-':>5} {ratio(oc,ic):>6} | "
-          f"{isk or '-':>7} {osk or '-':>6} {ratio(osk,isk):>6}")
+          f"{isk or '-':>7} {osk or '-':>6} {ratio(osk,isk):>6} | "
+          f"{osr or '-':>6} {ratio(osr,isk):>6}")
 
 print("\n===== TABLE 2: FOUNDATION APIs (ours vs system ICU; ratio = ours/sys, <1 = ours faster) =====")
 APIS = ["compare(locale:)", "localizedCompare", "localizedStdCmp",
-        "localizedStdContns", "localizedStdRange", "range(of:locale:)"]
+        "localizedCaseICmp", "localizedStdContns", "localizedCaseICnt",
+        "localizedStdRange", "range(of:locale:)", "range(backwards)"]
 for api in APIS:
     print(f"\n--- {api} ---")
     print(f"{'corpus':6} | {'sysICU':>7} {'ours':>7} {'ratio':>7}")

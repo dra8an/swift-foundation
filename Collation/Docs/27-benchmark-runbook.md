@@ -27,10 +27,12 @@ env for machine 2):
    full root cause in `Docs/25`). Harmless on machine 2.
 3. Runs **`bench_matrix.py <BenchFoundation> K`**, which drives:
    - `bench_icu` — pure ICU `ucol_strcollUTF8` / `ucol_getSortKey`.
-   - `BenchFoundation` (ours) — `RootCollator.cmp`/`.sk` (pure engine) **and** the
-     Foundation APIs (`compare(locale:)`, `localizedCompare`,
-     `localizedStandardCompare`, `localizedStandardContains`,
-     `localizedStandardRange`, `range(of:options:locale:)`).
+   - `BenchFoundation` (ours) — `RootCollator.cmp`/`.sk`/`.skRet` (pure
+     engine; `.skRet` is the allocating sortKey) **and** the Foundation APIs
+     (`compare(locale:)`, `localizedCompare`, `localizedStandardCompare`,
+     `localizedCaseInsensitiveCompare`, `localizedStandardContains`,
+     `localizedCaseInsensitiveContains`, `localizedStandardRange`,
+     `range(of:options:locale:)`, `range(of:.backwards,locale:)`).
    - `bench_system` — the same Foundation APIs through system Foundation
      (NSString → ICU). Compiled once by the script (`swiftc -O` from
      `bench_system_foundation.swift`); the old per-run `swift -O` recompiles
