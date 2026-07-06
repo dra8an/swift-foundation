@@ -80,19 +80,19 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 358   | 323       | 0.9× (parity) |
-| Latin  | 679   | 790       | **1.2× faster** |
-| CJK    | 724   | 585       | 0.8× (behind) |
-| Paths  | 436   | 313       | 0.7× (behind) |
+| ASCII  | 361   | 323       | 0.9× (parity) |
+| Latin  | 655   | 790       | **1.2× faster** |
+| CJK    | 687   | 585       | 0.9× (near parity) |
+| Paths  | 427   | 313       | 0.7× (behind) |
 
 ### range(of:options:.backwards,locale:)
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 648   | 324       | 0.5× (behind) |
-| Latin  | 669   | 830       | **1.2× faster** |
-| CJK    | 718   | 596       | 0.8× (behind) |
-| Paths  | 1337  | 506       | 0.4× (behind) |
+| ASCII  | 361   | 324       | **0.9× (parity)** |
+| Latin  | 663   | 830       | **1.3× faster** |
+| CJK    | 682   | 596       | 0.9× (near parity) |
+| Paths  | 469   | 506       | **1.1× faster** |
 
 ### Direct RootCollator (standalone, no Foundation overhead)
 
@@ -125,15 +125,14 @@ boundary validation, and String.Index construction to match time only.
 No-match calls (the common case) now do zero position work.
 
 **`range(of:locale:)`** is mixed. ASCII/Latin beat or match system ICU
-(byte-scan fast path at tertiary strength). CJK/paths are 0.7–0.8× —
-the system's `NSString rangeOfString:locale:` uses Latin-1 single-byte
-encoding advantage and pre-cached ICU `usearch` we can't match.
+(byte-scan fast path at tertiary strength). CJK is near parity (0.9×),
+paths is 0.7× — the system's `NSString rangeOfString:locale:` uses
+Latin-1 single-byte encoding advantage and pre-cached ICU `usearch`.
 
-**`range(of:.backwards,locale:)`** is our weakest API — 0.4–0.5× on
-ASCII/paths. Backward search pre-produces all CEs (no lazy bail-out),
-so the full O(n) CE + annotation cost is paid unconditionally. Latin is
-the exception (1.2× faster) because the system's backward search is
-also expensive on accented text.
+**`range(of:.backwards,locale:)`** is at parity or faster across all
+corpora after the backward byte-scan fast path (2026-07-06). ASCII
+0.9× (parity), Latin 1.3× faster, CJK 0.9× (near parity), paths 1.1×
+faster. Previously our weakest API (0.4–0.5×).
 
 **Allocating vs inout sortKey**: the allocating variant costs 24–39%
 more — the per-call `[UInt8]` allocation + copy that `sortKey(for:into:)`

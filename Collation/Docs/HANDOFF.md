@@ -256,14 +256,14 @@ system NSString → CoreFoundation → ICU bridge:
 | `localizedStdRange` | Latin | 479 | 1441 | **3.0× faster** |
 | `localizedStdRange` | CJK | 504 | 1277 | **2.5× faster** |
 | `localizedStdRange` | paths | 884 | 989 | **1.1× faster** |
-| `range(of:locale:)` | ASCII | 358 | 323 | **0.9× (parity)** |
-| `range(of:locale:)` | Latin | 679 | 790 | **1.2× faster** |
-| `range(of:locale:)` | CJK | 724 | 585 | **0.8× (behind)** |
-| `range(of:locale:)` | paths | 436 | 313 | **0.7× (behind)** |
-| `range(backwards)` | ASCII | 648 | 324 | **0.5× (behind)** |
-| `range(backwards)` | Latin | 669 | 830 | **1.2× faster** |
-| `range(backwards)` | CJK | 718 | 596 | **0.8× (behind)** |
-| `range(backwards)` | paths | 1337 | 506 | **0.4× (behind)** |
+| `range(of:locale:)` | ASCII | 361 | 323 | **0.9× (parity)** |
+| `range(of:locale:)` | Latin | 655 | 790 | **1.2× faster** |
+| `range(of:locale:)` | CJK | 687 | 585 | **0.9× (parity)** |
+| `range(of:locale:)` | paths | 427 | 313 | **0.7× (behind)** |
+| `range(backwards)` | ASCII | 361 | 324 | **0.9× (parity)** |
+| `range(backwards)` | Latin | 663 | 830 | **1.3× faster** |
+| `range(backwards)` | CJK | 682 | 596 | **0.9× (parity)** |
+| `range(backwards)` | paths | 469 | 506 | **1.1× faster** |
 
 Most Foundation string APIs are faster than system ICU. The two behind
 are `range(of:locale:)` on CJK/paths (system uses Latin-1 byte encoding

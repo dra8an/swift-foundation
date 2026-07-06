@@ -115,8 +115,8 @@ Tested 2026-07-06 on Apple Silicon (macOS 26) against system ICU (via NSString b
 | `localizedStdContains` | **2.2× faster** | **3.2× faster** | **2.7× faster** | **1.5× faster** |
 | `localizedCaseIContains` | **2.3× faster** | **3.3× faster** | **2.7× faster** | **2.1× faster** |
 | `localizedStdRange` | **2.2× faster** | **3.0× faster** | **2.5× faster** | **1.1× faster** |
-| `range(of:locale:)` | **0.9×** | **1.2× faster** | 0.8× | 0.7× |
-| `range(backwards)` | 0.5× | **1.2× faster** | 0.8× | 0.4× |
+| `range(of:locale:)` | **0.9×** | **1.2× faster** | 0.9× | 0.7× |
+| `range(backwards)` | **0.9×** | **1.3× faster** | 0.9× | **1.1× faster** |
 
 **Direct collation (RootCollator.compare, no Foundation overhead):**
 
