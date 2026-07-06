@@ -23,6 +23,9 @@ HOME = os.path.expanduser("~")
 ICU_BIN = os.environ.get("ICU_BIN", "Collation/Tools/bench_icu")
 ICU_LIB = os.environ.get("ICU_LIB", f"{HOME}/Projects/claude/collation/icu-build/lib")
 SYS_SCRIPT = "Collation/Tools/bench_system_foundation.swift"
+# Precompiled bench_system binary (run_benchmarks.sh builds it once);
+# fallback recompiles the script per run, which dominates wall time at K>1.
+SYS_BIN = os.environ.get("SYS_BIN")
 
 # (label, corpus file, locale-or-None for ICU bin, reps) — reps equalize work
 # (thai is ~33k lines vs ~200-440 for the rest).
@@ -31,7 +34,8 @@ CORPORA = [
     ("latin", "Collation/Tools/bench/bench-latin.txt", None, 300),
     ("cjk",   "Collation/Tools/bench/bench-cjk.txt",   None, 300),
     ("paths", "Collation/Tools/bench/bench-paths.txt", None, 150),
-    ("thai",  "Collation/Tools/bench/bench-thai.txt",  "th",   3),
+    # thai is ~33k lines per rep already; 10 reps for tighter mins.
+    ("thai",  "Collation/Tools/bench/bench-thai.txt",  "th",  10),
 ]
 pat = re.compile(r"\s*([A-Za-z().:_ ]+?)\s*:\s*(\d+)\s*ns/op")
 
@@ -55,7 +59,8 @@ for label, corpus, loc, reps in CORPORA:
     icu  = best([ICU_BIN, corpus, str(reps)] + ([loc] if loc else []),
                {"DYLD_LIBRARY_PATH": ICU_LIB})
     ours = best([BF, corpus, str(reps)])
-    sysf = best(["swift", "-O", SYS_SCRIPT, corpus, str(reps)])
+    sys_cmd = [SYS_BIN] if SYS_BIN else ["swift", "-O", SYS_SCRIPT]
+    sysf = best(sys_cmd + [corpus, str(reps)])
     results[label] = {"icu": icu, "ours": ours, "sys": sysf}
 
 print(f"\nK={K}  min ns/op over interleaved runs. (no-WMO build on Intel — see Docs/27.)")

@@ -31,10 +31,15 @@ env for machine 2):
      Foundation APIs (`compare(locale:)`, `localizedCompare`,
      `localizedStandardCompare`, `localizedStandardContains`,
      `localizedStandardRange`, `range(of:options:locale:)`).
-   - `bench_system_foundation.swift` (`swift -O`) — the same Foundation APIs
-     through system Foundation (NSString → ICU).
+   - `bench_system` — the same Foundation APIs through system Foundation
+     (NSString → ICU). Compiled once by the script (`swiftc -O` from
+     `bench_system_foundation.swift`); the old per-run `swift -O` recompiles
+     dominated wall time. Note: the compiled binary runs `range(of:locale:)`
+     faster on the system side than script mode did, so that API's ratios
+     shifted across the 2026-07-04 harness change (see `Docs/25`).
    - **min ns/op** over K interleaved runs; corpora with per-corpus reps
-     (ASCII/Latin/CJK 300, paths 150, thai 3 — thai is ~33k lines).
+     (ASCII/Latin/CJK 300, paths 150, thai 10 — thai is ~33k lines, so it is
+     the longest leg of the matrix by far).
 
 ## Reading the output
 

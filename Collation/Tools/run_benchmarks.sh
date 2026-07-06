@@ -31,5 +31,9 @@ echo "== build BenchFoundation (release, -no-WMO) =="
 swift build -c release -Xswiftc -no-whole-module-optimization --product BenchFoundation >/dev/null
 BF="$(swift build -c release -Xswiftc -no-whole-module-optimization --product BenchFoundation --show-bin-path)/BenchFoundation"
 
-echo "== run matrix (this takes a few minutes; bench_system recompiles per run) =="
+echo "== build bench_system (system-ICU reference, compiled once) =="
+swiftc -O Collation/Tools/bench_system_foundation.swift -o Collation/Tools/bench_system
+export SYS_BIN="$REPO/Collation/Tools/bench_system"
+
+echo "== run matrix =="
 python3 Collation/Tools/bench_matrix.py "$BF" "$K"

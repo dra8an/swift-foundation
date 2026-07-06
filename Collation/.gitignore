@@ -1,3 +1,4 @@
 Tools/gen_golden
 Tools/bench_icu
+Tools/bench_system
 Tools/extract_tailoring
