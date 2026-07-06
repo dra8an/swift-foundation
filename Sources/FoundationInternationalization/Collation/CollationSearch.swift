@@ -10,7 +10,9 @@
 /// from. Offsets are NFD-stream positions; they are converted to source
 /// scalar offsets only when a candidate match needs boundary validation and
 /// range reporting (an identity conversion when the iterator never
-/// decomposed anything — see `confirmMatch`).
+/// decomposed anything — see `confirmMatch`). One array of structs, not
+/// parallel arrays: a second array means a second per-call allocation, which
+/// measurably regresses short-line corpora (see optimization-targets.md §20).
 struct AnnotatedCE {
     let ce: Int64
     let nfdStart: Int
@@ -243,15 +245,16 @@ struct CollationSearch {
         let patCount = patternCEs.count
 
         iter.reset(numeric: numeric, scalars: text.unicodeScalars)
+        // Reserve for the whole text (capped so huge inputs don't over-
+        // allocate): growth reallocs of the 24-byte AnnotatedCE elements were
+        // measurable on long lines (paths corpus), where the old <=32 gate
+        // never fired.
         let textUTF8Count = text.utf8.count
-        if textUTF8Count <= 32 {
-            iter.ces.reserveCapacity(textUTF8Count + 1)
-        }
+        let reserve = min(textUTF8Count, 1024)
+        iter.ces.reserveCapacity(reserve + 1)
 
         var buffer: [AnnotatedCE] = []
-        if textUTF8Count <= 32 {
-            buffer.reserveCapacity(textUTF8Count)
-        }
+        buffer.reserveCapacity(reserve)
         var prevCECount = 0
         var prevScalarsConsumed = 0
         var nextMatchStart = 0
@@ -445,14 +448,11 @@ struct CollationSearch {
     private func produceAnnotatedCEs(for text: String, mask: Int64, iter: inout CEIterator) -> [AnnotatedCE] {
         iter.reset(numeric: numeric, scalars: text.unicodeScalars)
         let textUTF8Count = text.utf8.count
-        if textUTF8Count <= 32 {
-            iter.ces.reserveCapacity(textUTF8Count + 1)
-        }
+        let reserve = min(textUTF8Count, 1024)
+        iter.ces.reserveCapacity(reserve + 1)
 
         var result: [AnnotatedCE] = []
-        if textUTF8Count <= 32 {
-            result.reserveCapacity(textUTF8Count)
-        }
+        result.reserveCapacity(reserve)
         var prevCECount = 0
         var prevScalarsConsumed = 0
 

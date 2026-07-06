@@ -473,12 +473,31 @@ parity (1.11×). `localizedStandardRange` now beats system ICU on every corpus
 except paths (~1.4×, down from 2.28×); `range(of:locale:)` is at ASCII/Latin
 parity, other corpora ~1.2–1.4× behind.
 
-**Remaining levers (range):** the residual paths gap vs `contains` is the
-`AnnotatedCE` buffer itself (24 B/element, unreserved for long strings, so
-growth reallocs) — parallel `[Int64]`+`[Int32]` buffers or scratch reuse
-would trim it. The non-ASCII `range(of:locale:)` CE path is the other
-frontier; a byte-scan extension there must respect normalization, so it is
-not a straight port of step 5.
+7. **Capped buffer reserve for the range paths** (2026-07-06): the
+   `AnnotatedCE` buffer (and `iter.ces`) were only pre-reserved for texts
+   ≤32 UTF-8 bytes; long lines (paths corpus) paid growth reallocs of
+   24-byte elements — worst in the backward path, which pre-produces the
+   whole text's CEs. Now both forward and backward reserve
+   `min(utf8Count, 1024)` (capped so huge inputs don't over-allocate).
+   Interleaved A/B on Intel: paths backwards **−17%**, paths forward −5%,
+   ascii/latin neutral. (Docs/25's 07-06 baselines predate this by hours —
+   the paths range cells are ~5–17% better than recorded there.)
+
+   **Tried and reverted in the same round — parallel arrays:** splitting
+   `[AnnotatedCE]` into a dense `[Int64]` CE buffer + packed `[Int64]`
+   position windows (8-byte match-loop stride, contains-style). It helped
+   long lines (paths backwards −12%) but **regressed short-line corpora**
+   (ascii +5%, latin +8%): the second array is a second per-call malloc,
+   and short strings are allocation-dominated. One array of structs, one
+   malloc. Don't re-split without moving the buffers into the thread-local
+   scratch (zero-alloc steady state), which sidesteps the trade entirely.
+
+**Remaining levers (range):** backward search is the big one — 2.6×/3.45×
+behind system ICU on ascii/paths (Docs/25 finding #5): no byte-scan, no
+early exit, full CE pre-production. The non-ASCII `range(of:locale:)` CE
+path is the other frontier; a byte-scan extension there must respect
+normalization, so it is not a straight port of step 5. Scratch-owned search
+buffers (see step 7) would remove the remaining per-call allocations.
 
 ---
 
