@@ -481,3 +481,118 @@ frontier; a byte-scan extension there must respect normalization, so it is
 not a straight port of step 5.
 
 ---
+
+## From Foundation/stdlib team meeting (2026-06-24)
+
+Tips from the "Swift String Best Practices" meeting (T Liu, Alejandro
+Alonso, Michael Ilseman, Jeremy Schonfeld). Full notes in #swift-perf.
+
+### 21. Reserved TLS key from CoreOS
+
+**Status:** untried — highest-priority item
+
+Our `ScratchBuffers.swift` uses `pthread_key_create` for thread-local
+scratch buffers. The meeting notes say: "For thread-local storage, obtain
+a reserved TLS key from CoreOS to avoid an extra level of indirection."
+
+A reserved key eliminates one pointer dereference on every `takeScratch()`
+/ `giveScratch()` call — our hottest path (every compare, search, sortKey).
+
+**Action:** ask CoreOS contact for a reserved key allocation.
+
+---
+
+### 22. UTF8Span / non-escapable Ref type for string access
+
+**Status:** future (macOS 26+ gating)
+
+Meeting notes: "Use UTF8Span for writing parsers and non-mutating string
+algorithms" and "Employ the Ref type (a non-escapable wrapper) to avoid
+reference counting for strings."
+
+We already explored Span in round 14 (Doc 16 §9): `String.utf8Span.span`
+gives closure-free byte access identical to `withContiguousStorageIfAvailable`
+but `~Escapable` prevents storing in struct fields. The "Ref type" pattern
+could solve this: wrap the buffer in a non-escapable Ref that we pass down
+the call chain with `@inline(__always)`.
+
+Potential: −30–40% on CJK/Thai compare (eliminates the
+`withContiguousStorageIfAvailable` closure + `makeIterator` ARC). Requires
+the entire 5-call-deep CE chain to use `@inline(__always)` (already done)
+and accept `~Escapable` propagation.
+
+**Action:** revisit when macOS 26+ gating is acceptable for the hot path.
+
+---
+
+### 23. `withTemporaryAllocation` (OutputSpan) for scratch buffers
+
+**Status:** untried
+
+Meeting notes: "Prefer withTemporaryAllocation over
+withUnsafeTemporaryAllocation to get an OutputSpan with compile-time
+lifetime guarantees."
+
+Could replace our sort key level buffers (`SortKeyLevel`) and temporary
+CE arrays with OutputSpan-backed temporary allocations — guaranteed
+stack-allocated for small sizes, no ARC.
+
+**Action:** investigate once API is stable in the toolchain.
+
+---
+
+### 24. `static var` (computed) over `static let` for constants
+
+**Status:** untried — low priority
+
+Meeting notes: "prefer static var (computed properties) over static let
+to avoid lazy initialization and storage on the meta-type, allowing for
+direct inlining."
+
+We have ~100 `static let` integer constants across CollationConstants,
+CollationFastLatin, SortKey, UTrie2, UCharsTrie. Converting to `static var`
+is a mechanical change. Marginal gain expected (compiler likely already
+inlines integer literals with WMO), but aligns with stdlib team's
+recommendation.
+
+**Action:** batch-convert in a cleanup pass. Benchmark before/after.
+
+---
+
+### 25. Inline array for constant data (avoid C files)
+
+**Status:** investigate
+
+Meeting notes: "Investigate using Swift's inline array feature to define
+C constant data directly in Swift, potentially avoiding the need for
+separate C files."
+
+Our collation data is bundled as binary resources read at init. The ASCII
+CE table (128 entries) and fast-Latin setup data could potentially be
+defined as inline arrays — compile-time constant, zero init cost.
+
+**Action:** evaluate whether Swift inline arrays can encode the 128×8-byte
+ASCII CE table and whether it eliminates the `DataStorage` allocation.
+
+---
+
+### 26. Avoid intermediate string allocations in Foundation wiring
+
+**Status:** partially addressed
+
+Meeting notes: "Minimize the creation of temporary Swift String objects.
+Use mutating methods/in-out parameters."
+
+Our `sortKey(for:into:)` already does this. In `StringProtocol+Locale.swift`,
+`range(of:locale:)` creates `String(self)` and `String(aString)` copies —
+these are intermediate allocations the meeting specifically warns about.
+For `localizedStandardRange`, `CollatorCache` returns a shared collator
+avoiding per-call setup.
+
+The remaining allocations: `String(self)` in the search entry points when
+`Self` is a Substring. Could be eliminated by accepting `some StringProtocol`
+and passing the UTF-8 view directly — but requires API changes in
+CollationSearch to accept generic scalars views.
+
+**Action:** profile whether `String(substring)` copies dominate in real
+usage (unlikely for short strings, possibly significant for long text).
