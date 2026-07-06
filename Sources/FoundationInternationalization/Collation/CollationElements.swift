@@ -384,72 +384,120 @@ struct CEIterator {
 
     // MARK: Numeric collation (CODAN)
 
+    /// Scratch for digit runs with more than 7 significant digits (rare);
+    /// reused across runs so the slow path allocates only once per iterator.
+    private var numericDigits: [Int32] = []
+
     /// Collects the digit run starting with `firstCE32` and appends numeric CEs.
     /// (CollationIterator::appendNumericCEs, forward direction.)
     private mutating func appendNumericCEs(d: CollationDataView, firstCE32: UInt32) throws {
-        var digits: [Int32] = [CollationConstants.digitFromCE32(firstCE32)]
+        // First pass over the run (through the lookahead buffer, nothing
+        // consumed yet): accumulate the value and count significant digits.
+        // Runs of <= 7 significant digits — practically every digit run in
+        // real text — encode as a single dense CE straight from the value:
+        // no digits array, no slice copy (profiling showed the two per-run
+        // array allocations were most of numeric mode's cost).
+        var value = CollationConstants.digitFromCE32(firstCE32)
+        var significant = value == 0 ? 0 : 1
         var count = 0
+        var dense = true
         while let c = scalarAhead(count) {
             let (_, ce32) = lookup(c)
             guard CollationConstants.isSpecialCE32(ce32) && CollationConstants.tagFromCE32(ce32) == .digit else { break }
-            digits.append(CollationConstants.digitFromCE32(ce32))
+            let digit = CollationConstants.digitFromCE32(ce32)
+            count += 1
+            if significant == 0 && digit == 0 { continue }
+            significant += 1
+            if significant > 7 { dense = false; break }
+            value = value * 10 + digit
+        }
+
+        // 7-digit values past the dense encoding's capacity (>= 1_042_490)
+        // use the pair encoding, exactly like ICU's length<=7 fall-through.
+        if dense && value < 1_042_490 {
+            consumeAhead(count)
+            appendDenseNumericCE(value: value, numericPrimary: d.numericPrimary)
+            return
+        }
+
+        // Slow path (> 7 significant digits): collect the digits into the
+        // reusable scratch and run the segmented pair encoding.
+        if !numericDigits.isEmpty { numericDigits.removeAll(keepingCapacity: true) }
+        numericDigits.append(CollationConstants.digitFromCE32(firstCE32))
+        count = 0
+        while let c = scalarAhead(count) {
+            let (_, ce32) = lookup(c)
+            guard CollationConstants.isSpecialCE32(ce32) && CollationConstants.tagFromCE32(ce32) == .digit else { break }
+            numericDigits.append(CollationConstants.digitFromCE32(ce32))
             count += 1
         }
         consumeAhead(count)
         var pos = 0
         repeat {
             // Skip leading zeros.
-            while pos < digits.count - 1 && digits[pos] == 0 { pos += 1 }
+            while pos < numericDigits.count - 1 && numericDigits[pos] == 0 { pos += 1 }
             // Write a sequence of CEs for at most 254 digits at a time.
-            let segmentLength = min(digits.count - pos, 254)
-            appendNumericSegmentCEs(d: d, digits[pos..<(pos + segmentLength)])
+            let segmentLength = min(numericDigits.count - pos, 254)
+            appendNumericSegmentCEs(d: d, start: pos, length: segmentLength)
             pos += segmentLength
-        } while pos < digits.count
+        } while pos < numericDigits.count
     }
 
-    /// (CollationIterator::appendNumericSegmentCEs.)
-    private mutating func appendNumericSegmentCEs(d: CollationDataView, _ digitsSlice: ArraySlice<Int32>) {
-        let digits = Array(digitsSlice)
-        var length = digits.count
+    /// The dense single-CE encoding for a small segment value
+    /// (callers guarantee value < 1_042_490). (The in-capacity part of the
+    /// `length <= 7` branch of ICU's appendNumericSegmentCEs.)
+    private mutating func appendDenseNumericCE(value: Int32, numericPrimary: UInt32) {
+        var value = value
+        // Primary weight second byte values:
+        //     74 byte values   2.. 75 for small numbers in two-byte primary weights.
+        //     40 byte values  76..115 for medium numbers in three-byte primary weights.
+        //     16 byte values 116..131 for large numbers in four-byte primary weights.
+        //    124 byte values 132..255 for very large numbers with 4..127 digit pairs.
+        var firstByte: Int32 = 2
+        var numBytes: Int32 = 74
+        if value < numBytes {
+            ces.append(CollationConstants.makeCE(numericPrimary | (UInt32(firstByte + value) << 16)))
+            return
+        }
+        value -= numBytes
+        firstByte += numBytes
+        numBytes = 40
+        if value < numBytes * 254 {
+            let primary = numericPrimary
+                | (UInt32(firstByte + value / 254) << 16) | (UInt32(2 + value % 254) << 8)
+            ces.append(CollationConstants.makeCE(primary))
+            return
+        }
+        value -= numBytes * 254
+        firstByte += numBytes
+        numBytes = 16
+        // Callers guarantee the original value < 1_042_490 (= 74 + 40*254 +
+        // 16*254*254), the dense encoding's capacity; larger values take the
+        // pair encoding instead.
+        precondition(value < numBytes * 254 * 254)
+        var primary = numericPrimary | UInt32(2 + value % 254)
+        value /= 254
+        primary |= UInt32(2 + value % 254) << 8
+        value /= 254
+        primary |= UInt32(firstByte + value % 254) << 16
+        ces.append(CollationConstants.makeCE(primary))
+    }
+
+    /// (CollationIterator::appendNumericSegmentCEs.) Operates on
+    /// `numericDigits[start..<start+length]` in place — no slice copy.
+    private mutating func appendNumericSegmentCEs(d: CollationDataView, start: Int, length segmentLength: Int) {
+        var length = segmentLength
         let numericPrimary = d.numericPrimary
         // Note: We use primary byte values 2..255: digits are not compressible.
         if length <= 7 {
             // Very dense encoding for small numbers.
-            var value = digits[0]
-            for i in 1..<length { value = value * 10 + digits[i] }
-            // Primary weight second byte values:
-            //     74 byte values   2.. 75 for small numbers in two-byte primary weights.
-            //     40 byte values  76..115 for medium numbers in three-byte primary weights.
-            //     16 byte values 116..131 for large numbers in four-byte primary weights.
-            //    124 byte values 132..255 for very large numbers with 4..127 digit pairs.
-            var firstByte: Int32 = 2
-            var numBytes: Int32 = 74
-            if value < numBytes {
-                ces.append(CollationConstants.makeCE(numericPrimary | (UInt32(firstByte + value) << 16)))
+            var value = numericDigits[start]
+            for i in 1..<length { value = value * 10 + numericDigits[start + i] }
+            if value < 1_042_490 {
+                appendDenseNumericCE(value: value, numericPrimary: numericPrimary)
                 return
             }
-            value -= numBytes
-            firstByte += numBytes
-            numBytes = 40
-            if value < numBytes * 254 {
-                let primary = numericPrimary
-                    | (UInt32(firstByte + value / 254) << 16) | (UInt32(2 + value % 254) << 8)
-                ces.append(CollationConstants.makeCE(primary))
-                return
-            }
-            value -= numBytes * 254
-            firstByte += numBytes
-            numBytes = 16
-            if value < numBytes * 254 * 254 {
-                var primary = numericPrimary | UInt32(2 + value % 254)
-                value /= 254
-                primary |= UInt32(2 + value % 254) << 8
-                value /= 254
-                primary |= UInt32(firstByte + value % 254) << 16
-                ces.append(CollationConstants.makeCE(primary))
-                return
-            }
-            // original value > 1042489
+            // value past the dense capacity — fall through to pair encoding.
         }
 
         // The second primary byte value 132..255 indicates the number of digit
@@ -458,16 +506,16 @@ struct CEIterator {
         let numPairs = Int32((length + 1) / 2)
         var primary = numericPrimary | (UInt32(132 - 4 + numPairs) << 16)
         // Find the length without trailing 00 pairs.
-        while digits[length - 1] == 0 && digits[length - 2] == 0 { length -= 2 }
+        while numericDigits[start + length - 1] == 0 && numericDigits[start + length - 2] == 0 { length -= 2 }
         // Read the first pair.
         var pair: Int32
         var pos: Int
         if length & 1 == 1 {
             // Only "half a pair" if we have an odd number of digits.
-            pair = digits[0]
+            pair = numericDigits[start]
             pos = 1
         } else {
-            pair = digits[0] * 10 + digits[1]
+            pair = numericDigits[start] * 10 + numericDigits[start + 1]
             pos = 2
         }
         pair = 11 + 2 * pair
@@ -485,7 +533,7 @@ struct CEIterator {
                 primary |= UInt32(pair) << shift
                 shift -= 8
             }
-            pair = 11 + 2 * (digits[pos] * 10 + digits[pos + 1])
+            pair = 11 + 2 * (numericDigits[start + pos] * 10 + numericDigits[start + pos + 1])
             pos += 2
         }
         primary |= UInt32(pair - 1) << shift

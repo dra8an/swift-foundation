@@ -635,3 +635,34 @@ CollationSearch to accept generic scalars views.
 
 **Action:** profile whether `String(substring)` copies dominate in real
 usage (unlikely for short strings, possibly significant for long text).
+
+---
+
+### 27. Numeric digit runs: dense value fast path (no per-run arrays)
+
+**Status:** shipped (2026-07-06). Paths `localizedStandardContains` −22%
+(1597→1238 ns, 1.14× behind system ICU → ~0.89×, now ahead);
+`localizedStandardRange` paths −16% (1965→1644); `localizedStandardCompare`
+paths −5%. Digit-free corpora untouched.
+
+Finding #5 in Docs/25 measured numeric mode (which every `localizedStandard*`
+API turns on) costing ~33% on the digit-heavy paths corpus. The cost was in
+`appendNumericCEs`: every digit run allocated a fresh `[Int32]` digits array,
+and `appendNumericSegmentCEs` copied its `ArraySlice` into a second fresh
+Array — two mallocs per digit run, per call (a path like
+`IMG_20240115_123456.jpg` has three runs). Digits can't use the pre-computed
+ASCII CE table because the table is shared across option sets (numeric
+on/off), so every digit goes through the full pipeline.
+
+The fix: a first pass over the run (through the lookahead buffer, consuming
+nothing) accumulates the numeric value while counting significant digits.
+Runs of ≤ 7 significant digits whose value fits the dense encoding
+(< 1_042_490 = 74 + 40·254 + 16·254·254) — practically every run in real
+text — emit their single dense CE straight from the value: no arrays at all.
+Longer runs (or 7-digit values past the dense capacity, which ICU sends to
+the pair encoding — mind that boundary, it is easy to get wrong) fall back
+to a **reusable** iterator-owned `numericDigits` scratch and the segmented
+pair encoding, which now indexes the scratch directly instead of copying a
+slice. Byte-identical sort keys verified by the golden/differential/fuzz
+suites; `NumericTests.swift` pins the dense/pair boundary (1042489/1042490),
+the 7→8 digit transition, leading-zero equality, and long-run ordering.

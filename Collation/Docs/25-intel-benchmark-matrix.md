@@ -215,7 +215,10 @@ positions: 1193/1235/1351/1994/1747 → +reserve: paths ~1940.
      difference is numeric mode (`localizedStandard*` turns it on): digits
      leave the pre-computed ASCII CE table and take the slow numeric path,
      and the paths corpus is digit-heavy. The numeric-mode digit path is
-     therefore a measurable cost worth a look.
+     therefore a measurable cost worth a look. **Addressed the same day**
+     (`optimization-targets.md` §27, dense digit-run fast path): contains
+     paths 1597→1238 ns (now ~0.89×, ahead of system ICU), range paths
+     1965→1644.
    - **Allocating sortKey (`skRet`, Table 1)** costs ~160–470 ns/op over the
      inout variant (ascii 424→585, paths 1143→1614) — the per-call
      allocation+copy, as designed; recorded so the delta is tracked.
