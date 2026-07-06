@@ -492,12 +492,32 @@ parity, other corpora ~1.2–1.4× behind.
    malloc. Don't re-split without moving the buffers into the thread-local
    scratch (zero-alloc steady state), which sidesteps the trade entirely.
 
-**Remaining levers (range):** backward search is the big one — 2.6×/3.45×
-behind system ICU on ascii/paths (Docs/25 finding #5): no byte-scan, no
-early exit, full CE pre-production. The non-ASCII `range(of:locale:)` CE
-path is the other frontier; a byte-scan extension there must respect
-normalization, so it is not a straight port of step 5. Scratch-owned search
-buffers (see step 7) would remove the remaining per-call allocations.
+8. **Backward byte-scan + byte-scan soundness rules** (2026-07-06,
+   `16d0322`): backward search had no fast path at all — always full CE
+   pre-production. It now gets a byte scan from the end of the text, built
+   on an explicit soundness rule that also fixed three holes in the forward
+   scan (each had a failing test first): byte-level conclusions are only
+   valid over "clean" bytes (printable ASCII + TAB..CR — the other C0
+   controls and DEL are completely ignorable in root and produce no CE);
+   alternate must be nonIgnorable (shifted makes spaces/punct ignorable);
+   and a byte match is only provably FIRST/LAST if it lies entirely in the
+   clean prefix (forward) / suffix (backward) — beyond a dirty byte, an
+   earlier/later match can hide in a different normalization form.
+   Cleanliness is checked inline during the scan (a byte equal to a clean
+   pattern byte needs no check), keeping it single-pass. Same commit:
+   search's CE path now honors alternate=shifted (`maskedCE()` mirrors
+   compare's S3.4 variable handling; variable CEs and their trailing
+   primary-ignorables drop below the search mask). Intel interleaved A/B:
+   `range(of:.backwards)` ascii −51% (1480→723), paths −65% (2593→918) —
+   was the worst API in the matrix at 2.6×/3.45× behind system ICU, now
+   near parity; forward `range(of:locale:)` pays +2–5% for the soundness
+   fixes; latin/cjk backwards neutral (they fall to the CE path).
+
+**Remaining levers (range):** the non-ASCII CE path (forward ~1.0–1.4×,
+backward latin/cjk/thai similar) — a byte-scan extension there must respect
+normalization, so it is not a straight port. Scratch-owned search buffers
+(see step 7) would remove the remaining per-call allocations. The numeric
+digit path costs ~35% on digit-heavy contains (Docs/25 finding #5).
 
 ---
 

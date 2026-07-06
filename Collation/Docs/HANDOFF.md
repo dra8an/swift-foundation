@@ -133,9 +133,14 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   range search (NFD offsets on `AnnotatedCE`, `sawDecomposition` flag on
   `NFDIterator`, conversion/validation only at CE-equal candidates, index
   table deleted) — `localizedStandardRange` now beats system ICU on every
-  corpus except paths (1.46×, was 2.18×). Technique log:
-  `optimization-targets.md` §20; Apple Silicon numbers
-  `21-foundation-api-benchmark.md`; Intel `Docs/25`.
+  corpus except paths (1.38×, was 2.18×). 2026-07-06: **backward byte-scan**
+  + byte-scan soundness rules (clean-ASCII prefix/suffix proofs,
+  ignorable-control and shifted gates) + **alternate=shifted support in
+  search** (`16d0322`) — `range(of:.backwards)` went from the worst API
+  (2.6×/3.45× behind on ascii/paths) to beating system ICU on latin/paths,
+  ≤1.32× elsewhere. Technique log: `optimization-targets.md` §20 (steps
+  6–8); Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel
+  `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
   min-over-9 parity.
