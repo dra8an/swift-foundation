@@ -352,7 +352,8 @@ public struct RootCollator: @unchecked Sendable {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
         let searcher = CollationSearch(
-            data: data, base: base, norm: norm, options: options
+            data: data, base: base, norm: norm, options: options,
+            variableTopValue: variableTopValue(options)
         )
         return searcher.search(for: pattern, in: text, iter: &scratch.left)
     }
@@ -365,7 +366,8 @@ public struct RootCollator: @unchecked Sendable {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
         let searcher = CollationSearch(
-            data: data, base: base, norm: norm, options: options
+            data: data, base: base, norm: norm, options: options,
+            variableTopValue: variableTopValue(options)
         )
         return searcher.searchBackwards(for: pattern, in: text, iter: &scratch.left)
     }
@@ -380,7 +382,8 @@ public struct RootCollator: @unchecked Sendable {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
         let searcher = CollationSearch(
-            data: data, base: base, norm: norm, options: options
+            data: data, base: base, norm: norm, options: options,
+            variableTopValue: variableTopValue(options)
         )
         return searcher.contains(pattern: pattern, in: text, iter: &scratch.left)
     }

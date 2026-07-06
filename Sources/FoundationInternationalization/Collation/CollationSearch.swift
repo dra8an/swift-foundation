@@ -25,14 +25,40 @@ struct CollationSearch {
     let norm: NormalizationData
     let options: CollationOptions
     let numeric: Bool
+    /// Highest variable primary + 1 when alternate=shifted, else 0 — the same
+    /// convention as CollationCompare, so `primary < variableTop` tests
+    /// variable-ness and primary ignorables test out early.
+    let variableTop: UInt32
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData,
-         options: CollationOptions) {
+         options: CollationOptions, variableTopValue: UInt32 = 0) {
         self.data = data
         self.base = base
         self.norm = norm
         self.options = options
         self.numeric = options.numeric
+        self.variableTop = options.alternate == .shifted ? variableTopValue + 1 : 0
+    }
+
+    /// Applies the strength mask to one CE, honoring alternate=shifted (UTS
+    /// #10 S3.4, mirroring CollationCompare): a variable CE is shifted to the
+    /// quaternary level — below every search mask — and drags any directly
+    /// following primary-ignorable CEs (e.g. combining marks on a space) down
+    /// with it. Returns nil when the CE contributes nothing at this strength
+    /// (the caller skips it; it never enters the match buffer).
+    @inline(__always)
+    private func maskedCE(_ ce: Int64, mask: Int64, afterVariable: inout Bool) -> Int64? {
+        if variableTop != 0 {
+            let primary = UInt32(truncatingIfNeeded: ce >> 32)
+            if primary < variableTop && primary > CollationConstants.mergeSeparatorPrimary {
+                afterVariable = true
+                return nil
+            }
+            if primary == 0 && afterVariable { return nil }
+            afterVariable = false
+        }
+        let masked = ce & mask
+        return masked != 0 ? masked : nil
     }
 
     /// Searches for `pattern` in `text` at the configured collation strength.
@@ -54,7 +80,7 @@ struct CollationSearch {
         if pattern.isEmpty { return text.startIndex..<text.startIndex }
         if text.isEmpty { return nil }
 
-        if options.strength.rawValue >= CollationOptions.Strength.tertiary.rawValue && !numeric {
+        if byteScanEligible {
             if let range = byteScanSearch(for: pattern, in: text) {
                 return range
             }
@@ -65,6 +91,17 @@ struct CollationSearch {
         if patternCEs.isEmpty { return nil }
 
         return searchForward(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
+    }
+
+    /// The byte-scan fast paths are sound only when every clean-ASCII byte is
+    /// guaranteed a nonzero collation element: strength at least tertiary
+    /// (case differences stay significant), numeric off (digit runs would
+    /// collapse into single elements), and alternate=nonIgnorable (shifted
+    /// drops spaces/punctuation below the mask).
+    private var byteScanEligible: Bool {
+        options.strength.rawValue >= CollationOptions.Strength.tertiary.rawValue
+            && !numeric
+            && options.alternate == .nonIgnorable
     }
 
     /// Searches backwards for `pattern` in `text` at the configured collation
@@ -84,6 +121,12 @@ struct CollationSearch {
     func searchBackwards(for pattern: String, in text: String, iter: inout CEIterator) -> Range<String.Index>? {
         if pattern.isEmpty { return text.startIndex..<text.startIndex }
         if text.isEmpty { return nil }
+
+        if byteScanEligible {
+            if let range = byteScanSearchBackwards(for: pattern, in: text) {
+                return range
+            }
+        }
 
         let mask = strengthMask(for: options.strength)
         let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
@@ -133,14 +176,14 @@ struct CollationSearch {
         }
         var prevCECount = 0
         var nextMatchStart = 0
+        var afterVariable = false
 
         do {
             while try iter.appendMore() {
                 for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
-                    let masked = ce & mask
-                    if masked != 0 {
+                    if let masked = maskedCE(ce, mask: mask, afterVariable: &afterVariable) {
                         buffer.append(masked)
 
                         while nextMatchStart + patCount <= buffer.count {
@@ -167,59 +210,120 @@ struct CollationSearch {
 
     // MARK: - Byte-scan fast path
 
-    /// Direct UTF-8 byte scan when strength >= tertiary and no numeric mode.
-    /// For pure ASCII text: a definitive search (byte equality = collation equality,
-    /// "not found" is conclusive). For non-ASCII: only returns early on match
-    /// (byte match implies collation match), falls through on no-match since
-    /// normalization could still produce a collation match via the CE path.
+    /// True for ASCII bytes that are guaranteed a nonzero collation element
+    /// at tertiary strength with alternate=nonIgnorable: printable ASCII plus
+    /// the TAB..CR whitespace controls. The other C0 controls and DEL are
+    /// completely ignorable in the CLDR root (they produce no CE at all), so
+    /// no byte-level conclusion is sound in their vicinity — "ab" collation-
+    /// matches "a\u{01}b" even though the bytes differ.
+    @inline(__always)
+    private func isCleanASCIIByte(_ b: UInt8) -> Bool {
+        (b >= 0x20 && b <= 0x7E) || (b >= 0x09 && b <= 0x0D)
+    }
+
+    /// Direct UTF-8 byte scan (see `byteScanEligible` for the option gates).
+    /// Within a clean-ASCII region, byte equality is equivalent to collation
+    /// equality (each clean byte maps to exactly one nonzero CE), so:
+    /// - a byte match lying entirely inside the clean *prefix* of the text is
+    ///   definitively the FIRST collation match;
+    /// - "no byte match" over an entirely clean text and pattern is a
+    ///   definitive no-match.
+    /// Everything else falls through to the CE path — including byte matches
+    /// past the first non-clean byte: such a match is real, but an *earlier*
+    /// occurrence can hide in a different normalization form, so it is not
+    /// provably first.
     private func byteScanSearch(for pattern: String, in text: String) -> Range<String.Index>?? {
         guard text.isContiguousUTF8, pattern.isContiguousUTF8 else { return nil }
 
         let patLen = pattern.utf8.count
         let textLen = text.utf8.count
-        guard patLen <= textLen else {
-            // Pattern longer than text — check if ASCII for definitive answer
-            var isASCII = true
-            text.utf8.withContiguousStorageIfAvailable { buf in
-                for b in buf where b >= 0x80 { isASCII = false; break }
-            }
-            if isASCII {
-                pattern.utf8.withContiguousStorageIfAvailable { buf in
-                    for b in buf where b >= 0x80 { isASCII = false; break }
-                }
-            }
-            return isASCII ? .some(nil) : nil
-        }
 
         return text.utf8.withContiguousStorageIfAvailable { textBuf -> Range<String.Index>?? in
             pattern.utf8.withContiguousStorageIfAvailable { patBuf -> Range<String.Index>?? in
-                var allASCII = true
-                for j in 0..<patLen {
-                    if patBuf[j] >= 0x80 { allASCII = false; break }
+                for j in 0..<patLen where !isCleanASCIIByte(patBuf[j]) {
+                    return nil  // pattern not clean — CE path
                 }
 
-                for i in 0...(textLen - patLen) {
-                    if textBuf[i] != patBuf[0] {
-                        if textBuf[i] >= 0x80 { allASCII = false }
-                        continue
-                    }
-                    var matched = true
-                    for j in 1..<patLen {
-                        if textBuf[i + j] != patBuf[j] {
-                            matched = false
-                            break
+                // Single pass: cleanliness is checked as the scan advances,
+                // so a match is only ever returned from an all-clean prefix
+                // (bytes before it were checked at earlier positions; the
+                // window itself equals the clean pattern). A dirty byte ends
+                // the fast path — any remaining match would start beyond it
+                // and would not be provably first.
+                if patLen <= textLen {
+                    for i in 0...(textLen - patLen) {
+                        let b = textBuf[i]
+                        if b == patBuf[0] {
+                            // b equals a clean pattern byte, so it is clean —
+                            // no explicit check needed on this branch.
+                            var matched = true
+                            for j in 1..<patLen {
+                                if textBuf[i + j] != patBuf[j] { matched = false; break }
+                            }
+                            if matched {
+                                let startIdx = text.utf8.index(text.startIndex, offsetBy: i)
+                                let endIdx = text.utf8.index(startIdx, offsetBy: patLen)
+                                return .some(startIdx..<endIdx)
+                            }
+                        } else if !isCleanASCIIByte(b) {
+                            return nil
                         }
                     }
-                    if matched {
-                        let startIdx = text.utf8.index(text.startIndex, offsetBy: i)
-                        let endIdx = text.utf8.index(startIdx, offsetBy: patLen)
-                        return .some(startIdx..<endIdx)
-                    }
                 }
-                // No byte match found. If all bytes were ASCII, that's conclusive.
-                if allASCII { return .some(nil) }
-                // Non-ASCII present — can't rule out normalization match.
-                return nil
+                // No match; conclusive only if the tail bytes (never visited
+                // as window starts) are clean too.
+                let tailStart = patLen <= textLen ? textLen - patLen + 1 : 0
+                for k in tailStart..<textLen where !isCleanASCIIByte(textBuf[k]) {
+                    return nil
+                }
+                return .some(nil)
+            }!
+        }!
+    }
+
+    /// Mirror of `byteScanSearch` for backward search: scans from the end of
+    /// the text down to the last non-clean byte. A byte match entirely above
+    /// that point is definitively the LAST collation match (no later match
+    /// can hide in the clean suffix); "no byte match" over an entirely clean
+    /// text and pattern is a definitive no-match. Everything else falls
+    /// through to the CE path.
+    private func byteScanSearchBackwards(for pattern: String, in text: String) -> Range<String.Index>?? {
+        guard text.isContiguousUTF8, pattern.isContiguousUTF8 else { return nil }
+
+        let patLen = pattern.utf8.count
+        let textLen = text.utf8.count
+
+        return text.utf8.withContiguousStorageIfAvailable { textBuf -> Range<String.Index>?? in
+            pattern.utf8.withContiguousStorageIfAvailable { patBuf -> Range<String.Index>?? in
+                for j in 0..<patLen where !isCleanASCIIByte(patBuf[j]) {
+                    return nil  // pattern not clean — CE path
+                }
+
+                // Single pass from the end: cleanliness is checked as the
+                // scan descends, so a match is only ever returned from an
+                // all-clean suffix (no later match can hide in it). A dirty
+                // byte ends the fast path.
+                var i = textLen - 1
+                while i >= 0 {
+                    let b = textBuf[i]
+                    if i <= textLen - patLen, b == patBuf[0] {
+                        // b equals a clean pattern byte, so it is clean.
+                        var matched = true
+                        for j in 1..<patLen {
+                            if textBuf[i + j] != patBuf[j] { matched = false; break }
+                        }
+                        if matched {
+                            let startIdx = text.utf8.index(text.startIndex, offsetBy: i)
+                            let endIdx = text.utf8.index(startIdx, offsetBy: patLen)
+                            return .some(startIdx..<endIdx)
+                        }
+                    } else if !isCleanASCIIByte(b) {
+                        return nil
+                    }
+                    i -= 1
+                }
+                // Whole text clean, no byte match — conclusive.
+                return .some(nil)
             }!
         }!
     }
@@ -259,6 +363,7 @@ struct CollationSearch {
         var prevScalarsConsumed = 0
         var nextMatchStart = 0
         var nfdMap: [Int]? = nil
+        var afterVariable = false
 
         do {
             while try iter.appendMore() {
@@ -266,8 +371,7 @@ struct CollationSearch {
                 for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
-                    let masked = ce & mask
-                    if masked != 0 {
+                    if let masked = maskedCE(ce, mask: mask, afterVariable: &afterVariable) {
                         buffer.append(AnnotatedCE(
                             ce: masked,
                             nfdStart: prevScalarsConsumed,
@@ -428,12 +532,12 @@ struct CollationSearch {
     private func produceMaskedCEs(for string: String, mask: Int64, iter: inout CEIterator) -> [Int64] {
         iter.reset(numeric: numeric, scalars: string.unicodeScalars)
         var result: [Int64] = []
+        var afterVariable = false
         do {
             let allCEs = try iter.collectAll()
             for ce in allCEs {
                 if ce == CollationConstants.noCE { break }
-                let masked = ce & mask
-                if masked != 0 {
+                if let masked = maskedCE(ce, mask: mask, afterVariable: &afterVariable) {
                     result.append(masked)
                 }
             }
@@ -455,6 +559,7 @@ struct CollationSearch {
         result.reserveCapacity(reserve)
         var prevCECount = 0
         var prevScalarsConsumed = 0
+        var afterVariable = false
 
         do {
             while try iter.appendMore() {
@@ -462,8 +567,7 @@ struct CollationSearch {
                 for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
-                    let masked = ce & mask
-                    if masked != 0 {
+                    if let masked = maskedCE(ce, mask: mask, afterVariable: &afterVariable) {
                         result.append(AnnotatedCE(
                             ce: masked,
                             nfdStart: prevScalarsConsumed,

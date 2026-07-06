@@ -191,6 +191,105 @@ struct CollationSearchTests {
         #expect(result != nil)
     }
 
+    // MARK: - Byte-scan fast-path holes (ASCII ignorables, shifted)
+
+    @Test func ignorableControlBetweenASCII() {
+        // U+0001 is completely ignorable (produces no CE), but it is an ASCII
+        // byte — the byte scan must not claim a conclusive no-match for it.
+        let text = "a\u{0001}b"
+        let result = collator.search(for: "ab", in: text)
+        #expect(result != nil, "Completely ignorable ASCII control must not defeat the match")
+    }
+
+    @Test func ignorableControlBackwards() {
+        let text = "a\u{0001}b"
+        let result = collator.searchBackwards(for: "ab", in: text)
+        #expect(result != nil, "Completely ignorable ASCII control must not defeat the backwards match")
+    }
+
+    @Test func shiftedSpaceIsIgnorable() {
+        // Under alternate=shifted at tertiary strength, the space is variable
+        // and drops below the mask — "ab" matches "a b". The byte scan must
+        // not claim a conclusive no-match when shifted is on.
+        var opts = CollationOptions()
+        opts.alternate = .shifted
+        let result = collator.search(for: "ab", in: "a b", options: opts)
+        #expect(result != nil, "Shifted space should be ignorable in search")
+    }
+
+    @Test func shiftedPunctuationIsIgnorable() {
+        var opts = CollationOptions()
+        opts.alternate = .shifted
+        let result = collator.search(for: "ab", in: "a-b", options: opts)
+        #expect(result != nil, "Shifted punctuation should be ignorable in search")
+    }
+
+    @Test func shiftedBackwardsFindsLast() {
+        var opts = CollationOptions()
+        opts.alternate = .shifted
+        let text = "a b x a-b"
+        let last = collator.searchBackwards(for: "ab", in: text, options: opts)
+        #expect(last != nil)
+        #expect(last!.lowerBound > text.startIndex, "Backwards should find the later occurrence")
+    }
+
+    @Test func shiftedPatternWithSpace() {
+        // The pattern's own variable characters drop out too: "a b" as a
+        // pattern reduces to the CEs of "ab".
+        var opts = CollationOptions()
+        opts.alternate = .shifted
+        let result = collator.search(for: "a b", in: "xxabxx", options: opts)
+        #expect(result != nil, "Variable characters in the pattern should be ignorable")
+    }
+
+    @Test func nonShiftedSpaceStaysSignificant() {
+        // Default alternate=nonIgnorable: the space keeps its primary weight
+        // and "ab" must NOT match "a b".
+        let result = collator.search(for: "ab", in: "a b")
+        #expect(result == nil, "Space is significant at alternate=nonIgnorable")
+    }
+
+    @Test func forwardCrossNormalizationFindsFirst() {
+        // The FIRST collation match is in NFC form (different bytes than the
+        // pattern); a byte-identical NFD match appears later. The forward
+        // byte scan must not return the later byte match as "first".
+        let nfd = "e\u{0301}"
+        let nfc = "\u{00E9}"
+        let text = "x \(nfc) y \(nfd) z"
+        let first = collator.search(for: nfd, in: text)
+        #expect(first != nil)
+        #expect(text[first!] == nfc,
+                "Forward must find the earlier NFC-form match, not the byte-identical NFD one")
+    }
+
+    // MARK: - Backwards byte-scan semantics
+
+    @Test func backwardsFindsLastLongASCII() {
+        // Long enough that the old <=32 reserve gate never fired; pure ASCII
+        // so the backwards byte scan (if eligible) is definitive.
+        let text = "start abc middle abc more filler text here abc end"
+        let last = collator.searchBackwards(for: "abc", in: text)
+        #expect(last != nil)
+        #expect(text[last!] == "abc")
+        let tail = text[last!.upperBound...]
+        #expect(!tail.contains("abc"), "Must be the last occurrence")
+    }
+
+    @Test func backwardsCrossNormalizationFindsLast() {
+        // The pattern in NFD form; the LAST collation match in the text is in
+        // NFC form (different bytes). A backwards byte scan must not return
+        // the earlier byte-identical NFD match.
+        let nfd = "e\u{0301}"        // e + combining acute
+        let nfc = "\u{00E9}"         // é precomposed
+        let text = "x \(nfd) y \(nfc) z"
+        let first = collator.search(for: nfd, in: text)
+        let last = collator.searchBackwards(for: nfd, in: text)
+        #expect(first != nil)
+        #expect(last != nil)
+        #expect(last!.lowerBound > first!.lowerBound,
+                "Backwards must find the later NFC-form match, not the byte-identical NFD one")
+    }
+
     // MARK: - Cross-starter contractions
 
     @Test func koreanSyllableSearch() {
