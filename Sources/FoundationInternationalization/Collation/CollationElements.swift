@@ -33,6 +33,11 @@ struct CEIterator {
     /// Used by CollationSearch for position tracking.
     private(set) var scalarsConsumed = 0
 
+    /// True once the NFD front end has decomposed any input scalar. While
+    /// false, NFD scalar offsets equal source scalar offsets, so
+    /// CollationSearch can report positions without an NFD→source map.
+    var sawDecomposition: Bool { scalars.sawDecomposition }
+
     /// Normalized scalars read ahead of the current position.
     private var lookahead: [UInt32] = []
     private var lookaheadStart = 0

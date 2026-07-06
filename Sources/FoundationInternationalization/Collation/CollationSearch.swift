@@ -6,11 +6,15 @@
 // matched incrementally, stopping as soon as a match is found. Backwards
 // search pre-produces all CEs then scans from the end.
 
-/// Position-annotated collation element.
+/// Collation element annotated with the NFD-scalar window it was produced
+/// from. Offsets are NFD-stream positions; they are converted to source
+/// scalar offsets only when a candidate match needs boundary validation and
+/// range reporting (an identity conversion when the iterator never
+/// decomposed anything — see `confirmMatch`).
 struct AnnotatedCE {
     let ce: Int64
-    let sourceStart: Int
-    let sourceEnd: Int
+    let nfdStart: Int
+    let nfdEnd: Int
 }
 
 struct CollationSearch {
@@ -229,39 +233,33 @@ struct CollationSearch {
         return searchForward(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
     }
 
+    /// Lazy CE scan with lazy position reporting. No upfront per-call arrays:
+    /// CEs are annotated with raw NFD offsets as they are produced, and the
+    /// NFD→source conversion, boundary validation, and String.Index
+    /// construction all happen in `confirmMatch`, only for candidates whose
+    /// CEs already match (profiling showed the upfront index table + NFD map
+    /// were most of `localizedStandardRange` — pure waste on no-match calls).
     private func searchForward(patternCEs: [Int64], in text: String, mask: Int64, iter: inout CEIterator) -> Range<String.Index>? {
-        let textIndices = buildIndexTable(for: text)
-        let scalarCount = text.unicodeScalars.count
-        let nfdMap = buildNFDSourceMap(for: text)
         let patCount = patternCEs.count
 
         iter.reset(numeric: numeric, scalars: text.unicodeScalars)
-        iter.ces.reserveCapacity(scalarCount + 1)
+        let textUTF8Count = text.utf8.count
+        if textUTF8Count <= 32 {
+            iter.ces.reserveCapacity(textUTF8Count + 1)
+        }
 
         var buffer: [AnnotatedCE] = []
-        buffer.reserveCapacity(scalarCount)
+        if textUTF8Count <= 32 {
+            buffer.reserveCapacity(textUTF8Count)
+        }
         var prevCECount = 0
         var prevScalarsConsumed = 0
         var nextMatchStart = 0
+        var nfdMap: [Int]? = nil
 
         do {
             while try iter.appendMore() {
                 let curScalarsConsumed = iter.scalarsConsumed
-                let nfdStart = prevScalarsConsumed
-                let nfdEnd = curScalarsConsumed
-
-                let srcStart: Int
-                let srcEnd: Int
-                if nfdStart < nfdMap.count {
-                    srcStart = nfdMap[nfdStart]
-                    srcEnd = (nfdEnd < nfdMap.count)
-                        ? nfdMap[nfdEnd]
-                        : scalarCount
-                } else {
-                    srcStart = max(scalarCount - 1, 0)
-                    srcEnd = scalarCount
-                }
-
                 for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
@@ -269,20 +267,19 @@ struct CollationSearch {
                     if masked != 0 {
                         buffer.append(AnnotatedCE(
                             ce: masked,
-                            sourceStart: srcStart,
-                            sourceEnd: max(srcEnd, srcStart + 1)
+                            nfdStart: prevScalarsConsumed,
+                            nfdEnd: curScalarsConsumed
                         ))
 
                         // Try matching at each position as soon as we have enough CEs
                         while nextMatchStart + patCount <= buffer.count {
-                            if tryMatch(buffer: buffer, at: nextMatchStart, patternCEs: patternCEs, text: text, textIndices: textIndices) {
-                                let startScalar = buffer[nextMatchStart].sourceStart
-                                let endScalar = buffer[nextMatchStart + patCount - 1].sourceEnd
-                                let startIdx = textIndices[startScalar]
-                                let endIdx = endScalar < textIndices.count
-                                    ? textIndices[endScalar]
-                                    : text.endIndex
-                                return startIdx..<endIdx
+                            if let range = confirmMatch(
+                                buffer: buffer, at: nextMatchStart,
+                                patternCEs: patternCEs, text: text,
+                                sawDecomposition: iter.sawDecomposition,
+                                nfdMap: &nfdMap
+                            ) {
+                                return range
                             }
                             nextMatchStart += 1
                         }
@@ -298,14 +295,13 @@ struct CollationSearch {
 
         // Check any remaining positions after iteration completes
         while nextMatchStart + patCount <= buffer.count {
-            if tryMatch(buffer: buffer, at: nextMatchStart, patternCEs: patternCEs, text: text, textIndices: textIndices) {
-                let startScalar = buffer[nextMatchStart].sourceStart
-                let endScalar = buffer[nextMatchStart + patCount - 1].sourceEnd
-                let startIdx = textIndices[startScalar]
-                let endIdx = endScalar < textIndices.count
-                    ? textIndices[endScalar]
-                    : text.endIndex
-                return startIdx..<endIdx
+            if let range = confirmMatch(
+                buffer: buffer, at: nextMatchStart,
+                patternCEs: patternCEs, text: text,
+                sawDecomposition: iter.sawDecomposition,
+                nfdMap: &nfdMap
+            ) {
+                return range
             }
             nextMatchStart += 1
         }
@@ -313,62 +309,100 @@ struct CollationSearch {
         return nil
     }
 
-    private func tryMatch(buffer: [AnnotatedCE], at start: Int, patternCEs: [Int64], text: String, textIndices: [String.Index]) -> Bool {
+    /// Checks the pattern CEs against `buffer` at `start`; on CE equality,
+    /// converts the match's NFD offsets to source scalar offsets (building
+    /// the NFD→source map lazily, and only when the iterator actually
+    /// decomposed something — otherwise the streams are 1:1 and offsets
+    /// carry over directly), validates the match boundaries, and returns the
+    /// range in `text`.
+    private func confirmMatch(
+        buffer: [AnnotatedCE], at start: Int, patternCEs: [Int64],
+        text: String, sawDecomposition: Bool, nfdMap: inout [Int]?
+    ) -> Range<String.Index>? {
         for patIx in 0..<patternCEs.count {
             if buffer[start + patIx].ce != patternCEs[patIx] {
-                return false
+                return nil
             }
         }
-        let startScalar = buffer[start].sourceStart
-        let endScalar = buffer[start + patternCEs.count - 1].sourceEnd
-        return isValidStartBoundary(at: startScalar, in: text) &&
-               isValidEndBoundary(at: endScalar, in: text)
+
+        let nfdStart = buffer[start].nfdStart
+        let nfdEnd = buffer[start + patternCEs.count - 1].nfdEnd
+
+        let startScalar: Int
+        let endScalar: Int
+        if !sawDecomposition {
+            startScalar = nfdStart
+            endScalar = nfdEnd
+        } else {
+            if nfdMap == nil {
+                nfdMap = buildNFDSourceMap(for: text)
+            }
+            let map = nfdMap!
+            // One map entry per NFD scalar, holding its source scalar index;
+            // the last entry is always the last source scalar.
+            let scalarCount = map.isEmpty ? 0 : map[map.count - 1] + 1
+            if nfdStart < map.count {
+                startScalar = map[nfdStart]
+            } else {
+                startScalar = max(scalarCount - 1, 0)
+            }
+            // Clamp so the match always covers the last CE's own source
+            // scalar even when its whole NFD window maps into one scalar.
+            let lastNfdStart = buffer[start + patternCEs.count - 1].nfdStart
+            let lastSrcStart = lastNfdStart < map.count
+                ? map[lastNfdStart]
+                : max(scalarCount - 1, 0)
+            let srcEnd = nfdEnd < map.count ? map[nfdEnd] : scalarCount
+            endScalar = max(srcEnd, lastSrcStart + 1)
+        }
+
+        guard isValidStartBoundary(at: startScalar, in: text),
+              isValidEndBoundary(at: endScalar, in: text) else {
+            return nil
+        }
+
+        let scalars = text.unicodeScalars
+        guard let startIdx = scalars.index(
+            scalars.startIndex, offsetBy: startScalar, limitedBy: scalars.endIndex
+        ) else { return nil }
+        let endIdx = scalars.index(
+            startIdx, offsetBy: endScalar - startScalar, limitedBy: scalars.endIndex
+        ) ?? scalars.endIndex
+        return startIdx..<endIdx
     }
 
     // MARK: - Backward search (full pre-production)
 
     private func searchBackwardFull(patternCEs: [Int64], in text: String, mask: Int64) -> Range<String.Index>? {
-        let textIndices = buildIndexTable(for: text)
-        let annotated = produceAnnotatedCEs(for: text, mask: mask)
-        if annotated.isEmpty { return nil }
-
-        return searchBackwardMatch(patternCEs: patternCEs, annotated: annotated, text: text, textIndices: textIndices)
+        var iter = CEIterator(
+            data: data, base: base, norm: norm,
+            numeric: numeric,
+            scalars: text.unicodeScalars
+        )
+        return searchBackwardFull(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
     }
 
     private func searchBackwardFull(patternCEs: [Int64], in text: String, mask: Int64, iter: inout CEIterator) -> Range<String.Index>? {
-        let textIndices = buildIndexTable(for: text)
         let annotated = produceAnnotatedCEs(for: text, mask: mask, iter: &iter)
         if annotated.isEmpty { return nil }
 
-        return searchBackwardMatch(patternCEs: patternCEs, annotated: annotated, text: text, textIndices: textIndices)
+        return searchBackwardMatch(
+            patternCEs: patternCEs, annotated: annotated, text: text,
+            sawDecomposition: iter.sawDecomposition
+        )
     }
 
-    private func searchBackwardMatch(patternCEs: [Int64], annotated: [AnnotatedCE], text: String, textIndices: [String.Index]) -> Range<String.Index>? {
-
+    private func searchBackwardMatch(patternCEs: [Int64], annotated: [AnnotatedCE], text: String, sawDecomposition: Bool) -> Range<String.Index>? {
         let patCount = patternCEs.count
         guard patCount <= annotated.count else { return nil }
 
+        var nfdMap: [Int]? = nil
         for targetIx in stride(from: annotated.count - patCount, through: 0, by: -1) {
-            var matched = true
-            for patIx in 0..<patCount {
-                if annotated[targetIx + patIx].ce != patternCEs[patIx] {
-                    matched = false
-                    break
-                }
-            }
-
-            if matched {
-                let startScalar = annotated[targetIx].sourceStart
-                let endScalar = annotated[targetIx + patCount - 1].sourceEnd
-
-                if isValidStartBoundary(at: startScalar, in: text) &&
-                   isValidEndBoundary(at: endScalar, in: text) {
-                    let startIdx = textIndices[startScalar]
-                    let endIdx = endScalar < textIndices.count
-                        ? textIndices[endScalar]
-                        : text.endIndex
-                    return startIdx..<endIdx
-                }
+            if let range = confirmMatch(
+                buffer: annotated, at: targetIx, patternCEs: patternCEs,
+                text: text, sawDecomposition: sawDecomposition, nfdMap: &nfdMap
+            ) {
+                return range
             }
         }
 
@@ -408,45 +442,23 @@ struct CollationSearch {
 
     // MARK: - Annotated CE production (full, for backwards search)
 
-    private func produceAnnotatedCEs(for text: String, mask: Int64) -> [AnnotatedCE] {
-        var iter = CEIterator(
-            data: data, base: base, norm: norm,
-            numeric: numeric,
-            scalars: text.unicodeScalars
-        )
-        return produceAnnotatedCEs(for: text, mask: mask, iter: &iter)
-    }
-
     private func produceAnnotatedCEs(for text: String, mask: Int64, iter: inout CEIterator) -> [AnnotatedCE] {
-        let nfdMap = buildNFDSourceMap(for: text)
-        let scalarCount = text.unicodeScalars.count
-
         iter.reset(numeric: numeric, scalars: text.unicodeScalars)
-        iter.ces.reserveCapacity(scalarCount + 1)
+        let textUTF8Count = text.utf8.count
+        if textUTF8Count <= 32 {
+            iter.ces.reserveCapacity(textUTF8Count + 1)
+        }
 
         var result: [AnnotatedCE] = []
-        result.reserveCapacity(scalarCount)
+        if textUTF8Count <= 32 {
+            result.reserveCapacity(textUTF8Count)
+        }
         var prevCECount = 0
         var prevScalarsConsumed = 0
 
         do {
             while try iter.appendMore() {
                 let curScalarsConsumed = iter.scalarsConsumed
-                let nfdStart = prevScalarsConsumed
-                let nfdEnd = curScalarsConsumed
-
-                let srcStart: Int
-                let srcEnd: Int
-                if nfdStart < nfdMap.count {
-                    srcStart = nfdMap[nfdStart]
-                    srcEnd = (nfdEnd < nfdMap.count)
-                        ? nfdMap[nfdEnd]
-                        : scalarCount
-                } else {
-                    srcStart = max(scalarCount - 1, 0)
-                    srcEnd = scalarCount
-                }
-
                 for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
@@ -454,8 +466,8 @@ struct CollationSearch {
                     if masked != 0 {
                         result.append(AnnotatedCE(
                             ce: masked,
-                            sourceStart: srcStart,
-                            sourceEnd: max(srcEnd, srcStart + 1)
+                            nfdStart: prevScalarsConsumed,
+                            nfdEnd: curScalarsConsumed
                         ))
                     }
                 }
@@ -517,17 +529,6 @@ struct CollationSearch {
             idx = scalars.index(after: idx)
         }
         return norm.ccc(scalars[idx].value) == 0
-    }
-
-    // MARK: - Index table
-
-    private func buildIndexTable(for text: String) -> [String.Index] {
-        var indices: [String.Index] = []
-        indices.reserveCapacity(text.unicodeScalars.count)
-        for idx in text.unicodeScalars.indices {
-            indices.append(idx)
-        }
-        return indices
     }
 
     // MARK: - Strength mask

@@ -26,6 +26,12 @@ struct NFDIterator {
     var unitNext = 0
     /// Combining marks (ccc > 0) of the unit being built, sorted on flush.
     var marks: [UInt32] = []
+    /// True once any input scalar has been decomposed (the output stream is no
+    /// longer 1:1 with the source). While false, NFD scalar offsets equal
+    /// source scalar offsets — mark reordering permutes scalars within a unit
+    /// but never changes counts. CollationSearch uses this to skip building
+    /// the NFD→source position map.
+    private(set) var sawDecomposition = false
 
     init(norm: NormalizationData, scalars: String.UnicodeScalarView) {
         self.norm = norm
@@ -41,6 +47,7 @@ struct NFDIterator {
         for _ in 0..<n { _ = source.next() }
         pendingFirst = nil
         pendingMark = nil
+        sawDecomposition = false
         clearBuffers()
     }
 
@@ -52,6 +59,7 @@ struct NFDIterator {
         source = iter
         pendingFirst = first
         pendingMark = nil
+        sawDecomposition = false
         clearBuffers()
     }
 
@@ -105,6 +113,7 @@ struct NFDIterator {
             // character is a starter (no canonical reordering possible).
             // Bypasses refill() entirely — no arrays, no loops, no carry.
             if c < 0x0300, let quick = norm.quickDecomp(c) {
+                sawDecomposition = true
                 let following = nextSourceScalar()
                 if following == nil || (following! < 0x300 || norm.leadCCC(following!) == 0) {
                     pendingFirst = following
@@ -144,9 +153,11 @@ struct NFDIterator {
                 // Fast path for simple [starter, mark]: build unit directly
                 // without absorb/flushMarks calls. We know base is CCC=0 and
                 // mark is CCC>0 from quickDecomp's guard.
+                sawDecomposition = true
                 unit.append(quick.base)
                 marks.append(quick.mark)
             } else if norm.hasDecomposition(first) {
+                sawDecomposition = true
                 decomposed.removeAll(keepingCapacity: true)
                 _ = norm.appendDecomposition(of: first, to: &decomposed)
                 for c in decomposed { absorb(c) }
@@ -172,6 +183,7 @@ struct NFDIterator {
             if let quick = norm.quickDecomp(v) {
                 // Common Latin case: [starter, mark]. The starter begins a new
                 // reorderable unit if we already have content.
+                sawDecomposition = true
                 if (!unit.isEmpty || !marks.isEmpty) {
                     carried.append(quick.base)
                     carried.append(quick.mark)
@@ -182,6 +194,7 @@ struct NFDIterator {
                 absorb(quick.mark)
                 continue
             }
+            sawDecomposition = true
             decomposed.removeAll(keepingCapacity: true)
             _ = norm.appendDecomposition(of: v, to: &decomposed)
             // A decomposition starting with a starter begins a new reorderable

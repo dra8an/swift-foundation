@@ -129,8 +129,13 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   Since `c683653`, the search APIs were optimized (thread-local scratch-iterator
   reuse for `contains`/`search`/`searchBackwards`, plus ASCII/UTF-8 byte-scan
   fast paths for `range(of:locale:)`): `localizedStandardContains` now beats
-  system ICU on most corpora. Technique log: `optimization-targets.md` §20;
-  Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
+  system ICU on most corpora. 2026-07-04: **lazy position reporting** in the
+  range search (NFD offsets on `AnnotatedCE`, `sawDecomposition` flag on
+  `NFDIterator`, conversion/validation only at CE-equal candidates, index
+  table deleted) — `localizedStandardRange` now beats system ICU on every
+  corpus except paths (1.46×, was 2.18×). Technique log:
+  `optimization-targets.md` §20; Apple Silicon numbers
+  `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
   min-over-9 parity.

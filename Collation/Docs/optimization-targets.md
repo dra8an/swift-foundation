@@ -446,16 +446,38 @@ fixed it:
    CoreFoundation's `CFStringFindWithOptionsAndLocale`). ASCII near-parity with
    ICU. Does **not** apply to `localizedStandardRange` (primary + numeric).
 
+6. **Lazy position reporting** (2026-07-04): the range paths built three
+   upfront O(n) arrays *per call* — a `[String.Index]` table, the NFD→source
+   map (one trie probe per scalar plus decomposition scratch arrays), and
+   `unicodeScalars.count` passes — all consumed only *at match time*; pure
+   waste on no-match calls. Now `AnnotatedCE` carries raw NFD offsets
+   (free — read off `iter.scalarsConsumed`), and `confirmMatch` does the
+   NFD→source conversion, boundary validation, and `String.Index`
+   construction only for candidates whose CEs already matched. Two things
+   make the conversion cheap: a `sawDecomposition` flag on `NFDIterator`
+   (set only in the four decomposition branches; while false the NFD stream
+   is 1:1 with the source, so offsets carry over with no map at all — always
+   true for ASCII/paths/CJK; mark reordering permutes scalars within a unit
+   but never changes counts, so it doesn't need the flag), and building the
+   map lazily, cached across candidates, when decomposition did happen.
+   `String.Index`es come from one `index(offsetBy:limitedBy:)` walk at match
+   time — O(match position) once instead of O(n) always. Same treatment on
+   forward and backward search; the index-table builder is deleted. Intel:
+   `localizedStandardRange` −17 to −39% (ascii 1736→1190, now **beats**
+   system ICU at 0.85×; paths 3269→2020, 2.28×→~1.4×), `range(of:locale:)`
+   non-ASCII −10 to −40% (latin 2755→1656). Compare/contains unchanged.
+
 **Results.** `contains`: Apple Silicon 1.6–3.2× faster than system ICU
 (`2268a0e`); Intel beats ICU on ASCII/Latin/CJK/Thai (0.46–0.77×), paths near
-parity (1.11×). The range APIs are mixed — `localizedStandardRange` beats ICU on
-Latin/CJK/Thai but still pays the index-table/NFD-map/`AnnotatedCE` overhead on
-ASCII/paths; `range(of:locale:)` is at ASCII parity via the byte scan but the
-non-ASCII CE path is still behind.
+parity (1.11×). `localizedStandardRange` now beats system ICU on every corpus
+except paths (~1.4×, down from 2.28×); `range(of:locale:)` is at ASCII/Latin
+parity, other corpora ~1.2–1.4× behind.
 
-**Remaining levers (range):** apply the same lazy/Bool-style trimming to the
-range path's position-reporting arrays (compute only the two needed
-`String.Index`es instead of a full table; reuse the NFD/annotated buffers via
-scratch), and extend CE-space skipping. See `Docs/25` finding #4.
+**Remaining levers (range):** the residual paths gap vs `contains` is the
+`AnnotatedCE` buffer itself (24 B/element, unreserved for long strings, so
+growth reallocs) — parallel `[Int64]`+`[Int32]` buffers or scratch reuse
+would trim it. The non-ASCII `range(of:locale:)` CE path is the other
+frontier; a byte-scan extension there must respect normalization, so it is
+not a straight port of step 5.
 
 ---
