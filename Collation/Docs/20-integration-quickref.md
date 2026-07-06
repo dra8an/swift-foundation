@@ -112,9 +112,9 @@ Tested 2026-07-06 on Apple Silicon (macOS 26) against system ICU (via NSString b
 | `localizedStandardCompare` | **1.4× faster** | **2.5× faster** | **1.5× faster** | **1.7× faster** |
 | `localizedCaseInsensitiveCompare` | **1.4× faster** | **2.5× faster** | **1.5× faster** | **1.8× faster** |
 | `compare(_:locale:)` | **1.0×** | **1.6× faster** | **1.1× faster** | **1.2× faster** |
-| `localizedStdContains` | **2.2× faster** | **3.2× faster** | **2.7× faster** | **1.5× faster** |
+| `localizedStdContains` | **2.3× faster** | **3.2× faster** | **2.7× faster** | **2.0× faster** |
 | `localizedCaseIContains` | **2.3× faster** | **3.3× faster** | **2.7× faster** | **2.1× faster** |
-| `localizedStdRange` | **2.2× faster** | **3.0× faster** | **2.5× faster** | **1.1× faster** |
+| `localizedStdRange` | **2.2× faster** | **3.1× faster** | **2.5× faster** | **1.4× faster** |
 | `range(of:locale:)` | **0.9×** | **1.2× faster** | 0.9× | 0.7× |
 | `range(backwards)` | **0.9×** | **1.3× faster** | 0.9× | **1.1× faster** |
 

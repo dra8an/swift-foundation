@@ -53,10 +53,10 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 444   | 999       | **2.2× faster** |
-| Latin  | 455   | 1445      | **3.2× faster** |
-| CJK    | 482   | 1280      | **2.7× faster** |
-| Paths  | 623   | 963       | **1.5× faster** |
+| ASCII  | 439   | 999       | **2.3× faster** |
+| Latin  | 454   | 1445      | **3.2× faster** |
+| CJK    | 483   | 1280      | **2.7× faster** |
+| Paths  | 492   | 963       | **2.0× faster** |
 
 ### localizedCaseInsensitiveContains(_:)
 
@@ -71,10 +71,10 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 464   | 998       | **2.2× faster** |
-| Latin  | 479   | 1441      | **3.0× faster** |
-| CJK    | 504   | 1277      | **2.5× faster** |
-| Paths  | 884   | 989       | **1.1× faster** |
+| ASCII  | 457   | 998       | **2.2× faster** |
+| Latin  | 469   | 1441      | **3.1× faster** |
+| CJK    | 502   | 1277      | **2.5× faster** |
+| Paths  | 722   | 989       | **1.4× faster** |
 
 ### range(of:options:locale:)
 

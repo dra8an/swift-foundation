@@ -242,7 +242,7 @@ system NSString → CoreFoundation → ICU bridge:
 | `localizedStdContains` | ASCII | 444 | 999 | **2.2× faster** |
 | `localizedStdContains` | Latin | 455 | 1445 | **3.2× faster** |
 | `localizedStdContains` | CJK | 482 | 1280 | **2.7× faster** |
-| `localizedStdContains` | paths | 623 | 963 | **1.5× faster** |
+| `localizedStdContains` | paths | 492 | 963 | **2.0× faster** |
 | `localizedStdContains` | Thai | 499 | 1367 | **2.7× faster** |
 | `localizedCaseICmp` | ASCII | 137 | 198 | **1.4× faster** |
 | `localizedCaseICmp` | Latin | 137 | 347 | **2.5× faster** |
@@ -255,7 +255,7 @@ system NSString → CoreFoundation → ICU bridge:
 | `localizedStdRange` | ASCII | 464 | 998 | **2.2× faster** |
 | `localizedStdRange` | Latin | 479 | 1441 | **3.0× faster** |
 | `localizedStdRange` | CJK | 504 | 1277 | **2.5× faster** |
-| `localizedStdRange` | paths | 884 | 989 | **1.1× faster** |
+| `localizedStdRange` | paths | 722 | 989 | **1.4× faster** |
 | `range(of:locale:)` | ASCII | 361 | 323 | **0.9× (parity)** |
 | `range(of:locale:)` | Latin | 655 | 790 | **1.2× faster** |
 | `range(of:locale:)` | CJK | 687 | 585 | **0.9× (parity)** |
