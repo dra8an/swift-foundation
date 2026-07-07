@@ -666,3 +666,43 @@ pair encoding, which now indexes the scratch directly instead of copying a
 slice. Byte-identical sort keys verified by the golden/differential/fuzz
 suites; `NumericTests.swift` pins the dense/pair boundary (1042489/1042490),
 the 7→8 digit transition, leading-zero equality, and long-run ordering.
+
+---
+
+### 28. Byte-scan eligibility beyond ASCII (CJK) — investigated, parked
+
+**Status:** investigated 2026-07-06, parked; the end-boundary soundness fix
+it surfaced is shipped.
+
+The idea: generalize the byte-scan's clean-ASCII rule to per-scalar
+eligibility — a scalar where byte identity ⇔ collation identity (NFD-inert,
+context-free, single provably-unique CE) — so CJK text gets the definitive
+scan and the ~1.3× cjk range cells close. Scoped eligibility to OFFSET /
+IMPLICIT CE32 tags (single CE computed injectively from the code point, no
+uniqueness audit needed).
+
+**Why it's parked:** probing the root data showed common Han ideographs
+carry **longPrimary** tags — explicit data-assigned primaries (CLDR's
+curated Han order), not code-point-derived ones. Only rare characters
+(e.g. U+4EDD) get OFFSET. So the injective-by-construction eligibility
+never fires on real CJK text, and the scalar-wise scan restructuring cost
+3–11% on the ascii/paths fast paths while buying nothing (reverted; the
+tight byte-wise loops are back).
+
+**What a sound extension needs (recorded design, not built):**
+1. longPrimary scalars are only eligible if **no other scalar shares their
+   full CE** — requires an init-time uniqueness audit over the trie
+   (enumerate scalars, hash CE → collision set; collators are cached, so a
+   few ms once is acceptable), materialized as an eligibility bitmap that
+   would also replace the per-scalar trie+inert probes.
+2. Eligible scalars must not occur as **contraction suffixes** (a
+   contraction starting before a backward match window could consume into
+   it — the byte scan never visits that side). ICU's unsafe-backward set is
+   the right exclusion source.
+3. The forward **end-boundary rule** (shipped): a match's following scalar
+   must be clean/eligible — a combining mark there belongs to the match's
+   last character, and the CE path rejects the split. The ASCII byte scan
+   had accepted such matches since it shipped ("ab" matched in
+   "ab\u{0301}"); fixed with one following-byte check on match, regression
+   tests added. Backwards has no hole (its clean-suffix invariant already
+   covers everything after the match).

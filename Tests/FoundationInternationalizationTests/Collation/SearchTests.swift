@@ -262,6 +262,21 @@ struct CollationSearchTests {
                 "Forward must find the earlier NFC-form match, not the byte-identical NFD one")
     }
 
+    @Test func markAfterMatchEndRejected() {
+        // The end boundary of a match must not split a combining sequence:
+        // in "ab\u{0301}" the accent belongs to 'b', so bare "ab" must not
+        // match. The CE path rejects this via end-boundary validation; the
+        // byte scan must not accept it either (the mark sits just past the
+        // match window, where the clean-prefix rule used not to look).
+        let result = collator.search(for: "ab", in: "ab\u{0301}")
+        #expect(result == nil, "Match ending before a combining mark must be rejected")
+    }
+
+    @Test func markAfterMatchEndRejectedMidText() {
+        let result = collator.search(for: "ab", in: "xx ab\u{0301} yy")
+        #expect(result == nil)
+    }
+
     // MARK: - Backwards byte-scan semantics
 
     @Test func backwardsFindsLastLongASCII() {
@@ -288,6 +303,39 @@ struct CollationSearchTests {
         #expect(last != nil)
         #expect(last!.lowerBound > first!.lowerBound,
                 "Backwards must find the later NFC-form match, not the byte-identical NFD one")
+    }
+
+    // MARK: - CJK byte-scan eligibility (offset/implicit scalars)
+
+    @Test func cjkBackwardsFindsLast() {
+        let text = "日本 と 日本"
+        let first = collator.search(for: "日本", in: text)
+        let last = collator.searchBackwards(for: "日本", in: text)
+        #expect(first != nil)
+        #expect(last != nil)
+        #expect(first!.lowerBound < last!.lowerBound)
+        #expect(text[last!] == "日本")
+    }
+
+    @Test func cjkNoMatch() {
+        #expect(collator.search(for: "大阪", in: "東京は首都") == nil)
+        #expect(collator.searchBackwards(for: "大阪", in: "東京は首都") == nil)
+    }
+
+    @Test func cjkMarkAfterMatchEndRejected() {
+        // Combining mark directly after the matched ideograph: the end
+        // boundary would split the combining sequence.
+        let result = collator.search(for: "日本", in: "日本\u{0301}")
+        #expect(result == nil)
+    }
+
+    @Test func cjkAfterIneligiblePrefixStillFound() {
+        // An accented character before the match makes the fast path bail;
+        // the CE path must still find it.
+        let text = "café 日本 x"
+        let result = collator.search(for: "日本", in: text)
+        #expect(result != nil)
+        #expect(text[result!] == "日本")
     }
 
     // MARK: - Cross-starter contractions

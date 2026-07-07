@@ -261,6 +261,14 @@ struct CollationSearch {
                                 if textBuf[i + j] != patBuf[j] { matched = false; break }
                             }
                             if matched {
+                                // End boundary: the byte after the match must
+                                // be clean ASCII (or absent). A non-ASCII byte
+                                // there could open a combining mark belonging
+                                // to the match's last character — the CE path
+                                // rejects such splits, so let it decide.
+                                if i + patLen < textLen, !isCleanASCIIByte(textBuf[i + patLen]) {
+                                    return nil
+                                }
                                 let startIdx = text.utf8.index(text.startIndex, offsetBy: i)
                                 let endIdx = text.utf8.index(startIdx, offsetBy: patLen)
                                 return .some(startIdx..<endIdx)
