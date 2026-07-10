@@ -433,13 +433,18 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
 
     private func adjustToJapanese(_ dc: inout DateComponents, date: Date, requested: Calendar.ComponentSet) {
         guard requested.contains(.era) || requested.contains(.year) else { return }
-        let probe = gregorian.dateComponents([.year, .month, .day], from: date)
+        let probe = gregorian.dateComponents([.era, .year, .month, .day], from: date)
         guard let y = probe.year, let m = probe.month, let d = probe.day else { return }
-        if let era = eraEntry(forGregorianYear: y, month: m, day: d) {
+        let extendedYear = probe.era == 0 ? 1 - y : y
+        if let era = eraEntry(forGregorianYear: extendedYear, month: m, day: d) {
             if requested.contains(.era) { dc.era = era.index }
-            if requested.contains(.year) { dc.year = y - era.startGregorianYear + 1 }
+            if requested.contains(.year) { dc.year = extendedYear - era.startGregorianYear + 1 }
+        } else {
+            // Pre-Taika: ICU clamps to the first era; year counts from its start (≤ 0).
+            let first = Self.eras.last!
+            if requested.contains(.era) { dc.era = first.index }
+            if requested.contains(.year) { dc.year = extendedYear - first.startGregorianYear + 1 }
         }
-        // For pre-Meiji dates, leave gregorian's era + year as-is.
     }
 
 #if FOUNDATION_FRAMEWORK
