@@ -43,18 +43,33 @@ memory. Authoritative companions in this same `backup/`:
   pre-existing bench crashers fixed. Matrix conclusion: composition adds
   ~nothing; Buddhist ≈ Gregorian, Japanese +70–90 ns on component/roundtrip
   (era-table walk). See `BENCHMARKS_PACKAGE.md`.
+- **2026-07-10 additions** (probes + one fix, all green):
+  - `CalendarStrictPolicyParityProbe.swift` — `.strict` matching (leap-day,
+    day-31, time patterns), DST repeated-time `.first`/`.last`, nonexistent
+    DST times, backward direction, `nextDate` strict. Both calendars, 0 div.
+  - `CalendarDailySweepParityProbe.swift` — exhaustive day-by-day vs ICU:
+    Japanese 1868→2100 (85,102 days), Buddhist 1900→2100 (73,414 days),
+    pre-Taika sampled 200→643 + daily band 644→646. All 0 div after fix.
+  - **Pre-Taika fix in `Calendar_Japanese.swift`** (found by the sweep):
+    for dates before the first era (645-06-19), ICU clamps to era 0 (Taika)
+    with year counted from its start (≤ 0, e.g. 200 CE → year -444). Our
+    old fallback passed Gregorian era/year through. `adjustToJapanese` now
+    computes the Gregorian **extended year** (fixes a latent BCE lookup bug
+    too) and clamps to the first era when no era matches. `date(from:)`
+    already handled the ≤0 convention — decompose now matches it.
 
 ## Cherry-pick plan (fresh branch off post-merge `upstream/main`)
 
 Create `port/buddhist-japanese-main` off current `upstream/main`. Bring over
-these **3 code commits** from `origin/port/buddhist` — **SKIP the two backup
-commits `d6d03da` and `bb920e2`** (backup/ never goes upstream):
+these **4 code commits** from `origin/port/buddhist` — **SKIP the backup
+commits `d6d03da`, `bb920e2`, `d6edf21`** (backup/ never goes upstream):
 
 | Commit | Files |
 |---|---|
 | `bd96a7a` | `Calendar_Buddhist.swift`, `Calendar_Japanese.swift`, `Calendar_Cache.swift` (flags), Buddhist A/B/C + Japanese A probes |
 | `9ccf2f3` | Japanese B/C probes, era-inference fix, bridging (⚠ also edits `Calendar_Hebrew.swift`) |
 | `2cf2086` | `BenchmarkCalendar.swift`, `InternationalizationBenchmark.swift` |
+| `5a59e6a` | `CalendarStrictPolicyParityProbe.swift` + `CalendarDailySweepParityProbe.swift` (new probes), `Calendar_Japanese.swift` (pre-Taika era clamping fix — see below) |
 
 Expect this to be **file-take + manual fix**, not a clean `git cherry-pick`
 (the branch was built on the Hebrew v-stack; `upstream/main` has diverged).
@@ -88,9 +103,17 @@ Expect this to be **file-take + manual fix**, not a clean `git cherry-pick`
 
 - `swift build` + full `swift test` (release) on the new branch.
 - Buddhist A/B/C + Japanese A/B/C parity probes — zero divergences.
+- Strict-policy probe + daily-sweep probes (incl. pre-Taika) — zero divergences.
 - `swift package benchmark run --target InternationalizationBenchmarks` runs clean.
 - Feature flags OFF by default → `Calendar(identifier: .buddhist/.japanese)`
   unchanged until enabled.
+
+Note (iMac-side only, but symptomatic): builds on the research iMac require
+`TOOLCHAINS=swift` (Swift 6.3.1) — Xcode's bundled 6.2.3 fails to type-check
+an expression in `Calendar_Hebrew.swift`'s `isDateInWeekend` ("unable to
+type-check in reasonable time"). If the 6.4 machine's toolchain ever chokes
+the same way, the expression can be split into typed sub-expressions; the
+code itself is fine.
 
 ## Open decisions (defer or include)
 
