@@ -138,9 +138,17 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   ignorable-control and shifted gates) + **alternate=shifted support in
   search** (`16d0322`) — `range(of:.backwards)` went from the worst API
   (2.6×/3.45× behind on ascii/paths) to beating system ICU on latin/paths,
-  ≤1.32× elsewhere. Technique log: `optimization-targets.md` §20 (steps
-  6–8); Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel
-  `Docs/25`.
+  ≤1.32× elsewhere. 2026-07-12/13: **engine-entry round** (§29–§30):
+  compare hot/cold split (throws only paid on the pipeline path),
+  duplicated-safety-check removal, word-wise prefix scan, and the
+  **RootCollator storage box** — the collator was a ~768-byte struct copied
+  at every call boundary (incl. the CollatorCache fetch inside every
+  Foundation call); it is now one pointer. `localizedCompare` HALVED
+  (ascii 117 ns = 0.27× system ICU; latin 0.14×); engine compare ascii
+  39 ns (2.44×), paths 98 (2.00×). Table-1 rows recorded before 07-13
+  include a ~10–12 ns receiver-copy bench artifact — do not compare across.
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§30;
+  Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
   min-over-9 parity.
