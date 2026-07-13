@@ -29,7 +29,7 @@
 > every Foundation call). The engine rows also now hold the collator in a
 > loop-local `let` (§30), so Table-1 rows are NOT comparable to pre-07-13
 > recordings (~10–12 ns of receiver-copy artifact removed). Headlines:
-> `localizedCompare` latin **0.14×** (7× faster than system ICU);
+> `localizedCompare` latin **7.3× faster** than system ICU;
 > every Foundation API ≤1.21× on every corpus; engine compare ascii 2.4×,
 > paths 2.0×.
 >
@@ -123,21 +123,24 @@ pipeline cost on cjk/thai. The cjk row is the CE-bound frontier (§28).
 ## Table 2 — Integrated in Foundation (same APIs, two backends)
 
 Both call the *same* Foundation APIs; one routes to system ICU (NSString→ICU),
-the other to our Swift collator. ratio = ours / system-ICU. **<1 = ours faster.**
+the other to our Swift collator. **speedup = system-ICU ÷ ours: how many
+times faster we are (>1 = ours faster).** (Flipped from the old ours÷system
+convention on 2026-07-13; bench_matrix.py prints this orientation now.
+Doc 21 on machine 2 still uses the old convention until it re-baselines.)
 
 | API | ascii | latin | cjk | paths | thai |
 |-----|------:|------:|----:|------:|-----:|
-| `compare(locale:)`               | 0.62× | 0.38× | 0.60× | 0.55× | 0.94× |
-| `localizedCompare`               | **0.27×** | **0.14×** | 0.39× | **0.27×** | 0.80× |
-| `localizedStandardCompare`       | 0.35× | 0.18× | 0.41× | 0.32× | 0.87× |
-| `localizedCaseInsensitiveCompare`| 0.36× | 0.18× | 0.41× | 0.32× | 0.88× |
-| `localizedStandardContains`      | 0.68× | 0.42× | 0.51× | 0.78× | 0.46× |
-| `localizedCaseInsensitiveContains`| 0.66× | 0.40× | 0.50× | 0.73× | 0.44× |
-| `localizedStandardRange`         | 0.78× | 0.46× | 0.56× | 1.03× | 0.64× |
-| `range(of:options:locale:)`      | 0.91× | 0.89× | 1.21× | 1.10× | 1.13× |
-| `range(of:.backwards,locale:)`   | 0.91× | 0.79× | 1.17× | 0.78× | 1.01× |
+| `compare(locale:)`               | 1.62× | 2.60× | 1.66× | 1.82× | 1.07× |
+| `localizedCompare`               | **3.74×** | **7.31×** | 2.55× | **3.71×** | 1.24× |
+| `localizedStandardCompare`       | 2.82× | 5.62× | 2.44× | 3.09× | 1.15× |
+| `localizedCaseInsensitiveCompare`| 2.81× | 5.67× | 2.45× | 3.16× | 1.14× |
+| `localizedStandardContains`      | 1.47× | 2.37× | 1.95× | 1.28× | 2.15× |
+| `localizedCaseInsensitiveContains`| 1.52× | 2.53× | 2.01× | 1.37× | 2.28× |
+| `localizedStandardRange`         | 1.28× | 2.19× | 1.79× | 0.97× | 1.56× |
+| `range(of:options:locale:)`      | 1.10× | 1.13× | 0.83× | 0.91× | 0.88× |
+| `range(of:.backwards,locale:)`   | 1.10× | 1.26× | 0.85× | 1.28× | 0.99× |
 
-Raw ns/op behind the ratios (2026-07-06 post-fix quiet-machine run):
+Raw ns/op behind the speedups (2026-07-13 post-§30 run):
 
 | API | corpus | sysICU | ours |
 |-----|--------|-------:|-----:|
@@ -151,13 +154,16 @@ Raw ns/op behind the ratios (2026-07-06 post-fix quiet-machine run):
 | range(of:locale:)  | ascii/latin/cjk/paths/thai | 602 / 1644 / 1328 / 614 / 1533   | 546 / 1458 / 1603 / 676 / 1734 |
 | range(backwards)   | ascii/latin/cjk/paths/thai | 602 / 1726 / 1348 / 927 / 1637   | 549 / 1371 / 1582 / 725 / 1651 |
 
-History of the ours columns across today's three changes (min ns/op):
-`localizedStandardRange` — 06-26: 1625/2001/1732/3094/2110 → lazy
-positions: 1193/1235/1351/1994/1747 → +reserve: paths ~1940.
-`range(backwards)` — first baseline (pre-fix): 1555/1591/1749/3149/1862 →
-+reserve+byte-scan: 717/1612/1804/887/1809 (ascii −54%, paths −72%).
-`range(of:locale:)` forward pays +2–5% for the byte-scan soundness fixes
-(§20 step 8). Compare and contains unchanged throughout.
+All but five cells beat system ICU, none is worse than 0.83×. The compare
+family runs 1.1–7.3× faster than the system (`localizedCompare` latin:
+118 vs 863 ns); search runs 1.3–2.3× faster nearly everywhere. The five
+remaining <1× cells are all range-position reporting on the CE-bound
+corpora (cjk 0.83–0.85×, paths/thai forward range 0.88–0.97×). Most of
+the 07-13 jump in the compare family came from the §30 storage box: the
+collator struct's ~8 reference fields made every per-call copy pay a
+768-byte memcpy plus ~8 retain/release pairs, several times per Foundation
+call (cache fetch, return, throwing-call receiver). Per-API history: this
+file's git log plus §20/§27/§29/§30 of the technique log.
 
 ## Findings
 
