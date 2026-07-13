@@ -133,38 +133,70 @@ public struct RootCollator: @unchecked Sendable {
 
     /// Compares two strings under root collation.
     /// Defaults to tertiary strength with all options off, like ICU.
+    ///
+    /// Hot/cold split: the default-options fast-Latin byte path lives in a
+    /// non-throwing function (it cannot fail), so the error-handling ABI is
+    /// only paid when the CE pipeline actually runs. Measured on Intel:
+    /// `throws` alone cost 10 ns/call on the fast path — two thirds of the
+    /// entire mini-CE comparison (see optimization-targets.md §29).
     public func compare(
         _ left: String, _ right: String, options: CollationOptions = CollationOptions()
     ) throws -> Order {
-        try compareClassic(left, right, options: options)
+        if let fast = compareFastPath(left, right, options: options) {
+            return fast
+        }
+        return try compareSlowPath(left, right, options: options)
     }
 
-    /// Classic compare entry: the UTF-8 fast-Latin byte path, then compareBody.
-    /// Factored into its own (small) function so the fast-Latin path optimises
-    /// independently of the heavier CE pipeline in compareBody.
-    private func compareClassic(
+    /// The default-options UTF-8 fast-Latin byte path (the byte-level
+    /// identical-prefix scan of ICU's UTF-8 doCompare +
+    /// CollationFastLatin::compareUTF8): native Swift strings expose
+    /// contiguous UTF-8, so characters are read as raw bytes with no scalar
+    /// decoding. Returns nil when the options don't match the pre-baked
+    /// default setup or the byte path bails (non-Latin text, unsafe restart,
+    /// non-contiguous storage) — the caller then runs the throwing pipeline.
+    private func compareFastPath(
+        _ left: String, _ right: String, options: CollationOptions
+    ) -> Order? {
+        guard defaultFLPackedOptions >= 0, options.strength != .identical,
+              options.icuOptions == defaultFLWord,
+              !fastLatinTable.isEmpty else { return nil }
+        let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
+            right.utf8.withContiguousStorageIfAvailable { rBytes in
+                RootCollator.fastLatinUTF8(
+                    lBytes, rBytes, table: self.fastLatinTable,
+                    primaries: self.defaultFLPrimaries,
+                    options: self.defaultFLPackedOptions,
+                    numeric: options.numeric, safety: self.restartSafety)
+            } ?? CollationFastLatin.bailOutResult
+        } ?? CollationFastLatin.bailOutResult
+        if fast != CollationFastLatin.bailOutResult {
+            return fast < 0 ? .ascending : fast == 0 ? .same : .descending
+        }
+        return nil
+    }
+
+    /// The non-default-options byte path and the CE pipeline. `triedFastLatin`
+    /// semantics: when the caller's fast path bailed, the byte scan already
+    /// proved fast-Latin inapplicable, but compareBody re-derives that cheaply
+    /// via its own eligibility checks, so no flag needs to be threaded.
+    private func compareSlowPath(
         _ left: String, _ right: String, options: CollationOptions
     ) throws -> Order {
-        // UTF-8 byte fast path (the byte-level identical-prefix scan of
-        // ICU's UTF-8 doCompare + CollationFastLatin::compareUTF8): native
-        // Swift strings expose contiguous UTF-8, so characters are read as
-        // raw bytes with no scalar decoding. The identical strength level
-        // needs the NFD pipeline, so it keeps to the scalar path below.
         var triedFastLatin = false
         if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
-            let safety = restartSafety
-            let numeric = options.numeric
             let word = options.icuOptions
-            // Use pre-baked setup if options match (the common case).
-            // No lock, no cache, no class reference.
-            let primaries: UnsafeBufferPointer<UInt16>
-            let packedOptions: Int32
             if word == defaultFLWord, defaultFLPackedOptions >= 0 {
-                primaries = defaultFLPrimaries
-                packedOptions = defaultFLPackedOptions
+                // The caller's fast path already ran for these options — but
+                // only if both strings had contiguous UTF-8 (bridged strings
+                // skip the byte path; compareBody's scalar fast-Latin should
+                // still get its chance on those).
+                triedFastLatin = left.isContiguousUTF8 && right.isContiguousUTF8
             } else {
                 let setup = resolveFastLatinSetup(word)
                 if setup.packedOptions >= 0 {
+                    let safety = restartSafety
+                    let numeric = options.numeric
                     let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
                         right.utf8.withContiguousStorageIfAvailable { rBytes in
                             setup.primaries.withUnsafeBufferPointer { pBuf in
@@ -180,22 +212,6 @@ public struct RootCollator: @unchecked Sendable {
                         }
                         triedFastLatin = true
                     }
-                }
-                return try compareBody(left, right, options: options, triedFastLatin: triedFastLatin)
-            }
-            if packedOptions >= 0 {
-                let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
-                    right.utf8.withContiguousStorageIfAvailable { rBytes in
-                        RootCollator.fastLatinUTF8(
-                            lBytes, rBytes, table: table, primaries: primaries,
-                            options: packedOptions, numeric: numeric, safety: safety)
-                    } ?? nil
-                } ?? nil
-                if let fast {
-                    if fast != CollationFastLatin.bailOutResult {
-                        return fast < 0 ? .ascending : fast == 0 ? .same : .descending
-                    }
-                    triedFastLatin = true
                 }
             }
         }
@@ -249,12 +265,6 @@ public struct RootCollator: @unchecked Sendable {
            Self.isCJKUnified(l.value), Self.isCJKUnified(r.value) {
             let qp = quickPrimaryCompare(l.value, r.value, options: options)
             if qp != 0 { return qp < 0 ? .ascending : .descending }
-        }
-        if shared > 0,
-           (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
-            || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
-            shared = 0
-            fellBack = true
         }
 
         // Fast Latin (CollationFastLatin): when both remainders start within
@@ -583,11 +593,29 @@ public struct RootCollator: @unchecked Sendable {
         options packedOptions: Int32,
         numeric: Bool, safety: RestartSafety
     ) -> Int32 {
-        // Identical-prefix scan on bytes.
+        // Identical-prefix scan on bytes: 8 at a time through unaligned
+        // UInt64 loads (XOR + trailing zeros finds the first differing byte
+        // on little-endian), byte-wise tail. Long shared prefixes (paths,
+        // thai) scan at word speed; a first-byte difference costs the same
+        // one comparison as the byte loop did.
         let lLength = lBytes.count
         let rLength = rBytes.count
         let minLength = min(lLength, rLength)
         var i = 0
+        if minLength >= 8 {
+            let lRaw = UnsafeRawPointer(lBytes.baseAddress!)
+            let rRaw = UnsafeRawPointer(rBytes.baseAddress!)
+            let wordEnd = minLength & ~7
+            while i < wordEnd {
+                let lw = lRaw.loadUnaligned(fromByteOffset: i, as: UInt64.self)
+                let rw = rRaw.loadUnaligned(fromByteOffset: i, as: UInt64.self)
+                if lw != rw {
+                    i += (lw ^ rw).trailingZeroBitCount >> 3
+                    break
+                }
+                i += 8
+            }
+        }
         while i < minLength, lBytes[i] == rBytes[i] { i += 1 }
         if i == lLength && i == rLength { return 0 }  // binary equal
         // Back up to the start of a partially-equal code point (trail bytes
@@ -597,6 +625,18 @@ public struct RootCollator: @unchecked Sendable {
             repeat { i -= 1 } while i > 0 && lBytes[i] & 0xc0 == 0x80
         }
         if i > 0 {
+            // The safety check below only decides whether to restart at `i`
+            // or at 0. If the bytes at `i` are not fast-path eligible AND the
+            // bytes at 0 are not either, both restart points bail — skip the
+            // isUnsafe binary searches entirely (every all-Thai/CJK compare
+            // with a shared prefix lands here).
+            let lEligibleAtI = i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+            let rEligibleAtI = i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+            if !(lEligibleAtI && rEligibleAtI),
+               lBytes[0] > CollationFastLatin.latinMaxUTF8Lead
+                || rBytes[0] > CollationFastLatin.latinMaxUTF8Lead {
+                return CollationFastLatin.bailOutResult
+            }
             // Restarting at an unsafe scalar is not equivalent to full
             // iteration: compare from the start instead (ICU backs up
             // partially; skipping less is always sound).

@@ -706,3 +706,54 @@ tight byte-wise loops are back).
    "ab\u{0301}"); fixed with one following-byte check on match, regression
    tests added. Backwards has no hole (its clean-suffix invariant already
    covers everything after the match).
+
+---
+
+### 29. Engine-gap decomposition: the core is at ICU parity; the gap was the entry
+
+**Status:** measured 2026-07-12 (Intel, standalone WMO harness); stage 1
+shipped, stage 2 prototyped pending an API decision.
+
+A probe giving our engine ICU's exact calling contract (pre-pinned UTF-8
+buffers, no String) measures **15–16 ns on ascii compare — identical to
+ICU** in the same session. The entire "3×" was entry cost, decomposed by
+adding one feature per probe (all numbers stable ±1 ns):
+
+| layer | ns |
+|---|---|
+| engine core (bytes in) | 15 |
+| + String→bytes unwrapping ×2 (small-string stack spill + closures) | 25 |
+| + `throws` on the entry (the error ABI alone — **10 ns**) | 34 |
+| + options parameter & word check | 42 |
+| + cold-fallthrough frame | 44 |
+| + remaining old-entry structure | 52 (= old Table 1) |
+
+Also measured: the `-no-WMO` build workaround on machine 1 inflates Table 1
+(cjk compare −16%, thai −20%, sortKeys −16..−26% under WMO — the shipping
+config); the bench shell is 8 ns (ascii) to 14 ns (cjk, ARC on >15-byte
+strings); and bench_matrix hands ICU a "th" collator on the thai row while
+ours is root — root/root ICU is ~261 ns, so every thai ratio was slightly
+flattering. Field-wise options comparison measures the same as the
+`icuOptions` word rebuild — the cost is the parameter+branch, not the bit
+packing.
+
+**Shipped (stage 1, no API change):** hot/cold split of `compare` — the
+default-options fast-Latin byte path in a non-throwing `compareFastPath`
+returning `Order?`, thin throwing wrapper, slow path unchanged. Ascii/latin
+52→45, paths −9%, cjk/thai neutral. Same commit: removed a duplicated dead
+`unsafeStart` block in compareBody (double binary searches on every
+shared-prefix compare); reordered `fastLatinUTF8` so lead-byte-ineligible
+mismatches (all-Thai/CJK) bail before the isUnsafe binary searches (thai
+−4-5%); word-wise UInt64 identical-prefix scan (paths −11-15%).
+
+**Stage 2 (prototyped in the standalone, NOT shipped):** `@inlinable` on the
+wrapper + fast path (+`@usableFromInline` on ~7 members): ascii/latin
+45→31 ns for out-of-module callers — 1.9× vs ICU, ~10 ns of which is the
+String-unwrapping floor. Needs a decision: ABI/API surface commitment vs a
+win that only external-module callers see (same-module Foundation callers
+already get stage-1 speed).
+
+**Tried and reverted in the same round:** quick-primary CJK dispatch inside
+the pinned-buffer closures (regressed cjk +9-40 ns under WMO — the
+WMO-optimized compareBody path was already cheaper than the closure-context
+dispatch).
