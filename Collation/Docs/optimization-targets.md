@@ -797,3 +797,37 @@ test case = §29 probeA/probeA2 pair.
 
 Remaining ascii-compare ladder after this: ~15 loop + ~10 String unwrap +
 ~8 residual ≈ 34-38 vs ICU 16.
+
+---
+
+### 31. Quick-primary CJK dispatch at the byte-scan mismatch (third attempt — shipped)
+
+**Status:** shipped 2026-07-13. **cjk compare 232 → 82 ns (−65%): 3.2× behind
+ICU → 1.13×.** Ascii/latin/paths +1–2 ns, thai neutral (lead-byte gate).
+
+The §29-style probe ladder on the cjk corpus showed the minimal deciding
+work — decode two scalars, compare their single-CE primaries — costs 21 ns
+on pinned buffers (FASTER than ICU's whole 72 ns compare), while the
+shipping path spent 232 ns rebuilding scalar iterators in compareBody to
+re-derive what the byte scan already knew. The dispatch now runs inside the
+pinned-buffer closures at fastLatinUTF8's mismatch offset.
+
+Three lessons paid for twice (07-06 and twice today), now structural rules:
+1. **The pinned-buffer closures may only call STATIC functions with trivial
+   parameters.** An instance-method call there degrades codegen +17-22% on
+   every corpus, even ones that never execute the new code.
+2. **Fat by-value parameters on the shared hot call tax everyone.** The
+   dispatch takes its init-resolved trie views (QuickCJKSetup) as ONE
+   heap-boxed pointer, and lives in a SECOND static call that Latin-resolved
+   compares never reach.
+3. **Cold-path work must be gated before any decode:** a one-byte lead gate
+   (CJK blocks start at 0xE3; Thai is 0xE0) keeps the thai bail-out free.
+
+Also shipped: `quickPrimary` (instance and static twins) now handles the
+**longPrimary** tag — the tag most real-world Han actually carries (the
+bench corpus's rare ideographs are offset/implicit; common 日本中 are
+longPrimary and previously always fell through to the full pipeline, both
+here and in compareBody). Comparing actual primaries needs no §28
+injectivity: equal primaries simply fall through. Eligibility is resolved
+at init (no script reordering, non-shifted default); zh and shifted
+collators skip the dispatch entirely.

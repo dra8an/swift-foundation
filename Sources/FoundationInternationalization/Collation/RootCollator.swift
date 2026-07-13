@@ -29,6 +29,18 @@ public struct RootCollator: @unchecked Sendable {
         case malformedData
     }
 
+    /// Trivial-field views for the static quick-CJK dispatch: everything
+    /// `quickCJKPrimary` needs, resolved at init so the pinned-buffer
+    /// closures can call a static function with plain parameters.
+    struct QuickCJKSetup {
+        let eligible: Bool
+        let dataTrie: UTrie2
+        let dataCEs: UnsafeBufferPointer<Int64>
+        let hasBase: Bool
+        let baseTrie: UTrie2
+        let baseCEs: UnsafeBufferPointer<Int64>
+    }
+
     /// All stored state lives behind one class reference so a RootCollator
     /// value is a single pointer. As a flat struct the collator was ~768
     /// bytes; every method call materialized that copy on the stack (and a
@@ -70,6 +82,9 @@ public struct RootCollator: @unchecked Sendable {
         let fastLatinTable: UnsafeBufferPointer<UInt16>
         /// Stored for the same reason; see RestartSafety.
         let restartSafety: RestartSafety
+        /// Trivial-field views for the static quick-CJK dispatch (§31),
+        /// heap-boxed so the hot path passes one pointer.
+        let quickCJKSetupPtr: UnsafeMutablePointer<QuickCJKSetup>
 
         init(data: CollationData, base: CollationData?, norm: NormalizationData,
              reordering: Reordering?, defaultOptions: CollationOptions,
@@ -95,6 +110,23 @@ public struct RootCollator: @unchecked Sendable {
             let ceStorage = DataStorage()
             self.simpleCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage)
             self.simpleCEsStorage = ceStorage
+            // Quick-CJK dispatch setup: bare primary comparison is unsound
+            // under script reordering or a shifted default, so gate it off
+            // for those collators (compareBody handles them).
+            let setup = QuickCJKSetup(
+                eligible: reordering == nil && defaultOptions.alternate != .shifted,
+                dataTrie: data.trie, dataCEs: data.ces,
+                hasBase: base != nil,
+                baseTrie: base?.trie ?? data.trie,
+                baseCEs: base?.ces ?? data.ces)
+            let box = UnsafeMutablePointer<QuickCJKSetup>.allocate(capacity: 1)
+            box.initialize(to: setup)
+            self.quickCJKSetupPtr = box
+        }
+
+        deinit {
+            quickCJKSetupPtr.deinitialize(count: 1)
+            quickCJKSetupPtr.deallocate()
         }
     }
 
@@ -185,10 +217,17 @@ public struct RootCollator: @unchecked Sendable {
               !fastLatinTable.isEmpty else { return nil }
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
-                RootCollator.fastLatinUTF8(
+                var mismatch = -1
+                let f = RootCollator.fastLatinUTF8(
                     lBytes, rBytes, table: self.fastLatinTable,
                     primaries: self.defaultFLPrimaries,
                     options: self.defaultFLPackedOptions,
+                    numeric: options.numeric, safety: self.restartSafety,
+                    mismatch: &mismatch)
+                if f != CollationFastLatin.bailOutResult { return f }
+                return RootCollator.quickCJKDispatch(
+                    lBytes, rBytes, at: mismatch,
+                    setup: self.storage.quickCJKSetupPtr,
                     numeric: options.numeric, safety: self.restartSafety)
             } ?? CollationFastLatin.bailOutResult
         } ?? CollationFastLatin.bailOutResult
@@ -196,6 +235,78 @@ public struct RootCollator: @unchecked Sendable {
             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
         }
         return nil
+    }
+
+    /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called
+    /// only after fastLatinUTF8 bails (CJK/Thai text) — Latin-resolved
+    /// compares never evaluate it or its arguments. When both
+    /// first-differing scalars are CJK ideographs with distinct single-CE
+    /// primaries — the dominant case for CJK text — this decides the compare
+    /// right here, skipping compareBody's fresh scalar iterators and
+    /// re-decode (~21 ns against ~200 ns of machinery; §31).
+    ///
+    /// STATIC with trivial parameters, deliberately: calling an instance
+    /// method inside the contiguous-storage closures measurably degrades
+    /// codegen for every corpus (+17-22% — measured twice, 07-06 and 07-13);
+    /// the setup travels as one pointer for the same reason. The safety gate
+    /// mirrors compareBody's: a mismatch at offset 0 has no preceding
+    /// prefix, so restart safety is trivially met; deeper mismatches require
+    /// both restart scalars to be safe.
+    private static func quickCJKDispatch(
+        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
+        at mismatch: Int,
+        setup: UnsafePointer<QuickCJKSetup>,
+        numeric: Bool, safety: RestartSafety
+    ) -> Int32 {
+        if setup.pointee.eligible, mismatch >= 0,
+           mismatch < lBytes.count, mismatch < rBytes.count,
+           // Lead-byte gate: all CJK-unified blocks start at U+3400, whose
+           // UTF-8 lead is 0xE3 (ext B+ uses 0xF0). One byte compare rejects
+           // Thai (0xE0) and most other non-CJK bail-outs before any decode.
+           lBytes[mismatch] >= 0xE3, rBytes[mismatch] >= 0xE3 {
+            let lc = scalarAt(lBytes, mismatch)
+            let rc = scalarAt(rBytes, mismatch)
+            if lc != rc, isCJKUnified(lc), isCJKUnified(rc) {
+                let lp = quickCJKPrimary(lc, setup.pointee)
+                if lp != 0 {
+                    let rp = quickCJKPrimary(rc, setup.pointee)
+                    if rp != 0, lp != rp,
+                       mismatch == 0
+                        || (!safety.isUnsafe(lc, numeric: numeric)
+                            && !safety.isUnsafe(rc, numeric: numeric)) {
+                        return lp < rp ? -1 : 1
+                    }
+                }
+            }
+        }
+        return CollationFastLatin.bailOutResult
+    }
+
+    /// quickPrimary against the trivial init-resolved views (the static twin
+    /// of the instance method below; the differential suites keep them in
+    /// agreement). Returns 0 when the full pipeline must decide.
+    private static func quickCJKPrimary(_ c: UInt32, _ q: QuickCJKSetup) -> UInt32 {
+        var ce32 = q.dataTrie.get(c)
+        var ces = q.dataCEs
+        if ce32 == CollationConstants.fallbackCE32 {
+            guard q.hasBase else { return 0 }
+            ce32 = q.baseTrie.get(c)
+            ces = q.baseCEs
+        }
+        guard CollationConstants.isSpecialCE32(ce32) else { return 0 }
+        switch CollationConstants.tagFromCE32(ce32) {
+        case .longPrimary:
+            // long-primary form ppppppC1: the top three bytes are the primary.
+            return ce32 & 0xffff_ff00
+        case .offset:
+            let idx = CollationConstants.indexFromCE32(ce32)
+            guard idx < ces.count else { return 0 }
+            return CollationConstants.threeBytePrimaryForOffsetData(c, ces[idx])
+        case .implicit:
+            return CollationConstants.unassignedPrimaryFromCodePoint(c)
+        default:
+            return 0
+        }
     }
 
     /// The non-default-options byte path and the CE pipeline. `triedFastLatin`
@@ -222,9 +333,11 @@ public struct RootCollator: @unchecked Sendable {
                     let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
                         right.utf8.withContiguousStorageIfAvailable { rBytes in
                             setup.primaries.withUnsafeBufferPointer { pBuf in
-                                RootCollator.fastLatinUTF8(
+                                var mismatch = -1
+                                return RootCollator.fastLatinUTF8(
                                     lBytes, rBytes, table: table, primaries: pBuf,
-                                    options: setup.packedOptions, numeric: numeric, safety: safety)
+                                    options: setup.packedOptions, numeric: numeric, safety: safety,
+                                    mismatch: &mismatch)
                             }
                         } ?? nil
                     } ?? nil
@@ -566,6 +679,13 @@ public struct RootCollator: @unchecked Sendable {
         // else — simple CE32s can be case variants, Latin expansions, etc.
         guard CollationConstants.isSpecialCE32(ce32) else { return 0 }
         switch CollationConstants.tagFromCE32(ce32) {
+        case .longPrimary:
+            // long-primary form ppppppC1: the top three bytes are the primary.
+            // Single CE with common secondary/tertiary — safe to compare at
+            // the primary level (equal primaries fall through to the
+            // pipeline). This is the tag most REAL-WORLD Han carries; the
+            // offset/implicit tags below cover the rarer ideographs.
+            return ce32 & 0xffff_ff00
         case .offset:
             let idx = CollationConstants.indexFromCE32(ce32)
             guard idx < cesSource.count else { return 0 }
@@ -613,7 +733,8 @@ public struct RootCollator: @unchecked Sendable {
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
         table: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>,
         options packedOptions: Int32,
-        numeric: Bool, safety: RestartSafety
+        numeric: Bool, safety: RestartSafety,
+        mismatch: inout Int
     ) -> Int32 {
         // Identical-prefix scan on bytes: 8 at a time through unaligned
         // UInt64 loads (XOR + trailing zeros finds the first differing byte
@@ -640,12 +761,15 @@ public struct RootCollator: @unchecked Sendable {
         }
         while i < minLength, lBytes[i] == rBytes[i] { i += 1 }
         if i == lLength && i == rLength { return 0 }  // binary equal
+        // The restart offset for the caller's quick-CJK dispatch: valid
+        // whenever restarting at `i` is not known to be unsafe (-1 otherwise).
         // Back up to the start of a partially-equal code point (trail bytes
         // are 0x80..0xBF).
         if i > 0,
            (i != lLength && lBytes[i] & 0xc0 == 0x80) || (i != rLength && rBytes[i] & 0xc0 == 0x80) {
             repeat { i -= 1 } while i > 0 && lBytes[i] & 0xc0 == 0x80
         }
+        mismatch = i
         if i > 0 {
             // The safety check below only decides whether to restart at `i`
             // or at 0. If the bytes at `i` are not fast-path eligible AND the
@@ -665,6 +789,7 @@ public struct RootCollator: @unchecked Sendable {
             if (i != lLength && safety.isUnsafe(scalarAt(lBytes, i), numeric: numeric))
                 || (i != rLength && safety.isUnsafe(scalarAt(rBytes, i), numeric: numeric)) {
                 i = 0
+                mismatch = -1
             }
         }
         // Both sides must resume with fast-path-eligible lead bytes.
