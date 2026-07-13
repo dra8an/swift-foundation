@@ -22,7 +22,18 @@
 > comparable across the harness change — ours-vs-ours raw ns are (the 06-26
 > "ours" rows are preserved below for that comparison).
 >
-> The same day, the harness gained **four previously unmeasured metrics** —
+> **Re-baselined 2026-07-13** after the §29–§30 engine-entry round: compare
+> hot/cold split + prefix/safety wins (`ab7e953`) and the **RootCollator
+> storage box** (`2eeb5cd` — collator values are one pointer; the ~768-byte
+> per-call receiver copies are gone, including the CollatorCache fetch in
+> every Foundation call). The engine rows also now hold the collator in a
+> loop-local `let` (§30), so Table-1 rows are NOT comparable to pre-07-13
+> recordings (~10–12 ns of receiver-copy artifact removed). Headlines:
+> `localizedCompare` latin **0.14×** (7× faster than system ICU);
+> every Foundation API ≤1.21× on every corpus; engine compare ascii 2.4×,
+> paths 2.0×.
+>
+> The same day (07-06), the harness gained **four previously unmeasured metrics** —
 > the allocating sortKey variant (`skRet`, Table 1), the case-insensitive
 > compare/contains pair, and **backward search** (`range(backwards)`).
 > Their first baselines exposed backward search at 2.6×/3.45× behind system
@@ -97,14 +108,17 @@ ICU reference.
 
 | corpus | compare ICU | compare ours | ratio | sortKey ICU | sortKey ours | ratio | skRet ours | ratio |
 |--------|------------:|-------------:|------:|------------:|-------------:|------:|-----------:|------:|
-| ascii  | 16  | 50   | 3.12× | 196 | 424  | 2.16× | 585  | 2.98× |
-| latin  | 17  | 50   | 2.94× | 212 | 475  | 2.24× | 624  | 2.94× |
-| cjk    | 73  | 283  | 3.88× | 219 | 493  | 2.25× | 717  | 3.27× |
-| paths  | 48  | 120  | 2.50× | 669 | 1143 | 1.71× | 1614 | 2.41× |
-| thai   | 288 | 828  | 2.88× | 293 | 676  | 2.31× | 863  | 2.95× |
+| ascii  | 16  | 39   | 2.44× | 204 | 416  | 2.04× | 567  | 2.78× |
+| latin  | 17  | 38   | 2.24× | 208 | 463  | 2.23× | 600  | 2.88× |
+| cjk    | 73  | 284  | 3.89× | 229 | 484  | 2.11× | 714  | 3.12× |
+| paths  | 49  | 98   | 2.00× | 669 | 1152 | 1.72× | 1637 | 2.45× |
+| thai   | 289 | 823  | 2.85× | 292 | 665  | 2.28× | 856  | 2.93× |
 
-Pure-Swift vs hand-tuned C: ~2.5–3.9× on compare, ~1.7–2.5× on sortKey. This is
-the expected gap for a from-scratch Swift implementation against ICU's C engine.
+Pure-Swift vs hand-tuned C: ~2.0–3.9× on compare, ~1.7–2.3× on sortKey.
+§29 decomposed the remainder: the fast-Latin loop core measures ~15 ns with
+ICU's calling contract (vs ICU's ~16 total); ~10 ns is String→bytes
+unwrapping (the safe-API floor on macOS 15); the rest is per-scalar CE
+pipeline cost on cjk/thai. The cjk row is the CE-bound frontier (§28).
 
 ## Table 2 — Integrated in Foundation (same APIs, two backends)
 
@@ -113,29 +127,29 @@ the other to our Swift collator. ratio = ours / system-ICU. **<1 = ours faster.*
 
 | API | ascii | latin | cjk | paths | thai |
 |-----|------:|------:|----:|------:|-----:|
-| `compare(locale:)`               | 0.92× | 0.55× | 0.74× | 0.77× | 1.08× |
-| `localizedCompare`               | 0.60× | 0.31× | 0.55× | 0.49× | 0.96× |
-| `localizedStandardCompare`       | 0.67× | 0.34× | 0.57× | 0.56× | 1.01× |
-| `localizedCaseInsensitiveCompare`| 0.66× | 0.35× | 0.57× | 0.52× | 1.01× |
-| `localizedStandardContains`      | 0.75× | 0.49× | 0.58× | 1.14× | 0.52× |
-| `localizedCaseInsensitiveContains`| 0.76× | 0.46× | 0.57× | 0.85× | 0.50× |
-| `localizedStandardRange`         | 0.87× | 0.53× | 0.61× | 1.38× | 0.70× |
-| `range(of:options:locale:)`      | 1.18× | 1.02× | 1.32× | 1.35× | 1.17× |
-| `range(of:.backwards,locale:)`   | 1.17× | **0.94×** | 1.32× | **0.96×** | 1.09× |
+| `compare(locale:)`               | 0.62× | 0.38× | 0.60× | 0.55× | 0.94× |
+| `localizedCompare`               | **0.27×** | **0.14×** | 0.39× | **0.27×** | 0.80× |
+| `localizedStandardCompare`       | 0.35× | 0.18× | 0.41× | 0.32× | 0.87× |
+| `localizedCaseInsensitiveCompare`| 0.36× | 0.18× | 0.41× | 0.32× | 0.88× |
+| `localizedStandardContains`      | 0.68× | 0.42× | 0.51× | 0.78× | 0.46× |
+| `localizedCaseInsensitiveContains`| 0.66× | 0.40× | 0.50× | 0.73× | 0.44× |
+| `localizedStandardRange`         | 0.78× | 0.46× | 0.56× | 1.03× | 0.64× |
+| `range(of:options:locale:)`      | 0.91× | 0.89× | 1.21× | 1.10× | 1.13× |
+| `range(of:.backwards,locale:)`   | 0.91× | 0.79× | 1.17× | 0.78× | 1.01× |
 
 Raw ns/op behind the ratios (2026-07-06 post-fix quiet-machine run):
 
 | API | corpus | sysICU | ours |
 |-----|--------|-------:|-----:|
-| compare(locale:)   | ascii/latin/cjk/paths/thai | 659 / 1086 / 1155 / 899 / 1331 | 603 / 598 / 853 / 693 / 1433 |
-| localizedCompare   | ascii/latin/cjk/paths/thai | 436 / 861 / 928 / 676 / 1114   | 262 / 269 / 507 / 332 / 1064 |
-| localizedStdCmp    | ascii/latin/cjk/paths/thai | 436 / 858 / 933 / 692 / 1080   | 291 / 292 / 531 / 387 / 1092 |
-| localizedCaseICmp  | ascii/latin/cjk/paths/thai | 435 / 866 / 933 / 678 / 1076   | 285 / 300 / 532 / 355 / 1089 |
-| localizedStdContns | ascii/latin/cjk/paths/thai | 1440 / 2435 / 2204 / 1395 / 2380 | 1086 / 1196 / 1276 / 1587 / 1242 |
-| localizedCaseICnt  | ascii/latin/cjk/paths/thai | 1465 / 2579 / 2222 / 1412 / 2496 | 1111 / 1198 / 1276 / 1194 / 1236 |
-| localizedStdRange  | ascii/latin/cjk/paths/thai | 1424 / 2429 / 2260 / 1407 / 2530 | 1243 / 1285 / 1388 / 1940 / 1766 |
-| range(of:locale:)  | ascii/latin/cjk/paths/thai | 607 / 1643 / 1353 / 613 / 1616   | 716 / 1680 / 1790 / 826 / 1892 |
-| range(backwards)   | ascii/latin/cjk/paths/thai | 612 / 1717 / 1371 / 925 / 1653   | 717 / 1612 / 1804 / 887 / 1809 |
+| compare(locale:)   | ascii/latin/cjk/paths/thai | 654 / 1077 / 1140 / 918 / 1315 | 403 / 414 / 687 / 505 / 1232 |
+| localizedCompare   | ascii/latin/cjk/paths/thai | 438 / 863 / 931 / 676 / 1087   | 117 / 118 / 365 / 182 / 875 |
+| localizedStdCmp    | ascii/latin/cjk/paths/thai | 435 / 860 / 938 / 696 / 1053   | 154 / 153 / 385 / 225 / 918 |
+| localizedCaseICmp  | ascii/latin/cjk/paths/thai | 432 / 868 / 945 / 679 / 1049   | 154 / 153 / 385 / 215 / 919 |
+| localizedStdContns | ascii/latin/cjk/paths/thai | 1409 / 2424 / 2223 / 1379 / 2356 | 957 / 1023 / 1141 / 1080 / 1095 |
+| localizedCaseICnt  | ascii/latin/cjk/paths/thai | 1447 / 2544 / 2267 / 1408 / 2440 | 954 / 1005 / 1128 / 1029 / 1068 |
+| localizedStdRange  | ascii/latin/cjk/paths/thai | 1397 / 2432 / 2217 / 1410 / 2445 | 1093 / 1110 / 1239 / 1453 / 1567 |
+| range(of:locale:)  | ascii/latin/cjk/paths/thai | 602 / 1644 / 1328 / 614 / 1533   | 546 / 1458 / 1603 / 676 / 1734 |
+| range(backwards)   | ascii/latin/cjk/paths/thai | 602 / 1726 / 1348 / 927 / 1637   | 549 / 1371 / 1582 / 725 / 1651 |
 
 History of the ours columns across today's three changes (min ns/op):
 `localizedStandardRange` — 06-26: 1625/2001/1732/3094/2110 → lazy
