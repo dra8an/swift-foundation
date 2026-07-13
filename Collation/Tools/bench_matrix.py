@@ -35,7 +35,9 @@ CORPORA = [
     ("cjk",   "Collation/Tools/bench/bench-cjk.txt",   None, 300),
     ("paths", "Collation/Tools/bench/bench-paths.txt", None, 150),
     # thai is ~33k lines per rep already; 10 reps for tighter mins.
-    ("thai",  "Collation/Tools/bench/bench-thai.txt",  "th",  10),
+    # ICU gets the root collator like ours (a "th"-tailored ICU collator is
+    # ~9% slower on this corpus and was never the same data table as ours).
+    ("thai",  "Collation/Tools/bench/bench-thai.txt",  None,  10),
 ]
 pat = re.compile(r"\s*([A-Za-z().:_ ]+?)\s*:\s*(\d+)\s*ns/op")
 
@@ -77,14 +79,14 @@ for label, _, _, _ in CORPORA:
           f"{isk or '-':>7} {osk or '-':>6} {ratio(osk,isk):>6} | "
           f"{osr or '-':>6} {ratio(osr,isk):>6}")
 
-print("\n===== TABLE 2: FOUNDATION APIs (ours vs system ICU; ratio = ours/sys, <1 = ours faster) =====")
+print("\n===== TABLE 2: FOUNDATION APIs (speedup = sys/ours; >1 = ours faster) =====")
 APIS = ["compare(locale:)", "localizedCompare", "localizedStdCmp",
         "localizedCaseICmp", "localizedStdContns", "localizedCaseICnt",
         "localizedStdRange", "range(of:locale:)", "range(backwards)"]
 for api in APIS:
     print(f"\n--- {api} ---")
-    print(f"{'corpus':6} | {'sysICU':>7} {'ours':>7} {'ratio':>7}")
+    print(f"{'corpus':6} | {'sysICU':>7} {'ours':>7} {'speedup':>7}")
     for label, _, _, _ in CORPORA:
         s = results[label]["sys"].get(api)
         o = results[label]["ours"].get(api)
-        print(f"{label:6} | {s or '-':>7} {o or '-':>7} {ratio(o,s):>7}")
+        print(f"{label:6} | {s or '-':>7} {o or '-':>7} {ratio(s,o):>7}")
