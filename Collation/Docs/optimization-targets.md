@@ -757,3 +757,43 @@ already get stage-1 speed).
 the pinned-buffer closures (regressed cjk +9-40 ns under WMO — the
 WMO-optimized compareBody path was already cheaper than the closure-context
 dispatch).
+
+---
+
+### 30. The 768-byte collator: receiver copies at every call boundary
+
+**Status:** shipped 2026-07-13 (storage-box refactor + bench-harness fix).
+
+Disassembly of the §29 probes answered "why does `throws` cost 10 ns": it
+doesn't. RootCollator was a ~768-byte struct, and a method call materializes
+`self` as a stack copy. Around a NON-throwing call in a loop the optimizer
+hoists that copy out; around a THROWING call it cannot (the error edge
+breaks the access-scope reasoning), so the bench loops re-copied 768 bytes
+per iteration (`memcpy(stack, &collatorGlobal, 0x300)` visible per
+iteration in the disassembly). A loop-local receiver restores the hoist:
+the throwing probe drops 34→24 ns, within 1 ns of the non-throwing one —
+`throws` itself costs ~1 ns, as the ABI predicts. Every previously recorded
+Table-1 row (compare AND sortKey) carried ~10-12 ns of this artifact.
+
+**Fixes shipped:**
+1. BenchFoundation holds the collator in a loop-local `let` for the engine
+   rows (the honest shape — real callers hold locals).
+2. RootCollator's stored state moved into one `final class Storage`
+   (immutable after init, @unchecked Sendable like the struct); the struct
+   holds a single reference and forwards via computed properties. A
+   RootCollator value is now one pointer: no more 768-byte traffic at ANY
+   call boundary, including the CollatorCache fetch inside every Foundation
+   String API call.
+
+**Measured (Intel):** engine compare ascii 46→38-40, paths 109→98-99 (repo
+harness); standalone WMO: global-receiver == local-receiver (36 vs 34), sk
+ascii 395→348 (−12%), cjk cmp −3%, thai −2%, no regressions.
+**`localizedCompare` HALVED: ascii 255-264→117-118 ns, paths 331-338→
+183-186** — the cache fetch copied the collator per call.
+
+**Upstream note:** the missed hoist (loop-invariant indirect-self copy
+across a throwing call) is a reportable Swift optimizer limitation; reduced
+test case = §29 probeA/probeA2 pair.
+
+Remaining ascii-compare ladder after this: ~15 loop + ~10 String unwrap +
+~8 residual ≈ 34-38 vs ICU 16.

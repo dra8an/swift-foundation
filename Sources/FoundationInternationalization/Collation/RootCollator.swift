@@ -29,64 +29,97 @@ public struct RootCollator: @unchecked Sendable {
         case malformedData
     }
 
-    let data: CollationData
-    /// The base (root) data when `data` is a tailoring.
-    let base: CollationData?
-    let norm: NormalizationData
-    /// Script reordering from the tailoring, if any.
-    let reordering: Reordering?
-    /// The tailoring's default options (e.g. backwards-secondary for fr-CA);
-    /// plain defaults for the root collator.
-    public let defaultOptions: CollationOptions
-    /// Thread-local buffer stash: each thread caches one ScratchBuffers
-    /// instance, eliminating all locking and ARC on the take/give path.
-    private let threadLocal = ThreadLocalScratch()
-    /// The most recently used fast-Latin setup (per options word) — fallback
-    /// for non-default options.
-    private let fastLatinCache = FastLatinCache()
-    /// Pre-baked fast-Latin setup for the default options: primaries and
-    /// packed options resolved once at init. The fast path reads these
-    /// directly — no lock, no cache, no class reference, no ARC.
-    private let defaultFLPrimaries: UnsafeBufferPointer<UInt16>
-    private let defaultFLPackedOptions: Int32
-    private let defaultFLWord: Int32
-    /// Owns the memory behind defaultFLPrimaries.
-    private let defaultFLStorage: DataStorage
-    /// Pre-computed full 64-bit CEs for ASCII (0–127). Entry is 0 for
-    /// characters needing full pipeline (digits, U+0000). Eliminates trie
-    /// lookup + tag dispatch for common characters in the sort key path.
-    let simpleCEs: UnsafeBufferPointer<Int64>
-    private let simpleCEsStorage: DataStorage
-    /// The fast Latin table: the tailoring's own, or the base's when the
-    /// tailoring has none (CollationDataReader aliases the same way).
-    /// Stored: rebuilding it per compare would retain `base` each time.
-    let fastLatinTable: UnsafeBufferPointer<UInt16>
-    /// Stored for the same reason; see RestartSafety.
-    let restartSafety: RestartSafety
+    /// All stored state lives behind one class reference so a RootCollator
+    /// value is a single pointer. As a flat struct the collator was ~768
+    /// bytes; every method call materialized that copy on the stack (and a
+    /// throwing call in a loop re-copied it per iteration — the optimizer
+    /// cannot hoist the copy across a throwing call; see
+    /// optimization-targets.md §29). Everything is immutable after init.
+    final class Storage: @unchecked Sendable {
+        let data: CollationData
+        /// The base (root) data when `data` is a tailoring.
+        let base: CollationData?
+        let norm: NormalizationData
+        /// Script reordering from the tailoring, if any.
+        let reordering: Reordering?
+        /// The tailoring's default options (e.g. backwards-secondary for
+        /// fr-CA); plain defaults for the root collator.
+        let defaultOptions: CollationOptions
+        /// Thread-local buffer stash: each thread caches one ScratchBuffers
+        /// instance, eliminating all locking and ARC on the take/give path.
+        let threadLocal = ThreadLocalScratch()
+        /// The most recently used fast-Latin setup (per options word) —
+        /// fallback for non-default options.
+        let fastLatinCache = FastLatinCache()
+        /// Pre-baked fast-Latin setup for the default options: primaries and
+        /// packed options resolved once at init. The fast path reads these
+        /// directly — no lock, no cache, no ARC.
+        let defaultFLPrimaries: UnsafeBufferPointer<UInt16>
+        let defaultFLPackedOptions: Int32
+        let defaultFLWord: Int32
+        /// Owns the memory behind defaultFLPrimaries.
+        let defaultFLStorage: DataStorage
+        /// Pre-computed full 64-bit CEs for ASCII (0–127). Entry is 0 for
+        /// characters needing full pipeline (digits, U+0000). Eliminates trie
+        /// lookup + tag dispatch for common characters in the sort key path.
+        let simpleCEs: UnsafeBufferPointer<Int64>
+        let simpleCEsStorage: DataStorage
+        /// The fast Latin table: the tailoring's own, or the base's when the
+        /// tailoring has none (CollationDataReader aliases the same way).
+        /// Stored: rebuilding it per compare would retain `base` each time.
+        let fastLatinTable: UnsafeBufferPointer<UInt16>
+        /// Stored for the same reason; see RestartSafety.
+        let restartSafety: RestartSafety
+
+        init(data: CollationData, base: CollationData?, norm: NormalizationData,
+             reordering: Reordering?, defaultOptions: CollationOptions,
+             fastLatinTable: UnsafeBufferPointer<UInt16>, scriptsData: CollationData) {
+            self.data = data
+            self.base = base
+            self.norm = norm
+            self.reordering = reordering
+            self.defaultOptions = defaultOptions
+            self.fastLatinTable = fastLatinTable
+            self.restartSafety = RestartSafety(data: data, base: base, norm: norm)
+            // Pre-bake the default-options fast-Latin setup.
+            var prims: [UInt16] = []
+            let packed = CollationFastLatin.getOptions(
+                table: fastLatinTable, scriptsData: scriptsData, reordering: reordering,
+                options: defaultOptions.icuOptions, primaries: &prims)
+            let flStorage = DataStorage()
+            self.defaultFLPrimaries = flStorage.store(prims)
+            self.defaultFLPackedOptions = packed
+            self.defaultFLWord = defaultOptions.icuOptions
+            self.defaultFLStorage = flStorage
+            // Pre-compute ASCII CE table.
+            let ceStorage = DataStorage()
+            self.simpleCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage)
+            self.simpleCEsStorage = ceStorage
+        }
+    }
+
+    private let storage: Storage
+
+    // Forwarders: same names the rest of the module already uses.
+    var data: CollationData { storage.data }
+    var base: CollationData? { storage.base }
+    var norm: NormalizationData { storage.norm }
+    var reordering: Reordering? { storage.reordering }
+    public var defaultOptions: CollationOptions { storage.defaultOptions }
+    private var threadLocal: ThreadLocalScratch { storage.threadLocal }
+    private var fastLatinCache: FastLatinCache { storage.fastLatinCache }
+    private var defaultFLPrimaries: UnsafeBufferPointer<UInt16> { storage.defaultFLPrimaries }
+    private var defaultFLPackedOptions: Int32 { storage.defaultFLPackedOptions }
+    private var defaultFLWord: Int32 { storage.defaultFLWord }
+    var simpleCEs: UnsafeBufferPointer<Int64> { storage.simpleCEs }
+    var fastLatinTable: UnsafeBufferPointer<UInt16> { storage.fastLatinTable }
+    var restartSafety: RestartSafety { storage.restartSafety }
 
     public init(data: CollationData, norm: NormalizationData) {
-        self.data = data
-        self.base = nil
-        self.norm = norm
-        self.reordering = nil
-        self.defaultOptions = CollationOptions()
-        self.fastLatinTable = data.fastLatinTable
-        let opts = CollationOptions()
-        self.restartSafety = RestartSafety(data: data, base: nil, norm: norm)
-        // Pre-bake the default-options fast-Latin setup.
-        var prims: [UInt16] = []
-        let packed = CollationFastLatin.getOptions(
-            table: data.fastLatinTable, scriptsData: data, reordering: nil,
-            options: opts.icuOptions, primaries: &prims)
-        let flStorage = DataStorage()
-        self.defaultFLPrimaries = flStorage.store(prims)
-        self.defaultFLPackedOptions = packed
-        self.defaultFLWord = opts.icuOptions
-        self.defaultFLStorage = flStorage
-        // Pre-compute ASCII CE table.
-        let ceStorage = DataStorage()
-        self.simpleCEs = Self.buildSimpleCEs(data: data, base: nil, storage: ceStorage)
-        self.simpleCEsStorage = ceStorage
+        self.storage = Storage(
+            data: data, base: nil, norm: norm, reordering: nil,
+            defaultOptions: CollationOptions(),
+            fastLatinTable: data.fastLatinTable, scriptsData: data)
     }
 
     public init() throws {
@@ -98,35 +131,24 @@ public struct RootCollator: @unchecked Sendable {
     public init(tailoringNamed name: String) throws {
         let tailoring = try CollationData.tailoring(bytes: CollationData.tailoring(named: name))
         let root = try CollationData.root()
+        let data: CollationData
+        let base: CollationData?
         if let tailoringData = tailoring.data {
-            self.data = tailoringData
-            self.base = root
+            data = tailoringData
+            base = root
         } else {
             // Settings-only tailoring (e.g. fr-CA): use the base data directly.
-            self.data = root
-            self.base = nil
+            data = root
+            base = nil
         }
-        self.norm = try NormalizationData.standard()
-        self.reordering = tailoring.reordering
-        self.defaultOptions = CollationOptions(icuOptionsWord: tailoring.options)
-        self.fastLatinTable = data.fastLatinTable.isEmpty
+        let fastLatinTable = data.fastLatinTable.isEmpty
             ? (base?.fastLatinTable ?? data.fastLatinTable) : data.fastLatinTable
-        self.restartSafety = RestartSafety(data: data, base: base, norm: norm)
-        // Pre-bake the default-options fast-Latin setup.
-        let scriptsData = data.scriptStarts.isEmpty ? root : data
-        var prims: [UInt16] = []
-        let packed = CollationFastLatin.getOptions(
-            table: fastLatinTable, scriptsData: scriptsData, reordering: reordering,
-            options: defaultOptions.icuOptions, primaries: &prims)
-        let flStorage = DataStorage()
-        self.defaultFLPrimaries = flStorage.store(prims)
-        self.defaultFLPackedOptions = packed
-        self.defaultFLWord = defaultOptions.icuOptions
-        self.defaultFLStorage = flStorage
-        // Pre-compute ASCII CE table.
-        let ceStorage = DataStorage()
-        self.simpleCEs = Self.buildSimpleCEs(data: data, base: base, storage: ceStorage)
-        self.simpleCEsStorage = ceStorage
+        self.storage = Storage(
+            data: data, base: base, norm: try NormalizationData.standard(),
+            reordering: tailoring.reordering,
+            defaultOptions: CollationOptions(icuOptionsWord: tailoring.options),
+            fastLatinTable: fastLatinTable,
+            scriptsData: data.scriptStarts.isEmpty ? root : data)
     }
 
     // MARK: Comparison

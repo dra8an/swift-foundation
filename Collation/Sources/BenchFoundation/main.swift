@@ -40,21 +40,29 @@ func measure(_ name: String, ops: Int, _ body: () -> Void) {
 
 var sink = 0
 
+// The engine rows hold the collator in a loop-local `let`: calling a throwing
+// method on a GLOBAL struct receiver re-copies the whole (currently 768-byte)
+// RootCollator onto the stack every iteration — the optimizer cannot hoist
+// the copy across a throwing call (optimization-targets.md §29). A local
+// receiver hoists; real callers hold locals too, so this is the honest shape.
+
 // 0. Direct RootCollator.compare — cross-module baseline
 measure("RootCollator.cmp  ", ops: (lines.count - 1) * reps) {
+    let c = collator
     for _ in 0..<reps {
         for i in 1..<lines.count {
-            sink += (try! collator.compare(lines[i - 1], lines[i], options: defaultOpts)).rawValue
+            sink += (try! c.compare(lines[i - 1], lines[i], options: defaultOpts)).rawValue
         }
     }
 }
 
 // 0b. Direct RootCollator.sortKey — pure-engine baseline vs ucol_getSortKey
 measure("RootCollator.sk   ", ops: lines.count * reps) {
+    let c = collator
     var key: [UInt8] = []
     for _ in 0..<reps {
         for line in lines {
-            try! collator.sortKey(for: line, into: &key, options: defaultOpts)
+            try! c.sortKey(for: line, into: &key, options: defaultOpts)
             sink += key.count
         }
     }
@@ -63,9 +71,10 @@ measure("RootCollator.sk   ", ops: lines.count * reps) {
 // 0c. Direct RootCollator.sortKey (allocating variant) — returns a fresh
 // [UInt8] per call; measures the allocation+copy the inout API avoids.
 measure("RootCollator.skRet", ops: lines.count * reps) {
+    let c = collator
     for _ in 0..<reps {
         for line in lines {
-            sink += (try! collator.sortKey(for: line, options: defaultOpts)).count
+            sink += (try! c.sortKey(for: line, options: defaultOpts)).count
         }
     }
 }
