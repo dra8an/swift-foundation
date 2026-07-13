@@ -20,9 +20,7 @@ struct AnnotatedCE {
 }
 
 struct CollationSearch {
-    let data: CollationData
-    let base: CollationData?
-    let norm: NormalizationData
+    let storage: RootCollator.Storage
     let options: CollationOptions
     let numeric: Bool
     /// Highest variable primary + 1 when alternate=shifted, else 0 — the same
@@ -30,11 +28,13 @@ struct CollationSearch {
     /// variable-ness and primary ignorables test out early.
     let variableTop: UInt32
 
-    init(data: CollationData, base: CollationData?, norm: NormalizationData,
+    var data: CollationData { storage.data }
+    var base: CollationData? { storage.base }
+    var norm: NormalizationData { storage.norm }
+
+    init(storage: RootCollator.Storage,
          options: CollationOptions, variableTopValue: UInt32 = 0) {
-        self.data = data
-        self.base = base
-        self.norm = norm
+        self.storage = storage
         self.options = options
         self.numeric = options.numeric
         self.variableTop = options.alternate == .shifted ? variableTopValue + 1 : 0
