@@ -185,6 +185,27 @@ enum CollationKeys {
         var prevSecondary: UInt32 = 0
         var secSegmentStart = 0
 
+        // Batch primary bytes: accumulate into a fixed stack buffer and
+        // flush to `key` periodically. Converts many individual append()
+        // calls (each with an Array growth check) into fewer bulk copies.
+        var primBuf = (
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0)
+        )
+        var primCount = 0
+        let primCapacity = 64
+
+        @inline(__always)
+        func flushPrimaries(_ buf: UnsafePointer<UInt8>, _ count: Int, _ key: inout [UInt8]) {
+            key.append(contentsOf: UnsafeBufferPointer(start: buf, count: count))
+        }
+
         var cesIndex = 0
         while true {
             var ce = ces[cesIndex]
@@ -232,27 +253,37 @@ enum CollationKeys {
                 if !isCompressible || p1 != (prevReorderedPrimary >> 24) {
                     if prevReorderedPrimary != 0 {
                         if p < prevReorderedPrimary {
-                            // No primary compression terminator
-                            // at the end of the level or merged segment.
                             if p1 > UInt32(CollationConstants.mergeSeparatorPrimary >> 24) {
-                                key.append(3)  // PRIMARY_COMPRESSION_LOW_BYTE
+                                withUnsafeMutablePointer(to: &primBuf.0) { $0[primCount] = 3 }
+                                primCount += 1
                             }
                         } else {
-                            key.append(0xff)  // PRIMARY_COMPRESSION_HIGH_BYTE
+                            withUnsafeMutablePointer(to: &primBuf.0) { $0[primCount] = 0xff }
+                            primCount += 1
                         }
                     }
-                    key.append(UInt8(truncatingIfNeeded: p1))
+                    withUnsafeMutablePointer(to: &primBuf.0) { $0[primCount] = UInt8(truncatingIfNeeded: p1) }
+                    primCount += 1
                     prevReorderedPrimary = isCompressible ? p : 0
                 }
                 let p2 = UInt8(truncatingIfNeeded: p >> 16)
                 if p2 != 0 {
-                    key.append(p2)
+                    withUnsafeMutablePointer(to: &primBuf.0) { $0[primCount] = p2 }
+                    primCount += 1
                     let p3 = UInt8(truncatingIfNeeded: p >> 8)
                     if p3 != 0 {
-                        key.append(p3)
+                        withUnsafeMutablePointer(to: &primBuf.0) { $0[primCount] = p3 }
+                        primCount += 1
                         let p4 = UInt8(truncatingIfNeeded: p)
-                        if p4 != 0 { key.append(p4) }
+                        if p4 != 0 {
+                            withUnsafeMutablePointer(to: &primBuf.0) { $0[primCount] = p4 }
+                            primCount += 1
+                        }
                     }
+                }
+                if primCount >= primCapacity - 6 {
+                    withUnsafePointer(to: &primBuf.0) { flushPrimaries($0, primCount, &key) }
+                    primCount = 0
                 }
             }
 
@@ -475,6 +506,11 @@ enum CollationKeys {
             }
 
             if (lower32 >> 24) == UInt32(levelSeparator) { break }  // ce == NO_CE
+        }
+
+        // Flush any remaining batched primary bytes.
+        if primCount > 0 {
+            withUnsafePointer(to: &primBuf.0) { flushPrimaries($0, primCount, &key) }
         }
 
         // Append the beyond-primary levels.
