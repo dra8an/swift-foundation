@@ -873,3 +873,52 @@ range-search cells (§28 audit or reuse QuickCJKSetup/longPrimary for search
 CE production), stage-2 @inlinable (§29, awaiting the user's API decision),
 and the Swift optimizer report (§30; reduced test case reproducible from
 §29's probeA/probeA2 description).
+
+---
+
+### 33. Cross-machine divergence: CE-array parameter shape in the sort-key writer
+
+**Status:** measured 2026-07-14 (Intel, interleaved WMO EngineBench A/B).
+Resolution PENDING — `borrowing` candidate in the working tree, NOT
+committed; needs the user's decision and machine 2's re-verification on 6.4.
+
+Machine 2's `3aaa1d5` changed `writeSortKeyUpToQuaternary`'s `ces`
+parameter `[Int64]` → `UnsafeBufferPointer<Int64>`, wrapping the (only)
+call site in `withUnsafeBufferPointer`, to remove a per-call retain/release
+pair on the Array storage. Their measurement (Apple Silicon, 6.4, WMO
+EngineBench): sortKey −2..−4% (ascii 202→194, latin 218→213, cjk 213→207,
+paths 453→441), 1511 tests pass.
+
+On Intel/6.3.1 the same commit is a consistent sortKey REGRESSION.
+Interleaved A/B (pre-fix `f3acf29` binary vs `3aaa1d5` binary, six
+alternating rounds across two sessions, min per binary, WMO EngineBench):
+
+| corpus | sk pre-fix | sk 3aaa1d5 | Δ | skRet pre | skRet 3aaa1d5 |
+|--------|-----------:|-----------:|---|----------:|--------------:|
+| paths  | 796 | 879 | **+10%** | 1023 | 1091 |
+| thai   | 508 | 532 | +4.7%    | 676  | 696  |
+| ascii  | 337 | 348 | +3.3%    | ~505 | ~502 |
+
+compare identical (86–87 paths) on all binaries — clean control. Cause
+hypothesis: the call-site closure blocks WMO from inlining the writer into
+`sortKey`, so the entire key-writing loop runs de-optimized — cost scales
+with key length, which is why paths (longest keys) hurts most. This
+generalizes §31 lesson 1 beyond the pinned-buffer closures: **on
+6.3.1/Intel, a closure wrapping a hot call site is a codegen hazard even
+outside compare.**
+
+**Reconciliation candidate (in working tree):** `ces: borrowing [Int64]`,
+direct call, no closures anywhere. `borrowing` is an explicit +0 pass — no
+retain/release pair, which was the whole point of machine 2's change.
+Intel interleaved (same sessions): paths 798 vs 796 pre-fix, ascii 337 vs
+337, thai 510 vs 508 — the regression is fully erased. 1511 tests / 120
+suites green with the change. **Machine 2 must verify on 6.4 that
+`borrowing` still eliminates their measured ARC pair** (if it does not,
+the untested fallback is keeping the `[Int64]` signature and wrapping the
+writer's own body in `withUnsafeBufferPointer` internally).
+
+Same-day re-baseline at `3aaa1d5` (K=3, run_benchmarks.sh, this machine):
+compare rows match Docs/25 within noise (ascii 36, latin 35, cjk 83,
+paths 86, thai 636); the sortKey rows carry the regression above (ascii
+347, latin 376, cjk 366, paths 883, thai 516). Docs/25's Table 1 is
+deliberately NOT updated until the parameter-shape decision lands.
