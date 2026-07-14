@@ -140,7 +140,7 @@ enum CollationKeys {
     /// (without identical level and without the 00 terminator).
     /// (CollationKeys::writeSortKeyUpToQuaternary.)
     static func writeSortKeyUpToQuaternary(
-        ces: [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
+        ces: UnsafeBufferPointer<Int64>, compressibleBytes: UnsafeBufferPointer<Bool>,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
         into key: inout [UInt8], reusing buffers: inout SortKeyLevelBuffers
     ) {

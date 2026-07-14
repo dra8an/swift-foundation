@@ -562,10 +562,12 @@ public struct RootCollator: @unchecked Sendable {
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
         key.removeAll(keepingCapacity: true)
-        CollationKeys.writeSortKeyUpToQuaternary(
-            ces: scratch.left.ces, compressibleBytes: compressibleBytes,
-            options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key, reusing: &scratch.levels)
+        scratch.left.ces.withUnsafeBufferPointer { cesBuf in
+            CollationKeys.writeSortKeyUpToQuaternary(
+                ces: cesBuf, compressibleBytes: compressibleBytes,
+                options: options.icuOptions, variableTopValue: variableTopValue(options),
+                reordering: reordering, into: &key, reusing: &scratch.levels)
+        }
         if options.strength == .identical {
             key.append(1)  // level separator
             scratch.left.scalars.reset(scalars: s.unicodeScalars)
