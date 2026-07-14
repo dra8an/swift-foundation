@@ -102,33 +102,35 @@ collator.
 
 ## Performance
 
-Tested 2026-07-13 on Apple Silicon (macOS 26) against system ICU (via NSString bridge).
+Tested 2026-07-14 on Apple Silicon (macOS 26) against system ICU (via NSString bridge).
 
 **Foundation API integration (what users actually call):**
 
 | API | ASCII | Latin | CJK | Paths |
 |-----|-------|-------|-----|-------|
-| `localizedCompare` | **4.5× faster** | **8.2× faster** | **2.4× faster** | **4.0× faster** |
-| `localizedStandardCompare` | **3.9× faster** | **6.6× faster** | **2.3× faster** | **3.5× faster** |
-| `localizedCaseInsensitiveCompare` | **3.9× faster** | **6.7× faster** | **2.3× faster** | **3.6× faster** |
-| `compare(_:locale:)` | **1.6× faster** | **2.4× faster** | **1.6× faster** | **1.8× faster** |
-| `localizedStdContains` | **2.8× faster** | **4.0× faster** | **3.2× faster** | **2.4× faster** |
-| `localizedCaseIContains` | **2.9× faster** | **4.1× faster** | **3.3× faster** | **2.6× faster** |
-| `localizedStdRange` | **2.7× faster** | **3.8× faster** | **3.1× faster** | **1.6× faster** |
-| `range(of:locale:)` | **1.3× faster** | **1.4× faster** | **1.0×** | **1.0×** |
-| `range(backwards)` | **1.3× faster** | **1.5× faster** | **1.0×** | **1.4× faster** |
+| `localizedCompare` | **4.3× faster** | **8.2× faster** | **5.7× faster** | **3.9× faster** |
+| `localizedStandardCompare` | **3.9× faster** | **6.7× faster** | **4.7× faster** | **3.5× faster** |
+| `localizedCaseInsensitiveCompare` | **3.9× faster** | **6.6× faster** | **4.6× faster** | **3.6× faster** |
+| `compare(_:locale:)` | **1.5× faster** | **2.6× faster** | **2.3× faster** | **1.8× faster** |
+| `localizedStdContains` | **3.1× faster** | **4.3× faster** | **3.5× faster** | **2.6× faster** |
+| `localizedCaseIContains` | **3.2× faster** | **4.5× faster** | **3.5× faster** | **2.8× faster** |
+| `localizedStdRange` | **3.0× faster** | **4.1× faster** | **3.3× faster** | **1.7× faster** |
+| `range(of:locale:)` | **1.4× faster** | **1.5× faster** | **1.1× faster** | **1.1× faster** |
+| `range(backwards)` | **1.4× faster** | **1.6× faster** | **1.1× faster** | **1.6× faster** |
 
-**Direct collation (RootCollator.compare, no Foundation overhead):**
+**Direct collation engine (EngineBench full WMO vs ICU 79):**
 
 | Operation | Ratio vs ICU |
 |-----------|-------------|
-| Sort keys (ASCII/Latin/CJK) | 1.4–1.9× slower |
-| Compare (ASCII/Latin) | 1.5–1.8× slower |
-| Compare (CJK) | 2.8× slower |
+| Sort keys (ASCII/Latin/CJK) | 1.7–1.9× slower |
+| Sort keys (paths) | 1.2× slower |
+| Compare (ASCII/Latin/paths) | 1.5–1.9× slower |
+| Compare (CJK) | **0.6× (faster than ICU)** |
 
-Direct collation arithmetic is slower than ICU (C vs Swift overhead), but
-the Foundation API layer is faster because system ICU pays the ObjC bridge
-cost (NSString → CoreFoundation → ICU) that we avoid entirely.
+Direct collation arithmetic is 1.2–1.9× behind ICU (C vs Swift overhead),
+except CJK compare which beats ICU via quick-primary dispatch. Through
+Foundation APIs we're 1.1–8.2× faster because system ICU pays the ObjC
+bridge cost (NSString → CoreFoundation → ICU) that we avoid entirely.
 
 ## Remaining gaps
 
