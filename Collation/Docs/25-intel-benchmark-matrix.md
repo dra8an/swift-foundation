@@ -22,16 +22,18 @@
 > comparable across the harness change — ours-vs-ours raw ns are (the 06-26
 > "ours" rows are preserved below for that comparison).
 >
-> **Re-baselined 2026-07-13** after the §29–§30 engine-entry round: compare
-> hot/cold split + prefix/safety wins (`ab7e953`) and the **RootCollator
-> storage box** (`2eeb5cd` — collator values are one pointer; the ~768-byte
-> per-call receiver copies are gone, including the CollatorCache fetch in
-> every Foundation call). The engine rows also now hold the collator in a
-> loop-local `let` (§30), so Table-1 rows are NOT comparable to pre-07-13
-> recordings (~10–12 ns of receiver-copy artifact removed). Headlines:
-> `localizedCompare` latin **7.3× faster** than system ICU;
-> every Foundation API ≤1.21× on every corpus; engine compare ascii 2.4×,
-> paths 2.0×.
+> **Re-baselined 2026-07-13 (evening)**, one coherent run containing the
+> full 07-12/13 round: compare hot/cold split (`ab7e953`), **RootCollator
+> storage box** (`2eeb5cd` — the §29–§30 receiver-copy discovery), the
+> **quick-primary CJK dispatch + longPrimary coverage** (`4acac0b`, §31),
+> the **CollationSearch storage box** from machine 2 (`67594f8`), thai
+> measured **root vs root** for the first time (ICU ref ~258, was ~289
+> with a "th" collator), and Table 2 as **speedup = system ÷ ours** (>1 =
+> we're faster). Table-1 rows are NOT comparable to pre-07-13 recordings
+> (~10–12 ns receiver-copy artifact removed; §30). Headlines: engine cjk
+> compare **1.26× vs ICU C** (was 3.9× a week ago); `localizedCompare`
+> 3.5–7× faster than system ICU on every non-Thai corpus; all Foundation
+> APIs within 0.80× of the system, all but five cells ahead.
 >
 > The same day (07-06), the harness gained **four previously unmeasured metrics** —
 > the allocating sortKey variant (`skRet`, Table 1), the case-insensitive
@@ -76,7 +78,8 @@ trip, so its numbers there are full-WMO.)
 - Per-corpus reps equalize work (thai is ~33k lines vs ~200–440 for the rest):
   ASCII/Latin/CJK 300, paths 150, thai 10.
 - Corpora: `Collation/Tools/bench/bench-{ascii,latin,cjk,paths,thai}.txt`
-  (thai uses the `th` tailoring / dictionary corpus).
+  (thai is the dictionary corpus; since 07-13 BOTH sides use the root
+  collator on it — earlier runs gave ICU a `th`-tailored one).
 - Harnesses:
   - **Pure ICU:** `Collation/Tools/bench_icu.c` → `ucol_strcollUTF8` / `ucol_getSortKey`
     (ICU 79, local build at `~/Projects/claude/collation/icu-build`).
@@ -108,17 +111,23 @@ ICU reference.
 
 | corpus | compare ICU | compare ours | ratio | sortKey ICU | sortKey ours | ratio | skRet ours | ratio |
 |--------|------------:|-------------:|------:|------------:|-------------:|------:|-----------:|------:|
-| ascii  | 16  | 39   | 2.44× | 204 | 416  | 2.04× | 567  | 2.78× |
-| latin  | 17  | 38   | 2.24× | 208 | 463  | 2.23× | 600  | 2.88× |
-| cjk    | 73  | 284  | 3.89× | 229 | 484  | 2.11× | 714  | 3.12× |
-| paths  | 49  | 98   | 2.00× | 669 | 1152 | 1.72× | 1637 | 2.45× |
-| thai   | 289 | 823  | 2.85× | 292 | 665  | 2.28× | 856  | 2.93× |
+| ascii  | 16  | 41   | 2.56× | 192 | 416  | 2.17× | 562  | 2.93× |
+| latin  | 17  | 42   | 2.47× | 208 | 456  | 2.19× | 594  | 2.86× |
+| cjk    | 73  | 92   | **1.26×** | 216 | 481  | 2.23× | 699  | 3.24× |
+| paths  | 48  | 102  | 2.12× | 659 | 1109 | 1.68× | 1568 | 2.38× |
+| thai   | 258 | 813  | 3.15× | 266 | 672  | 2.53× | 823  | 3.09× |
 
-Pure-Swift vs hand-tuned C: ~2.0–3.9× on compare, ~1.7–2.3× on sortKey.
+Pure-Swift vs hand-tuned C: 1.3–3.2× on compare, ~1.7–2.5× on sortKey.
+(ascii/latin compare read ~2 ns higher than the 07-13 morning run purely
+from -no-WMO code-layout shift after the search-box edit — under WMO, the
+shipping config, the same change is neutral-to-better: ascii 35–36 ns.)
 §29 decomposed the remainder: the fast-Latin loop core measures ~15 ns with
 ICU's calling contract (vs ICU's ~16 total); ~10 ns is String→bytes
-unwrapping (the safe-API floor on macOS 15); the rest is per-scalar CE
-pipeline cost on cjk/thai. The cjk row is the CE-bound frontier (§28).
+unwrapping (the safe-API floor on macOS 15). cjk is decided by the §31
+quick-primary dispatch (1.26×). Thai — a real CE-pipeline workload
+(contractions, marks) — is now the last row above 3× and the next engine
+frontier; note its ratio ROSE with the honest root/root fix (ICU got
+faster, ours barely moved).
 
 ## Table 2 — Integrated in Foundation (same APIs, two backends)
 
@@ -130,40 +139,40 @@ Doc 21 on machine 2 still uses the old convention until it re-baselines.)
 
 | API | ascii | latin | cjk | paths | thai |
 |-----|------:|------:|----:|------:|-----:|
-| `compare(locale:)`               | 1.62× | 2.60× | 1.66× | 1.82× | 1.07× |
-| `localizedCompare`               | **3.74×** | **7.31×** | 2.55× | **3.71×** | 1.24× |
-| `localizedStandardCompare`       | 2.82× | 5.62× | 2.44× | 3.09× | 1.15× |
-| `localizedCaseInsensitiveCompare`| 2.81× | 5.67× | 2.45× | 3.16× | 1.14× |
-| `localizedStandardContains`      | 1.47× | 2.37× | 1.95× | 1.28× | 2.15× |
-| `localizedCaseInsensitiveContains`| 1.52× | 2.53× | 2.01× | 1.37× | 2.28× |
-| `localizedStandardRange`         | 1.28× | 2.19× | 1.79× | 0.97× | 1.56× |
-| `range(of:options:locale:)`      | 1.10× | 1.13× | 0.83× | 0.91× | 0.88× |
-| `range(of:.backwards,locale:)`   | 1.10× | 1.26× | 0.85× | 1.28× | 0.99× |
+| `compare(locale:)`               | 1.56× | 2.59× | 2.22× | 1.74× | 1.07× |
+| `localizedCompare`               | **3.50×** | **7.04×** | **5.09×** | **3.66×** | 1.23× |
+| `localizedStandardCompare`       | 2.72× | 5.57× | 4.31× | 3.11× | 1.16× |
+| `localizedCaseInsensitiveCompare`| 2.73× | 5.55× | 4.31× | 3.14× | 1.14× |
+| `localizedStandardContains`      | 1.57× | 2.56× | 2.02× | 1.36× | 2.29× |
+| `localizedCaseInsensitiveContains`| 1.59× | 2.66× | 2.01× | 1.47× | 2.44× |
+| `localizedStandardRange`         | 1.45× | 2.33× | 1.84× | 0.96× | 1.63× |
+| `range(of:options:locale:)`      | 1.29× | 1.18× | 0.80× | 1.00× | 0.92× |
+| `range(of:.backwards,locale:)`   | 1.28× | 1.27× | 0.82× | 1.38× | 1.04× |
 
-Raw ns/op behind the speedups (2026-07-13 post-§30 run):
+Raw ns/op behind the speedups (2026-07-13 evening run, §29–§31 + search box):
 
 | API | corpus | sysICU | ours |
 |-----|--------|-------:|-----:|
-| compare(locale:)   | ascii/latin/cjk/paths/thai | 654 / 1077 / 1140 / 918 / 1315 | 403 / 414 / 687 / 505 / 1232 |
-| localizedCompare   | ascii/latin/cjk/paths/thai | 438 / 863 / 931 / 676 / 1087   | 117 / 118 / 365 / 182 / 875 |
-| localizedStdCmp    | ascii/latin/cjk/paths/thai | 435 / 860 / 938 / 696 / 1053   | 154 / 153 / 385 / 225 / 918 |
-| localizedCaseICmp  | ascii/latin/cjk/paths/thai | 432 / 868 / 945 / 679 / 1049   | 154 / 153 / 385 / 215 / 919 |
-| localizedStdContns | ascii/latin/cjk/paths/thai | 1409 / 2424 / 2223 / 1379 / 2356 | 957 / 1023 / 1141 / 1080 / 1095 |
-| localizedCaseICnt  | ascii/latin/cjk/paths/thai | 1447 / 2544 / 2267 / 1408 / 2440 | 954 / 1005 / 1128 / 1029 / 1068 |
-| localizedStdRange  | ascii/latin/cjk/paths/thai | 1397 / 2432 / 2217 / 1410 / 2445 | 1093 / 1110 / 1239 / 1453 / 1567 |
-| range(of:locale:)  | ascii/latin/cjk/paths/thai | 602 / 1644 / 1328 / 614 / 1533   | 546 / 1458 / 1603 / 676 / 1734 |
-| range(backwards)   | ascii/latin/cjk/paths/thai | 602 / 1726 / 1348 / 927 / 1637   | 549 / 1371 / 1582 / 725 / 1651 |
+| compare(locale:)   | ascii/latin/cjk/paths/thai | 638 / 1056 / 1110 / 897 / 1318 | 408 / 408 / 499 / 517 / 1232 |
+| localizedCompare   | ascii/latin/cjk/paths/thai | 420 / 852 / 911 / 684 / 1087   | 120 / 121 / 179 / 187 / 883 |
+| localizedStdCmp    | ascii/latin/cjk/paths/thai | 422 / 852 / 923 / 709 / 1051   | 155 / 153 / 214 / 228 / 909 |
+| localizedCaseICmp  | ascii/latin/cjk/paths/thai | 423 / 854 / 927 / 675 / 1052   | 155 / 154 / 215 / 215 / 920 |
+| localizedStdContns | ascii/latin/cjk/paths/thai | 1409 / 2398 / 2179 / 1367 / 2314 | 897 / 936 / 1078 / 1002 / 1011 |
+| localizedCaseICnt  | ascii/latin/cjk/paths/thai | 1427 / 2502 / 2193 / 1397 / 2426 | 896 / 942 / 1090 / 949 / 996 |
+| localizedStdRange  | ascii/latin/cjk/paths/thai | 1404 / 2388 / 2188 / 1378 / 2442 | 971 / 1023 / 1188 / 1429 / 1495 |
+| range(of:locale:)  | ascii/latin/cjk/paths/thai | 588 / 1608 / 1332 / 601 / 1522   | 456 / 1366 / 1659 / 603 / 1662 |
+| range(backwards)   | ascii/latin/cjk/paths/thai | 593 / 1682 / 1329 / 916 / 1625   | 462 / 1324 / 1619 / 662 / 1569 |
 
-All but five cells beat system ICU, none is worse than 0.83×. The compare
-family runs 1.1–7.3× faster than the system (`localizedCompare` latin:
-118 vs 863 ns); search runs 1.3–2.3× faster nearly everywhere. The five
-remaining <1× cells are all range-position reporting on the CE-bound
-corpora (cjk 0.83–0.85×, paths/thai forward range 0.88–0.97×). Most of
-the 07-13 jump in the compare family came from the §30 storage box: the
-collator struct's ~8 reference fields made every per-call copy pay a
-768-byte memcpy plus ~8 retain/release pairs, several times per Foundation
-call (cache fetch, return, throwing-call receiver). Per-API history: this
-file's git log plus §20/§27/§29/§30 of the technique log.
+All but five cells beat system ICU, none is worse than 0.80×. The compare
+family runs 1.1–7× faster than the system (`localizedCompare` latin: 121
+vs 852 ns; cjk 179 vs 911 thanks to the §31 dispatch); search runs
+1.3–2.7× faster nearly everywhere. The five remaining ≤1× cells are all
+range-position reporting on CE-bound corpora (cjk 0.80–0.82×, paths/thai
+forward range 0.92–1.00×). The 07-13 jumps came from the §30 storage
+boxes (the collator and searcher structs carried reference fields, so
+every per-call copy paid a large memcpy plus retain/release pairs —
+several times per Foundation call) and the §31 CJK dispatch. Per-API
+history: this file's git log plus §20/§27/§29–§31 of the technique log.
 
 ## Findings
 
