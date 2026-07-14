@@ -35,5 +35,8 @@ echo "== build bench_system (system-ICU reference, compiled once) =="
 swiftc -O Collation/Tools/bench_system_foundation.swift -o Collation/Tools/bench_system
 export SYS_BIN="$REPO/Collation/Tools/bench_system"
 
+echo "== build EngineBench (engine-only, FULL WMO — honest Table 1) =="
+export ENGINE_BIN="$(Collation/Tools/build_engine_bench.sh)"
+
 echo "== run matrix =="
 python3 Collation/Tools/bench_matrix.py "$BF" "$K"

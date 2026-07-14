@@ -26,6 +26,11 @@ SYS_SCRIPT = "Collation/Tools/bench_system_foundation.swift"
 # Precompiled bench_system binary (run_benchmarks.sh builds it once);
 # fallback recompiles the script per run, which dominates wall time at K>1.
 SYS_BIN = os.environ.get("SYS_BIN")
+# Full-WMO engine-only bench (build_engine_bench.sh) for Table 1: measures
+# the shipping optimization level even on machine 1, where the full
+# BenchFoundation executable must build -no-WMO (Locale SIGILL, Docs/25).
+# Falls back to the BenchFoundation numbers when unset.
+ENGINE_BIN = os.environ.get("ENGINE_BIN")
 
 # (label, corpus file, locale-or-None for ICU bin, reps) — reps equalize work
 # (thai is ~33k lines vs ~200-440 for the rest).
@@ -61,11 +66,14 @@ for label, corpus, loc, reps in CORPORA:
     icu  = best([ICU_BIN, corpus, str(reps)] + ([loc] if loc else []),
                {"DYLD_LIBRARY_PATH": ICU_LIB})
     ours = best([BF, corpus, str(reps)])
+    if ENGINE_BIN:
+        ours.update(best([ENGINE_BIN, corpus, str(reps)]))
     sys_cmd = [SYS_BIN] if SYS_BIN else ["swift", "-O", SYS_SCRIPT]
     sysf = best(sys_cmd + [corpus, str(reps)])
     results[label] = {"icu": icu, "ours": ours, "sys": sysf}
 
-print(f"\nK={K}  min ns/op over interleaved runs. (no-WMO build on Intel — see Docs/27.)")
+eng = "engine rows FULL-WMO via EngineBench" if ENGINE_BIN else "engine rows -no-WMO (set ENGINE_BIN!)"
+print(f"\nK={K}  min ns/op over interleaved runs. {eng}; Foundation rows -no-WMO on machine 1 (Docs/27).")
 print("\n================ TABLE 1: PURE COLLATOR ENGINE (ours vs ICU C) ================")
 print(f"{'corpus':6} | {'cmp ICU':>7} {'ours':>5} {'ratio':>6} | {'sk ICU':>7} {'ours':>6} {'ratio':>6} | {'skRet':>6} {'ratio':>6}")
 print("-" * 80)

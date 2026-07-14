@@ -25,7 +25,12 @@ env for machine 2):
    This flag is **mandatory on machine 1** — a normal release WMO executable
    SIGILLs at startup (the `_localeICUClass` `@_dynamicReplacement` miscompile;
    full root cause in `Docs/25`). Harmless on machine 2.
-3. Runs **`bench_matrix.py <BenchFoundation> K`**, which drives:
+3. Builds **EngineBench** (`build_engine_bench.sh`): the engine sources
+   copied into a scratch package and built FULL-WMO — no Locale, so machine
+   1's WMO SIGILL never trips. Table 1 reads from it (the shipping
+   optimization level); Table 2 keeps the -no-WMO BenchFoundation on
+   machine 1.
+4. Runs **`bench_matrix.py <BenchFoundation> K`**, which drives:
    - `bench_icu` — pure ICU `ucol_strcollUTF8` / `ucol_getSortKey`.
    - `BenchFoundation` (ours) — `RootCollator.cmp`/`.sk`/`.skRet` (pure
      engine; `.skRet` is the allocating sortKey) **and** the Foundation APIs

@@ -109,25 +109,29 @@ fresh `[UInt8]` per call — the difference (~150–450 ns) is the per-call
 allocation+copy the inout API avoids. Both are measured against the same
 ICU reference.
 
+**Since 2026-07-13 late, Table 1 measures the FULL-WMO engine** — the
+shipping optimization level — via the engine-only EngineBench
+(`Tools/build_engine_bench.sh`; no Locale, so machine 1's WMO SIGILL never
+trips). The old -no-WMO engine rows carried a 10–26% build-workaround
+handicap and were sensitive to code-layout luck.
+
 | corpus | compare ICU | compare ours | ratio | sortKey ICU | sortKey ours | ratio | skRet ours | ratio |
 |--------|------------:|-------------:|------:|------------:|-------------:|------:|-----------:|------:|
-| ascii  | 16  | 41   | 2.56× | 192 | 416  | 2.17× | 562  | 2.93× |
-| latin  | 17  | 42   | 2.47× | 208 | 456  | 2.19× | 594  | 2.86× |
-| cjk    | 73  | 92   | **1.26×** | 216 | 481  | 2.23× | 699  | 3.24× |
-| paths  | 48  | 102  | 2.12× | 659 | 1109 | 1.68× | 1568 | 2.38× |
-| thai   | 258 | 813  | 3.15× | 266 | 672  | 2.53× | 823  | 3.09× |
+| ascii  | 16  | 36   | 2.25× | 192 | 338  | 1.76× | 497  | 2.59× |
+| latin  | 17  | 35   | 2.06× | 208 | 369  | 1.77× | 518  | 2.49× |
+| cjk    | 73  | 81   | **1.11×** | 216 | 368  | 1.70× | 574  | 2.66× |
+| paths  | 48  | 87   | 1.81× | 659 | 805  | **1.22×** | 1017 | 1.54× |
+| thai   | 258 | 637  | 2.47× | 266 | 513  | 1.93× | 678  | 2.55× |
 
-Pure-Swift vs hand-tuned C: 1.3–3.2× on compare, ~1.7–2.5× on sortKey.
-(ascii/latin compare read ~2 ns higher than the 07-13 morning run purely
-from -no-WMO code-layout shift after the search-box edit — under WMO, the
-shipping config, the same change is neutral-to-better: ascii 35–36 ns.)
+(Includes machine 2's sortKey primary-byte batching, `68156e1` — paths
+sortKey −18% on Intel, matching their −15% on Apple Silicon.)
+
+Pure-Swift vs hand-tuned C: 1.1–2.5× on compare, 1.2–1.9× on sortKey.
 §29 decomposed the remainder: the fast-Latin loop core measures ~15 ns with
 ICU's calling contract (vs ICU's ~16 total); ~10 ns is String→bytes
 unwrapping (the safe-API floor on macOS 15). cjk is decided by the §31
-quick-primary dispatch (1.26×). Thai — a real CE-pipeline workload
-(contractions, marks) — is now the last row above 3× and the next engine
-frontier; note its ratio ROSE with the honest root/root fix (ICU got
-faster, ours barely moved).
+quick-primary dispatch. Thai — a real CE-pipeline workload (contractions,
+marks) — is the last compare row above 2.5× and the next engine frontier.
 
 ## Table 2 — Integrated in Foundation (same APIs, two backends)
 
