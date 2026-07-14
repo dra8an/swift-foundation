@@ -831,3 +831,45 @@ here and in compareBody). Comparing actual primaries needs no §28
 injectivity: equal primaries simply fall through. Eligibility is resolved
 at init (no script reordering, non-shifted default); zh and shifted
 collators skip the dispatch entirely.
+
+---
+
+### 32. Thai round plan (the last compare row above 2.5×) — untried
+
+**Status:** planned 2026-07-13, not started. Thai compare 637 ns vs ICU 258
+(2.47×, WMO EngineBench) — the one workload that runs the full CE pipeline
+per call (marks, contractions, real normalization). Method: §29-style probe
+ladder FIRST (pinned-buffer pipeline entry, then stage by stage) to
+attribute the 379 ns before changing anything; EngineBench WMO A/B per
+experiment.
+
+Levers, in order:
+
+1. **NFD mark pass-through for already-ordered marks** (est −60 ns/compare;
+   also helps sortKey). In `NFDIterator.next()`, a non-decomposing scalar
+   with ccc>0 currently routes through the full `refill()` buffering (unit +
+   marks arrays, flushMarks sort) even when NO reordering can occur. When
+   the current scalar has no decomposition, ccc(c)>0, and the PEEKED next
+   scalar is a starter (leadCCC==0) or end-of-input, emit `c` directly and
+   stash the peeked scalar in `pendingFirst` (mechanism already exists for
+   quickDecomp). Fall back to refill() when two non-starters are adjacent
+   or the mark decomposes. This mirrors ICU's FCD pass-through, which never
+   buffers Thai marks. Correctness gate: full ICU-reference conformance run
+   (433k lines) + fuzz keys — canonical ordering is where subtle bugs live.
+
+2. **Thread-local scratch cost, quantify then maybe fix**: every pipeline
+   entry pays takeScratch/giveScratch; estimates range 2–22 ns and it has
+   never been pinned. Step 1: stub to a preallocated global (single-threaded
+   bench only) and A/B the thai row. Step 2 (only if >8 ns): store the TLS
+   value as an Unmanaged raw pointer so take/give become plain loads around
+   pthread_getspecific, removing retain/release atomics.
+
+3. **CE-buffer machinery** — `ces` array append + appendMore dispatch per
+   scalar; attack informed by whatever the ladder attributes.
+
+After thai, the standing queue: sortKey entry ladder (§29 never ran for
+sortKey; it still pays throws + the ~22 ns reset), the five sub-parity
+range-search cells (§28 audit or reuse QuickCJKSetup/longPrimary for search
+CE production), stage-2 @inlinable (§29, awaiting the user's API decision),
+and the Swift optimizer report (§30; reduced test case reproducible from
+§29's probeA/probeA2 description).
