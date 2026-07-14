@@ -147,7 +147,20 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (ascii 117 ns = 0.27× system ICU; latin 0.14×); engine compare ascii
   39 ns (2.44×), paths 98 (2.00×). Table-1 rows recorded before 07-13
   include a ~10–12 ns receiver-copy bench artifact — do not compare across.
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§30;
+  2026-07-13 late: **quick-primary CJK dispatch** at the byte-scan mismatch
+  + longPrimary coverage in quickPrimary (§31, `4acac0b`) — cjk compare
+  232→82 ns, now **1.11× vs ICU C** (was 3.9×); hard rule recorded there:
+  the pinned-buffer closures may only call STATIC functions with trivial
+  parameters. Machine 2 same day: **CollationSearch storage box**
+  (`67594f8`, search APIs −5..−13%) and **sortKey primary-byte batching**
+  (`68156e1`, paths sortKey −18% Intel / −15% AS). Harness: **Table 1 now
+  measures the FULL-WMO engine** via `Tools/build_engine_bench.sh`
+  (EngineBench — no Locale, so machine 1's WMO SIGILL never trips); Table 2
+  prints SPEEDUP (sys/ours); thai runs root-vs-root. Current Intel engine
+  (WMO): compare 1.1–2.5×, sortKey 1.2–1.9×; Foundation APIs 1.1–7× FASTER
+  than system ICU except five range cells (0.80–1.00×). **Next round is
+  planned in §32 (thai, 2.47×, the last big row).**
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§32;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
@@ -284,7 +297,13 @@ DYLD_LIBRARY_PATH=/Users/dragan/Projects/Unicode/icu-DraganBesevic-2/icu4c/sourc
   ./bench_icu Tools/bench/bench-cjk.txt 200
 ```
 
-#### Intel iMac (macOS 15, Swift 6.3.1 release) — confirmed 2026-06-19, updated 2026-06-22
+#### Intel iMac (macOS 15, Swift 6.3.1 release) — HISTORICAL (through 2026-06-22)
+
+> **Current Intel numbers live in `Docs/25` (re-baselined 2026-07-13,
+> full-WMO EngineBench for Table 1).** Headline row there: compare ascii 36
+> (2.25×), cjk 81 (1.11×), thai 637 (2.47×); sortKey 1.2–1.9×. The tables
+> below predate the §29–§31 round AND the harness changes — keep them only
+> as the record of the June optimization arc; do not compare against them.
 
 min ns/op (best wall-clock pass; Bench takes the min over 9 internal passes,
 interleaved across many invocations). One coherent run across all columns.
