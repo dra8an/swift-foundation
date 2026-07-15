@@ -158,9 +158,21 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (EngineBench — no Locale, so machine 1's WMO SIGILL never trips); Table 2
   prints SPEEDUP (sys/ours); thai runs root-vs-root. Current Intel engine
   (WMO): compare 1.1–2.5×, sortKey 1.2–1.9×; Foundation APIs 1.1–7× FASTER
-  than system ICU except five range cells (0.80–1.00×). **Next round is
-  planned in §32 (thai, 2.47×, the last big row).**
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§32;
+  than system ICU except five range cells (0.80–1.00×).
+  2026-07-14: **§33** — machine 2's sortKey CE-array-as-UnsafeBufferPointer
+  (`3aaa1d5`, −2..−4% AS) regressed Intel (+10% paths, call-site closure
+  blocks WMO inlining of the writer); reconciled as `ces: borrowing [Int64]`
+  (`44c9497`) — Intel restored, machine 2 to re-verify the ARC win on 6.4.
+  Same day, **§34 (thai round part 1, `2e6c961`)**: probe ladder attributed
+  the thai gap (NFD 345 / CE +200 / skip-walk 126 with 88% unsafe fallback /
+  scratch 5 = settled); **lone-mark pass-through at refill's head** shipped —
+  thai compare 637→615, sortKey 513→486, others neutral. §34 also records
+  the **ALIGNMENT TRAP**: Intel WMO paths-sortKey deltas within ±7% are
+  code-placement luck until the writer's instruction stream is diffed
+  (`otool -tv`; identical instructions = not a regression). **Next: §32
+  lever 3 (Thai-block simple-CE table, buffer-free single-step contraction
+  match), then the duplicated skip-walk (byte-mismatch handoff).**
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§34;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
