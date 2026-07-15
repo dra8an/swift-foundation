@@ -22,7 +22,7 @@ Same Foundation APIs, two backends:
 | Latin  | 45    | 368       | **8.2× faster** |
 | CJK    | 66    | 377       | **5.7× faster** |
 | Paths  | 77    | 304       | **3.9× faster** |
-| Thai   | 369   | 500       | **1.4× faster** |
+| Thai   | 314   | 499       | **1.6× faster** |
 
 ### localizedStandardCompare(_:)
 
@@ -32,7 +32,7 @@ Same Foundation APIs, two backends:
 | Latin  | 53    | 355       | **6.7× faster** |
 | CJK    | 79    | 368       | **4.7× faster** |
 | Paths  | 93    | 327       | **3.5× faster** |
-| Thai   | 377   | 485       | **1.3× faster** |
+| Thai   | 329   | 483       | **1.5× faster** |
 
 ### localizedCaseInsensitiveCompare(_:)
 
@@ -42,7 +42,7 @@ Same Foundation APIs, two backends:
 | Latin  | 54    | 355       | **6.6× faster** |
 | CJK    | 80    | 370       | **4.6× faster** |
 | Paths  | 87    | 315       | **3.6× faster** |
-| Thai   | 378   | 484       | **1.3× faster** |
+| Thai   | 330   | 485       | **1.5× faster** |
 
 ### compare(_:locale:)
 
@@ -52,7 +52,7 @@ Same Foundation APIs, two backends:
 | Latin  | 193   | 493       | **2.6× faster** |
 | CJK    | 218   | 499       | **2.3× faster** |
 | Paths  | 231   | 421       | **1.8× faster** |
-| Thai   | 526   | 631       | **1.2× faster** |
+| Thai   | 473   | 634       | **1.3× faster** |
 
 ### localizedStandardContains(_:)
 
@@ -62,7 +62,7 @@ Same Foundation APIs, two backends:
 | Latin  | 346   | 1478      | **4.3× faster** |
 | CJK    | 370   | 1309      | **3.5× faster** |
 | Paths  | 377   | 995       | **2.6× faster** |
-| Thai   | 368   | 1397      | **3.8× faster** |
+| Thai   | 329   | 1395      | **4.2× faster** |
 
 ### localizedCaseInsensitiveContains(_:)
 
@@ -72,7 +72,7 @@ Same Foundation APIs, two backends:
 | Latin  | 343   | 1533      | **4.5× faster** |
 | CJK    | 374   | 1317      | **3.5× faster** |
 | Paths  | 356   | 1007      | **2.8× faster** |
-| Thai   | 371   | 1444      | **3.9× faster** |
+| Thai   | 330   | 1442      | **4.4× faster** |
 
 ### localizedStandardRange(of:)
 
@@ -82,7 +82,7 @@ Same Foundation APIs, two backends:
 | Latin  | 361   | 1477      | **4.1× faster** |
 | CJK    | 397   | 1302      | **3.3× faster** |
 | Paths  | 605   | 1011      | **1.7× faster** |
-| Thai   | 580   | 1440      | **2.5× faster** |
+| Thai   | 536   | 1443      | **2.7× faster** |
 
 ### range(of:options:locale:)
 
@@ -92,7 +92,7 @@ Same Foundation APIs, two backends:
 | Latin  | 525   | 810       | **1.5× faster** |
 | CJK    | 548   | 603       | **1.1× faster** |
 | Paths  | 296   | 322       | **1.1× faster** |
-| Thai   | 566   | 727       | **1.3× faster** |
+| Thai   | 524   | 719       | **1.4× faster** |
 
 ### range(of:options:.backwards,locale:)
 
@@ -102,7 +102,7 @@ Same Foundation APIs, two backends:
 | Latin  | 524   | 845       | **1.6× faster** |
 | CJK    | 553   | 606       | **1.1× faster** |
 | Paths  | 331   | 523       | **1.6× faster** |
-| Thai   | 573   | 776       | **1.4× faster** |
+| Thai   | 528   | 769       | **1.5× faster** |
 
 ### Direct RootCollator (EngineBench, full WMO)
 
@@ -112,7 +112,7 @@ Same Foundation APIs, two backends:
 | Latin  | 16      | 10     | 1.6×  | 218     | 125    | 1.7×  | 282 |
 | CJK    | 27      | 42     | **0.6×** | 213  | 121    | 1.8×  | 296 |
 | Paths  | 44      | 30     | 1.5×  | 453     | 372    | 1.2×  | 534 |
-| Thai   | 334     | 192    | 1.7×  | 292     | 161    | 1.8×  | 364 |
+| Thai   | 286     | 192    | 1.5×  | 253     | 161    | 1.6×  | 324 |
 
 ## Analysis
 
