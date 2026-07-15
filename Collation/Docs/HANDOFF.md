@@ -169,10 +169,16 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   thai compare 637→615, sortKey 513→486, others neutral. §34 also records
   the **ALIGNMENT TRAP**: Intel WMO paths-sortKey deltas within ±7% are
   code-placement luck until the writer's instruction stream is diffed
-  (`otool -tv`; identical instructions = not a regression). **Next: §32
-  lever 3 (Thai-block simple-CE table, buffer-free single-step contraction
-  match), then the duplicated skip-walk (byte-mismatch handoff).**
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§34;
+  (`otool -tv`; identical instructions = not a regression).
+  2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
+  (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
+  mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
+  probe deltas are CEILINGS when deleted work shares memory traffic with
+  what remains). **Thai now ~546 cmp / ~452 sk (~2.10× / ~1.70× vs ICU;
+  was 637/513 = 2.47×/1.93× at round start). Next: unsafe-mask for the
+  Thai block (§35 item 1), then the NFD per-scalar floor (Span refactor,
+  parked).**
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§35;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench

@@ -135,9 +135,11 @@ sortKey −18% on Intel, matching their −15% on Apple Silicon.)
 > stripped). WMO builds of identical sources are not bit-identical either;
 > whole-binary hashes prove nothing.
 >
-> Post-§34 thai row (mark pass-through): compare 615, sortKey 486, skRet
-> 664 (was 637/513/678 at the 07-13 re-baseline; ICU 258–260). Full round
-> table pending the §32 round end.
+> Post-§35 thai row (mark pass-through + Thai simple-CE table +
+> walk-skip): compare ~546, sortKey ~452 (was 637/513 at the 07-13
+> re-baseline; ICU 258–260 — ratio now ~2.10× compare, ~1.70× sortKey).
+> Cross-day absolutes drift with machine load; the §34/§35 interleaved
+> pairs are the record. Full-matrix re-baseline pending the §32 round end.
 
 Pure-Swift vs hand-tuned C: 1.1–2.5× on compare, 1.2–1.9× on sortKey.
 §29 decomposed the remainder: the fast-Latin loop core measures ~15 ns with

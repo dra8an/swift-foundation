@@ -1000,3 +1000,65 @@ Modest vs the §32 −60 estimate: marks are only ~2/word; the remaining gap
 is CE production (~200 ns, §32 lever 3 — Thai-block simple-CE table and a
 buffer-free single-step contraction match are the designed next attacks)
 and the duplicated skip-walk (~126 ns, byte-mismatch handoff).
+
+---
+
+### 35. §32 thai round, part 2: Thai simple-CE table and the walk-skip
+
+**Status:** shipped 2026-07-15 (`4a73ada` lever 3a, `26e340f` lever 3b).
+Gates: 1511 tests / 120 suites green after each (incl. 433k conformance +
+fuzz keys). All numbers WMO EngineBench, min of 3 interleaved rounds,
+writer instruction-certified per §34 before every paths verdict.
+
+**Re-attribution after §34** (committed ladder, `build_thai_ladder.sh`):
+P0 579 / P1 522 / P2 skip-walk 123 / P3 scratch 6 / P4 core 495 /
+P5 NFD 306 / P6 +CE 426 — CE production down to ~120 (was ~204), NFD
+front end the largest remaining item.
+
+**Lever 3a — Thai-block simple-CE table (`4a73ada`):** second 128-entry
+init-built table (U+0E00–0E7F) beside the ASCII one (`buildSimpleCEs`
+generalized with a range offset). Consonants and tone/vowel marks are
+single simple CEs → skip trie walk + appendCEs dispatch. Specials
+(prefix-vowel contractions, digits) stay 0 sentinels → full path, so the
+contraction/numeric machinery is untouched. appendMore's new branch sits
+after the ASCII fast path; ASCII returns before it, other scripts pay one
+wrapped-subtract compare. **thai compare 608→557 (−8%), sortKey 482→451
+(−6%); ascii/latin/cjk neutral; paths inside the certified band.**
+
+**Lever 3b — walk-skip (`26e340f`):** §34's P7 showed 88% of thai pairs
+end the identical-prefix walk in the shared=0 unsafe fallback. The byte
+scan already delivers the mismatch offset (it feeds quickCJKDispatch,
+incl. on the all-Thai bail at the lead-byte gate); a static
+`walkIsUseless` helper (§31 shape) backs up to the scalar start — one
+backup serves both sides, prefix bytes being equal — decodes the two
+first-differing scalars, and checks restart safety. Unsafe → compareBody
+takes the fallback exit directly (identical behavior, no walk). Hint
+threads compare → slowPath → body; non-default options and bridged
+strings never compute it. `NFDIterator.reset` needed `@inline(__always)`
+back (fell out of line after the restructure — profile-confirmed).
+**thai compare 563→546; everything else neutral.**
+
+**Probe-ceiling lesson (bench truth):** ladder P8 (pipeline with no walk)
+promised ~−110; the shipped lever delivers −17. In context the walk is
+far cheaper than standalone — it pre-warms the exact bytes the pipeline
+re-reads, and the restart-safety searches move into walkIsUseless rather
+than disappear (sample profile: compareBody 1078→463, walkIsUseless +265,
+fastPath +75). Standalone probe deltas are CEILINGS, not estimates, when
+the deleted work shares memory traffic with what remains.
+
+**Round state:** thai compare 637 → ~546 (−14%, 2.47×→~2.10× vs ICU
+258–260), sortKey 513 → ~452 (−12%). Cross-day absolutes drift a few ns
+with machine load; per-day interleaved pairs are the record.
+
+**Next, in order:**
+1. **Unsafe-mask for the Thai block:** walkIsUseless's isUnsafe binary
+   searches cost ~265 profile samples; a precomputed 128-bit mask
+   (U+0E00–0E7F, built at init beside the simple-CE table) turns each
+   into ~3 ALU ops. Est −20–35 thai compare. Also serves compareBody's
+   unsafeStart on the non-skip path.
+2. **NFD per-scalar floor (306 ns both strings):** the String scalar
+   iterator itself — the parked Span-based pipeline refactor (HANDOFF
+   backlog; high risk, blocked on toolchain ergonomics).
+3. Buffer-free single-step contraction match for the prefix vowels —
+   demoted: the remaining CE share (~120) caps it well under the earlier
+   estimate, against the S2.1 machinery's correctness risk.
