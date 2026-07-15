@@ -75,6 +75,7 @@ public struct RootCollator: @unchecked Sendable {
         /// characters needing full pipeline (digits, U+0000). Eliminates trie
         /// lookup + tag dispatch for common characters in the sort key path.
         let simpleCEs: UnsafeBufferPointer<Int64>
+        let thaiCEs: UnsafeBufferPointer<Int64>
         let simpleCEsStorage: DataStorage
         /// The fast Latin table: the tailoring's own, or the base's when the
         /// tailoring has none (CollationDataReader aliases the same way).
@@ -106,9 +107,14 @@ public struct RootCollator: @unchecked Sendable {
             self.defaultFLPackedOptions = packed
             self.defaultFLWord = defaultOptions.icuOptions
             self.defaultFLStorage = flStorage
-            // Pre-compute ASCII CE table.
+            // Pre-compute simple-CE tables: ASCII, and the Thai block
+            // (U+0E00–0E7F — the one non-Latin script whose hot scalars are
+            // mostly single simple CEs; §34's ladder put ~200 ns of the thai
+            // row in CE production). Same exclusion rules for both: specials
+            // (contractions, prefixes, digits) stay 0 and take the full path.
             let ceStorage = DataStorage()
             self.simpleCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage)
+            self.thaiCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage, from: 0x0E00)
             self.simpleCEsStorage = ceStorage
             // Quick-CJK dispatch setup: bare primary comparison is unsound
             // under script reordering or a shifted default, so gate it off
@@ -144,6 +150,7 @@ public struct RootCollator: @unchecked Sendable {
     private var defaultFLPackedOptions: Int32 { storage.defaultFLPackedOptions }
     private var defaultFLWord: Int32 { storage.defaultFLWord }
     var simpleCEs: UnsafeBufferPointer<Int64> { storage.simpleCEs }
+    var thaiCEs: UnsafeBufferPointer<Int64> { storage.thaiCEs }
     var fastLatinTable: UnsafeBufferPointer<UInt16> { storage.fastLatinTable }
     var restartSafety: RestartSafety { storage.restartSafety }
 
@@ -577,7 +584,7 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     private func takeScratch() -> ScratchBuffers {
-        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm, simpleCEs: simpleCEs)
+        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm, simpleCEs: simpleCEs, thaiCEs: thaiCEs)
     }
 
     private func giveScratch(_ buffers: ScratchBuffers) {
@@ -602,10 +609,12 @@ public struct RootCollator: @unchecked Sendable {
     /// map to a single simple CE (no expansion, no contraction, no prefix) get
     /// their full 64-bit CE stored; others get 0 (sentinel for "use full pipeline").
     private static func buildSimpleCEs(
-        data: CollationData, base: CollationData?, storage: DataStorage
+        data: CollationData, base: CollationData?, storage: DataStorage,
+        from start: UInt32 = 0
     ) -> UnsafeBufferPointer<Int64> {
         var table: [Int64] = Array(repeating: 0, count: 128)
-        for c: UInt32 in 0..<128 {
+        for i: UInt32 in 0..<128 {
+            let c = start + i
             var ce32 = data.trie.get(c)
             if ce32 == CollationConstants.fallbackCE32, let base {
                 ce32 = base.trie.get(c)
@@ -613,12 +622,12 @@ public struct RootCollator: @unchecked Sendable {
             // Only handle the simple cases: non-special CE32s and long-primary/
             // long-secondary tags that produce exactly one CE.
             if !CollationConstants.isSpecialCE32(ce32) {
-                table[Int(c)] = CollationConstants.ceFromCE32(ce32)
+                table[Int(i)] = CollationConstants.ceFromCE32(ce32)
             } else {
                 let tag = CollationConstants.tagFromCE32(ce32)
                 switch tag {
                 case .longPrimary, .longSecondary:
-                    table[Int(c)] = CollationConstants.ceFromCE32(ce32)
+                    table[Int(i)] = CollationConstants.ceFromCE32(ce32)
                 default:
                     // Expansions, contractions, digits, prefixes, u0000 — leave as 0.
                     break

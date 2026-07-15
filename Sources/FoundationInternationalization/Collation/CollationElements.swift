@@ -27,6 +27,9 @@ struct CEIterator {
     /// Pre-computed CEs for ASCII (0–127). Entry is 0 for characters that
     /// need full pipeline processing (digits in numeric mode, U+0000, etc.).
     let simpleCEs: UnsafeBufferPointer<Int64>
+    /// Pre-computed CEs for the Thai block (U+0E00–0E7F), same contract:
+    /// specials (prefix-vowel contractions, digits) are 0 sentinels.
+    let thaiCEs: UnsafeBufferPointer<Int64>
     var ces: [Int64] = []
 
     /// Number of NFD scalars consumed so far (via popScalar + consumeAhead).
@@ -52,7 +55,8 @@ struct CEIterator {
 
     init(data: CollationData, base: CollationData? = nil, norm: NormalizationData,
          numeric: Bool, scalars: String.UnicodeScalarView,
-         simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
+         simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         self.data = data
         self.base = base
         self.norm = norm
@@ -61,6 +65,7 @@ struct CEIterator {
         self.dataView = CollationDataView(data)
         self.baseView = base.map(CollationDataView.init)
         self.simpleCEs = simpleCEs
+        self.thaiCEs = thaiCEs
     }
 
     /// Rewinds onto a new input, keeping all buffer storage so that reuse
@@ -187,6 +192,20 @@ struct CEIterator {
         // Fast path: pre-computed CE for simple ASCII characters.
         if c < 128, !simpleCEs.isEmpty {
             let ce = simpleCEs[Int(c)]
+            if ce != 0 {
+                ces.append(ce)
+                pushHistory(c)
+                return true
+            }
+        }
+        // Fast path: pre-computed CE for simple Thai-block scalars —
+        // consonants, sara aa, tone/vowel marks (§34 attributed ~200 ns of
+        // the thai row to CE production). Prefix-vowel contractions and
+        // digits are 0 sentinels and take the full path, identical to the
+        // ASCII table's exclusion rules. ASCII returns above and never
+        // reaches this; other scripts pay one wrapped-subtract compare.
+        if (c &- 0x0E00) < 128, !thaiCEs.isEmpty {
+            let ce = thaiCEs[Int(c &- 0x0E00)]
             if ce != 0 {
                 ces.append(ce)
                 pushHistory(c)

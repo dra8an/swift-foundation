@@ -46,10 +46,11 @@ final class ScratchBuffers {
     var nfdScalars: [UInt32] = []
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData,
-         simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
+         simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         let empty = "".unicodeScalars
-        self.left = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs)
-        self.right = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs)
+        self.left = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs)
+        self.right = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs)
     }
 }
 
