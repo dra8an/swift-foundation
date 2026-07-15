@@ -156,6 +156,27 @@ measure("P6.collectAll  ", ops: pairOps) {
     }
 }
 
+// P8: pipeline core with NO skip-walk — both sides always reset from the
+// string start (what compareBody would cost if the walk were skipped for
+// unsafe-first-diff pairs; on this corpus 88% of walks are discarded, so
+// this approximates the walk-skipping ceiling, minus the 12% that lose
+// their prefix skip).
+measure("P8.noWalkCore  ", ops: pairOps) {
+    let c = collator
+    let s = hoisted
+    let vtop = c.variableTopValue(opts)
+    let reorder = c.reordering
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            s.left.reset(numeric: false, scalars: lines[i - 1].unicodeScalars)
+            s.right.reset(numeric: false, scalars: lines[i].unicodeScalars)
+            sink += try! CollationCompare.compareUpToQuaternary(
+                &s.left, &s.right, options: opts.icuOptions,
+                variableTopValue: vtop, reordering: reorder)
+        }
+    }
+}
+
 // P7: one pass of statistics — how often does the skip-walk's work get
 // thrown away (unsafeStart fallback), and how much prefix is there to skip?
 do {
