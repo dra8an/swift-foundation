@@ -1,7 +1,7 @@
 # Foundation API Benchmark: Swift Collator vs System ICU
 
 Measured 2026-07-15 on Apple Silicon (macOS 26), min of 9 passes, release
-builds. Includes all optimizations through §37 (allocation-free search).
+builds. Includes all optimizations through §38 (locale-resolution cache).
 
 Same Foundation APIs, two backends:
 
@@ -25,7 +25,7 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 52    | 195       | **3.8× faster** |
+| ASCII  | 53    | 195       | **3.7× faster** |
 | Latin  | 53    | 346       | **6.5× faster** |
 | CJK    | 79    | 357       | **4.5× faster** |
 | Paths  | 93    | 322       | **3.5× faster** |
@@ -34,7 +34,7 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 53    | 197       | **3.7× faster** |
+| ASCII  | 52    | 197       | **3.8× faster** |
 | Latin  | 54    | 342       | **6.3× faster** |
 | CJK    | 80    | 357       | **4.5× faster** |
 | Paths  | 87    | 309       | **3.6× faster** |
@@ -43,16 +43,16 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 190   | 332       | **1.7× faster** |
-| Latin  | 193   | 505       | **2.6× faster** |
-| CJK    | 218   | 489       | **2.2× faster** |
-| Paths  | 231   | 413       | **1.8× faster** |
+| ASCII  | 66    | 332       | **5.0× faster** |
+| Latin  | 67    | 505       | **7.5× faster** |
+| CJK    | 88    | 489       | **5.6× faster** |
+| Paths  | 95    | 413       | **4.3× faster** |
 
 ### localizedStandardContains(_:)
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 224   | 1006      | **4.5× faster** |
+| ASCII  | 226   | 1006      | **4.5× faster** |
 | Latin  | 242   | 1434      | **5.9× faster** |
 | CJK    | 263   | 1280      | **4.9× faster** |
 | Paths  | 245   | 983       | **4.0× faster** |
@@ -61,7 +61,7 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 223   | 1012      | **4.5× faster** |
+| ASCII  | 227   | 1012      | **4.5× faster** |
 | Latin  | 242   | 1496      | **6.2× faster** |
 | CJK    | 263   | 1295      | **4.9× faster** |
 | Paths  | 245   | 994       | **4.1× faster** |
@@ -79,25 +79,25 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 210   | 344       | **1.6× faster** |
-| Latin  | 407   | 817       | **2.0× faster** |
-| CJK    | 429   | 581       | **1.4× faster** |
-| Paths  | 275   | 318       | **1.2× faster** |
+| ASCII  | 82    | 344       | **4.2× faster** |
+| Latin  | 276   | 817       | **3.0× faster** |
+| CJK    | 294   | 581       | **2.0× faster** |
+| Paths  | 143   | 318       | **2.2× faster** |
 
 ### range(of:options:.backwards,locale:)
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 210   | 349       | **1.7× faster** |
-| Latin  | 416   | 846       | **2.0× faster** |
-| CJK    | 429   | 593       | **1.4× faster** |
-| Paths  | 312   | 514       | **1.6× faster** |
+| ASCII  | 80    | 349       | **4.4× faster** |
+| Latin  | 289   | 846       | **2.9× faster** |
+| CJK    | 299   | 593       | **2.0× faster** |
+| Paths  | 185   | 514       | **2.8× faster** |
 
 ### Direct RootCollator (EngineBench, full WMO)
 
 | Corpus | compare | ICU 79 | ratio | sortKey (inout) | ICU 79 | ratio | sortKey (alloc) |
 |--------|---------|--------|-------|---------|--------|-------|---------|
-| ASCII  | 17      | 9      | 1.9×  | 198     | 107    | 1.9×  | 265 |
+| ASCII  | 17      | 9      | 1.9×  | 198     | 107    | 1.9×  | 262 |
 | Latin  | 16      | 10     | 1.6×  | 218     | 125    | 1.7×  | 282 |
 | CJK    | 27      | 42     | **0.6×** | 213  | 121    | 1.8×  | 296 |
 | Paths  | 42      | 30     | 1.4×  | 450     | 372    | 1.2×  | 529 |
@@ -105,19 +105,26 @@ Same Foundation APIs, two backends:
 
 ## Analysis
 
-**`localizedCompare` family** is 3.7–7.8× faster than system ICU.
+**Every Foundation API is 2.0–7.8× faster than system ICU on every
+corpus.** No cells at parity or behind.
 
-**`compare(_:locale:)`** is 1.7–2.6× faster.
+**`localizedCompare` family** is 3.7–7.8× faster.
 
-**Search APIs (contains, range)** are 1.2–6.2× faster. The §37
-allocation-free refactor (2026-07-15) moved pattern/annotated/text CE
-buffers into ScratchBuffers, eliminating per-call malloc/free. Contains
-and localizedStandardRange improved 29–35% across all corpora.
+**`compare(_:locale:)`** is 4.3–7.5× faster — the §38 one-slot
+locale-resolution cache (2026-07-15) eliminated ~130 ns of per-call
+identifier parsing and dictionary lookups. Previously 1.7–2.6×.
 
-**Direct engine compare** is 1.4–1.9× behind ICU on ASCII/Latin/paths,
-**0.6× on CJK** (faster than ICU).
+**Search APIs (contains, range)** are 2.0–6.2× faster. The §37
+allocation-free refactor moved CE buffers into ScratchBuffers; the §38
+locale cache further helped the explicit-locale range APIs.
 
-**Sort keys** are 1.2–1.9× behind ICU. Paths at 1.2× is our tightest.
+**`range(of:locale:)` and `range(backwards)`** — previously our weakest
+APIs (0.4–1.6× across the optimization history) — now 2.0–4.4× faster.
+
+**Direct engine** is 1.4–1.9× behind ICU on ASCII/Latin/paths, **0.6×
+on CJK** (faster than ICU), 1.5× on Thai.
+
+**Sort keys** are 1.2–1.9× behind ICU.
 
 ## How to reproduce
 
@@ -140,6 +147,4 @@ cd Collation/Tools && DYLD_LIBRARY_PATH=~/Projects/Unicode/icu-DraganBesevic-2/i
   ./bench_icu bench/bench-ascii.txt 200
 
 # Thai: use 10 reps (33k lines per rep)
-# EngineBench/BenchFoundation: <corpus> 10
-# bench_icu: bench/bench-thai.txt 10 th
 ```
