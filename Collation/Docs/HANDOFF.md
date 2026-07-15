@@ -174,10 +174,15 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
   mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
   probe deltas are CEILINGS when deleted work shares memory traffic with
-  what remains). **Thai now ~546 cmp / ~452 sk (~2.10× / ~1.70× vs ICU;
-  was 637/513 = 2.47×/1.93× at round start). Next: unsafe-mask for the
-  Thai block (§35 item 1), then the NFD per-scalar floor (Span refactor,
-  parked).**
+  what remains). A Thai unsafe-mask was tried and REVERTED the same day
+  (§35: −4 thai, +5..9 every other compare — the pinned-closure context
+  is codegen-fragile even for two extra property reads; helper renamed
+  walkIsUseless → mismatchRestartIsUnsafe, `9b1d62b`). **Round-end
+  re-baseline (Docs/25, K=3 at `9b1d62b`): thai compare 534 (2.05×, was
+  637/2.47×), sortKey 443 (1.65×, was 513/1.93×); thai localizedCompare
+  1.53× faster than system, contains 2.8–2.9×; only the two cjk range
+  cells (0.84–0.86×) remain sub-parity. The thai frontier is now the NFD
+  per-scalar floor — the parked Span refactor.**
   Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§35;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
