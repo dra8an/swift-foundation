@@ -1156,4 +1156,10 @@ engine cjk search/line: 863 → 410–440 (−50%).
 Against system ICU (cjk range 1312/1331): the LAST two sub-parity cells
 in the matrix flipped to ~1.2× faster. Every search-family row improved
 30–45% except the byte-scan range rows, which are neutral by design.
-Full-matrix re-baseline for Docs/25 pending.
+
+**Closed 2026-07-16:** Docs/25 re-baselined (coherent K=3 at `1b43bbc`) —
+zero cells behind system ICU on either machine. Table 1 certified
+unchanged post-§37 (compare ±2 mixed-sign = noise; paths sortKey inside
+the §34 band with the writer's instruction stream byte-identical).
+Machine 2 confirmed §37 on Apple Silicon (−29..35%) and resolved §33
+(borrowing neutral on 6.4 — correct cross-platform shape, no fallback).

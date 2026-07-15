@@ -170,6 +170,18 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   the **ALIGNMENT TRAP**: Intel WMO paths-sortKey deltas within ±7% are
   code-placement luck until the writer's instruction stream is diffed
   (`otool -tv`; identical instructions = not a regression).
+  2026-07-16: **§37 allocation-free search** (`43c5c84`) — ~40% of every
+  search() call was allocator traffic (per-call pattern/window/text CE
+  arrays); they now live on ScratchBuffers, handed to the search entries
+  as ONE class reference (per-buffer inout parameters opened exclusivity
+  scopes before the byte-scan fast path and taxed ascii/paths range —
+  rule recorded in §37). Engine cjk search −50%; contains/stdRange
+  −30..45% on every corpus; **the last two sub-parity cells (cjk range)
+  flipped — Docs/25 re-baselined at `1b43bbc`: ZERO cells behind system
+  ICU on either machine** (sole ≤1×: paths range fwd at 0.99×,
+  byte-scan-bound parity wobble). Machine 2 confirmed §37 on AS
+  (−29..35%) and resolved §33 (borrowing neutral on 6.4). Probes
+  committed: `build_thai_ladder.sh` (P0–P8), `build_cjk_probe.sh`.
   2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
   (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
   mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
