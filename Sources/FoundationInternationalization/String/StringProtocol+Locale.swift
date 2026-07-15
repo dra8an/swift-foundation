@@ -180,8 +180,9 @@ extension StringProtocol {
             var opts = CollationOptions()
             opts.strength = .primary
             opts.numeric = true
-            if let range = collator.search(for: String(string), in: String(self), options: opts) {
-                return rebaseRange(range, from: String(self))
+            let text = String(self)  // once: search input AND rebase source
+            if let range = collator.search(for: String(string), in: text, options: opts) {
+                return rebaseRange(range, from: text)
             }
         }
         return nil
@@ -207,7 +208,7 @@ extension StringProtocol {
                 : collator.search(for: String(aString), in: text, options: opts)
             if let range {
                 if let searchRange {
-                    return rebaseRange(range, from: text, offsetBy: searchRange.lowerBound, in: String(self))
+                    return rebaseRange(range, from: text, offsetBy: searchRange.lowerBound)
                 }
                 return rebaseRange(range, from: text)
             }
@@ -215,20 +216,28 @@ extension StringProtocol {
         return nil
     }
 
+    /// Maps a range the search produced (indices into the materialized
+    /// `source` String) back into SELF's index space. Scalar-offset math on
+    /// both sides: the search's indices are scalar-aligned, and a
+    /// Substring's scalar count matches its materialized copy while its
+    /// indices stay base-string-relative — mapping through a fresh
+    /// `String(self)` returned copy-space indices, misaligned for every
+    /// Substring receiver (§39; caught by SubstringReceiverTests).
     private func rebaseRange(_ range: Range<String.Index>, from source: String) -> Range<Index>? {
-        let startOffset = source.distance(from: source.startIndex, to: range.lowerBound)
-        let endOffset = source.distance(from: source.startIndex, to: range.upperBound)
-        let selfStr = String(self)
-        let start = selfStr.index(selfStr.startIndex, offsetBy: startOffset)
-        let end = selfStr.index(selfStr.startIndex, offsetBy: endOffset)
-        return start..<end
+        rebaseRange(range, from: source, offsetBy: startIndex)
     }
 
-    private func rebaseRange(_ range: Range<String.Index>, from source: String, offsetBy base: Index, in original: String) -> Range<Index>? {
-        let startOffset = source.distance(from: source.startIndex, to: range.lowerBound)
-        let endOffset = source.distance(from: source.startIndex, to: range.upperBound)
-        let start = original.index(base, offsetBy: startOffset)
-        let end = original.index(base, offsetBy: endOffset)
+    /// As above, with the search having run on the slice starting at `base`
+    /// in self (the `range(of:range:)` case).
+    private func rebaseRange(_ range: Range<String.Index>, from source: String, offsetBy base: Index) -> Range<Index>? {
+        let sourceScalars = source.unicodeScalars
+        let startOffset = sourceScalars.distance(from: sourceScalars.startIndex, to: range.lowerBound)
+        let endOffset = sourceScalars.distance(from: sourceScalars.startIndex, to: range.upperBound)
+        let selfScalars = self.unicodeScalars
+        guard let start = selfScalars.index(base, offsetBy: startOffset, limitedBy: endIndex),
+              let end = selfScalars.index(base, offsetBy: endOffset, limitedBy: endIndex) else {
+            return nil
+        }
         return start..<end
     }
 }

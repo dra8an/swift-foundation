@@ -60,10 +60,10 @@ hasBuffered nulls both "showed" ~265 samples and delivered nothing).
 Allocation/resolution samples are the trustworthy kind.
 
 **Standing audit list (paths not yet through the hunt):**
-- [ ] §26 wrapper string conversions: `String(self)`/`String(aString)`
-      in every StringProtocol entry; `String(self[range])` slicing in
-      compare/range paths (allocates when Self is Substring or a range
-      is passed).
+- [x] §26 wrapper string conversions — AUDITED (§39): found and fixed a
+      Substring index-space BUG in rebaseRange; duplicate conversions
+      deduped. The one remaining Substring materialization is the
+      engine's String input contract — accepted.
 - [ ] `confirmMatch`/`buildNFDSourceMap`: nfdMap `[Int]` + per-scalar
       `decomposed`/`fullyDecomposed` temporaries — per search call on
       decomposing text with a match candidate (accented real-world
@@ -1271,3 +1271,38 @@ paths range(of:) — the matrix's last at-parity cell (0.99×) — flips to
 (~100 ns) is the options translation + the heavier generic entry — the
 honest remaining wrapper cost. Docs/25 tables not yet re-baselined with
 §38; the §37 run (`1b43bbc`) predates it.
+
+---
+
+### 39. Wrapper-string audit: a Substring index-space BUG, not a perf item
+
+**Status:** shipped 2026-07-16. Gates: 1514 tests / 121 suites green
+(the original 1511 + three new regression tests).
+
+The first box on the ALLOCATION/RESOLUTION HUNT audit list (§26 wrapper
+string conversions) turned up a wrong-answer bug instead of nanoseconds:
+`rebaseRange` mapped the search result's offsets into a FRESH
+`String(self)` copy and returned that copy's indices as `Self.Index`.
+For String receivers the copy shares identity — harmless. For SUBSTRING
+receivers, whose indices are base-string-relative, every
+`localizedStandardRange`/`range(of:locale:)` result was misaligned by
+the substring's start offset. Never caught because tests and benches
+always used whole Strings (SubstringReceiverTests now covers it).
+
+**Fix:** rebase in self's OWN index space with scalar-offset math
+(matching the scalar-aligned indices the search produces), via
+`unicodeScalars.index(_:offsetBy:limitedBy:)` from `startIndex` (or the
+searchRange base). This also deletes the `String(self)` inside
+rebaseRange and the duplicate conversion in localizedStandardRange — the
+dedupe fell out of the correctness fix.
+
+**Perf side (holdsub probe, -no-WMO, Substring receivers):** stdRange
+632→620 ascii / 728→714 cjk; ranged range(of:) 285→282 / 887→877. The
+remaining Substring cost (~+50 vs String receivers on compare) is the
+one required materialization — the engine takes String; removing that
+means a generic pipeline (not worth it; see §36's dependency-chain
+verdict).
+
+**Audit-list lesson:** the box was filed as a ~50 ns cleanup; the audit
+found a correctness bug that no benchmark could ever show. Working the
+list pays even when the nanoseconds don't.
