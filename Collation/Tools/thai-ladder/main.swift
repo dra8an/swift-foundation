@@ -144,6 +144,72 @@ measure("P5.nfdDrain    ", ops: pairOps) {
     }
 }
 
+// P5 decomposition: what are the ~23 ns/scalar of the NFD drain made of?
+// P5a: the String scalar-iterator floor (no NFD logic at all).
+measure("P5a.rawScalars ", ops: pairOps) {
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            var it = lines[i - 1].unicodeScalars.makeIterator()
+            while let c = it.next() { sink &+= Int(c.value) }
+            var it2 = lines[i].unicodeScalars.makeIterator()
+            while let c = it2.next() { sink &+= Int(c.value) }
+        }
+    }
+}
+
+// P5b: P5a + the per-scalar isInert trie lookup (the NFD fast path's work).
+measure("P5b.raw+isInert", ops: pairOps) {
+    let norm = collator.norm
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            var it = lines[i - 1].unicodeScalars.makeIterator()
+            while let c = it.next() { sink &+= norm.isInert(c.value) ? 1 : 0 }
+            var it2 = lines[i].unicodeScalars.makeIterator()
+            while let c = it2.next() { sink &+= norm.isInert(c.value) ? 1 : 0 }
+        }
+    }
+}
+
+// P5c: the UTF-8 byte floor — decode scalars from pinned bytes by hand
+// (what a Span/byte-based front end could not beat).
+measure("P5c.rawBytes   ", ops: pairOps) {
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            for s in [lines[i - 1], lines[i]] {
+                s.utf8.withContiguousStorageIfAvailable { bytes in
+                    var j = 0
+                    while j < bytes.count {
+                        let b0 = UInt32(bytes[j])
+                        if b0 < 0x80 { sink &+= Int(b0); j += 1 }
+                        else if b0 < 0xe0 {
+                            sink &+= Int(((b0 & 0x1f) << 6) | (UInt32(bytes[j+1]) & 0x3f)); j += 2
+                        } else if b0 < 0xf0 {
+                            sink &+= Int(((b0 & 0x0f) << 12) | ((UInt32(bytes[j+1]) & 0x3f) << 6) | (UInt32(bytes[j+2]) & 0x3f)); j += 3
+                        } else {
+                            sink &+= Int(((b0 & 0x07) << 18) | ((UInt32(bytes[j+1]) & 0x3f) << 12) | ((UInt32(bytes[j+2]) & 0x3f) << 6) | (UInt32(bytes[j+3]) & 0x3f)); j += 4
+                        }
+                    }
+                } ?? ()
+            }
+        }
+    }
+}
+
+// P5d: the same full NFD drain through a LOCAL iterator (no class-stored
+// struct, no exclusivity bookkeeping per call) — separates real NFD
+// machinery cost from scratch-object access tax.
+measure("P5d.nfdLocal   ", ops: pairOps) {
+    var nfd = NFDIterator(norm: collator.norm, scalars: "".unicodeScalars)
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            nfd.reset(scalars: lines[i - 1].unicodeScalars)
+            while let c = nfd.next() { sink &+= Int(c) }
+            nfd.reset(scalars: lines[i].unicodeScalars)
+            while let c = nfd.next() { sink &+= Int(c) }
+        }
+    }
+}
+
 measure("P6.collectAll  ", ops: pairOps) {
     let s = hoisted
     for _ in 0..<reps {

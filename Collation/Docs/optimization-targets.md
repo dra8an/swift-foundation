@@ -1072,3 +1072,46 @@ mismatchRestartIsUnsafe.)
 2. Buffer-free single-step contraction match for the prefix vowels —
    demoted: the remaining CE share (~120) caps it well under the earlier
    estimate, against the S2.1 machinery's correctness risk.
+
+---
+
+### 36. The NFD per-scalar floor: decomposed — Span refactor RETIRED
+
+**Status:** investigated 2026-07-15 (ladder probes P5a–P5d, two null
+experiments). No code shipped; the ladder probes are committed. The
+"Span-based CE pipeline refactor" (HANDOFF backlog, Docs/16 §9.6/§10,
+"potential −30–40% CJK/Thai") is RETIRED on the evidence below.
+
+**Floor decomposition (thai corpus, both strings, WMO ladder):**
+
+| probe | ns/pair | meaning |
+|---|---:|---|
+| P5a raw String scalar iteration | 58–60 | 4.4 ns/scalar — the iterator is cheap |
+| P5b + isInert per scalar | 67–72 | the trie hit adds ~0.9 ns/scalar |
+| P5c hand-decoded UTF-8 bytes | 124–126 | the "byte floor" is SLOWER than the String iterator |
+| P5d full NFD drain, local iterator | 195 | machinery = ~128/pair ≈ 9.5 ns/scalar |
+| P5 same drain via class-stored scratch | 298–306 | probe-shape exclusivity tax ~103 (real pipeline pays ~3% — it passes the iterators inout) |
+
+Docs/16's premise — that `String.UnicodeScalarView.Iterator` ARC/overhead
+is the hidden cost a Span/byte front end would eliminate — is a phantom on
+this toolchain: the iterator runs at 4.4 ns/scalar and beats a hand-rolled
+byte decoder. There is nothing for Span to win back; the refactor's
+estimate inherited a 2026-06 profile misread.
+
+**Null experiment 1 (unsafe-mask, §35):** already recorded — leaf-profile
+samples of independent loads overstate wall-clock.
+
+**Null experiment 2 (hasBuffered dispatch flag, same day):** collapsing
+next()'s three buffer checks (pendingMark / unit / carried) into one
+maintained flag measured ±5 ns on every corpus (writer-certified). The
+three checks are independent L1-hot loads the out-of-order core already
+runs in parallel; the dispatch head costs nothing.
+
+**Conclusion:** the remaining thai engine gap (~530 vs ICU ~260) is
+per-scalar serial dependency chains (optional unwrap → trie load →
+branch → append), not any removable layer. No cheap lever remains; a
+batched/fused pipeline redesign is the only shape that could attack it,
+and with thai `localizedCompare` already 1.53× FASTER than system ICU the
+engine row is bragging rights, not user-visible cost. Next frontiers per
+the standing queue: the two cjk range cells (0.84×) and the sortKey entry
+ladder (§29 never ran for sortKey).
