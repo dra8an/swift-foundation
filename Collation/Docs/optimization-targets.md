@@ -1029,7 +1029,7 @@ wrapped-subtract compare. **thai compare 608→557 (−8%), sortKey 482→451
 end the identical-prefix walk in the shared=0 unsafe fallback. The byte
 scan already delivers the mismatch offset (it feeds quickCJKDispatch,
 incl. on the all-Thai bail at the lead-byte gate); a static
-`walkIsUseless` helper (§31 shape) backs up to the scalar start — one
+`mismatchRestartIsUnsafe` helper (§31 shape) backs up to the scalar start — one
 backup serves both sides, prefix bytes being equal — decodes the two
 first-differing scalars, and checks restart safety. Unsafe → compareBody
 takes the fallback exit directly (identical behavior, no walk). Hint
@@ -1041,8 +1041,8 @@ back (fell out of line after the restructure — profile-confirmed).
 **Probe-ceiling lesson (bench truth):** ladder P8 (pipeline with no walk)
 promised ~−110; the shipped lever delivers −17. In context the walk is
 far cheaper than standalone — it pre-warms the exact bytes the pipeline
-re-reads, and the restart-safety searches move into walkIsUseless rather
-than disappear (sample profile: compareBody 1078→463, walkIsUseless +265,
+re-reads, and the restart-safety searches move into mismatchRestartIsUnsafe rather
+than disappear (sample profile: compareBody 1078→463, mismatchRestartIsUnsafe +265,
 fastPath +75). Standalone probe deltas are CEILINGS, not estimates, when
 the deleted work shares memory traffic with what remains.
 
@@ -1050,15 +1050,25 @@ the deleted work shares memory traffic with what remains.
 258–260), sortKey 513 → ~452 (−12%). Cross-day absolutes drift a few ns
 with machine load; per-day interleaved pairs are the record.
 
+**Tried and reverted — Thai unsafe-mask (2026-07-15, same day):** a
+128-bit init-built restart-safety mask for U+0E00–0E7F, fed to
+mismatchRestartIsUnsafe as two UInt64 parameters, to replace its isUnsafe
+binary searches (~265 profile samples). Measured: thai compare −4
+(noise level — the out-of-order core hides those searches behind the
+surrounding work; leaf-profile samples overstate their wall-clock cost)
+while **every other corpus's compare paid +5..+9 ns** (ascii/latin 35→42,
+cjk 81→90, paths 86→91 — consistent across rounds). §31's rule,
+sharpened: **the pinned-buffer closure context is codegen-fragile; even
+two extra property reads captured into it tax all corpora.** New data may
+enter the fast path only through the existing boxed setup pointer — and a
+−4 ns lever justifies nothing. (Also renamed: walkIsUseless →
+mismatchRestartIsUnsafe.)
+
 **Next, in order:**
-1. **Unsafe-mask for the Thai block:** walkIsUseless's isUnsafe binary
-   searches cost ~265 profile samples; a precomputed 128-bit mask
-   (U+0E00–0E7F, built at init beside the simple-CE table) turns each
-   into ~3 ALU ops. Est −20–35 thai compare. Also serves compareBody's
-   unsafeStart on the non-skip path.
-2. **NFD per-scalar floor (306 ns both strings):** the String scalar
+1. **NFD per-scalar floor (306 ns both strings):** the String scalar
    iterator itself — the parked Span-based pipeline refactor (HANDOFF
-   backlog; high risk, blocked on toolchain ergonomics).
-3. Buffer-free single-step contraction match for the prefix vowels —
+   backlog; high risk, blocked on toolchain ergonomics). This is the
+   remaining thai gap; the cheap levers are exhausted.
+2. Buffer-free single-step contraction match for the prefix vowels —
    demoted: the remaining CE share (~120) caps it well under the earlier
    estimate, against the S2.1 machinery's correctness risk.

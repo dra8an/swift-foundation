@@ -224,7 +224,7 @@ public struct RootCollator: @unchecked Sendable {
         guard defaultFLPackedOptions >= 0, options.strength != .identical,
               options.icuOptions == defaultFLWord,
               !fastLatinTable.isEmpty else { return nil }
-        var walkUseless = false
+        var unsafeRestart = false
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 var mismatch = -1
@@ -243,7 +243,7 @@ public struct RootCollator: @unchecked Sendable {
                 // Headed for the pipeline: decide here — while the bytes are
                 // pinned — whether compareBody's identical-prefix walk would
                 // be discarded (§35). STATIC helper, trivial params (§31).
-                walkUseless = RootCollator.walkIsUseless(
+                unsafeRestart = RootCollator.mismatchRestartIsUnsafe(
                     lBytes, rBytes, at: mismatch,
                     safety: self.restartSafety, numeric: options.numeric)
                 return CollationFastLatin.bailOutResult
@@ -252,7 +252,7 @@ public struct RootCollator: @unchecked Sendable {
         if fast != CollationFastLatin.bailOutResult {
             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
         }
-        skipWalk = walkUseless
+        skipWalk = unsafeRestart
         return nil
     }
 
@@ -265,7 +265,7 @@ public struct RootCollator: @unchecked Sendable {
     /// Conservative false when the mismatch is at either string's end (a
     /// length-divergent pair keeps its walk) or out of view. STATIC with
     /// trivial parameters (§31).
-    private static func walkIsUseless(
+    private static func mismatchRestartIsUnsafe(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
         at mismatch: Int, safety: RestartSafety, numeric: Bool
     ) -> Bool {
@@ -432,7 +432,7 @@ public struct RootCollator: @unchecked Sendable {
         var fellBack = false
         if skipWalk {
             // The byte scan already proved the first-differing scalar is an
-            // unsafe restart (walkIsUseless): the walk below would end in
+            // unsafe restart (mismatchRestartIsUnsafe): the walk below would end in
             // the shared=0 fallback, so take that exit directly (§35).
             fellBack = true
         } else {
