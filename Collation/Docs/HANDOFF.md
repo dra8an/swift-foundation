@@ -185,6 +185,25 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   row ahead. Machine 2 confirmed §37 on AS
   (−29..35%) and resolved §33 (borrowing neutral on 6.4). Probes
   committed: `build_thai_ladder.sh` (P0–P8), `build_cjk_probe.sh`.
+  Same day, three more from the ALLOCATION/RESOLUTION HUNT audit list
+  (the pattern note at the top of optimization-targets.md — read it
+  before any perf work): **§38** one-slot locale-resolution cache
+  (`609e6cd`) — every explicit-locale API −190..250 ns flat;
+  compare(locale:) ascii 409→219, paths range(of:) — the last at-parity
+  cell — to 1.50× ahead; AS confirmed −61..65%. **§39 CORRECTNESS FIX**
+  (`9878236`/`702c961`): rebaseRange returned copy-space indices — every
+  localizedStandardRange/range(of:locale:) result on a SUBSTRING receiver
+  was misaligned by the substring's start offset; fixed with
+  self-relative scalar-offset math + 3 regression tests (suite now
+  1514/121). **§40** (`b4d1ce5`): StandardComparator paid Locale.current
+  PER COMPARISON (~60 ns × n·log n in sorts) — now uses
+  collatorForCurrentLocale (287→229/cmp; −50..64 verified on all
+  corpora). §40 also records the stale-binary bench trap rules.
+  **Docs/25's tables are the §37-era run (`1b43bbc`) — §38–§40 shipped
+  after; fold them in at the next coherent re-baseline.** Audit boxes
+  left: nfdMap temporaries (AGREED NEXT), sortKey wrappers (+ the §29
+  sortKey entry ladder), CollationOptions.from WMO check, and the
+  locale-change invalidation DESIGN NOTE for the upstream proposal.
   2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
   (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
   mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
@@ -198,7 +217,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   1.53× faster than system, contains 2.8–2.9×; only the two cjk range
   cells (0.84–0.86×) remain sub-parity. The thai frontier is now the NFD
   per-scalar floor — the parked Span refactor.**
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§35;
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§40;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench

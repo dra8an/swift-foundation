@@ -65,6 +65,13 @@
 > unchanged by §37 (compare ±2 mixed-sign; paths sortKey moves inside
 > the §34 band with writer instructions byte-identical).
 >
+> **CAVEAT (2026-07-16 late): the tables below predate §38–§40** — the
+> one-slot locale cache (explicit-locale rows −190..250 ns; paths
+> range(of:) now 1.50× ahead), the §39 Substring rebase fix, and the §40
+> comparator fix all shipped after this run. Their A/B numbers live in
+> the technique-log sections; fold everything into the next coherent
+> re-baseline.
+>
 > The same day (07-06), the harness gained **four previously unmeasured metrics** —
 > the allocating sortKey variant (`skRet`, Table 1), the case-insensitive
 > compare/contains pair, and **backward search** (`range(backwards)`).
