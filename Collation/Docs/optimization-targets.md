@@ -68,8 +68,10 @@ Allocation/resolution samples are the trustworthy kind.
       `decomposed`/`fullyDecomposed` temporaries — per search call on
       decomposing text with a match candidate (accented real-world
       Latin; bench corpora barely trigger it).
-- [ ] String.Comparator / SortDescriptor / Predicate evaluation paths —
-      per-evaluation options/collator resolution not yet profiled.
+- [x] String.Comparator / SortDescriptor / Predicate paths — AUDITED
+      (§40): StandardComparator resolved Locale.current per comparison
+      (~90 ns × n·log n in sorts) — fixed via collatorForCurrentLocale
+      (287→229). String.Comparator clean; the others delegate.
 - [ ] CollationOptions.from + CompareOptions.init per call (85 -no-WMO
       samples in §38's profile; likely WMO-free, verify before acting).
 - [ ] sortKey Foundation wrappers (entry ladder never ran for sortKey —
@@ -1306,3 +1308,36 @@ verdict).
 **Audit-list lesson:** the box was filed as a ~50 ns cleanup; the audit
 found a correctness bug that no benchmark could ever show. Working the
 list pays even when the nanoseconds don't.
+
+---
+
+### 40. Comparator audit: Locale.current per comparison in StandardComparator
+
+**Status:** shipped 2026-07-16. Gates: 1514 tests / 121 suites green.
+
+Second box on the hunt list (Comparator/SortDescriptor/Predicate paths).
+Attribution rows (BF -no-WMO, ascii): String.Comparator.compare 197 ns
+(stored locale — §38's slot absorbs resolution); StandardComparator
+.localizedStandard **287 ns** — it resolved `collator(for: .current)`,
+evaluating the Locale.current accessor PER COMPARISON (~90 ns), which
+sorts multiply by n·log n. SortDescriptor/KeyPathComparator/Predicate
+have no resolution of their own — they delegate to these two.
+
+**Fix (one line × two build branches):** use
+`collatorForCurrentLocale()` — the same cached current-locale resolution
+the localized* String APIs use. **287→229 (−21%)**, String.Comparator
+unchanged (control). The remaining +60 vs the direct
+localizedStandardCompare API (~170) is options translation + protocol
+dispatch + the cache lock — accepted floor without struct-side caching
+on the public Codable comparator types.
+
+**Bench-truth incident worth remembering:** the first two attribution
+attempts silently measured a STALE binary — the temp hook had a compile
+error swallowed by `>/dev/null`, `set -e` masked by an `&&` list, and a
+`strings`-based hook check that can never work (Swift packs ≤15-byte
+literals inline, invisible to `strings`). Rules: never bench a probe
+binary without seeing its build stderr, and verify hooks by their OUTPUT
+ROWS, not by binary inspection. (This also means §38's holdcmp loop
+never fired — its attribution stands anyway: the sample window landed on
+the compare(locale:) phase of the normal run, and §38's A/B verdict was
+measured on the real APIs, not the hook.)
