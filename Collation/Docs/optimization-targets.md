@@ -922,3 +922,81 @@ compare rows match Docs/25 within noise (ascii 36, latin 35, cjk 83,
 paths 86, thai 636); the sortKey rows carry the regression above (ascii
 347, latin 376, cjk 366, paths 883, thai 516). Docs/25's Table 1 is
 deliberately NOT updated until the parameter-shape decision lands.
+
+---
+
+### 34. §32 thai round, part 1: probe ladder, NFD mark pass-through, and the alignment trap
+
+**Status:** shipped 2026-07-14. Gates: 1511 tests / 120 suites green (incl. 433k-line conformance + 52k fuzz keys).
+
+**Ladder (thai corpus, WMO, ns/compare-pair; probes in a scratch package,
+repo untouched):** P0 full compare 639 (EngineBench same session 631 ✓);
+P1 compareBody direct 597 → entry+byte-scan ≈ 42; P2 scalar skip-walk alone
+126; P3 scratch take/give 5 (settles §32 lever 2: below the 8 ns action
+threshold, estimate range was 2–22 — NO Unmanaged-TLS work needed);
+P4 pipeline core (skip+reset+compareUpToQuaternary, scratch hoisted) 570;
+P5 NFD drain both strings 345; P6 P5+collectAll 549 (CE production ≈ +200).
+
+**Skip-walk statistics (P7):** 99% of adjacent pairs share a prefix (avg 3.3
+of 6.8 scalars), but 88% hit the unsafe-start fallback and re-iterate from
+zero — Thai consonants and า are contraction continuations (unsafe), so a
+safe restart deeper than 0 exists in only 45% of prefix pairs at avg depth
+1.9. ICU-style partial backup is NOT the gap (ICU has the same fallback and
+still runs 258); the 126 ns walk being duplicated byte-scan work remains a
+follow-up lever (byte-mismatch handoff).
+
+**Lever 1 shipped shape:** lone-mark pass-through at refill()'s head — a
+non-decomposing ccc>0 scalar whose peeked follower starts with ccc 0 (or
+EOI) becomes the unit directly (no absorb/flushMarks, no carried round
+trip), follower stashed in pendingFirst. All guards from one norm.value()
+lookup. next() stays byte-identical so no other corpus can be affected by
+construction. sawDecomposition stays false (output 1:1 — also helps
+search's lazy position path on Thai).
+
+**Shapes tried and rejected (all measured, quiet machine, interleaved):**
+inline branch in next() (+58 paths sk), @inline(never) mutating helper
+called from next() (+50 paths sk), refill-head + @inline(never) refill
+(identical to refill-head alone — the attribute did nothing measurable).
+
+**THE ALIGNMENT TRAP (bench-truth finding, applies to all Intel WMO paths
+sortKey verdicts):** every variant showed paths sk +50..65, yet paths never
+executes any new code. sample-profiler diff put the entire delta inside
+writeSortKeyUpToQuaternary; otool disassembly showed its 2585 instructions
+BYTE-IDENTICAL between PRE and variant binaries — only the function's start
+address shifted (NFDIterator.swift precedes SortKey.swift in the WMO
+emission order, so any size change upstream moves the writer's loop
+alignment). A null-change probe (same-size dead function) landed clean,
+which first looked like semantic causation — alignment is chaotic like
+that. ALSO: WMO builds of identical sources are NOT bit-identical
+(__TEXT differs, behavior equal), so whole-binary hashes prove nothing.
+
+**RULES going forward:**
+1. An Intel WMO paths-sortKey delta within ±7% is UNTRUSTWORTHY until the
+   hot function's instruction stream is diffed (otool -tv, addresses
+   stripped). Identical instructions = alignment luck, not a regression.
+2. This puts an uncertainty band on §33's Intel magnitude (+10% paths for
+   the UnsafeBufferPointer shape) — §33's writer instructions genuinely
+   differed (parameter + closure), so the mechanism stands, but part of the
+   magnitude may be alignment.
+3. Machine 2 (Apple Silicon) should sanity-check paths sk for this commit;
+   AS is far less alignment-sensitive.
+
+**Final numbers (WMO EngineBench, quiet machine, min of 3 interleaved
+rounds vs unchanged tip; writer instruction-certified before measuring):**
+
+| corpus | cmp pre | cmp new | sk pre | sk new | skRet pre | skRet new |
+|--------|--------:|--------:|-------:|-------:|----------:|----------:|
+| thai   | 643 | **615** | 510 | **486** | 684 | **664** |
+| ascii  | 36  | 36  | 339 | 339 | 491 | 498 |
+| latin  | 36  | 36  | 370 | 370 | 511 | 513 |
+| cjk    | 81  | 81  | 368 | 363 | 578 | 574 |
+| paths  | 86  | 87  | 804 | 851* | 1012 | 1057* |
+
+\* alignment shift, certified: writeSortKeyUpToQuaternary's 2585
+instructions byte-identical, start address moved (rule 1 above).
+
+Thai engine compare 643→615 (2.45×→~2.37× vs ICU 260), sortKey −5%.
+Modest vs the §32 −60 estimate: marks are only ~2/word; the remaining gap
+is CE production (~200 ns, §32 lever 3 — Thai-block simple-CE table and a
+buffer-free single-step contraction match are the designed next attacks)
+and the duplicated skip-walk (~126 ns, byte-mismatch handoff).

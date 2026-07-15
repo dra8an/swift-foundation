@@ -126,6 +126,19 @@ handicap and were sensitive to code-layout luck.
 (Includes machine 2's sortKey primary-byte batching, `68156e1` — paths
 sortKey −18% on Intel, matching their −15% on Apple Silicon.)
 
+> **Alignment band (2026-07-14, §34):** on this machine the paths sortKey
+> row moves ±6–7% from pure code placement — any size change in a file
+> earlier in the WMO emission order shifts `writeSortKeyUpToQuaternary`'s
+> loop alignment (its instruction stream can be byte-identical while the
+> row reads +50 ns). Do not convict a paths sortKey delta inside that band
+> without an instruction-stream diff of the writer (`otool -tv`, addresses
+> stripped). WMO builds of identical sources are not bit-identical either;
+> whole-binary hashes prove nothing.
+>
+> Post-§34 thai row (mark pass-through): compare 615, sortKey 486, skRet
+> 664 (was 637/513/678 at the 07-13 re-baseline; ICU 258–260). Full round
+> table pending the §32 round end.
+
 Pure-Swift vs hand-tuned C: 1.1–2.5× on compare, 1.2–1.9× on sortKey.
 §29 decomposed the remainder: the fast-Latin loop core measures ~15 ns with
 ICU's calling contract (vs ICU's ~16 total); ~10 ns is String→bytes
