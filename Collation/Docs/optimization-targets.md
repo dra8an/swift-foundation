@@ -79,6 +79,19 @@ Allocation/resolution samples are the trustworthy kind.
 - [ ] The skRet variant allocates BY API CONTRACT (returns fresh
       [UInt8]) — documented, inout twin exists; not a defect.
 - Machine 2: run the same audit over any AS-only wiring.
+- [ ] DESIGN NOTE for the upstream proposal (not a bench item): every
+      current-locale collator cache (collatorForCurrentLocale, §40's
+      comparator path) resolves ONCE and never invalidates — a mid-process
+      system-locale change keeps serving the old collator. The rigorous
+      shape is "resolve once, revalidate cheaply" against Foundation's
+      locale generation state (~few ns per call). Decide before proposing
+      upstream; expect the review question.
+- UPSTREAM note (outside collation scope): the localized case-mapping
+      entries at the top of StringProtocol+Locale.swift (capitalized/
+      lowercased/uppercased with .current) evaluate Locale.current per
+      call — the §40 shape exactly. Heavyweight operations, so
+      proportionally smaller — flag in the upstream conversation, do not
+      patch from here.
 
 ---
 
