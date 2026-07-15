@@ -465,7 +465,7 @@ not committed).
 ```sh
 cd ~/Projects/dra8an/swift-foundation-collation  # repo root (machine 2)
 # machine 1 (Intel iMac): cd ~/Projects/claude/collation/swift-foundation
-swift test                      # full suite, ~5-20s (machine 1 reports 1488 tests / 119 suites)
+swift test                      # full suite, ~30s (machine 1 reports 1514 tests / 121 suites)
 swift build -c release          # build everything incl. BenchFoundation
 ```
 
