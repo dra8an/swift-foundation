@@ -8,6 +8,76 @@ The pre-baked fast-Latin setup (−22% ASCII) showed the pattern: if something
 is checked per-call but the answer is fixed at init, store the answer once and
 skip the check. Look for more instances of this.
 
+## THE ALLOCATION/RESOLUTION HUNT (the pattern that keeps paying — check
+## every per-call path for it)
+
+Three of the project's largest single wins came from the same shape of
+defect and the same 30-minute method. **Any per-call path that has not
+been through this audit is a suspect.**
+
+**The defect shape:** work whose RESULT is identical (or near-identical)
+across calls, redone per call — allocating a buffer, resolving a
+locale/options/setup, hashing a string key, copying a fat struct. It
+hides because each instance looks cheap and idiomatic in source.
+
+**The three case studies:**
+- **§30 storage boxes:** the 768-byte collator struct copied at every
+  call boundary → one class reference. `localizedCompare` HALVED.
+- **§37 search buffers:** three arrays malloc'd/freed per search() call
+  (~40% of cjk search) → reused ScratchBuffers slots. Engine search
+  −50%; the last sub-parity matrix cells flipped.
+- **§38 locale resolution:** identifier scans + 2–3 string-keyed
+  dictionary probes per compare(_:locale:) call → one-slot cache. Every
+  explicit-locale row −190..250 ns; the last at-parity cell → 1.50×.
+
+**The method (proven, ~30 min):**
+1. Hold-loop the ONE operation (temporary bench hook or probe package;
+   never committed) and `sample PID 10`.
+2. Read "Sort by top of stack". The convicting symbols:
+   `nanov2_malloc*/nanov2_free/tiny_malloc*` (malloc traffic),
+   `swift_allocObject`, `Hasher.combine/_finalize` +
+   `__RawDictionaryStorage.find` (string-keyed lookups),
+   `swift_retain/release` in large blocks, `String.init`/
+   `_uncheckedFromUTF8`/`hasPrefix` (string materialization),
+   `swift_beginAccess`/`AccessSet` (exclusivity),
+   `LockedState`/`os_unfair_lock` (per-call locking).
+3. When possible, profile the CHEAP SIBLING of the expensive API
+   (localizedCompare next to compare(locale:)) — the diff of the two
+   profiles is a shopping list.
+4. Fix by reuse: scratch-owned buffers (removeAll(keepingCapacity:)),
+   one-slot caches keyed for a pointer-equality hit, init-resolved
+   setups behind ONE reference (§31/§37 rule: hand state to hot entries
+   as one class ref, never as multiple inouts — inout scopes are paid
+   before any fast path runs).
+5. Gate as always; certify unrelated rows per §34 before believing them.
+
+**Calibration — when profiler samples are REAL vs phantom:** samples in
+malloc/hash/lock/refcount chains convert to wall-clock nearly 1:1 (they
+are serial dependencies — §37/§38 delivered what the profile promised).
+Samples spread over independent cheap loads and branches DO NOT (the
+out-of-order core runs them for free: the §35 unsafe-mask and §36
+hasBuffered nulls both "showed" ~265 samples and delivered nothing).
+Allocation/resolution samples are the trustworthy kind.
+
+**Standing audit list (paths not yet through the hunt):**
+- [ ] §26 wrapper string conversions: `String(self)`/`String(aString)`
+      in every StringProtocol entry; `String(self[range])` slicing in
+      compare/range paths (allocates when Self is Substring or a range
+      is passed).
+- [ ] `confirmMatch`/`buildNFDSourceMap`: nfdMap `[Int]` + per-scalar
+      `decomposed`/`fullyDecomposed` temporaries — per search call on
+      decomposing text with a match candidate (accented real-world
+      Latin; bench corpora barely trigger it).
+- [ ] String.Comparator / SortDescriptor / Predicate evaluation paths —
+      per-evaluation options/collator resolution not yet profiled.
+- [ ] CollationOptions.from + CompareOptions.init per call (85 -no-WMO
+      samples in §38's profile; likely WMO-free, verify before acting).
+- [ ] sortKey Foundation wrappers (entry ladder never ran for sortKey —
+      §29 queue item; combine with this audit).
+- [ ] The skRet variant allocates BY API CONTRACT (returns fresh
+      [UInt8]) — documented, inout twin exists; not a defect.
+- Machine 2: run the same audit over any AS-only wiring.
+
 ---
 
 ## Ideas
