@@ -54,12 +54,16 @@
 > 6.4; §37 carries to Apple Silicon, −29..35% there). Headlines: **the
 > last two sub-parity cells flipped** — cjk range fwd/back now
 > 1.19×/1.06× ahead; contains 2.4–4.2× on every corpus (thai contains
-> 577 ns vs system 2317); stdRange 1.5–3.6×. **Zero cells behind system
-> ICU on either machine**; the only ≤1× number anywhere is paths
-> range(of:) at 0.99× — byte-scan-bound, oscillating ±1% around parity
-> across runs, untouched by §37 by design. Engine rows certified
-> unchanged (§37: compare ±2 mixed-sign; paths sortKey moves inside the
-> §34 band with writer instructions byte-identical).
+> 577 ns vs system 2317); stdRange 1.5–3.6×. **Zero Foundation-API cells
+> (Table 2) behind system ICU on either machine**; the only ≤1× Table-2
+> number is paths range(of:) at 0.99× — byte-scan-bound, oscillating ±1%
+> around parity across runs, untouched by §37 by design. The pure-engine
+> rows (Table 1 — raw ICU C calls, no API overhead on either side) are a
+> separate comparison and still trail hand-tuned C on this machine:
+> compare 1.12–2.25×, sortKey 1.17–1.78× (Apple Silicon's cjk engine
+> compare is the one engine row ahead of ICU C). Engine rows certified
+> unchanged by §37 (compare ±2 mixed-sign; paths sortKey moves inside
+> the §34 band with writer instructions byte-identical).
 >
 > The same day (07-06), the harness gained **four previously unmeasured metrics** —
 > the allocating sortKey variant (`skRet`, Table 1), the case-insensitive

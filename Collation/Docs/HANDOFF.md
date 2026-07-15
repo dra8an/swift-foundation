@@ -177,9 +177,12 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   scopes before the byte-scan fast path and taxed ascii/paths range —
   rule recorded in §37). Engine cjk search −50%; contains/stdRange
   −30..45% on every corpus; **the last two sub-parity cells (cjk range)
-  flipped — Docs/25 re-baselined at `1b43bbc`: ZERO cells behind system
-  ICU on either machine** (sole ≤1×: paths range fwd at 0.99×,
-  byte-scan-bound parity wobble). Machine 2 confirmed §37 on AS
+  flipped — Docs/25 re-baselined at `1b43bbc`: ZERO Foundation-API
+  cells (Table 2) behind system ICU on either machine** (sole ≤1×: paths
+  range fwd at 0.99×, byte-scan-bound parity wobble). The pure-engine
+  rows (Table 1, vs raw ICU C) still trail hand-tuned C 1.1–2.25×
+  compare / 1.2–1.8× sortKey on Intel; AS cjk compare is the one engine
+  row ahead. Machine 2 confirmed §37 on AS
   (−29..35%) and resolved §33 (borrowing neutral on 6.4). Probes
   committed: `build_thai_ladder.sh` (P0–P8), `build_cjk_probe.sh`.
   2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
