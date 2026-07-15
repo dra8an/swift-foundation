@@ -33,6 +33,20 @@ struct CollatorCache: Sendable {
     /// Sendable so sharing is safe.
     private let currentCache = LockedState(initialState: RootCollator?(nil))
 
+    /// One-slot cache for the most recent explicit-locale resolution (§38).
+    /// Full resolution walks locale.identifier through prefix scans, a
+    /// substring, and 2–3 string-keyed dictionary probes under a lock —
+    /// profiled at ~2/3 of the whole compare(_:locale:) call. Callers
+    /// overwhelmingly pass the same Locale repeatedly; comparing its
+    /// identifier against the slot is a pointer-equality fast path when
+    /// the backing storage is shared, so a repeat resolves in
+    /// lock + compare + return.
+    private struct LastLocale {
+        var identifier: String? = nil
+        var collator: RootCollator? = nil
+    }
+    private let lastLocale = LockedState(initialState: LastLocale())
+
     func collatorForCurrentLocale() -> RootCollator? {
         return currentCache.withLock { cached in
             if let c = cached { return c }
@@ -45,8 +59,19 @@ struct CollatorCache: Sendable {
 
     func collator(for locale: Locale?) -> RootCollator? {
         guard let locale else { return collator(forLanguage: nil) }
-        let lang = Self.resolveLanguage(for: locale)
-        return collator(forLanguage: lang)
+        let id = locale.identifier
+        if let hit = lastLocale.withLock({ slot in
+            slot.identifier == id ? slot.collator : RootCollator?.none
+        }) {
+            return hit
+        }
+        let resolved = collator(forLanguage: Self.resolveLanguage(for: locale))
+        if let resolved {
+            lastLocale.withLock { slot in
+                slot = LastLocale(identifier: id, collator: resolved)
+            }
+        }
+        return resolved
     }
 
     private func collator(forLanguage lang: String?) -> RootCollator? {

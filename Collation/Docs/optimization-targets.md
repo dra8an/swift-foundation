@@ -1163,3 +1163,41 @@ unchanged post-§37 (compare ±2 mixed-sign = noise; paths sortKey inside
 the §34 band with the writer's instruction stream byte-identical).
 Machine 2 confirmed §37 on Apple Silicon (−29..35%) and resolved §33
 (borrowing neutral on 6.4 — correct cross-platform shape, no fallback).
+
+---
+
+### 38. One-slot locale-resolution cache: the explicit-locale wrapper tax
+
+**Status:** shipped 2026-07-16. Gates: 1511 tests / 120 suites green.
+
+compare(_:locale:) cost 409 ns on ascii while localizedCompare cost 118 —
+same 36 ns engine compare underneath. Profile (holdcmp loop, -no-WMO):
+the gap was per-call locale resolution — locale.identifier
+materialization, resolveLanguage's hasPrefix/contains scans + substring,
+2–3 string-keyed dictionary probes under the cache lock, plus
+retain/release churn (~400 samples) and Hasher work (~215).
+
+**Shipped:** a one-slot (identifier → collator) cache in CollatorCache,
+checked before full resolution. Callers overwhelmingly pass the same
+Locale repeatedly; comparing its identifier against the slot hits the
+String pointer-equality fast path, so a repeat resolves in lock +
+compare + return. range(of:locale:)/range(backwards) share collator(for:)
+and inherit the win.
+
+**Measured (BF -no-WMO, min of 3 interleaved rounds; flat ~−200 ns on
+every explicit-locale row):**
+
+| corpus | compare(locale:) | range fwd | range back |
+|--------|-----------------:|----------:|-----------:|
+| ascii  | 409→219 | 454→263 | 459→268 |
+| latin  | 416→222 | 1022→787 | 1109→885 |
+| cjk    | 478→284 | 1077→854 | 1240→992 |
+| paths  | 511→313 | **579→391** | 636→442 |
+| thai   | 1064→838 | 1069→850 | 1208→976 |
+
+paths range(of:) — the matrix's last at-parity cell (0.99×) — flips to
+**1.50× ahead** (391 vs system 587); ascii range to ~2.2×; cjk range to
+~1.53×/1.33×. The residual compare(locale:)-vs-localizedCompare gap
+(~100 ns) is the options translation + the heavier generic entry — the
+honest remaining wrapper cost. Docs/25 tables not yet re-baselined with
+§38; the §37 run (`1b43bbc`) predates it.
