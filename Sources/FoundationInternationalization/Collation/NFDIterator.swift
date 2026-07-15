@@ -42,6 +42,7 @@ struct NFDIterator {
     /// across compares runs allocation-free. `skippingFirst` positions the
     /// iterator after the first `n` scalars (for the identical-prefix skip;
     /// the caller guarantees that position is a clean restart boundary).
+    @inline(__always)  // §35: fell out of line after the skip-walk restructure
     mutating func reset(scalars: String.UnicodeScalarView, skippingFirst n: Int = 0) {
         source = scalars.makeIterator()
         for _ in 0..<n { _ = source.next() }
@@ -55,6 +56,7 @@ struct NFDIterator {
     /// caller has already pulled from it (`first`). Equivalent to resetting onto
     /// the suffix `first` followed by the rest of `iter`, but without building a
     /// new String iterator or re-walking the skipped prefix.
+    @inline(__always)
     mutating func reset(source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
         source = iter
         pendingFirst = first

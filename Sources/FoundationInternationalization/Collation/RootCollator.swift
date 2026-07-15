@@ -203,10 +203,11 @@ public struct RootCollator: @unchecked Sendable {
     public func compare(
         _ left: String, _ right: String, options: CollationOptions = CollationOptions()
     ) throws -> Order {
-        if let fast = compareFastPath(left, right, options: options) {
+        var skipWalk = false
+        if let fast = compareFastPath(left, right, options: options, skipWalk: &skipWalk) {
             return fast
         }
-        return try compareSlowPath(left, right, options: options)
+        return try compareSlowPath(left, right, options: options, skipWalk: skipWalk)
     }
 
     /// The default-options UTF-8 fast-Latin byte path (the byte-level
@@ -217,11 +218,13 @@ public struct RootCollator: @unchecked Sendable {
     /// default setup or the byte path bails (non-Latin text, unsafe restart,
     /// non-contiguous storage) — the caller then runs the throwing pipeline.
     private func compareFastPath(
-        _ left: String, _ right: String, options: CollationOptions
+        _ left: String, _ right: String, options: CollationOptions,
+        skipWalk: inout Bool
     ) -> Order? {
         guard defaultFLPackedOptions >= 0, options.strength != .identical,
               options.icuOptions == defaultFLWord,
               !fastLatinTable.isEmpty else { return nil }
+        var walkUseless = false
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 var mismatch = -1
@@ -232,16 +235,52 @@ public struct RootCollator: @unchecked Sendable {
                     numeric: options.numeric, safety: self.restartSafety,
                     mismatch: &mismatch)
                 if f != CollationFastLatin.bailOutResult { return f }
-                return RootCollator.quickCJKDispatch(
+                let q = RootCollator.quickCJKDispatch(
                     lBytes, rBytes, at: mismatch,
                     setup: self.storage.quickCJKSetupPtr,
                     numeric: options.numeric, safety: self.restartSafety)
+                if q != CollationFastLatin.bailOutResult { return q }
+                // Headed for the pipeline: decide here — while the bytes are
+                // pinned — whether compareBody's identical-prefix walk would
+                // be discarded (§35). STATIC helper, trivial params (§31).
+                walkUseless = RootCollator.walkIsUseless(
+                    lBytes, rBytes, at: mismatch,
+                    safety: self.restartSafety, numeric: options.numeric)
+                return CollationFastLatin.bailOutResult
             } ?? CollationFastLatin.bailOutResult
         } ?? CollationFastLatin.bailOutResult
         if fast != CollationFastLatin.bailOutResult {
             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
         }
+        skipWalk = walkUseless
         return nil
+    }
+
+    /// True when compareBody's identical-prefix walk is provably useless:
+    /// the byte scan's mismatch offset locates the first differing scalars,
+    /// and if either is an unsafe restart the walk always ends in the
+    /// shared=0 fallback (88% of thai dictionary pairs — §34's P7 stats),
+    /// so compareBody can reset from the start directly, which is exactly
+    /// the behavior those pairs get today, minus the ~123 ns walk.
+    /// Conservative false when the mismatch is at either string's end (a
+    /// length-divergent pair keeps its walk) or out of view. STATIC with
+    /// trivial parameters (§31).
+    private static func walkIsUseless(
+        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
+        at mismatch: Int, safety: RestartSafety, numeric: Bool
+    ) -> Bool {
+        guard mismatch >= 0, mismatch < lBytes.count, mismatch < rBytes.count else {
+            return false
+        }
+        // Back up to the scalar start: prefix bytes below the mismatch are
+        // equal on both sides, so both scalars start at the same offset and
+        // share the same lead byte (hence the same length, in bounds by
+        // UTF-8 validity of native Strings).
+        var start = mismatch
+        while start > 0, lBytes[start] & 0xc0 == 0x80 { start -= 1 }
+        let lc = scalarAt(lBytes, start)
+        let rc = scalarAt(rBytes, start)
+        return safety.isUnsafe(lc, numeric: numeric) || safety.isUnsafe(rc, numeric: numeric)
     }
 
     /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called
@@ -321,7 +360,8 @@ public struct RootCollator: @unchecked Sendable {
     /// proved fast-Latin inapplicable, but compareBody re-derives that cheaply
     /// via its own eligibility checks, so no flag needs to be threaded.
     private func compareSlowPath(
-        _ left: String, _ right: String, options: CollationOptions
+        _ left: String, _ right: String, options: CollationOptions,
+        skipWalk: Bool = false
     ) throws -> Order {
         var triedFastLatin = false
         if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
@@ -357,13 +397,16 @@ public struct RootCollator: @unchecked Sendable {
                 }
             }
         }
-        return try compareBody(left, right, options: options, triedFastLatin: triedFastLatin)
+        return try compareBody(
+            left, right, options: options, triedFastLatin: triedFastLatin,
+            skipWalk: skipWalk)
     }
 
     /// Shared compare body: identical-prefix skip, fast-Latin scalar path, CE
     /// pipeline, and identical level. Split out so compareClassic stays small.
     private func compareBody(
-        _ left: String, _ right: String, options: CollationOptions, triedFastLatin: Bool
+        _ left: String, _ right: String, options: CollationOptions, triedFastLatin: Bool,
+        skipWalk: Bool = false
     ) throws -> Order {
         // No `if left == right` shortcut here. Swift's String == is canonical
         // equivalence, which for non-binary-equal strings runs NFC
@@ -384,19 +427,28 @@ public struct RootCollator: @unchecked Sendable {
         var lIter = left.unicodeScalars.makeIterator()
         var rIter = right.unicodeScalars.makeIterator()
         var shared = 0
-        var lNext = lIter.next()
-        var rNext = rIter.next()
-        while let a = lNext, let b = rNext, a == b {
-            shared += 1
+        var lNext: Unicode.Scalar? = nil
+        var rNext: Unicode.Scalar? = nil
+        var fellBack = false
+        if skipWalk {
+            // The byte scan already proved the first-differing scalar is an
+            // unsafe restart (walkIsUseless): the walk below would end in
+            // the shared=0 fallback, so take that exit directly (§35).
+            fellBack = true
+        } else {
             lNext = lIter.next()
             rNext = rIter.next()
-        }
-        var fellBack = false
-        if shared > 0,
-           (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
-            || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
-            shared = 0
-            fellBack = true
+            while let a = lNext, let b = rNext, a == b {
+                shared += 1
+                lNext = lIter.next()
+                rNext = rIter.next()
+            }
+            if shared > 0,
+               (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
+                || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
+                shared = 0
+                fellBack = true
+            }
         }
 
         // Quick primary comparison: if both first-differing scalars are in
