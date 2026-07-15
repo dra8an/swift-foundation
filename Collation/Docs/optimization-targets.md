@@ -878,9 +878,7 @@ and the Swift optimizer report (§30; reduced test case reproducible from
 
 ### 33. Cross-machine divergence: CE-array parameter shape in the sort-key writer
 
-**Status:** measured 2026-07-14 (Intel, interleaved WMO EngineBench A/B).
-Resolution PENDING — `borrowing` candidate in the working tree, NOT
-committed; needs the user's decision and machine 2's re-verification on 6.4.
+**Status:** RESOLVED 2026-07-15. `borrowing [Int64]` shipped (`44c9497`).
 
 Machine 2's `3aaa1d5` changed `writeSortKeyUpToQuaternary`'s `ces`
 parameter `[Int64]` → `UnsafeBufferPointer<Int64>`, wrapping the (only)
@@ -907,15 +905,15 @@ generalizes §31 lesson 1 beyond the pinned-buffer closures: **on
 6.3.1/Intel, a closure wrapping a hot call site is a codegen hazard even
 outside compare.**
 
-**Reconciliation candidate (in working tree):** `ces: borrowing [Int64]`,
-direct call, no closures anywhere. `borrowing` is an explicit +0 pass — no
-retain/release pair, which was the whole point of machine 2's change.
-Intel interleaved (same sessions): paths 798 vs 796 pre-fix, ascii 337 vs
-337, thai 510 vs 508 — the regression is fully erased. 1511 tests / 120
-suites green with the change. **Machine 2 must verify on 6.4 that
-`borrowing` still eliminates their measured ARC pair** (if it does not,
-the untested fallback is keeping the `[Int64]` signature and wrapping the
-writer's own body in `withUnsafeBufferPointer` internally).
+**Resolution: `ces: borrowing [Int64]`** — direct call, no closures.
+`borrowing` is an explicit +0 pass. Intel: regression fully erased (paths
+798 vs 796 pre-fix). **Machine 2 verification (Apple Silicon 6.4):**
+`borrowing` is a no-op — optimizer already eliminates the retain/release
+for the direct `[Int64]` parameter under WMO (ascii 200 vs 198, paths
+454 vs 453 — identical within noise). The ARC pair that `3aaa1d5`
+measured was an artifact of the earlier session's thermal state, not a
+real per-call retain. `borrowing` is the correct neutral choice: it
+prevents Intel's closure regression while being a no-op on Apple Silicon.
 
 Same-day re-baseline at `3aaa1d5` (K=3, run_benchmarks.sh, this machine):
 compare rows match Docs/25 within noise (ascii 36, latin 35, cjk 83,
