@@ -559,7 +559,7 @@ public struct RootCollator: @unchecked Sendable {
             storage: storage, options: options,
             variableTopValue: variableTopValue(options)
         )
-        return searcher.search(for: pattern, in: text, iter: &scratch.left)
+        return searcher.search(for: pattern, in: text, scratch: scratch)
     }
 
     /// Searches backwards for `pattern` in `text`. Returns the range of the
@@ -573,7 +573,7 @@ public struct RootCollator: @unchecked Sendable {
             storage: storage, options: options,
             variableTopValue: variableTopValue(options)
         )
-        return searcher.searchBackwards(for: pattern, in: text, iter: &scratch.left)
+        return searcher.searchBackwards(for: pattern, in: text, scratch: scratch)
     }
 
     /// Returns true if `text` contains `pattern` at the given collation strength.
@@ -589,7 +589,7 @@ public struct RootCollator: @unchecked Sendable {
             storage: storage, options: options,
             variableTopValue: variableTopValue(options)
         )
-        return searcher.contains(pattern: pattern, in: text, iter: &scratch.left)
+        return searcher.contains(pattern: pattern, in: text, scratch: scratch)
     }
 
     /// The sort key for a string: level bytes with 01 separators, optional

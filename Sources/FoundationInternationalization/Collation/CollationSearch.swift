@@ -63,20 +63,24 @@ struct CollationSearch {
 
     /// Searches for `pattern` in `text` at the configured collation strength.
     /// Returns the range in `text` of the first match, or nil.
+    /// Direct/test entry: allocates one-off buffers. The hot path
+    /// (`RootCollator.search`) calls the buffer-reusing overload below.
     func search(for pattern: String, in text: String) -> Range<String.Index>? {
-        if pattern.isEmpty { return text.startIndex..<text.startIndex }
-        if text.isEmpty { return nil }
-
-        let mask = strengthMask(for: options.strength)
-        let patternCEs = produceMaskedCEs(for: pattern, mask: mask)
-        if patternCEs.isEmpty { return nil }
-
-        return searchForward(patternCEs: patternCEs, in: text, mask: mask)
+        return search(
+            for: pattern, in: text,
+            scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses a caller-owned iterator for pattern CE production, then resets it
-    /// for the text scan — no per-call iterator allocation.
-    func search(for pattern: String, in text: String, iter: inout CEIterator) -> Range<String.Index>? {
+    /// Reuses the caller's thread-local scratch (iterator + CE buffers) — no
+    /// per-call allocations at all (§37: the per-call pattern and window
+    /// arrays were the largest cost of the cjk range cells). The scratch
+    /// travels as ONE class reference so the byte-scan fast path — which
+    /// never touches it — pays no exclusivity scopes at the call boundary
+    /// (three inout parameters here cost ascii/paths range +30..40 ns
+    /// under -no-WMO; measured 2026-07-16).
+    func search(
+        for pattern: String, in text: String, scratch: ScratchBuffers
+    ) -> Range<String.Index>? {
         if pattern.isEmpty { return text.startIndex..<text.startIndex }
         if text.isEmpty { return nil }
 
@@ -87,10 +91,13 @@ struct CollationSearch {
         }
 
         let mask = strengthMask(for: options.strength)
-        let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
-        if patternCEs.isEmpty { return nil }
+        produceMaskedCEs(
+            for: pattern, mask: mask, iter: &scratch.left, into: &scratch.patternCEs)
+        if scratch.patternCEs.isEmpty { return nil }
 
-        return searchForward(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
+        return searchForward(
+            patternCEs: scratch.patternCEs, in: text, mask: mask,
+            iter: &scratch.left, window: &scratch.annotatedCEs)
     }
 
     /// The byte-scan fast paths are sound only when every clean-ASCII byte is
@@ -106,19 +113,18 @@ struct CollationSearch {
 
     /// Searches backwards for `pattern` in `text` at the configured collation
     /// strength. Returns the range of the last match, or nil.
+    /// Direct/test entry: allocates one-off buffers.
     func searchBackwards(for pattern: String, in text: String) -> Range<String.Index>? {
-        if pattern.isEmpty { return text.startIndex..<text.startIndex }
-        if text.isEmpty { return nil }
-
-        let mask = strengthMask(for: options.strength)
-        let patternCEs = produceMaskedCEs(for: pattern, mask: mask)
-        if patternCEs.isEmpty { return nil }
-
-        return searchBackwardFull(patternCEs: patternCEs, in: text, mask: mask)
+        return searchBackwards(
+            for: pattern, in: text,
+            scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses a caller-owned iterator for backwards search.
-    func searchBackwards(for pattern: String, in text: String, iter: inout CEIterator) -> Range<String.Index>? {
+    /// Reuses the caller's thread-local scratch for backwards search — no
+    /// per-call allocations (§37; one class reference, see `search`).
+    func searchBackwards(
+        for pattern: String, in text: String, scratch: ScratchBuffers
+    ) -> Range<String.Index>? {
         if pattern.isEmpty { return text.startIndex..<text.startIndex }
         if text.isEmpty { return nil }
 
@@ -129,39 +135,60 @@ struct CollationSearch {
         }
 
         let mask = strengthMask(for: options.strength)
-        let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
-        if patternCEs.isEmpty { return nil }
+        produceMaskedCEs(
+            for: pattern, mask: mask, iter: &scratch.left, into: &scratch.patternCEs)
+        if scratch.patternCEs.isEmpty { return nil }
 
-        return searchBackwardFull(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
+        produceAnnotatedCEs(
+            for: text, mask: mask, iter: &scratch.left, into: &scratch.annotatedCEs)
+        if scratch.annotatedCEs.isEmpty { return nil }
+
+        return searchBackwardMatch(
+            patternCEs: scratch.patternCEs, annotated: scratch.annotatedCEs,
+            text: text, sawDecomposition: scratch.left.sawDecomposition
+        )
     }
 
     /// Returns true if `pattern` appears anywhere in `text`.
     /// Fast path: no position tracking, no array allocations for index/NFD maps.
     ///
-    /// Direct/test entry: allocates a one-off iterator. The hot path
-    /// (`RootCollator.contains`) calls the iter-reusing overload below with the
-    /// collator's thread-local scratch iterator.
+    /// Direct/test entry: allocates a one-off iterator and buffers. The hot
+    /// path (`RootCollator.contains`) calls the buffer-reusing overload below
+    /// with the collator's thread-local scratch.
     func contains(pattern: String, in text: String) -> Bool {
-        var iter = CEIterator(
-            data: data, base: base, norm: norm,
-            numeric: numeric, scalars: text.unicodeScalars
-        )
-        return contains(pattern: pattern, in: text, iter: &iter)
+        return contains(
+            pattern: pattern, in: text,
+            scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses a caller-owned `CEIterator` for both the pattern and the text —
-    /// no per-call `CEIterator` or CE-array allocation. `localizedStandard-
-    /// Contains` over many strings reuses one scratch iterator across all calls
-    /// (profiling showed fresh per-call iterators dominated `contains`).
-    func contains(pattern: String, in text: String, iter: inout CEIterator) -> Bool {
+    /// Reuses the caller's thread-local scratch for both the pattern and the
+    /// text — no per-call allocations. `localizedStandardContains` over many
+    /// strings reuses one scratch set across all calls (profiling showed
+    /// fresh per-call iterators dominated `contains`; §37 removed the
+    /// remaining per-call arrays).
+    func contains(
+        pattern: String, in text: String, scratch: ScratchBuffers
+    ) -> Bool {
         if pattern.isEmpty { return true }
         if text.isEmpty { return false }
 
         let mask = strengthMask(for: options.strength)
-        // Pattern CEs first, reusing `iter`; then `iter` is reset onto the text.
-        let patternCEs = produceMaskedCEs(for: pattern, mask: mask, iter: &iter)
-        if patternCEs.isEmpty { return false }
+        // Pattern CEs first, reusing scratch.left; then it is reset onto the
+        // text. The rest of the body borrows them as locals once.
+        produceMaskedCEs(
+            for: pattern, mask: mask, iter: &scratch.left, into: &scratch.patternCEs)
+        if scratch.patternCEs.isEmpty { return false }
 
+        return containsScan(
+            pattern: pattern, in: text, mask: mask,
+            patternCEs: scratch.patternCEs,
+            iter: &scratch.left, textCEs: &scratch.maskedTextCEs)
+    }
+
+    private func containsScan(
+        pattern: String, in text: String, mask: Int64, patternCEs: [Int64],
+        iter: inout CEIterator, textCEs buffer: inout [Int64]
+    ) -> Bool {
         let patCount = patternCEs.count
 
         iter.reset(numeric: numeric, scalars: text.unicodeScalars)
@@ -170,7 +197,7 @@ struct CollationSearch {
             iter.ces.reserveCapacity(textUTF8Count + 1)
         }
 
-        var buffer: [Int64] = []
+        if !buffer.isEmpty { buffer.removeAll(keepingCapacity: true) }
         if textUTF8Count <= 32 {
             buffer.reserveCapacity(textUTF8Count)
         }
@@ -338,34 +365,31 @@ struct CollationSearch {
 
     // MARK: - Forward search (lazy CE production)
 
-    private func searchForward(patternCEs: [Int64], in text: String, mask: Int64) -> Range<String.Index>? {
-        var iter = CEIterator(
-            data: data, base: base, norm: norm,
-            numeric: numeric,
-            scalars: text.unicodeScalars
-        )
-        return searchForward(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
-    }
-
-    /// Lazy CE scan with lazy position reporting. No upfront per-call arrays:
-    /// CEs are annotated with raw NFD offsets as they are produced, and the
-    /// NFD→source conversion, boundary validation, and String.Index
-    /// construction all happen in `confirmMatch`, only for candidates whose
-    /// CEs already match (profiling showed the upfront index table + NFD map
-    /// were most of `localizedStandardRange` — pure waste on no-match calls).
-    private func searchForward(patternCEs: [Int64], in text: String, mask: Int64, iter: inout CEIterator) -> Range<String.Index>? {
+    /// Lazy CE scan with lazy position reporting. No per-call arrays at all:
+    /// CEs are annotated with raw NFD offsets as they are produced into the
+    /// caller-owned `window`, and the NFD→source conversion, boundary
+    /// validation, and String.Index construction all happen in
+    /// `confirmMatch`, only for candidates whose CEs already match
+    /// (profiling showed the upfront index table + NFD map were most of
+    /// `localizedStandardRange`; §37 showed the window's per-call
+    /// malloc/free was most of the cjk range cells).
+    private func searchForward(
+        patternCEs: [Int64], in text: String, mask: Int64,
+        iter: inout CEIterator, window buffer: inout [AnnotatedCE]
+    ) -> Range<String.Index>? {
         let patCount = patternCEs.count
 
         iter.reset(numeric: numeric, scalars: text.unicodeScalars)
         // Reserve for the whole text (capped so huge inputs don't over-
         // allocate): growth reallocs of the 24-byte AnnotatedCE elements were
         // measurable on long lines (paths corpus), where the old <=32 gate
-        // never fired.
+        // never fired. reserveCapacity on the retained-capacity buffer is a
+        // no-op once warm.
         let textUTF8Count = text.utf8.count
         let reserve = min(textUTF8Count, 1024)
         iter.ces.reserveCapacity(reserve + 1)
 
-        var buffer: [AnnotatedCE] = []
+        if !buffer.isEmpty { buffer.removeAll(keepingCapacity: true) }
         buffer.reserveCapacity(reserve)
         var prevCECount = 0
         var prevScalarsConsumed = 0
@@ -488,25 +512,6 @@ struct CollationSearch {
 
     // MARK: - Backward search (full pre-production)
 
-    private func searchBackwardFull(patternCEs: [Int64], in text: String, mask: Int64) -> Range<String.Index>? {
-        var iter = CEIterator(
-            data: data, base: base, norm: norm,
-            numeric: numeric,
-            scalars: text.unicodeScalars
-        )
-        return searchBackwardFull(patternCEs: patternCEs, in: text, mask: mask, iter: &iter)
-    }
-
-    private func searchBackwardFull(patternCEs: [Int64], in text: String, mask: Int64, iter: inout CEIterator) -> Range<String.Index>? {
-        let annotated = produceAnnotatedCEs(for: text, mask: mask, iter: &iter)
-        if annotated.isEmpty { return nil }
-
-        return searchBackwardMatch(
-            patternCEs: patternCEs, annotated: annotated, text: text,
-            sawDecomposition: iter.sawDecomposition
-        )
-    }
-
     private func searchBackwardMatch(patternCEs: [Int64], annotated: [AnnotatedCE], text: String, sawDecomposition: Bool) -> Range<String.Index>? {
         let patCount = patternCEs.count
         guard patCount <= annotated.count else { return nil }
@@ -526,20 +531,15 @@ struct CollationSearch {
 
     // MARK: - CE production (pattern)
 
-    private func produceMaskedCEs(for string: String, mask: Int64) -> [Int64] {
-        var iter = CEIterator(
-            data: data, base: base, norm: norm,
-            numeric: numeric,
-            scalars: string.unicodeScalars
-        )
-        return produceMaskedCEs(for: string, mask: mask, iter: &iter)
-    }
-
-    /// As above, but reuses a caller-owned iterator (reset onto `string`) — no
-    /// per-call iterator allocation for the pattern.
-    private func produceMaskedCEs(for string: String, mask: Int64, iter: inout CEIterator) -> [Int64] {
+    /// Produces the masked CEs of `string` into the caller-owned `result`
+    /// (cleared first, capacity retained) — no per-call allocation. Empties
+    /// `result` on pipeline errors; callers treat empty as no-match.
+    private func produceMaskedCEs(
+        for string: String, mask: Int64, iter: inout CEIterator,
+        into result: inout [Int64]
+    ) {
         iter.reset(numeric: numeric, scalars: string.unicodeScalars)
-        var result: [Int64] = []
+        if !result.isEmpty { result.removeAll(keepingCapacity: true) }
         var afterVariable = false
         do {
             let allCEs = try iter.collectAll()
@@ -550,20 +550,22 @@ struct CollationSearch {
                 }
             }
         } catch {
-            return []
+            result.removeAll(keepingCapacity: true)
         }
-        return result
     }
 
     // MARK: - Annotated CE production (full, for backwards search)
 
-    private func produceAnnotatedCEs(for text: String, mask: Int64, iter: inout CEIterator) -> [AnnotatedCE] {
+    private func produceAnnotatedCEs(
+        for text: String, mask: Int64, iter: inout CEIterator,
+        into result: inout [AnnotatedCE]
+    ) {
         iter.reset(numeric: numeric, scalars: text.unicodeScalars)
         let textUTF8Count = text.utf8.count
         let reserve = min(textUTF8Count, 1024)
         iter.ces.reserveCapacity(reserve + 1)
 
-        var result: [AnnotatedCE] = []
+        if !result.isEmpty { result.removeAll(keepingCapacity: true) }
         result.reserveCapacity(reserve)
         var prevCECount = 0
         var prevScalarsConsumed = 0
@@ -588,10 +590,8 @@ struct CollationSearch {
                 prevScalarsConsumed = curScalarsConsumed
             }
         } catch {
-            return []
+            result.removeAll(keepingCapacity: true)
         }
-
-        return result
     }
 
     /// Maps each NFD scalar position to its original source scalar index.

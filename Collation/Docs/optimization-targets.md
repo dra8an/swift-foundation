@@ -1115,3 +1115,47 @@ and with thai `localizedCompare` already 1.53× FASTER than system ICU the
 engine row is bragging rights, not user-visible cost. Next frontiers per
 the standing queue: the two cjk range cells (0.84×) and the sortKey entry
 ladder (§29 never ran for sortKey).
+
+---
+
+### 37. Allocation-free search: the cjk range cells flipped
+
+**Status:** shipped 2026-07-16. Gates: 1511 tests / 120 suites green.
+
+**Attribution (engine-level cjk search probe, `build_cjk_probe.sh`, WMO;
+sample profile):** searchForward 1264 + pattern produceMaskedCEs 903
+samples — and ~2400 samples of allocator traffic (nano malloc/free,
+swift_allocObject, refcount, malloc-type cache). Every search() call
+allocated the pattern CE array, the annotated text-CE window (with a
+~1 KB reserve), and contains' text buffer, then freed them. The CE
+arithmetic itself (appendCEs + offset math) was ~430 samples. The
+standing-queue guess (quickPrimary prefilter for search CE production)
+was aimed at the wrong block.
+
+**Shipped shape:** three reusable buffers on ScratchBuffers (patternCEs,
+annotatedCEs, maskedTextCEs); the search/searchBackwards/contains entries
+take the scratch as ONE class reference; producers fill caller-owned
+arrays (removeAll(keepingCapacity:) + reserve, §14 discipline). First
+attempt passed the buffers as three inout parameters — that opened
+exclusivity scopes at the call boundary and cost the BYTE-SCAN corpora
+(ascii/paths range) +30..40 ns despite never touching the buffers;
+the class-reference shape opens scopes only after the byte scan bails.
+Rule: **hand thread-local state to search entries as one reference, not
+as per-buffer inouts — inout scopes are paid before the fast path runs.**
+
+**Measured (BF -no-WMO, min of 3 interleaved rounds; engine probe WMO):**
+
+engine cjk search/line: 863 → 410–440 (−50%).
+
+| corpus | contains | stdRange | range fwd | range back |
+|--------|---------:|---------:|----------:|-----------:|
+| cjk    | 1042→679 | 1150→744 | **1526→1073** | **1520→1065..1235** |
+| ascii  | 895→546  | 993→617  | 466→456 | 472→466 |
+| latin  | 957→570  | 1066→661 | 1394→988 | 1339→931 |
+| paths  | 999→574  | 1362→929 | 589→582 | 647→640 |
+| thai   | 846→558  | 1366→989 | 1472→1148 | 1370→1046 |
+
+Against system ICU (cjk range 1312/1331): the LAST two sub-parity cells
+in the matrix flipped to ~1.2× faster. Every search-family row improved
+30–45% except the byte-scan range rows, which are neutral by design.
+Full-matrix re-baseline for Docs/25 pending.
