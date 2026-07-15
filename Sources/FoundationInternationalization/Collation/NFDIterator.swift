@@ -135,6 +135,31 @@ struct NFDIterator {
     private mutating func refill(startingWith first: UInt32?) {
         unit.removeAll(keepingCapacity: true)
         unitNext = 0
+        // Fast path for a lone combining mark between starters (Thai
+        // tone/vowel marks): a non-decomposing mark whose follower starts
+        // with ccc 0 (or ends the input) is a complete single-mark
+        // reorderable unit by itself — nothing can sort across either
+        // boundary, so it becomes the unit with none of the absorb/
+        // flushMarks machinery, and the peeked follower goes to
+        // `pendingFirst` (skipping the carried-scalar refill round trip).
+        // Output stays 1:1 with the source (mirrors ICU's FCD pass-through,
+        // which never buffers ordered marks). Two adjacent marks or a
+        // decomposing mark take the full path below. This check lives HERE,
+        // not in next(), so next()'s inlined copies stay byte-identical and
+        // no other corpus can be affected (optimization-targets.md §34).
+        if let c = first, carried.isEmpty {
+            let v = norm.value(c)
+            if (v >> 16) & 7 == 0, UInt8(truncatingIfNeeded: v) != 0 {
+                let following = nextSourceScalar()
+                if following == nil || (following! < 0x300 || norm.leadCCC(following!) == 0) {
+                    pendingFirst = following
+                    unit.append(c)
+                    return
+                }
+                // Adjacent mark: hand the peeked scalar back and buffer.
+                pendingFirst = following
+            }
+        }
         if !carried.isEmpty {
             // Fast exit: single inert carried scalar — emit it directly as a
             // one-element unit without consuming the next source scalar into
