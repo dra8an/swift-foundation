@@ -464,12 +464,33 @@ struct CollationSearch {
         text: String, sawDecomposition: Bool,
         nfdMap: inout [Int], nfdMapBuilt: inout Bool
     ) -> Range<String.Index>? {
+        // Hot head — runs at EVERY candidate position; the fail-fast CE
+        // comparison must inline into the scan loops. The once-per-match
+        // range construction lives in the @inline(never) tail below: with
+        // it inline, the whole function grew past WMO's inlining threshold
+        // and the scan loops paid an 11-argument call per candidate (§42 —
+        // no-match scans +9%; the §29 hot/cold split shape).
         for patIx in 0..<patternCEs.count {
             if buffer[start + patIx].ce != patternCEs[patIx] {
                 return nil
             }
         }
+        return confirmedRange(
+            buffer: buffer, at: start, patternCEs: patternCEs, text: text,
+            sawDecomposition: sawDecomposition,
+            nfdMap: &nfdMap, nfdMapBuilt: &nfdMapBuilt)
+    }
 
+    /// Cold tail of `confirmMatch`: NFD→source offset conversion, boundary
+    /// validation, and String.Index construction for a candidate whose CEs
+    /// fully matched. Runs once per successful search (plus rare
+    /// boundary-rejected candidates), so it stays out of line by design.
+    @inline(never)
+    private func confirmedRange(
+        buffer: [AnnotatedCE], at start: Int, patternCEs: [Int64],
+        text: String, sawDecomposition: Bool,
+        nfdMap: inout [Int], nfdMapBuilt: inout Bool
+    ) -> Range<String.Index>? {
         let nfdStart = buffer[start].nfdStart
         let nfdEnd = buffer[start + patternCEs.count - 1].nfdEnd
 
@@ -501,18 +522,28 @@ struct CollationSearch {
             endScalar = max(srcEnd, lastSrcStart + 1)
         }
 
-        guard isValidStartBoundary(at: startScalar, in: text),
-              isValidEndBoundary(at: endScalar, in: text) else {
-            return nil
-        }
-
+        // Boundary validation fused with index construction — ONE bounded
+        // walk to startScalar plus the short hop to endScalar (§42). The old
+        // shape (separate isValidStart/EndBoundary helpers) walked to each
+        // offset separately AND paid a whole-string `scalars.count` walk per
+        // confirmed match — the top remaining match-tax leaf after §41. A
+        // boundary is valid when the scalar at it is a starter (ccc 0) or it
+        // sits at the text's edge, so the match never splits a combining
+        // sequence.
         let scalars = text.unicodeScalars
         guard let startIdx = scalars.index(
             scalars.startIndex, offsetBy: startScalar, limitedBy: scalars.endIndex
         ) else { return nil }
+        if startScalar != 0 {
+            guard startIdx != scalars.endIndex,
+                  norm.ccc(scalars[startIdx].value) == 0 else { return nil }
+        }
         let endIdx = scalars.index(
             startIdx, offsetBy: endScalar - startScalar, limitedBy: scalars.endIndex
         ) ?? scalars.endIndex
+        if endIdx != scalars.endIndex {
+            guard norm.ccc(scalars[endIdx].value) == 0 else { return nil }
+        }
         return startIdx..<endIdx
     }
 
@@ -625,28 +656,6 @@ struct CollationSearch {
             }
             i += 1
         }
-    }
-
-    // MARK: - Boundary validation
-
-    private func isValidStartBoundary(at scalarOffset: Int, in text: String) -> Bool {
-        if scalarOffset == 0 { return true }
-        let scalars = text.unicodeScalars
-        var idx = scalars.startIndex
-        for _ in 0..<scalarOffset {
-            idx = scalars.index(after: idx)
-        }
-        return norm.ccc(scalars[idx].value) == 0
-    }
-
-    private func isValidEndBoundary(at scalarOffset: Int, in text: String) -> Bool {
-        let scalars = text.unicodeScalars
-        if scalarOffset >= scalars.count { return true }
-        var idx = scalars.startIndex
-        for _ in 0..<scalarOffset {
-            idx = scalars.index(after: idx)
-        }
-        return norm.ccc(scalars[idx].value) == 0
     }
 
     // MARK: - Strength mask

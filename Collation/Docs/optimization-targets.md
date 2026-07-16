@@ -68,11 +68,12 @@ Allocation/resolution samples are the trustworthy kind.
       tax on decomposing text was 7× a no-match scan, ~all allocator
       traffic (2 temporaries PER DECOMPOSING SCALAR + per-call map).
       Fixed: trie count twin + scratch-owned map; match tax −86%.
-- [ ] `isValidEndBoundary` O(n) `scalars.count` walk per confirmed
-      match (then walks again to the offset) — top remaining leaf in
-      §41's post-fix profile (1 349 samples). Single bounded walk via
-      the `index(_:offsetBy:limitedBy:)` shape. Same family:
-      `isValidStartBoundary` walks scalar-by-scalar too.
+- [x] `isValidEndBoundary`/`isValidStartBoundary` walks — AUDITED
+      (§42): whole-string count walk + up to three separate offset
+      walks per confirmed match, fused into confirmMatch's index
+      construction (one bounded walk). Match confirmations −17..19%;
+      paths stdRange (frequent hits, long lines) −12% in the shipping
+      build. The WMO inlining trap it exposed is §42's lesson.
 - [x] String.Comparator / SortDescriptor / Predicate paths — AUDITED
       (§40): StandardComparator resolved Locale.current per comparison
       (~90 ns × n·log n in sorts) — fixed via collatorForCurrentLocale
@@ -1469,3 +1470,77 @@ check (fullDecompositionCount: new=1, base=0 — nm, never `strings`,
 §40 rule). Table 1 engine rows: compare/sortKey call graphs untouched
 by construction; matrix deltas vs `1b43bbc` ±4% mixed-sign, within the
 §34 placement band.
+
+---
+
+### 42. Boundary-walk fusion in confirmMatch — and the WMO inlining trap
+
+**Status:** shipped 2026-07-16 (machine 1). Gates: 1514 tests / 121
+suites green.
+
+The §41 follow-up box. Attribution came free with §41's post-fix
+profile (hold-B): `UnicodeScalarView.distance` 1 349 samples — that is
+`isValidEndBoundary`'s `scalarOffset >= scalars.count` check, a
+WHOLE-STRING walk per confirmed match — plus the validator bodies and
+`index(offsetBy:)`. In total the old tail walked the text up to four
+times per match: count walk, start-boundary walk, end-boundary walk,
+then index construction again for the returned range.
+
+**Fix, part 1 — fusion:** boundary validation folded into the index
+construction confirmMatch already does: ONE bounded walk to the start
+offset (`index(_:offsetBy:limitedBy:)`), boundary-check the scalar
+there, short hop to the end offset, boundary-check there. A boundary
+is valid when its scalar is a starter (ccc 0) or sits at the text's
+edge — semantics unchanged, case-by-case equivalent on all reachable
+inputs. Both validators deleted.
+
+**The trap this exposed (the reason to always carry a control
+variant):** the first build IMPROVED the match variants but regressed
+the absent-control +9% — consistently, across interleaved rounds. nm
+told the story: in the base binary confirmMatch has NO symbol (WMO
+inlined it fully into the scan loops); with the fused tail the
+function grew past the inlining threshold, stopped inlining, and the
+hot fail-fast CE-equality loop — which runs at EVERY candidate
+position — paid an 11-argument function call per candidate.
+
+**Fix, part 2 — the §29 hot/cold split, again:** the equality head
+stays in confirmMatch (tiny, inlines away — 0 symbols, verified); the
+once-per-match range construction moved behind `@inline(never)
+confirmedRange`. The control then came back BETTER than base: the
+head-only function is smaller than the original, whose inlined tail
+had been bloating the scan loops all along.
+
+**Measured (engine probe, full WMO, accented-64, interleaved K=3
+mins; `build_accented_probe.sh`):**
+
+| variant | base (§41) | §42 | Δ |
+|---|---:|---:|---|
+| A end-match | 5 624 | 4 685 | **−16.7%** |
+| B start-match | 2 542 | 2 060 | **−19.0%** |
+| C absent (control) | 3 026 | 2 818 | **−6.9%** |
+
+**Shipping build (BF -no-WMO, interleaved K=3, cjk + paths):** all
+rows neutral (±2.2% mixed-sign) except **paths localizedStdRange
+963→845 (−12.3%)** — a real matrix-visible win: stdRange is never
+byte-scan eligible (case/diacritic-insensitive strength), the paths
+needle hits many lines (shared path prefixes), and every hit paid the
+whole-line count walk on the corpus with the longest lines. Docs/25's
+`13337d4` tables predate this row change; fold at the next coherent
+re-baseline (expected paths stdRange speedup ≈1.69×, was 1.46×).
+
+**Bench-truth incident (the §40 trap, new variant):** the first §42
+A/B base binary was silently PRE-§41 — the §41 certification had built
+base sources into `.build` last and never rebuilt. Caught by binary
+size, confirmed by nm (no fullDecompositionCount symbol). Rule
+addition: **an A/B that builds the base into `.build` leaves `.build`
+stale — symbol-verify BOTH sides of every A/B before running, and
+rebuild `.build` after certification.**
+
+**Lessons recorded:** (1) growing a hot function's cold tail can
+silently un-inline the hot head under WMO — watch symbol
+appearance/disappearance with nm, split hot/cold when it happens;
+(2) the probe's absent-control variant is what caught it — every
+match-path probe needs a no-match control; (3) the remaining
+match-confirmation cost is now the map walk itself (§41's noted
+second-order item: truncate at the candidate's nfdEnd) plus one
+unavoidable bounded walk for index construction.
