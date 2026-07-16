@@ -199,11 +199,23 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   PER COMPARISON (~60 ns × n·log n in sorts) — now uses
   collatorForCurrentLocale (287→229/cmp; −50..64 verified on all
   corpora). §40 also records the stale-binary bench trap rules.
-  **Docs/25's tables are the §37-era run (`1b43bbc`) — §38–§40 shipped
-  after; fold them in at the next coherent re-baseline.** Audit boxes
-  left: nfdMap temporaries (AGREED NEXT), sortKey wrappers (+ the §29
-  sortKey entry ladder), CollationOptions.from WMO check, and the
-  locale-change invalidation DESIGN NOTE for the upstream proposal.
+  2026-07-15 (machine 1): **§41 nfdMap audit box** (`13337d4`) — a
+  matching search on DECOMPOSING text cost 7× a no-match scan of the
+  same line (confirmMatch's map + two temp arrays PER DECOMPOSING
+  SCALAR ≈ ~130 mallocs/line), invisible to the bench matrix (the
+  standard corpora barely trigger the path; real-world accented Latin
+  pays it on every hit). Fixed by a trie count-twin
+  (fullDecompositionCount) + scratch-owned map: **match tax −86%**
+  (end-match 21.3→5.6 µs on accented-64, engine probe full WMO);
+  neutral on standard corpora (interleaved A/B vs `78ccaa8`, 24 rows
+  ±2.6%). Probe committed: `build_accented_probe.sh`. **Docs/25
+  re-baselined at `13337d4` — §38–§41 folded in; every Table-2 cell
+  now ≥1.28× ahead of system ICU** (paths range(of:), the last 0.99×
+  holdout, reads 1.41×). Audit boxes left: isValidEndBoundary's O(n)
+  scalars.count walk per confirmed match (§41 follow-up, top remaining
+  match-tax leaf), sortKey wrappers (+ the §29 sortKey entry ladder),
+  CollationOptions.from WMO check, and the locale-change invalidation
+  DESIGN NOTE for the upstream proposal.
   2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
   (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
   mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
@@ -217,7 +229,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   1.53× faster than system, contains 2.8–2.9×; only the two cjk range
   cells (0.84–0.86×) remain sub-parity. The thai frontier is now the NFD
   per-scalar floor — the parked Span refactor.**
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§40;
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§41;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench

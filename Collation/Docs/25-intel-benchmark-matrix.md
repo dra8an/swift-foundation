@@ -65,12 +65,25 @@
 > unchanged by §37 (compare ±2 mixed-sign; paths sortKey moves inside
 > the §34 band with writer instructions byte-identical).
 >
-> **CAVEAT (2026-07-16 late): the tables below predate §38–§40** — the
-> one-slot locale cache (explicit-locale rows −190..250 ns; paths
-> range(of:) now 1.50× ahead), the §39 Substring rebase fix, and the §40
-> comparator fix all shipped after this run. Their A/B numbers live in
-> the technique-log sections; fold everything into the next coherent
-> re-baseline.
+> **Re-baselined 2026-07-15 (§41)**, one coherent K=3 run at `13337d4`,
+> folding in the four boxes shipped after `1b43bbc`: **§38** one-slot
+> locale cache, **§39** Substring rebase fix, **§40** comparator
+> current-locale fix, **§41** allocation-free NFD→source map in search
+> match confirmation. Headlines: the §38 explicit-locale wins are now in
+> the tables — compare(locale:) ascii 2.87× (was 1.55×), and the
+> matrix's last ≤1× cell (paths range(of:) 0.99×) reads **1.41×**; every
+> Table-2 cell is now ≥1.28× ahead of system ICU. §41's own win is
+> invisible in this matrix BY DESIGN (the standard corpora barely
+> trigger the map path) — its evidence is the accented-search probe
+> (`build_accented_probe.sh`: match tax on decomposing text −86%;
+> technique log §41). §41 certified NEUTRAL here by direct A/B at the
+> same -no-WMO recipe (base `78ccaa8` vs §41, interleaved K=3,
+> cjk+paths: all 24 rows ±2.6% mixed-sign). A uniform +20–50 ns drift
+> vs `1b43bbc` on rows no code touched (contains, localizedCompare)
+> appears in BOTH A/B sides — inherited -no-WMO placement/run variance
+> from the §38–§40 span, not §41. Engine rows (Table 1): ±4%
+> mixed-sign vs `1b43bbc`, inside the §34 placement band; compare/
+> sortKey call graphs untouched by §38–§41 by construction.
 >
 > The same day (07-06), the harness gained **four previously unmeasured metrics** —
 > the allocating sortKey variant (`skRet`, Table 1), the case-insensitive
@@ -152,18 +165,21 @@ shipping optimization level — via the engine-only EngineBench
 trips). The old -no-WMO engine rows carried a 10–26% build-workaround
 handicap and were sensitive to code-layout luck.
 
-2026-07-16 re-baseline (`1b43bbc`, §37 included — engine rows unchanged
-from 07-15 within the certification bands):
+2026-07-15 §41 re-baseline (`13337d4` — engine rows within the §34
+placement band of `1b43bbc`; §38–§41 touch no compare/sortKey call
+graph):
 
 | corpus | compare ICU | compare ours | ratio | sortKey ICU | sortKey ours | ratio | skRet ours | ratio |
 |--------|------------:|-------------:|------:|------------:|-------------:|------:|-----------:|------:|
-| ascii  | 16  | 36   | 2.25× | 194 | 342  | 1.76× | 487  | 2.51× |
-| latin  | 17  | 36   | 2.12× | 208 | 371  | 1.78× | 505  | 2.43× |
-| cjk    | 72  | 81   | **1.12×** | 218 | 366  | 1.68× | 561  | 2.57× |
-| paths  | 48  | 83   | 1.73× | 661 | 813  | **1.23×** | 1013 | 1.53× |
-| thai   | 258 | 528  | **2.05×** | 265 | 444  | 1.68× | 609  | 2.30× |
+| ascii  | 16  | 35   | 2.19× | 194 | 338  | 1.74× | 490  | 2.53× |
+| latin  | 17  | 34   | 2.00× | 208 | 376  | 1.81× | 522  | 2.51× |
+| cjk    | 73  | 81   | **1.11×** | 222 | 370  | 1.67× | 590  | 2.66× |
+| paths  | 49  | 86   | 1.76× | 671 | 782  | **1.17×** | 1006 | 1.50× |
+| thai   | 266 | 551  | **2.07×** | 270 | 459  | 1.70× | 622  | 2.30× |
 
-Previous (07-13) row set for the arc: ascii 36/338/497, latin 35/369/518,
+Previous (07-16, `1b43bbc`) row set for the arc: ascii 36/342/487,
+latin 36/371/505, cjk 81/366/561, paths 83/813/1013, thai 528/444/609.
+Earlier (07-13) row set: ascii 36/338/497, latin 35/369/518,
 cjk 81/368/574, paths 87/805/1017, **thai 637/513/678** — the §34/§35
 round moved thai compare −16% and sortKey −14% with everything else
 neutral (paths sortKey differences sit in the §34 alignment band).
@@ -195,47 +211,48 @@ times faster we are (>1 = ours faster).** (Flipped from the old ours÷system
 convention on 2026-07-13; bench_matrix.py prints this orientation now.
 Doc 21 on machine 2 still uses the old convention until it re-baselines.)
 
-2026-07-16 re-baseline (`1b43bbc`, §37 allocation-free search included):
+2026-07-15 §41 re-baseline (`13337d4`, §38–§41 included):
 
 | API | ascii | latin | cjk | paths | thai |
 |-----|------:|------:|----:|------:|-----:|
-| `compare(locale:)`               | 1.55× | 2.56× | 2.22× | 1.74× | 1.24× |
-| `localizedCompare`               | **3.55×** | **7.05×** | **5.11×** | **3.66×** | **1.53×** |
-| `localizedStandardCompare`       | 2.74× | 5.54× | 4.34× | 3.03× | 1.45× |
-| `localizedCaseInsensitiveCompare`| 2.75× | 5.60× | 4.39× | 3.13× | 1.44× |
-| `localizedStandardContains`      | **2.57×** | **4.05×** | **3.17×** | **2.37×** | **4.02×** |
-| `localizedCaseInsensitiveContains`| **2.58×** | **4.21×** | **3.18×** | **2.61×** | **4.16×** |
-| `localizedStandardRange`         | **2.27×** | **3.57×** | **2.97×** | 1.48× | **2.42×** |
-| `range(of:options:locale:)`      | 1.31× | 1.61× | **1.19×** | 0.99× | 1.41× |
-| `range(of:.backwards,locale:)`   | 1.30× | 1.49× | **1.06×** | 1.43× | 1.35× |
+| `compare(locale:)`               | **2.87×** | **5.05×** | **3.89×** | **2.90×** | **1.53×** |
+| `localizedCompare`               | **3.12×** | **6.47×** | **4.81×** | **3.38×** | 1.48× |
+| `localizedStandardCompare`       | 2.49× | 5.27× | 4.09× | 2.86× | 1.33× |
+| `localizedCaseInsensitiveCompare`| 2.39× | 5.31× | 3.97× | 2.97× | 1.37× |
+| `localizedStandardContains`      | 2.52× | 4.29× | 3.04× | 2.33× | **3.87×** |
+| `localizedCaseInsensitiveContains`| 2.54× | 4.27× | 3.07× | 2.59× | **4.03×** |
+| `localizedStandardRange`         | 2.20× | 3.55× | 2.81× | 1.46× | **2.81×** |
+| `range(of:options:locale:)`      | **2.29×** | **2.07×** | **1.49×** | **1.41×** | **1.72×** |
+| `range(of:.backwards,locale:)`   | **2.20×** | **1.93×** | **1.28×** | **1.91×** | **1.57×** |
 
-Raw ns/op behind the speedups (2026-07-16 re-baseline):
+Raw ns/op behind the speedups (2026-07-15 §41 re-baseline):
 
 | API | corpus | sysICU | ours |
 |-----|--------|-------:|-----:|
-| compare(locale:)   | ascii/latin/cjk/paths/thai | 633 / 1061 / 1106 / 885 / 1292 | 409 / 415 / 499 / 508 / 1038 |
-| localizedCompare   | ascii/latin/cjk/paths/thai | 419 / 846 / 905 / 666 / 1074   | 118 / 120 / 177 / 182 / 701 |
-| localizedStdCmp    | ascii/latin/cjk/paths/thai | 419 / 847 / 912 / 681 / 1042   | 153 / 153 / 210 / 225 / 718 |
-| localizedCaseICmp  | ascii/latin/cjk/paths/thai | 420 / 851 / 917 / 669 / 1039   | 153 / 152 / 209 / 214 / 721 |
-| localizedStdContns | ascii/latin/cjk/paths/thai | 1398 / 2389 / 2170 / 1354 / 2317 | 543 / 590 / 685 / 572 / 577 |
-| localizedCaseICnt  | ascii/latin/cjk/paths/thai | 1414 / 2503 / 2196 / 1396 / 2431 | 548 / 595 / 691 / 535 / 584 |
-| localizedStdRange  | ascii/latin/cjk/paths/thai | 1389 / 2386 / 2169 / 1375 / 2408 | 613 / 668 / 731 / 926 / 994 |
-| range(of:locale:)  | ascii/latin/cjk/paths/thai | 586 / 1620 / 1303 / 587 / 1500   | 447 / 1005 / 1092 / 593 / 1062 |
-| range(backwards)   | ascii/latin/cjk/paths/thai | 593 / 1673 / 1320 / 907 / 1613   | 455 / 1126 / 1248 / 636 / 1193 |
+| compare(locale:)   | ascii/latin/cjk/paths/thai | 646 / 1116 / 1125 / 915 / 1304 | 225 / 221 / 289 / 315 / 854 |
+| localizedCompare   | ascii/latin/cjk/paths/thai | 430 / 893 / 923 / 686 / 1082   | 138 / 138 / 192 / 203 / 731 |
+| localizedStdCmp    | ascii/latin/cjk/paths/thai | 429 / 891 / 949 / 703 / 1045   | 172 / 169 / 232 / 246 / 785 |
+| localizedCaseICmp  | ascii/latin/cjk/paths/thai | 421 / 892 / 944 / 683 / 1043   | 176 / 168 / 238 / 230 / 761 |
+| localizedStdContns | ascii/latin/cjk/paths/thai | 1429 / 2618 / 2227 / 1407 / 2332 | 566 / 610 / 733 / 605 / 603 |
+| localizedCaseICnt  | ascii/latin/cjk/paths/thai | 1456 / 2612 / 2258 / 1444 / 2449 | 574 / 611 / 736 / 557 / 608 |
+| localizedStdRange  | ascii/latin/cjk/paths/thai | 1421 / 2459 / 2218 / 1425 / 2439 | 647 / 693 / 790 / 974 / 867 |
+| range(of:locale:)  | ascii/latin/cjk/paths/thai | 602 / 1652 / 1334 / 612 / 1526   | 263 / 797 / 895 / 433 / 885 |
+| range(backwards)   | ascii/latin/cjk/paths/thai | 605 / 1728 / 1351 / 943 / 1628   | 275 / 897 / 1052 / 494 / 1040 |
 
-**Every cell beats system ICU** except paths range(of:) at 0.99× —
-byte-scan-bound, ±1% around parity across runs, unaffected by §37 by
-design. The compare family runs 1.2–7× faster; after §37 the search
-family runs 1.3–4.2× faster everywhere (contains: thai 577 vs 2317 ns;
-the former cjk sub-parity range cells now 1.19×/1.06× ahead — the §37
-allocator elimination was worth −30..45% on every buffered-search row,
-and machine 2 confirmed the same shape on Apple Silicon). Before §37 the
-cjk range cells read 0.84–0.86× (paths/thai
-forward range 0.92–1.00×). The 07-13 jumps came from the §30 storage
-boxes (the collator and searcher structs carried reference fields, so
-every per-call copy paid a large memcpy plus retain/release pairs —
-several times per Foundation call) and the §31 CJK dispatch. Per-API
-history: this file's git log plus §20/§27/§29–§31 of the technique log.
+**Every cell beats system ICU — the lowest is 1.28×** (cjk backward
+range). The §38 locale cache moved the whole explicit-locale block:
+compare(locale:) 1.55×→2.87× ascii, and the matrix's historical last
+sub-parity holdout (paths range(of:), 0.99× at `1b43bbc`) now reads
+1.41×. The compare family runs 1.3–6.5× faster; the search family
+1.3–4.3× faster everywhere. Arc summary: the 07-13 jumps came from the
+§30 storage boxes (the collator and searcher structs carried reference
+fields, so every per-call copy paid a large memcpy plus retain/release
+pairs — several times per Foundation call) and the §31 CJK dispatch;
+§37 flipped the cjk range cells (0.84–0.86× before); §38 flipped paths
+range(of:). §41's match-confirmation win is on decomposing-text
+matches only — outside this matrix, measured by its own probe
+(technique log §41). Per-API history: this file's git log plus
+§20/§27/§29–§41 of the technique log.
 
 ## Findings
 
