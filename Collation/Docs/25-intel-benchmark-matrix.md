@@ -85,6 +85,12 @@
 > mixed-sign vs `1b43bbc`, inside the §34 placement band; compare/
 > sortKey call graphs untouched by §38–§41 by construction.
 >
+> **CAVEAT (2026-07-16): §42 shipped after this run** — boundary-walk
+> fusion in confirmMatch. Its A/B moved ONE cell: paths
+> localizedStdRange 963→845 (−12.3%, expected speedup ≈1.69× vs the
+> 1.46× below); everything else neutral ±2.2%. Fold at the next
+> coherent re-baseline. Details: technique log §42.
+>
 > The same day (07-06), the harness gained **four previously unmeasured metrics** —
 > the allocating sortKey variant (`skRet`, Table 1), the case-insensitive
 > compare/contains pair, and **backward search** (`range(backwards)`).
