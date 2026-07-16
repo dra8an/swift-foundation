@@ -147,6 +147,42 @@ public struct NormalizationData: @unchecked Sendable {
         return true
     }
 
+    /// Number of scalars in the fully expanded canonical decomposition of
+    /// `c` — 0 when `c` has none. Count-only twin of `appendDecomposition`
+    /// plus the one-level recursion buildNFDSourceMap applied over its
+    /// output (the pool is fully decomposed in practice, so the second
+    /// level is defensive parity, not extra data). Keep in lockstep with
+    /// `appendDecomposition` — the NFD→source map's entry counts must equal
+    /// the scalars the NFD pipeline actually emits (§41).
+    func fullDecompositionCount(of c: UInt32) -> Int {
+        if c < 0xc0 { return 0 }
+        let v = value(c)
+        let length = Int((v >> 16) & 7)
+        if length == 0 { return 0 }
+        if length == 7 {
+            // Hangul syllable: L V (T) Jamo; Jamo decompose no further.
+            return (Int(c) - 0xac00) % 28 != 0 ? 3 : 2
+        }
+        let offset = Int(v >> 19)
+        var n = 0
+        for d in buffer[offset..<(offset + length)] {
+            if d >= 0xc0 {
+                let dv = value(d)
+                let dlength = Int((dv >> 16) & 7)
+                if dlength == 0 {
+                    n += 1
+                } else if dlength == 7 {
+                    n += (Int(d) - 0xac00) % 28 != 0 ? 3 : 2
+                } else {
+                    n += dlength
+                }
+            } else {
+                n += 1
+            }
+        }
+        return n
+    }
+
     /// Quick decomposition for the common Latin case: a precomposed character
     /// that decomposes to exactly [starter, one-combining-mark]. Returns the
     /// two scalars directly from one trie lookup, or nil if the decomposition

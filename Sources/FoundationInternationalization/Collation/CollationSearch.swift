@@ -97,7 +97,8 @@ struct CollationSearch {
 
         return searchForward(
             patternCEs: scratch.patternCEs, in: text, mask: mask,
-            iter: &scratch.left, window: &scratch.annotatedCEs)
+            iter: &scratch.left, window: &scratch.annotatedCEs,
+            nfdMap: &scratch.nfdSourceMap)
     }
 
     /// The byte-scan fast paths are sound only when every clean-ASCII byte is
@@ -145,7 +146,8 @@ struct CollationSearch {
 
         return searchBackwardMatch(
             patternCEs: scratch.patternCEs, annotated: scratch.annotatedCEs,
-            text: text, sawDecomposition: scratch.left.sawDecomposition
+            text: text, sawDecomposition: scratch.left.sawDecomposition,
+            nfdMap: &scratch.nfdSourceMap
         )
     }
 
@@ -375,7 +377,8 @@ struct CollationSearch {
     /// malloc/free was most of the cjk range cells).
     private func searchForward(
         patternCEs: [Int64], in text: String, mask: Int64,
-        iter: inout CEIterator, window buffer: inout [AnnotatedCE]
+        iter: inout CEIterator, window buffer: inout [AnnotatedCE],
+        nfdMap: inout [Int]
     ) -> Range<String.Index>? {
         let patCount = patternCEs.count
 
@@ -394,7 +397,7 @@ struct CollationSearch {
         var prevCECount = 0
         var prevScalarsConsumed = 0
         var nextMatchStart = 0
-        var nfdMap: [Int]? = nil
+        var nfdMapBuilt = false
         var afterVariable = false
 
         do {
@@ -416,7 +419,7 @@ struct CollationSearch {
                                 buffer: buffer, at: nextMatchStart,
                                 patternCEs: patternCEs, text: text,
                                 sawDecomposition: iter.sawDecomposition,
-                                nfdMap: &nfdMap
+                                nfdMap: &nfdMap, nfdMapBuilt: &nfdMapBuilt
                             ) {
                                 return range
                             }
@@ -438,7 +441,7 @@ struct CollationSearch {
                 buffer: buffer, at: nextMatchStart,
                 patternCEs: patternCEs, text: text,
                 sawDecomposition: iter.sawDecomposition,
-                nfdMap: &nfdMap
+                nfdMap: &nfdMap, nfdMapBuilt: &nfdMapBuilt
             ) {
                 return range
             }
@@ -453,10 +456,13 @@ struct CollationSearch {
     /// the NFD→source map lazily, and only when the iterator actually
     /// decomposed something — otherwise the streams are 1:1 and offsets
     /// carry over directly), validates the match boundaries, and returns the
-    /// range in `text`.
+    /// range in `text`. `nfdMap` is the scratch-owned map buffer;
+    /// `nfdMapBuilt` tracks whether it holds THIS text's map yet (§41 —
+    /// stale contents from a previous search must not be trusted).
     private func confirmMatch(
         buffer: [AnnotatedCE], at start: Int, patternCEs: [Int64],
-        text: String, sawDecomposition: Bool, nfdMap: inout [Int]?
+        text: String, sawDecomposition: Bool,
+        nfdMap: inout [Int], nfdMapBuilt: inout Bool
     ) -> Range<String.Index>? {
         for patIx in 0..<patternCEs.count {
             if buffer[start + patIx].ce != patternCEs[patIx] {
@@ -473,25 +479,25 @@ struct CollationSearch {
             startScalar = nfdStart
             endScalar = nfdEnd
         } else {
-            if nfdMap == nil {
-                nfdMap = buildNFDSourceMap(for: text)
+            if !nfdMapBuilt {
+                buildNFDSourceMap(for: text, into: &nfdMap)
+                nfdMapBuilt = true
             }
-            let map = nfdMap!
             // One map entry per NFD scalar, holding its source scalar index;
             // the last entry is always the last source scalar.
-            let scalarCount = map.isEmpty ? 0 : map[map.count - 1] + 1
-            if nfdStart < map.count {
-                startScalar = map[nfdStart]
+            let scalarCount = nfdMap.isEmpty ? 0 : nfdMap[nfdMap.count - 1] + 1
+            if nfdStart < nfdMap.count {
+                startScalar = nfdMap[nfdStart]
             } else {
                 startScalar = max(scalarCount - 1, 0)
             }
             // Clamp so the match always covers the last CE's own source
             // scalar even when its whole NFD window maps into one scalar.
             let lastNfdStart = buffer[start + patternCEs.count - 1].nfdStart
-            let lastSrcStart = lastNfdStart < map.count
-                ? map[lastNfdStart]
+            let lastSrcStart = lastNfdStart < nfdMap.count
+                ? nfdMap[lastNfdStart]
                 : max(scalarCount - 1, 0)
-            let srcEnd = nfdEnd < map.count ? map[nfdEnd] : scalarCount
+            let srcEnd = nfdEnd < nfdMap.count ? nfdMap[nfdEnd] : scalarCount
             endScalar = max(srcEnd, lastSrcStart + 1)
         }
 
@@ -512,15 +518,19 @@ struct CollationSearch {
 
     // MARK: - Backward search (full pre-production)
 
-    private func searchBackwardMatch(patternCEs: [Int64], annotated: [AnnotatedCE], text: String, sawDecomposition: Bool) -> Range<String.Index>? {
+    private func searchBackwardMatch(
+        patternCEs: [Int64], annotated: [AnnotatedCE], text: String,
+        sawDecomposition: Bool, nfdMap: inout [Int]
+    ) -> Range<String.Index>? {
         let patCount = patternCEs.count
         guard patCount <= annotated.count else { return nil }
 
-        var nfdMap: [Int]? = nil
+        var nfdMapBuilt = false
         for targetIx in stride(from: annotated.count - patCount, through: 0, by: -1) {
             if let range = confirmMatch(
                 buffer: annotated, at: targetIx, patternCEs: patternCEs,
-                text: text, sawDecomposition: sawDecomposition, nfdMap: &nfdMap
+                text: text, sawDecomposition: sawDecomposition,
+                nfdMap: &nfdMap, nfdMapBuilt: &nfdMapBuilt
             ) {
                 return range
             }
@@ -594,31 +604,27 @@ struct CollationSearch {
         }
     }
 
-    /// Maps each NFD scalar position to its original source scalar index.
-    private func buildNFDSourceMap(for text: String) -> [Int] {
-        var map: [Int] = []
-        map.reserveCapacity(text.unicodeScalars.count)
-        for (i, scalar) in text.unicodeScalars.enumerated() {
-            let c = scalar.value
-            if norm.hasDecomposition(c) {
-                var decomposed: [UInt32] = []
-                _ = norm.appendDecomposition(of: c, to: &decomposed)
-                var fullyDecomposed: [UInt32] = []
-                for d in decomposed {
-                    if norm.hasDecomposition(d) {
-                        _ = norm.appendDecomposition(of: d, to: &fullyDecomposed)
-                    } else {
-                        fullyDecomposed.append(d)
-                    }
-                }
-                for _ in fullyDecomposed {
-                    map.append(i)
-                }
-            } else {
+    /// Fills `map` with each NFD scalar position's original source scalar
+    /// index. Allocation-free (§41): the expansion counts come straight from
+    /// the trie (`fullDecompositionCount`, the count-only twin of
+    /// `appendDecomposition`) and the map is a scratch-owned buffer — the
+    /// old per-call map plus two `[UInt32]` temporaries PER DECOMPOSING
+    /// SCALAR were ~half of every matching search on accented text. The
+    /// utf8 reserve replaces a `unicodeScalars.count` walk, which cost its
+    /// own O(n) pass.
+    private func buildNFDSourceMap(for text: String, into map: inout [Int]) {
+        if !map.isEmpty { map.removeAll(keepingCapacity: true) }
+        map.reserveCapacity(min(text.utf8.count, 1024))
+        var i = 0
+        for scalar in text.unicodeScalars {
+            let n = norm.fullDecompositionCount(of: scalar.value)
+            if n == 0 {
                 map.append(i)
+            } else {
+                for _ in 0..<n { map.append(i) }
             }
+            i += 1
         }
-        return map
     }
 
     // MARK: - Boundary validation

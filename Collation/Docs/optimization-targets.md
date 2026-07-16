@@ -64,10 +64,15 @@ Allocation/resolution samples are the trustworthy kind.
       Substring index-space BUG in rebaseRange; duplicate conversions
       deduped. The one remaining Substring materialization is the
       engine's String input contract — accepted.
-- [ ] `confirmMatch`/`buildNFDSourceMap`: nfdMap `[Int]` + per-scalar
-      `decomposed`/`fullyDecomposed` temporaries — per search call on
-      decomposing text with a match candidate (accented real-world
-      Latin; bench corpora barely trigger it).
+- [x] `confirmMatch`/`buildNFDSourceMap` — AUDITED (§41): the match
+      tax on decomposing text was 7× a no-match scan, ~all allocator
+      traffic (2 temporaries PER DECOMPOSING SCALAR + per-call map).
+      Fixed: trie count twin + scratch-owned map; match tax −86%.
+- [ ] `isValidEndBoundary` O(n) `scalars.count` walk per confirmed
+      match (then walks again to the offset) — top remaining leaf in
+      §41's post-fix profile (1 349 samples). Single bounded walk via
+      the `index(_:offsetBy:limitedBy:)` shape. Same family:
+      `isValidStartBoundary` walks scalar-by-scalar too.
 - [x] String.Comparator / SortDescriptor / Predicate paths — AUDITED
       (§40): StandardComparator resolved Locale.current per comparison
       (~90 ns × n·log n in sorts) — fixed via collatorForCurrentLocale
@@ -1354,3 +1359,113 @@ ROWS, not by binary inspection. (This also means §38's holdcmp loop
 never fired — its attribution stands anyway: the sample window landed on
 the compare(locale:) phase of the normal run, and §38's A/B verdict was
 measured on the real APIs, not the hook.)
+
+---
+
+### 41. nfdMap: the match-confirmation tax on decomposing text
+
+**Status:** shipped 2026-07-15 (machine 1). Gates: 1514 tests / 121
+suites green. Probe committed: `build_accented_probe.sh`
+(accented-probe/main.swift — the A/B/C workload below).
+
+Next box on the hunt list: `confirmMatch`/`buildNFDSourceMap`. The path
+fires only when a search on DECOMPOSING text reaches a full CE match —
+which is why the benchmark matrix never showed it: ascii/paths are
+handled by the byte scan, cjk/thai text does not decompose
+(`sawDecomposition` stays false, NFD offsets are identity), and the
+latin corpus row searches line 1's prefix in all 200 lines, so ~1 line
+in 200 pays it. Real-world accented Latin (French, German, Vietnamese
+…) with a matching needle — the common `localizedStandardRange` case on
+non-English text — pays it on EVERY hit. A user-facing latency defect
+sitting in the matrix's blind spot.
+
+**Workload (new probe, engine-level, full WMO, bench-accented-64,
+K=9):** per-line search, three variants — A: needle = that line's last
+8 chars (full CE scan, then match); B: needle = first 8 chars (instant
+match); C: needle absent (full CE scan, no match — the control).
+Hook premise verified by output rows: hits A=200/200, B=200/200, C=0.
+
+| variant | ns/op | pays |
+|---|---:|---|
+| C absent (control) | 3 024 | full-line CE scan, no map |
+| B start-match | 16 057 | ~8-char CE scan + map build |
+| A end-match | 21 293 | full-line CE scan + map build |
+
+A successful match costs **~18 µs over the no-match scan of the same
+line — 7×**. B is the smoking gun: an instant position-0 match still
+pays 16 µs, because `buildNFDSourceMap` walks and allocates over the
+WHOLE text regardless of where the match sits.
+
+**Profile conviction (hold-loop B, `sample` 10 s, ~10 k busy-thread
+samples):** ~4 800 samples in allocator/refcount leaves — nanov2
+malloc/free 1 864, allocObject/slowAllocTyped 661, malloc-size/
+type-cache 678, retain/release/dealloc ~1 100, array-grow
+(`_consumeAndCreateNew`) 203 — the trustworthy serial kind (§ hunt
+calibration). Plus 479 in `UnicodeScalarView.distance` (the
+`reserveCapacity(text.unicodeScalars.count)` walk is O(n)), ~630 in the
+map-build body (enumerated iteration + append), and ~900 in dyld
+platform-version checks (`_availability_version_check`,
+`os_system_version_get_current_version`, `dyld_get_*_platform`) sitting
+under the typed-malloc descriptor path — i.e. MORE allocation traffic
+in disguise; verify they vanish with the allocs post-fix. Source: the
+`[Int]` map is one alloc per call, but the loop body allocates TWO
+fresh `[UInt32]` temporaries (`decomposed`/`fullyDecomposed`) per
+decomposing scalar — ~128 malloc/free pairs per 64-char accented line.
+
+**Fix shape (decided from the nfd trie layout):** the temporaries can
+be deleted outright, not scratch-pooled — the map only needs the
+decomposition COUNT per source scalar, and the trie entry encodes it
+directly (`(value >> 16) & 7`; length-7 = Hangul, arithmetic 2/3; else
+the pool slice is readable in place for the second level). Plan:
+1. count-only twin of `appendDecomposition` on `NormalizationData`
+   (mirrors it exactly so the two can never drift);
+2. `buildNFDSourceMap` fills a scratch-owned `nfdSourceMap` slot
+   (`removeAll(keepingCapacity:)` + reserve, §14/§37 discipline),
+   threaded as inout past the byte scan like the window buffer, with a
+   local `built` flag replacing the Optional;
+3. drop the O(n) `unicodeScalars.count` reserve walk (reserve
+   `min(utf8.count, 1024)` like the window; warm after first use).
+
+**Measured (same probe, engine-level full WMO, accented-64, K=9):**
+
+| variant | before | after | Δ |
+|---|---:|---:|---|
+| A end-match | 21 293 | **5 617** | **−74%** |
+| B start-match | 16 057 | **2 551** | **−84%** |
+| C absent (control) | 3 024 | 3 029 | neutral ✓ |
+
+The match tax (A−C) fell 18.3 µs → 2.6 µs (**−86%**), and an instant
+match (B) is now cheaper than a full no-match scan, as it should be.
+Post-fix re-sample of hold-B: ZERO allocator samples — nanov2/
+allocObject/malloc-type AND the ~900 dyld platform-version samples all
+gone (confirming the latter were typed-malloc descriptor overhead, not
+a real availability check in our path). The profile is now real work:
+the trie count walk (buildNFDSourceMap 1 418 + fullDecompositionCount
+1 328 — note the loop runs ~6× more iterations/sec post-fix, so
+same-code sample counts are not comparable across the two profiles),
+CE production, and the follow-up below.
+
+**Follow-up surfaced by the post-fix profile:** `isValidEndBoundary`
+does `scalarOffset >= scalars.count` — an O(n) UnicodeScalarView walk
+per confirmed match, now the top remaining match-tax leaf
+(`UnicodeScalarView.distance` 1 349 samples in hold-B; it then walks
+AGAIN to the offset). Restructure to a single bounded walk
+(`index(_:offsetBy:limitedBy:)` shape). Filed on the audit list; not
+folded into this box to keep the attribution clean. The whole-text map
+walk for a position-0 match (truncate at the candidate's `nfdEnd`) is
+the second-order item behind it — only worth it once the boundary walk
+is gone.
+
+**Certification (BF -no-WMO, base `78ccaa8` vs §41 at the same build
+recipe, interleaved K=3, cjk + paths):** all 24 rows within ±2.6%
+mixed-sign — the added searchForward/searchBackwardMatch inout
+parameter and the ScratchBuffers field are free on the standard
+corpora (the inout scope opens only after the byte scan, per the §37
+rule). The full-matrix drift vs `1b43bbc` on rows no code touched
+(contains/localizedCompare +20–50 ns) appears in BOTH A/B sides —
+inherited -no-WMO placement/run variance from the §38–§40 span, not
+§41; the A/B is the proof. Binaries positively identified by nm symbol
+check (fullDecompositionCount: new=1, base=0 — nm, never `strings`,
+§40 rule). Table 1 engine rows: compare/sortKey call graphs untouched
+by construction; matrix deltas vs `1b43bbc` ±4% mixed-sign, within the
+§34 placement band.

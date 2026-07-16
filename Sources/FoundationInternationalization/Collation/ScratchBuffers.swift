@@ -52,6 +52,11 @@ final class ScratchBuffers {
     var annotatedCEs: [AnnotatedCE] = []
     /// contains: masked text CEs.
     var maskedTextCEs: [Int64] = []
+    /// search: NFD-position → source-scalar-index map, built lazily by
+    /// confirmMatch only for a full CE match on decomposing text. Its
+    /// per-call allocation (plus per-scalar temporaries) was ~half the cost
+    /// of every matching search on accented text (§41).
+    var nfdSourceMap: [Int] = []
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData,
          simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
