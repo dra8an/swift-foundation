@@ -78,8 +78,14 @@ Allocation/resolution samples are the trustworthy kind.
       (§40): StandardComparator resolved Locale.current per comparison
       (~90 ns × n·log n in sorts) — fixed via collatorForCurrentLocale
       (287→229). String.Comparator clean; the others delegate.
-- [ ] CollationOptions.from + CompareOptions.init per call (85 -no-WMO
-      samples in §38's profile; likely WMO-free, verify before acting).
+- [x] CollationOptions.from + CompareOptions.init per call — AUDITED
+      (2026-07-16): built the module WMO (build-only; the machine-1
+      SIGILL is runtime-only) and swept every object file — the symbol
+      does not exist and no call sites reference it. Fully inlined/
+      constant-folded under WMO; the 85 §38-profile samples were a
+      -no-WMO bench-build artifact (Docs/25 already documents that
+      handicap). No code change. Verdict cost ~2–3 ns/call in the
+      bench build only — not worth an API-side workaround.
 - [ ] sortKey Foundation wrappers (entry ladder never ran for sortKey —
       §29 queue item; combine with this audit).
 - [ ] The skRet variant allocates BY API CONTRACT (returns fresh
