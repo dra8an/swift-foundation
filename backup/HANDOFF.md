@@ -1,20 +1,53 @@
-# Hebrew port — Session Handoff
+# Calendar ports — Session Handoff (master entry point)
 
-**Cold-resume: read this file first.** Last update: 2026-06-04.
+**Cold-resume: read this file first.** Last update: 2026-07-17.
 
-## 🚧 SUPERSEDED CONTEXT BELOW for cold-resume on 2026-06-12+
+## ✅ CURRENT STATE (2026-07-17) — read this section, then the active plan
 
-**As of 2026-06-11**, active work has moved on. Read these FIRST:
+**Active work: Chinese calendar port. Read `backup/CHINESE_PLAN.md` — it is
+the self-contained starting point** (strategy options, sources, test plan,
+milestones, open questions). Everything below it in this file is history.
 
-1. `backup/SESSION_2026-06-11.md` — today's full progress (Buddhist port complete b1–b3; Japanese Suite A complete j1).
-2. `backup/BUDDHIST_JAPANESE_PLAN.md` — Buddhist + Japanese plan (revised 2026-06-11 to single branch / single PR).
-3. `backup/j1-japanese-suite-a-complete/README.md` — Japanese state, including ⚠ Meiji 1868-09-08 vs CLDR 1868-10-23 anomaly with investigation paths.
+### Workstream status
 
-**Current branch**: `port/buddhist` (off `port/hebrew`'s `67c538c`). Work is **uncommitted** — first action on resume is `git status` to inventory, then commit + push.
+| Effort | Status |
+|---|---|
+| Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
+| Buddhist + Japanese | **PR #2105 OPEN** since 2026-07-12 (`port/buddhist-japanese-main`, head `08b6e889`). Awaiting first review. Watch: `gh pr view 2105 --repo swiftlang/swift-foundation`. Review responses happen on the 6.4 machine. |
+| Chinese | **Starting** — see `backup/CHINESE_PLAN.md`. Research branch `port/chinese` (to be created off `port/buddhist` tip `ae2bc97`). |
 
-**PR #2028 status** (waiting on reviewer): 4 commits live on `port/hebrew-perf-and-dedup`; latest is `f764dc7` "Add per-pattern probe to fast-path gate" (the Option B fix). Five round-1 reviewer comments all addressed in `0127031`. No new reviewer activity yet.
+### Branch landscape (fork = dra8an/swift-foundation)
 
-The rest of THIS file describes the Hebrew port state as of 2026-06-04 — still accurate for the Hebrew side, but no longer reflects the active work.
+| Branch | Role |
+|---|---|
+| `port/hebrew` | Hebrew research (v8–v26 stack). Historic. |
+| `port/buddhist` (`ae2bc97`) | B/J research + all parity probes + handoff docs. Base for `port/chinese`. |
+| `port/buddhist-japanese-main` (`08b6e889`) | PR #2105 source. 6.4 machine owns it. |
+| `port/chinese` | Chinese research — CREATE off `port/buddhist`. |
+
+### Environment (critical, this 6.3 iMac)
+
+- **`export TOOLCHAINS=swift SWIFTCI_USE_LOCAL_DEPS=1` before every build**
+  — Xcode's 6.2.3 fails on `Calendar_Hebrew.swift`; Swift 6.3.1 required.
+  Unexpected full rebuild or errors in unchanged code → check `swift --version` FIRST.
+- Build-cache issues → `./scripts/clean-test.sh`; timings → `backup/EXPECTED_TIMES.md`.
+- Release-mode blocked here (Intel SIGBUS) — release validation on 6.4 machine.
+- Never commit/push without explicit user instruction. Announce long
+  launches first. `gh` for PR inspection, never local checkout of PR branches.
+
+### Doc map (all in backup/)
+
+- `CHINESE_PLAN.md` — **active plan (start here)**
+- `BUDDHIST_JAPANESE_6.4_HANDOFF.md` — B/J cherry-pick handoff (executed; kept for pattern)
+- `BUDDHIST_JAPANESE_PR_DESCRIPTION.md` — B/J draft PR body
+- `BENCHMARKS_PACKAGE.md` — bench methodology + B/J results matrix (PR-ready)
+- `PARITY_PROTOCOL.md` — zero-divergence bar (non-negotiable)
+- `LOCAL_VS_UPSTREAM_DIVERGENCE.md` — Hebrew local-probe divergences (back-sync reading)
+- `SESSION_2026-06-11.md` — B/J build log incl. bug forensics
+- `EXPECTED_TIMES.md`, `BUILD_CACHE_PROTOCOL.md` — operational discipline
+
+The rest of THIS file describes the Hebrew port state as of 2026-06-04 —
+still accurate for Hebrew history, but no longer the active work.
 
 ---
 
