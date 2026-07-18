@@ -85,8 +85,8 @@ Track via the protocol baseline in agent memory
   major solar term (zhōngqì) following the winter-solstice month rules.
   Month 11 contains the winter solstice; New Year = second (sometimes
   third) new moon after solstice.
-- **ICU's field conventions** (the parity target — verify all in Suite A
-  discovery tests, do not trust this table blindly):
+- **ICU's field conventions** (VERIFIED 2026-07-17 — the authoritative
+  version is § 11.1; the sketch below was the pre-verification guess):
   - `era` = 60-year cycle number since the 2637 BCE epoch (Huangdi era);
     recent dates are in cycle ~78–79.
   - `year` = 1…60 within the cycle.
@@ -777,3 +777,94 @@ Japanese `dateInterval(.era)`, Meiji data).
    2026-07-17: out of scope for this effort entirely.**
 3. Same single-branch/single-PR bundling as B/J, or Chinese standalone PR?
    (Standalone recommended — it's a big review on its own.)
+
+## 11. Implementation log — verified conventions & divergence registry
+
+> Everything in this section is OBSERVED/SOURCE-DERIVED during M1/M2
+> (2026-07-17), not assumed. It is the raw material for the PR description
+> and the 6.4 handoff. Snapshots: `c1` = `40be0f6` (M1), `c2` = `a316747` (M2).
+
+### 11.1 Verified ICU field model (supersedes the § 4 sketch)
+
+- extended year `ext` = related Gregorian year + 2637 (CNY 2000 → ext 4637).
+- `era` = 60-year cycle = `(ext−1) fdiv 60 + 1` (2000 → era 78).
+- `year` = `(ext−1) fmod 60 + 1` (1..60; 2000 → 17).
+- `yearForWeekOfYear` = **ext**, not year-in-cycle.
+- `dayOfYear` = CNY-relative (1..384).
+- `month` = display number 1..12 (leap repeats it, `isLeapMonth` set);
+  ICU populates `isLeapMonth` in EVERY dateComponents result whether or
+  not requested (Hebrew precedent: always set it).
+- `quarter` ≡ 0 for chinese (ICU bug; we return the same sentinel).
+- LIMITS (chnsecal.cpp:174): era 1..83333, year 1..60, woy 1..50/55,
+  day 1..29/30, doy 1..353/385, weekdayOrdinal −1..5, YEAR_WOY ±5,000,000.
+- `date(from:)` era default when unset = era of the CURRENT date (ICU
+  fields default from "now"), verified: `{year: 41}` alone → CNY 2024.
+- Rejected-day behavior: day out of 1..monthLength → nil (Hebrew-shaped;
+  strict probes in M3 will confirm against _CalendarICU's wrapper).
+
+### 11.2 Verified ICU behavioral conventions (ported in M2)
+
+1. `dateInterval(.yearForWeekOfYear)` → **nil** for chinese.
+2. `date(byAdding: .yearForWeekOfYear)` → **no-op** for chinese.
+3. `ordinality(.month, .year)` → **display month number**, NOT ordinal
+   position (leap-4 day → 4, and the month after it → 5).
+4. `dateInterval(.era)` = the 60-year cycle span (matched ICU on first try).
+5. **Year-add pin dance** (THE nontrivial one; sources:
+   `calendar.cpp` `Calendar::add` UCAL_YEAR → `set(year+N)` +
+   `pinField(DOM)`; `Calendar::getActualMaximum(UCAL_DATE)` clones,
+   `prepareGetActual` sets DOM=1, clone `complete()` resolves, but
+   `handleGetMonthLength` is then called **on the original object** —
+   reading the original's IS_LEAP_MONTH — with the CLONE's resolved
+   month number; `chnsecal.cpp` `handleComputeMonthStart` resolves month
+   as estimate `CNY + month0×29 days` → `newMoonNear` → **bump exactly
+   once** if display OR leap mismatches — never twice):
+   - S1 = single-bump resolution of (source display M, source leap L) in
+     the target year.
+   - pin length = month length at S2 = single-bump resolution of
+     (S1's display number, ORIGINAL leap L).
+   - result = S1 + min(day, len(S2)) − 1, **spilling leniently** into
+     following months when unpinned.
+   - Reproduces BOTH: 1906 m4L d30 + 1y → 1907-07-10 (spill into m6) and
+     m12 d30 + 1y → Feb 7 (clamp), plus the 2023-leap-2 single-bump-
+     consumed case (leap flag silently dropped when the bump was used for
+     the display correction).
+   Implemented in `_CalendarChinese.date(byAdding:)` year path +
+   `resolvedMonthStart(ext:display:leap:)`.
+6. Month-add = pure lunation stepping with day pinned
+   (`ChineseCalendar::add` UCAL_MONTH → `offsetMonth`); our ordinal-walk +
+   clamp matches on all sampled cases incl. day-30→29.
+
+### 11.3 Known divergences & exclusions registry (the PR's "known issues")
+
+| # | What | Scope | Cause | Status |
+|---|---|---|---|---|
+| 1 | ICU emits `day=0` and off-by-one doms | Chinese months starting 2057-09-28 and 2097-08-07 (30 days each) | Apple ICU internal clash: baked newYearAdj/winterSolsticeAdj + newMoonDates tables vs live code (§ 5c) | Excluded + documented. ICU is self-inconsistent (a valid calendar never emits day 0) |
+| 2 | ICU year-level queries corrupted in those years | whole Chinese years 2057 & 2097 (e.g. `range(.day,.year)` = 1..<325 for a ~354-day year) | same artifact propagating into actualMaximum(DOY) | Excluded whole years in probes |
+| 3 | fallback m6-2101 starts Jun 27 (ours) vs Jun 26 (ICU) | 30 days in Chinese 2101 (first fallback year) | documented Reingold-vs-Duffett-Smith conjunction class (§ 5b); our instant is astronomically right | Intentional; documented |
+| 4 | out-of-range divergence profile | <1901 / >2100 | § 5b measurements + adjudication (9/10 vs promulgated record) | Intentional; PR-defensible with citations |
+
+### 11.4 Bugs found & fixed via probes (process log)
+
+- `toLocalDay` off-by-one in the fallback port (+1 that didn't belong):
+  every fallback month start one day late; caught by the 74,510-day
+  engine sweep (1,421 divergent days → 30 after fix). Lesson: the sweep
+  gates real bugs, run it after any engine change.
+- Probe hardcoded artifact-window literal for 2097 miscomputed by 35 days
+  (manual RD arithmetic); replaced ALL probe literals with computed
+  `gregorianRD(...)` expressions.
+- My first four year-add models (clamp; bump+clamp; no-pin spill;
+  pin-vs-spilled-month) each matched a subset of cases — only the
+  source-derived pin dance (11.2 #5) matched all. Lesson recorded: for
+  add/roll semantics, read Calendar::add + getActualMaximum verbatim
+  FIRST; observed behavior alone underdetermines the algorithm.
+
+### 11.5 Verification inventory (as of c2)
+
+- Generator: 200 years swept from `_CalendarICU`; HKO cross-validation =
+  exactly the 3 known ICU-vs-HKO month starts (1914 M10, 1916 M01/CNY,
+  1920 M10) — 2,455/2,461 rows identical, nothing else.
+- Engine daily sweep 1899-01-01..2102-12-31 (74,510 days): in-table
+  divergence ONLY within registry #1 windows; out-of-table only registry
+  #3; seams tile exactly; 1899+1900 fully clean (incl. 1900 leap-8).
+- M1 probe: 5,723 sampled days, 13 fields, 0 diffs; round-trip 0 fails.
+- Suite A (9 topics, ~900 dates): 0 divergences.

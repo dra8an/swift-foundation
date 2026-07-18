@@ -14,7 +14,7 @@ milestones, open questions). Everything below it in this file is history.
 |---|---|
 | Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
 | Buddhist + Japanese | **PR #2105 OPEN** since 2026-07-12 (`port/buddhist-japanese-main`, head `08b6e889`). Awaiting first review. Watch: `gh pr view 2105 --repo swiftlang/swift-foundation`. Review responses happen on the 6.4 machine. |
-| Chinese | **Starting** — see `backup/CHINESE_PLAN.md`. Research branch `port/chinese` (to be created off `port/buddhist` tip `ae2bc97`). |
+| Chinese | **M2 COMPLETE** (2026-07-17): engine + `_CalendarChinese` + Suite A all zero-divergence vs ICU. Snapshots c1=`40be0f6`, c2=`a316747` on `port/chinese`. Findings: `CHINESE_PLAN.md` § 11. Next: M3 (Suites B/C, daily sweep, strict). |
 
 ### Branch landscape (fork = dra8an/swift-foundation)
 
@@ -23,7 +23,7 @@ milestones, open questions). Everything below it in this file is history.
 | `port/hebrew` | Hebrew research (v8–v26 stack). Historic. |
 | `port/buddhist` (`ae2bc97`) | B/J research + all parity probes + handoff docs. Base for `port/chinese`. |
 | `port/buddhist-japanese-main` (`08b6e889`) | PR #2105 source. 6.4 machine owns it. |
-| `port/chinese` | Chinese research — CREATE off `port/buddhist`. |
+| `port/chinese` | Chinese research — ACTIVE, head `a316747` (c2). |
 
 ### Environment (critical, this 6.3 iMac)
 
