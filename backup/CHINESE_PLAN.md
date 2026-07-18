@@ -757,6 +757,9 @@ Japanese `dateInterval(.era)`, Meiji data).
   date(from:) round-trip green on sampled dates). Snapshot `c1`.
 - M2: full Suite A green. `c2`.
 - M3: Suites B + C green; daily sweep green; strict green. `c3`.
+- **M3.5 (NEXT — verification hardening, added 2026-07-17 after the
+  "anything unnoticed?" audit):** close the three verification gaps before
+  benches; see § 11.7.
 - M4: benches + docs (`BENCHMARKS_PACKAGE.md` results section) + session log.
 - M5: handoff doc for the 6.4 machine (`CHINESE_6.4_HANDOFF.md`, mirroring
   `BUDDHIST_JAPANESE_6.4_HANDOFF.md`) + draft PR description. **Must carry
@@ -907,3 +910,40 @@ Japanese `dateInterval(.era)`, Meiji data).
   strict patterns ({m4,leap,d1} biennial-skip, CNY yearly, {m6,d30}
   short-month skip): zero failures. B/J tests in the shared probe files:
   unaffected, still green.
+
+### 11.7 M3.5 TODO — verification gaps found in the end-of-day audit (OPEN)
+
+Audit question: "any icu4swift-year-start-shaped bugs lurking?" Answer: three
+gaps, none yet closed. DO THESE FIRST next session:
+
+1. **Deep-fallback never executed by tests** (<1899 / >2102) — exactly the
+   icu4swift bug shape (its non-tiling 1776 lived in untested fallback).
+   Add `ChineseInvariantProbe.swift`:
+   - Tiling + structure invariant sweep over relatedIso ≈ −2000..5000:
+     `year(Y).endRD == year(Y+1).newYearRD`, monthCount ∈ {12,13}, leap
+     present iff 13 months, and **sum-of-length-bits == nyNext − ny** (this
+     catches the silent-corruption case: fallback encodes month lengths as
+     29/30 BITS — a 28/31-day solver gap would silently mis-encode; the
+     sum check exposes it).
+   - Historical pins from § 5c adjudication as PERMANENT expectations:
+     CNY 1776-02-19, 1795-01-21, 1814-01-21, 1871-02-19, 1890-01-21,
+     2148-02-20; leap months 1775=m10L, 1900=m8L, 2147=m11L.
+   - Far-date round-trips + dateInterval(.year) adjacency at −1000, 1,
+     1500, 3000, 4600 CE (internal consistency, NOT vs ICU — divergence
+     out there is intentional/documented).
+   - Add debug-only `assert(len == 29 || len == 30)` in the engine's
+     fallback year builder (active under swift test, free in release).
+2. **min/maximumRange never compared vs ICU** — the LIMITS-derived values
+   (era 1..<83334 etc.) are unverified guesses. Add a probe comparing all
+   components' minimumRange/maximumRange vs `_CalendarICU(.chinese)`.
+3. **Hebrew isLeapMonth follow-up (upstream, NOT this branch):** the M3
+   discovery (ICU populates isLeapMonth iff .month/.isLeapMonth requested)
+   implies MERGED Hebrew may have a latent shape deviation: it ALWAYS
+   populates isLeapMonth=false, ICU likely returns nil for sets like
+   [.minute]. Verify with the per-set probe pointed at .hebrew (and check
+   B/J too). Functionally benign (false ≡ nil under the framework's
+   `?? false` coercions — which is why every Hebrew parity suite passed),
+   but observable via DateComponents equality / `.isLeapMonth != nil`, so
+   it violates strict parity. If confirmed: one-line guard like Chinese's;
+   needs USER DECISION on how/when to upstream (Hebrew is merged; B/J PR
+   #2105 still open — could fold into a review round).
