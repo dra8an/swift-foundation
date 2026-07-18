@@ -557,3 +557,762 @@ internal enum _ChineseCalendarEngine {
         return y
     }
 }
+
+
+// MARK: - _CalendarChinese
+
+/// Pure-Swift implementation of the Chinese lunisolar calendar.
+///
+/// Field conventions match ICU: era = 60-year cycle number since the 2637 BCE
+/// epoch, year = 1...60 within the cycle, month = 1...12 with `isLeapMonth`
+/// distinguishing the repeated month, extended year (used by
+/// `yearForWeekOfYear`) = related Gregorian year + 2637.
+internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
+
+    init(identifier: Calendar.Identifier, timeZone: TimeZone?, locale: Locale?, firstWeekday: Int?, minimumDaysInFirstWeek: Int?, gregorianStartDate: Date?) {
+        assert(identifier == .chinese, "_CalendarChinese only handles .chinese")
+        self.identifier = identifier
+        self.timeZone = timeZone ?? .default
+        self.locale = locale
+        if let firstWeekday, (firstWeekday >= 1 && firstWeekday <= 7) {
+            _firstWeekday = firstWeekday
+        }
+        if var minimumDaysInFirstWeek {
+            if minimumDaysInFirstWeek < 1 { minimumDaysInFirstWeek = 1 }
+            else if minimumDaysInFirstWeek > 7 { minimumDaysInFirstWeek = 7 }
+            _minimumDaysInFirstWeek = minimumDaysInFirstWeek
+        }
+    }
+
+    let identifier: Calendar.Identifier
+    var locale: Locale?
+    var timeZone: TimeZone
+
+    var _firstWeekday: Int?
+    var firstWeekday: Int {
+        set { _firstWeekday = _CalendarUtility.validatedFirstWeekday(newValue) }
+        get { _CalendarUtility.resolveFirstWeekday(stored: _firstWeekday, locale: locale) }
+    }
+
+    var _minimumDaysInFirstWeek: Int?
+    var minimumDaysInFirstWeek: Int {
+        set { _minimumDaysInFirstWeek = _CalendarUtility.clampedMinimumDaysInFirstWeek(newValue) }
+        get { _CalendarUtility.resolveMinimumDaysInFirstWeek(stored: _minimumDaysInFirstWeek, locale: locale) }
+    }
+
+    func copy(changingLocale: Locale?, changingTimeZone: TimeZone?, changingFirstWeekday: Int?, changingMinimumDaysInFirstWeek: Int?) -> _CalendarProtocol {
+        let args = _CalendarUtility.resolvedCopyArgs(
+            currentTimeZone: timeZone, changingTimeZone: changingTimeZone,
+            currentLocale: locale, changingLocale: changingLocale,
+            currentFirstWeekday: _firstWeekday, changingFirstWeekday: changingFirstWeekday,
+            currentMinimumDaysInFirstWeek: _minimumDaysInFirstWeek, changingMinimumDaysInFirstWeek: changingMinimumDaysInFirstWeek
+        )
+        return _CalendarChinese(identifier: identifier, timeZone: args.timeZone, locale: args.locale, firstWeekday: args.firstWeekday, minimumDaysInFirstWeek: args.minimumDaysInFirstWeek, gregorianStartDate: nil)
+    }
+
+    // No fast paths in phase 1 — leap months complicate the matching patterns.
+    var supportsNextDateFastPath: Bool { false }
+
+    // MARK: Extended year model
+
+    // extended year = related Gregorian year + 2637; era = 60-year cycle.
+    static let extOffset = 2637
+
+    private static func yearData(ext: Int) -> _ChineseYear {
+        _ChineseCalendarEngine.year(relatedIso: ext - extOffset)
+    }
+
+    private static func floorDiv(_ a: Int, _ b: Int) -> Int {
+        a >= 0 ? a / b : -((-a + b - 1) / b)
+    }
+
+    private static func eraAndYear(ext: Int) -> (era: Int, year: Int) {
+        let e = floorDiv(ext - 1, 60)
+        return (e + 1, ext - 1 - e * 60 + 1)
+    }
+
+    private static func ext(era: Int, year: Int) -> Int {
+        (era - 1) * 60 + year
+    }
+
+    // MARK: Range
+
+    func minimumRange(of component: Calendar.Component) -> Range<Int>? {
+        switch component {
+        case .era: return 1..<83334          // ICU chnsecal LIMITS
+        case .year: return 1..<61
+        case .month: return 1..<13
+        case .day: return 1..<30
+        case .hour: return 0..<24
+        case .minute: return 0..<60
+        case .second: return 0..<60
+        case .weekday: return 1..<8
+        case .weekdayOrdinal: return -1..<6
+        case .quarter: return 1..<5
+        case .weekOfMonth: return 1..<6
+        case .weekOfYear: return 1..<51
+        case .yearForWeekOfYear: return -5_000_000..<5_000_001
+        case .nanosecond: return 0..<1_000_000_000
+        case .isLeapMonth: return 0..<2
+        case .isRepeatedDay: return 0..<1
+        case .dayOfYear: return 1..<354
+        case .calendar, .timeZone:
+            return nil
+        }
+    }
+
+    func maximumRange(of component: Calendar.Component) -> Range<Int>? {
+        switch component {
+        case .era: return 1..<83334
+        case .year: return 1..<61
+        case .month: return 1..<13
+        case .day: return 1..<31
+        case .hour: return 0..<24
+        case .minute: return 0..<60
+        case .second: return 0..<60
+        case .weekday: return 1..<8
+        case .weekdayOrdinal: return -1..<6
+        case .quarter: return 1..<5
+        case .weekOfMonth: return 1..<7
+        case .weekOfYear: return 1..<56
+        case .yearForWeekOfYear: return -5_000_000..<5_000_001
+        case .nanosecond: return 0..<1_000_000_000
+        case .isLeapMonth: return 0..<2
+        case .isRepeatedDay: return 0..<1
+        case .dayOfYear: return 1..<386
+        case .calendar, .timeZone:
+            return nil
+        }
+    }
+
+    func range(of smaller: Calendar.Component, in larger: Calendar.Component, for date: Date) -> Range<Int>? {
+        switch smaller {
+        case .weekday:
+            switch larger {
+            case .second, .minute, .hour, .day, .weekday: return nil
+            default: return maximumRange(of: smaller)
+            }
+        case .hour:
+            switch larger {
+            case .second, .minute, .hour: return nil
+            default: return maximumRange(of: smaller)
+            }
+        case .minute:
+            switch larger {
+            case .second, .minute: return nil
+            default: return maximumRange(of: smaller)
+            }
+        case .second:
+            switch larger {
+            case .second: return nil
+            default: return maximumRange(of: smaller)
+            }
+        case .nanosecond:
+            return maximumRange(of: smaller)
+        default:
+            break
+        }
+        switch (smaller, larger) {
+        case (.month, .year):
+            // Number of display months is always 12 (the leap repeats a number).
+            return 1..<13
+        default:
+            break
+        }
+        guard let interval = dateInterval(of: larger, for: date) else { return nil }
+        guard let ord1 = ordinality(of: smaller, in: larger, for: interval.start + 0.1) else { return nil }
+        guard let ord2 = ordinality(of: smaller, in: larger, for: interval.start + interval.duration - 0.1) else { return nil }
+        if ord2 < ord1 { return ord1..<ord1 }
+        return ord1..<(ord2 + 1)
+    }
+
+    // MARK: Ordinality
+
+    func ordinality(of smaller: Calendar.Component, in larger: Calendar.Component, for date: Date) -> Int? {
+        let tz = self.timeZone
+        let comps = dateComponents(
+            [.year, .month, .day, .hour, .minute, .second, .nanosecond,
+             .weekday, .weekOfYear, .weekOfMonth, .weekdayOrdinal, .dayOfYear],
+            from: date, in: tz
+        )
+        guard let day = comps.day, let dayOfYear = comps.dayOfYear else { return nil }
+        let hour = comps.hour ?? 0
+        let minute = comps.minute ?? 0
+        let second = comps.second ?? 0
+        let nanosecond = comps.nanosecond ?? 0
+
+        switch (smaller, larger) {
+        case (.day, .year):
+            return dayOfYear
+        case (.day, .month):
+            return day
+        case (.month, .year):
+            // Ordinal position of the month within the year (leap months count).
+            let (_, ordinal, _) = fields(for: date, in: tz)
+            return ordinal
+        case (.weekOfYear, .year):
+            let weekday = comps.weekday ?? 1
+            let relStart = (weekday - dayOfYear + 7001 - firstWeekday) % 7
+            var unwrapped = (dayOfYear - 1 + relStart) / 7
+            if (7 - relStart) >= minimumDaysInFirstWeek { unwrapped += 1 }
+            return unwrapped
+        case (.weekOfMonth, .month):
+            return comps.weekOfMonth
+        case (.weekday, .year):
+            return (dayOfYear - 1) / 7 + 1
+        case (.weekday, .month):
+            return (day - 1) / 7 + 1
+        case (.weekday, .weekOfYear):
+            guard let weekday = comps.weekday else { return nil }
+            return ((weekday - firstWeekday + 7) % 7) + 1
+        case (.weekdayOrdinal, .month):
+            return (day - 1) / 7 + 1
+        case (.hour, .day):
+            return hour + 1
+        case (.minute, .hour):
+            return minute + 1
+        case (.second, .minute):
+            return second + 1
+        case (.nanosecond, .second):
+            return nanosecond + 1
+        default:
+            return nil
+        }
+    }
+
+    // MARK: Internal field extraction
+
+    /// (extended year, month ordinal, day) for a date in the given timezone.
+    private func fields(for date: Date, in tz: TimeZone) -> (ext: Int, ordinal: Int, day: Int) {
+        let totalOffset = tz.secondsFromGMT(for: date)
+        let localSeconds = date.timeIntervalSinceReferenceDate + Double(totalOffset)
+        let (rd, _) = Self.rataDieAndSecondsInDay(localSeconds: localSeconds)
+        let y = _ChineseCalendarEngine.year(containingRD: rd)
+        let (ordinal, day) = y.ordinalAndDay(rd: rd)!
+        return (y.relatedIso + Self.extOffset, ordinal, day)
+    }
+
+    // MARK: Date intervals
+
+    private static func nextOrdinalMonth(ext: Int, ordinal: Int) -> (Int, Int) {
+        let y = yearData(ext: ext)
+        if ordinal < Int(y.monthCount) { return (ext, ordinal + 1) }
+        return (ext + 1, 1)
+    }
+
+    private static func prevOrdinalMonth(ext: Int, ordinal: Int) -> (Int, Int) {
+        if ordinal > 1 { return (ext, ordinal - 1) }
+        let py = yearData(ext: ext - 1)
+        return (ext - 1, Int(py.monthCount))
+    }
+
+    private func firstDayOfWeekYear(_ ext: Int) -> Int {
+        let rdNY = Self.yearData(ext: ext).newYearRD
+        var r = rdNY % 7
+        if r < 0 { r += 7 }
+        let nyWeekday = r + 1
+        let rel = (nyWeekday - firstWeekday + 7) % 7
+        let offset: Int
+        if (7 - rel) >= minimumDaysInFirstWeek {
+            offset = -rel
+        } else {
+            offset = 7 - rel
+        }
+        return rdNY + offset
+    }
+
+    private func numWeeksInYearForWeekOfYear(_ ext: Int) -> Int {
+        (firstDayOfWeekYear(ext + 1) - firstDayOfWeekYear(ext)) / 7
+    }
+
+    /// Date at local midnight of (ext, ordinal, day).
+    private func localMidnight(ext: Int, ordinal: Int, day: Int, in tz: TimeZone) -> Date {
+        let y = Self.yearData(ext: ext)
+        let rd = y.monthStartRD(ordinal: ordinal) + day - 1
+        return utcDate(fromRataDie: rd, secondsInDay: 0, in: tz,
+                       repeatedTimePolicy: .former, skippedTimePolicy: .former)
+    }
+
+    func dateInterval(of component: Calendar.Component, for date: Date) -> DateInterval? {
+        let tz = self.timeZone
+        let (ext, ordinal, day) = fields(for: date, in: tz)
+
+        switch component {
+        case .era:
+            // One era = one 60-year cycle.
+            let (era, _) = Self.eraAndYear(ext: ext)
+            let startExt = Self.ext(era: era, year: 1)
+            let start = localMidnight(ext: startExt, ordinal: 1, day: 1, in: tz)
+            let end = localMidnight(ext: startExt + 60, ordinal: 1, day: 1, in: tz)
+            return DateInterval(start: start, duration: end.timeIntervalSince(start))
+        case .year:
+            let start = localMidnight(ext: ext, ordinal: 1, day: 1, in: tz)
+            let end = localMidnight(ext: ext + 1, ordinal: 1, day: 1, in: tz)
+            return DateInterval(start: start, duration: end.timeIntervalSince(start))
+        case .yearForWeekOfYear:
+            let weekYearComps = dateComponents([.yearForWeekOfYear], from: date, in: tz)
+            guard let weekYear = weekYearComps.yearForWeekOfYear else { return nil }
+            let rdStart = firstDayOfWeekYear(weekYear)
+            let rdEnd = firstDayOfWeekYear(weekYear + 1)
+            let utcStart = Date(timeIntervalSinceReferenceDate: Double(rdStart - Self.rataDieAtDateReference) * 86400)
+            let utcEnd = Date(timeIntervalSinceReferenceDate: Double(rdEnd - Self.rataDieAtDateReference) * 86400)
+            let (o1, d1) = tz.rawAndDaylightSavingTimeOffset(for: utcStart, repeatedTimePolicy: .former, skippedTimePolicy: .former)
+            let (o2, d2) = tz.rawAndDaylightSavingTimeOffset(for: utcEnd, repeatedTimePolicy: .former, skippedTimePolicy: .former)
+            let start = utcStart - Double(o1) - d1
+            let end = utcEnd - Double(o2) - d2
+            return DateInterval(start: start, duration: end.timeIntervalSince(start))
+        case .month:
+            let start = localMidnight(ext: ext, ordinal: ordinal, day: 1, in: tz)
+            let (ny, nm) = Self.nextOrdinalMonth(ext: ext, ordinal: ordinal)
+            let end = localMidnight(ext: ny, ordinal: nm, day: 1, in: tz)
+            return DateInterval(start: start, duration: end.timeIntervalSince(start))
+        case .weekOfYear, .weekOfMonth:
+            let y = Self.yearData(ext: ext)
+            let rdHere = y.monthStartRD(ordinal: ordinal) + day - 1
+            var r = rdHere % 7
+            if r < 0 { r += 7 }
+            let weekday = r + 1
+            var daysBack = weekday - firstWeekday
+            if daysBack < 0 { daysBack += 7 }
+            let rdStart = rdHere - daysBack
+            let start = utcDate(fromRataDie: rdStart, secondsInDay: 0, in: tz,
+                                repeatedTimePolicy: .former, skippedTimePolicy: .former)
+            let end = utcDate(fromRataDie: rdStart + 7, secondsInDay: 0, in: tz,
+                              repeatedTimePolicy: .former, skippedTimePolicy: .former)
+            return DateInterval(start: start, duration: end.timeIntervalSince(start))
+        case .day, .weekday, .weekdayOrdinal, .dayOfYear:
+            let y = Self.yearData(ext: ext)
+            let rdHere = y.monthStartRD(ordinal: ordinal) + day - 1
+            let start = utcDate(fromRataDie: rdHere, secondsInDay: 0, in: tz,
+                                repeatedTimePolicy: .former, skippedTimePolicy: .former)
+            let end = utcDate(fromRataDie: rdHere + 1, secondsInDay: 0, in: tz,
+                              repeatedTimePolicy: .former, skippedTimePolicy: .former)
+            return DateInterval(start: start, duration: end.timeIntervalSince(start))
+        case .hour:
+            let ti = Double(tz.secondsFromGMT(for: date))
+            let time = date.timeIntervalSinceReferenceDate
+            var fixedTime = time + ti
+            fixedTime = (fixedTime / 3600.0).rounded(.down) * 3600.0
+            fixedTime = fixedTime - ti
+            return DateInterval(start: Date(timeIntervalSinceReferenceDate: fixedTime), duration: 3600.0)
+        case .minute:
+            let time = date.timeIntervalSinceReferenceDate
+            return DateInterval(start: Date(timeIntervalSinceReferenceDate: (time / 60.0).rounded(.down) * 60.0), duration: 60.0)
+        case .second:
+            let time = date.timeIntervalSinceReferenceDate
+            return DateInterval(start: Date(timeIntervalSinceReferenceDate: time.rounded(.down)), duration: 1.0)
+        case .nanosecond:
+            return DateInterval(start: date, duration: 1e-9)
+        case .quarter, .isLeapMonth, .isRepeatedDay, .calendar, .timeZone:
+            return nil
+        }
+    }
+
+    // MARK: Weekend
+
+    func isDateInWeekend(_ date: Date) -> Bool {
+        let weekendRange = locale?.weekendRange ?? _CalendarUtility.defaultWeekendRange
+        let comps = dateComponents([.weekday, .hour, .minute, .second], from: date, in: self.timeZone)
+        guard let dayOfWeek = comps.weekday else { return false }
+        let timeInDay = TimeInterval(
+            (comps.hour ?? 0) * Calendar._kSecondsInHour
+            + (comps.minute ?? 0) * 60
+            + (comps.second ?? 0)
+        )
+        return _CalendarUtility.isDateInWeekend(weekday: dayOfWeek, timeInDay: timeInDay, weekendRange: weekendRange)
+    }
+
+    // MARK: Date ↔ DateComponents
+
+    internal static let rataDieAtDateReference = 730_486
+
+    private static func rataDieAndSecondsInDay(localSeconds: Double) -> (rd: Int, secondsInDay: Double) {
+        let totalDays = (localSeconds / 86400).rounded(.down)
+        let rd = Int(totalDays) &+ rataDieAtDateReference
+        let secondsInDay = localSeconds - totalDays * 86400
+        return (rd, secondsInDay)
+    }
+
+    internal func utcDate(fromRataDie rd: Int, secondsInDay: Double, in timeZone: TimeZone,
+                          repeatedTimePolicy: TimeZone.DaylightSavingTimePolicy,
+                          skippedTimePolicy: TimeZone.DaylightSavingTimePolicy) -> Date {
+        _ = skippedTimePolicy
+        let daysSinceRef = rd &- Self.rataDieAtDateReference
+        let secondsAsIfUTC = Double(daysSinceRef) * 86400 + secondsInDay
+        let tmpDate = Date(timeIntervalSinceReferenceDate: secondsAsIfUTC)
+        let (tzOffset, dstOffset) = timeZone.rawAndDaylightSavingTimeOffset(
+            for: tmpDate, repeatedTimePolicy: repeatedTimePolicy)
+        return tmpDate - Double(tzOffset) - dstOffset
+    }
+
+    func date(from components: DateComponents) -> Date? {
+        // era = cycle (default 1, matching ICU's missing-field default), year = 1...60.
+        let era = components.era ?? 1
+        guard let yearValue = components.year else { return nil }
+        let ext = Self.ext(era: era, year: yearValue)
+        guard ext > -5_000_000 && ext < 5_000_000 else { return nil }
+
+        let month = components.month ?? 1
+        let isLeap = components.isLeapMonth ?? false
+        let day = components.day ?? 1
+
+        let y = Self.yearData(ext: ext)
+        guard month >= 1 && month <= 12 else { return nil }
+        // A leap month that doesn't exist in this year falls back to the regular month.
+        let ordinal: Int
+        if let o = y.ordinal(month: month, isLeap: isLeap) {
+            ordinal = o
+        } else if isLeap, let o = y.ordinal(month: month, isLeap: false) {
+            ordinal = o
+        } else {
+            return nil
+        }
+        let daysInMonth = y.monthLength(ordinal: ordinal)
+        guard day >= 1 && day <= daysInMonth else { return nil }
+
+        let rd = y.monthStartRD(ordinal: ordinal) + day - 1
+
+        var secondsInDay: Double = 0
+        if let hour = components.hour { secondsInDay += Double(hour) * 3600 }
+        if let minute = components.minute { secondsInDay += Double(minute) * 60 }
+        if let second = components.second { secondsInDay += Double(second) }
+        if let nanosecond = components.nanosecond { secondsInDay += Double(nanosecond) / 1e9 }
+
+        let tz = components.timeZone ?? timeZone
+        return utcDate(fromRataDie: rd, secondsInDay: secondsInDay, in: tz,
+                       repeatedTimePolicy: .former, skippedTimePolicy: .former)
+    }
+
+    func dateComponents(_ components: Calendar.ComponentSet, from date: Date, in timeZone: TimeZone) -> DateComponents {
+        let totalOffset = timeZone.secondsFromGMT(for: date)
+        let localSeconds = date.timeIntervalSinceReferenceDate + Double(totalOffset)
+        let (rd, secondsInDay) = Self.rataDieAndSecondsInDay(localSeconds: localSeconds)
+
+        let y = _ChineseCalendarEngine.year(containingRD: rd)
+        let (ordinal, day) = y.ordinalAndDay(rd: rd)!
+        let label = y.label(ordinal: ordinal)
+        let ext = y.relatedIso + Self.extOffset
+        let (era, yearInCycle) = Self.eraAndYear(ext: ext)
+
+        var result = DateComponents()
+
+        if components.contains(.era) { result.era = era }
+        if components.contains(.year) { result.year = yearInCycle }
+        if components.contains(.month) { result.month = label.month }
+        if components.contains(.day) { result.day = day }
+        // ICU always populates isLeapMonth for chinese whether or not requested.
+        result.isLeapMonth = label.isLeap
+
+        if components.contains(.hour) || components.contains(.minute)
+            || components.contains(.second) || components.contains(.nanosecond) {
+            let h = Int(secondsInDay / 3600)
+            let remAfterH = secondsInDay - Double(h) * 3600
+            let m = Int(remAfterH / 60)
+            let remAfterM = remAfterH - Double(m) * 60
+            let s = Int(remAfterM)
+            let ns = Int((localSeconds - localSeconds.rounded(.down)) * 1_000_000_000)
+            if components.contains(.hour) { result.hour = h }
+            if components.contains(.minute) { result.minute = m }
+            if components.contains(.second) { result.second = s }
+            if components.contains(.nanosecond) { result.nanosecond = ns }
+        }
+
+        if components.contains(.weekday) {
+            var r = rd % 7
+            if r < 0 { r += 7 }
+            result.weekday = r + 1
+        }
+
+        if components.contains(.dayOfYear) {
+            result.dayOfYear = rd - y.newYearRD + 1
+        }
+
+        if components.contains(.timeZone) {
+            result.timeZone = timeZone
+        }
+
+        let needsWeekFields = components.contains(.weekdayOrdinal) ||
+                              components.contains(.weekOfMonth) ||
+                              components.contains(.weekOfYear) ||
+                              components.contains(.yearForWeekOfYear)
+        if needsWeekFields {
+            var r = rd % 7
+            if r < 0 { r += 7 }
+            let weekday = r + 1
+
+            let dayOfYear = rd - y.newYearRD + 1
+            let yearLength = y.daysInYear
+
+            let relativeWeekdayForYearStart = (weekday - dayOfYear + 7001 - firstWeekday) % 7
+            let relativeWeekday = (weekday + 7 - firstWeekday) % 7
+
+            var weekOfYear = (dayOfYear - 1 + relativeWeekdayForYearStart) / 7
+            if (7 - relativeWeekdayForYearStart) >= minimumDaysInFirstWeek {
+                weekOfYear += 1
+            }
+
+            var yearForWeekOfYear = ext
+            if weekOfYear == 0 {
+                let previousYearLength = Self.yearData(ext: ext - 1).daysInYear
+                let previousDayOfYear = dayOfYear + previousYearLength
+                weekOfYear = Self.weekNumber(
+                    desiredDay: previousDayOfYear, dayOfPeriod: previousDayOfYear, weekday: weekday,
+                    firstWeekday: firstWeekday, minimumDaysInFirstWeek: minimumDaysInFirstWeek)
+                yearForWeekOfYear -= 1
+            } else if dayOfYear >= yearLength - 5 {
+                var lastRelativeDayOfWeek = (relativeWeekday + yearLength - dayOfYear) % 7
+                if lastRelativeDayOfWeek < 0 { lastRelativeDayOfWeek += 7 }
+                if ((6 - lastRelativeDayOfWeek) >= minimumDaysInFirstWeek)
+                    && ((dayOfYear + 7 - relativeWeekday) > yearLength) {
+                    weekOfYear = 1
+                    yearForWeekOfYear += 1
+                }
+            }
+
+            let weekOfMonth = Self.weekNumber(
+                desiredDay: day, dayOfPeriod: day, weekday: weekday,
+                firstWeekday: firstWeekday, minimumDaysInFirstWeek: minimumDaysInFirstWeek)
+            let weekdayOrdinal = (day - 1) / 7 + 1
+
+            if components.contains(.weekdayOrdinal)    { result.weekdayOrdinal = weekdayOrdinal }
+            if components.contains(.weekOfMonth)       { result.weekOfMonth = weekOfMonth }
+            if components.contains(.weekOfYear)        { result.weekOfYear = weekOfYear }
+            if components.contains(.yearForWeekOfYear) { result.yearForWeekOfYear = yearForWeekOfYear }
+        }
+
+        // ICU returns 0 for chinese quarter (bug); match the sentinel.
+        if components.contains(.quarter) {
+            result.quarter = 0
+        }
+
+        return result
+    }
+
+    private static func weekNumber(
+        desiredDay: Int, dayOfPeriod: Int, weekday: Int,
+        firstWeekday: Int, minimumDaysInFirstWeek: Int
+    ) -> Int {
+        var periodStartDayOfWeek = (weekday - firstWeekday - dayOfPeriod + 1) % 7
+        if periodStartDayOfWeek < 0 { periodStartDayOfWeek += 7 }
+        var weekNo = (desiredDay + periodStartDayOfWeek - 1) / 7
+        if (7 - periodStartDayOfWeek) >= minimumDaysInFirstWeek {
+            weekNo += 1
+        }
+        return weekNo
+    }
+
+    func dateComponents(_ components: Calendar.ComponentSet, from date: Date) -> DateComponents {
+        dateComponents(components, from: date, in: self.timeZone)
+    }
+
+    // MARK: Adding
+
+    func date(byAdding components: DateComponents, to date: Date, wrappingComponents: Bool) -> Date? {
+        var result = date
+
+        // Wrap-day single-component fast path.
+        if wrappingComponents,
+           let d = components.day, d != 0,
+           (components.era ?? 0) == 0, (components.year ?? 0) == 0, (components.month ?? 0) == 0,
+           (components.weekOfYear ?? 0) == 0, (components.weekOfMonth ?? 0) == 0,
+           (components.weekdayOrdinal ?? 0) == 0, (components.weekday ?? 0) == 0,
+           (components.dayOfYear ?? 0) == 0, (components.yearForWeekOfYear ?? 0) == 0,
+           (components.hour ?? 0) == 0, (components.minute ?? 0) == 0,
+           (components.second ?? 0) == 0, (components.nanosecond ?? 0) == 0 {
+            let tz = self.timeZone
+            let (ext, ordinal, curDay) = fields(for: result, in: tz)
+            let y = Self.yearData(ext: ext)
+            let monthLen = y.monthLength(ordinal: ordinal)
+            let newDay = ((curDay - 1 + d) % monthLen + monthLen) % monthLen + 1
+            let comps = dateComponents([.hour, .minute, .second, .nanosecond], from: result, in: tz)
+            var secondsInDay: Double = 0
+            if let h = comps.hour { secondsInDay += Double(h) * 3600 }
+            if let m = comps.minute { secondsInDay += Double(m) * 60 }
+            if let s = comps.second { secondsInDay += Double(s) }
+            if let n = comps.nanosecond { secondsInDay += Double(n) / 1e9 }
+            let rd = y.monthStartRD(ordinal: ordinal) + newDay - 1
+            return utcDate(fromRataDie: rd, secondsInDay: secondsInDay, in: tz,
+                           repeatedTimePolicy: .former, skippedTimePolicy: .former)
+        }
+
+        let yearsToAdd = (components.year ?? 0) + (components.era ?? 0) * 60
+        let monthsToAdd = components.month ?? 0
+
+        if yearsToAdd != 0 {
+            let tz = self.timeZone
+            let (ext, ordinal, d) = fields(for: result, in: tz)
+            let y = Self.yearData(ext: ext)
+            let label = y.label(ordinal: ordinal)
+            let newExt = ext + yearsToAdd
+            let ny = Self.yearData(ext: newExt)
+            // Preserve display month; drop the leap flag if the target year lacks it.
+            let newOrdinal = ny.ordinal(month: label.month, isLeap: label.isLeap)
+                ?? ny.ordinal(month: label.month, isLeap: false)!
+            let clampedDay = min(d, ny.monthLength(ordinal: newOrdinal))
+            let comps = dateComponents([.hour, .minute, .second, .nanosecond], from: result, in: tz)
+            var secondsInDay: Double = 0
+            if let h = comps.hour { secondsInDay += Double(h) * 3600 }
+            if let m = comps.minute { secondsInDay += Double(m) * 60 }
+            if let s = comps.second { secondsInDay += Double(s) }
+            if let n = comps.nanosecond { secondsInDay += Double(n) / 1e9 }
+            let rd = ny.monthStartRD(ordinal: newOrdinal) + clampedDay - 1
+            result = utcDate(fromRataDie: rd, secondsInDay: secondsInDay, in: tz,
+                             repeatedTimePolicy: .former, skippedTimePolicy: .former)
+        }
+
+        if monthsToAdd != 0 {
+            let tz = self.timeZone
+            var (ext, ordinal, d) = fields(for: result, in: tz)
+            var remaining = monthsToAdd
+            while remaining > 0 {
+                (ext, ordinal) = Self.nextOrdinalMonth(ext: ext, ordinal: ordinal)
+                remaining -= 1
+            }
+            while remaining < 0 {
+                (ext, ordinal) = Self.prevOrdinalMonth(ext: ext, ordinal: ordinal)
+                remaining += 1
+            }
+            let ny = Self.yearData(ext: ext)
+            let clampedDay = min(d, ny.monthLength(ordinal: ordinal))
+            let comps = dateComponents([.hour, .minute, .second, .nanosecond], from: result, in: tz)
+            var secondsInDay: Double = 0
+            if let h = comps.hour { secondsInDay += Double(h) * 3600 }
+            if let m = comps.minute { secondsInDay += Double(m) * 60 }
+            if let s = comps.second { secondsInDay += Double(s) }
+            if let n = comps.nanosecond { secondsInDay += Double(n) / 1e9 }
+            let rd = ny.monthStartRD(ordinal: ordinal) + clampedDay - 1
+            result = utcDate(fromRataDie: rd, secondsInDay: secondsInDay, in: tz,
+                             repeatedTimePolicy: .former, skippedTimePolicy: .former)
+        }
+
+        var daysToAdd = 0
+        if let d = components.day { daysToAdd += d }
+        if let doy = components.dayOfYear { daysToAdd += doy }
+        if let wom = components.weekOfMonth { daysToAdd += wom * 7 }
+        if let woy = components.weekOfYear { daysToAdd += woy * 7 }
+        if let wo = components.weekdayOrdinal { daysToAdd += wo * 7 }
+        if let w = components.weekday { daysToAdd += w }
+
+        if let n = components.yearForWeekOfYear, n != 0 {
+            let tz = self.timeZone
+            let localComps = dateComponents([.yearForWeekOfYear], from: result, in: tz)
+            if var yy = localComps.yearForWeekOfYear {
+                if n > 0 {
+                    for _ in 0..<n {
+                        daysToAdd += numWeeksInYearForWeekOfYear(yy) * 7
+                        yy += 1
+                    }
+                } else {
+                    for _ in 0..<(-n) {
+                        yy -= 1
+                        daysToAdd -= numWeeksInYearForWeekOfYear(yy) * 7
+                    }
+                }
+            }
+        }
+
+        if daysToAdd != 0 {
+            let tz = self.timeZone
+            let totalOffset1 = tz.secondsFromGMT(for: result)
+            let candidate = result + Double(daysToAdd) * 86400
+            let totalOffset2 = tz.secondsFromGMT(for: candidate)
+            result = candidate - Double(totalOffset2 - totalOffset1)
+        }
+
+        if let h = components.hour, h != 0 { result += Double(h) * 3600 }
+        if let m = components.minute, m != 0 { result += Double(m) * 60 }
+        if let s = components.second, s != 0 { result += Double(s) }
+        if let ns = components.nanosecond, ns != 0 { result += Double(ns) / 1_000_000_000 }
+
+        return result
+    }
+
+    // MARK: Difference
+
+    func dateComponents(_ components: Calendar.ComponentSet, from start: Date, to end: Date) -> DateComponents {
+        var result = DateComponents()
+        var curr = start
+        for component in Self.orderedDiffComponents(components) {
+            let (diff, newCurr) = difference(inComponent: component, from: curr, to: end)
+            result.setValue(diff, for: component)
+            curr = newCurr
+        }
+        return result
+    }
+
+    private static func orderedDiffComponents(_ components: Calendar.ComponentSet) -> [Calendar.Component] {
+        var out: [Calendar.Component] = []
+        if components.contains(.era) { out.append(.era) }
+        if components.contains(.year) { out.append(.year) }
+        if components.contains(.yearForWeekOfYear) { out.append(.yearForWeekOfYear) }
+        if components.contains(.quarter) { out.append(.quarter) }
+        if components.contains(.month) { out.append(.month) }
+        if components.contains(.weekOfYear) { out.append(.weekOfYear) }
+        if components.contains(.weekOfMonth) { out.append(.weekOfMonth) }
+        if components.contains(.day) { out.append(.day) }
+        if components.contains(.dayOfYear) { out.append(.dayOfYear) }
+        if components.contains(.weekday) { out.append(.weekday) }
+        if components.contains(.weekdayOrdinal) { out.append(.weekdayOrdinal) }
+        if components.contains(.hour) { out.append(.hour) }
+        if components.contains(.minute) { out.append(.minute) }
+        if components.contains(.second) { out.append(.second) }
+        if components.contains(.nanosecond) { out.append(.nanosecond) }
+        return out
+    }
+
+    private func difference(inComponent component: Calendar.Component, from start: Date, to end: Date) -> (Int, Date) {
+        if start == end { return (0, start) }
+
+        switch component {
+        case .hour:
+            let delta = end.timeIntervalSince(start) / 3600
+            let diff = Int(delta.rounded(.towardZero))
+            return (diff, start.addingTimeInterval(Double(diff) * 3600))
+        case .minute:
+            let delta = end.timeIntervalSince(start) / 60
+            let diff = Int(delta.rounded(.towardZero))
+            return (diff, start.addingTimeInterval(Double(diff) * 60))
+        case .second:
+            let delta = end.timeIntervalSince(start)
+            let diff = Int(delta.rounded(.towardZero))
+            return (diff, start.addingTimeInterval(Double(diff)))
+        case .nanosecond:
+            let delta = end.timeIntervalSince(start) * 1_000_000_000
+            let diff = Int(delta.rounded(.towardZero))
+            return (diff, start.addingTimeInterval(Double(diff) / 1_000_000_000))
+        default:
+            break
+        }
+
+        let forward = end > start
+        let step = forward ? 1 : -1
+        var diff = 0
+        var current = start
+        var safety = 0
+
+        while true {
+            let trial = diff + step
+            var dc = DateComponents()
+            dc.setValue(trial, for: component)
+            guard let nextStep = date(byAdding: dc, to: start, wrappingComponents: false) else {
+                break
+            }
+            if nextStep == current {
+                break
+            }
+            let overshoot = forward ? (nextStep > end) : (nextStep < end)
+            if overshoot { break }
+            current = nextStep
+            diff = trial
+            safety += 1
+            if safety > 1_000_000 { break }
+        }
+        return (diff, current)
+    }
+
+#if FOUNDATION_FRAMEWORK
+    func bridgeToNSCalendar() -> NSCalendar {
+        _NSSwiftCalendar(calendar: Calendar(inner: self))
+    }
+#endif
+}

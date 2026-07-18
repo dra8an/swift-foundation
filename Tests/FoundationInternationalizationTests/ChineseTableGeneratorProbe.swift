@@ -270,3 +270,75 @@ private struct ChineseEngineParityProbe {
         #expect(inTableOutsideArtifact.isEmpty)
     }
 }
+
+@Suite("Chinese M1 RoundTrip Probe")
+private struct ChineseM1RoundTripProbe {
+    @Test func chineseM1RoundTripAndFields() throws {
+        let icu = _CalendarICU(
+            identifier: .chinese, timeZone: .gmt, locale: nil,
+            firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil
+        )
+        let ours = _CalendarChinese(
+            identifier: .chinese, timeZone: .gmt, locale: nil,
+            firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil
+        )
+        let fields: Calendar.ComponentSet = [.era, .year, .month, .day, .isLeapMonth,
+                                             .dayOfYear, .weekday, .weekOfYear,
+                                             .yearForWeekOfYear, .weekOfMonth,
+                                             .weekdayOrdinal, .quarter, .hour]
+        let artifact: [ClosedRange<Int>] = [
+            _ChineseAstro.gregorianRD(2057, 9, 26)..._ChineseAstro.gregorianRD(2057, 10, 29),
+            _ChineseAstro.gregorianRD(2097, 8, 5)..._ChineseAstro.gregorianRD(2097, 9, 7),
+        ]
+        var fieldDiffs: [String] = []
+        var roundTripFails: [String] = []
+        var checked = 0
+
+        // Every 13th day over 1899-2102 (in-table + both fallback seams), noon GMT.
+        var rd = _ChineseAstro.gregorianRD(1899, 1, 1)
+        let endRD = _ChineseAstro.gregorianRD(2102, 12, 31)
+        let known2101 = 767186...767215   // documented fallback divergence (m6 2101)
+        while rd <= endRD {
+            defer { rd += 13 }
+            if artifact.contains(where: { $0.contains(rd) }) { continue }
+            if known2101.contains(rd) { continue }
+            let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)
+            checked += 1
+
+            let ic = icu.dateComponents(fields, from: date, in: .gmt)
+            let oc = ours.dateComponents(fields, from: date, in: .gmt)
+            for (name, a, b) in [
+                ("era", ic.era, oc.era), ("year", ic.year, oc.year),
+                ("month", ic.month, oc.month), ("day", ic.day, oc.day),
+                ("doy", ic.dayOfYear, oc.dayOfYear), ("wd", ic.weekday, oc.weekday),
+                ("woy", ic.weekOfYear, oc.weekOfYear),
+                ("yfwoy", ic.yearForWeekOfYear, oc.yearForWeekOfYear),
+                ("wom", ic.weekOfMonth, oc.weekOfMonth),
+                ("wdo", ic.weekdayOrdinal, oc.weekdayOrdinal),
+                ("q", ic.quarter, oc.quarter), ("hour", ic.hour, oc.hour),
+            ] where a != b {
+                if fieldDiffs.count < 15 { fieldDiffs.append("rd \(rd) \(name): icu \(a ?? -99) ours \(b ?? -99)") }
+            }
+            if (ic.isLeapMonth ?? false) != (oc.isLeapMonth ?? false) {
+                if fieldDiffs.count < 15 { fieldDiffs.append("rd \(rd) isLeapMonth: \(ic.isLeapMonth ?? false) vs \(oc.isLeapMonth ?? false)") }
+            }
+
+            // Round-trip: our components -> date(from:) -> same instant.
+            var dc = DateComponents()
+            dc.era = oc.era; dc.year = oc.year; dc.month = oc.month; dc.day = oc.day
+            dc.isLeapMonth = oc.isLeapMonth; dc.hour = 12
+            if let rt = ours.date(from: dc) {
+                if rt != date, roundTripFails.count < 10 {
+                    roundTripFails.append("rd \(rd): \(date) -> \(rt)")
+                }
+            } else if roundTripFails.count < 10 {
+                roundTripFails.append("rd \(rd): date(from:) nil for \(dc)")
+            }
+        }
+        print("M1: checked \(checked) sampled days; field diffs \(fieldDiffs.count); round-trip fails \(roundTripFails.count)")
+        for d in fieldDiffs { print("  FIELD: \(d)") }
+        for r in roundTripFails { print("  RT: \(r)") }
+        #expect(fieldDiffs.isEmpty)
+        #expect(roundTripFails.isEmpty)
+    }
+}
