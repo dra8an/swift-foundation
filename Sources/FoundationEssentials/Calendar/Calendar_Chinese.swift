@@ -996,8 +996,10 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         if components.contains(.year) { result.year = yearInCycle }
         if components.contains(.month) { result.month = label.month }
         if components.contains(.day) { result.day = day }
-        // ICU always populates isLeapMonth for chinese whether or not requested.
-        result.isLeapMonth = label.isLeap
+        // ICU populates isLeapMonth iff .month or .isLeapMonth was requested.
+        if components.contains(.month) || components.contains(.isLeapMonth) {
+            result.isLeapMonth = label.isLeap
+        }
 
         if components.contains(.hour) || components.contains(.minute)
             || components.contains(.second) || components.contains(.nanosecond) {

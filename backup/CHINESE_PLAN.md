@@ -868,3 +868,42 @@ Japanese `dateInterval(.era)`, Meiji data).
   #3; seams tile exactly; 1899+1900 fully clean (incl. 1900 leap-8).
 - M1 probe: 5,723 sampled days, 13 fields, 0 diffs; round-trip 0 fails.
 - Suite A (9 topics, ~900 dates): 0 divergences.
+
+### 11.6 M3 findings (Suites B/C, daily sweep, strict — snapshot c3)
+
+- **isLeapMonth population rule (THE M3 discovery):** ICU populates
+  `isLeapMonth` in dateComponents results **iff the requested set contains
+  `.month` or `.isLeapMonth`** — nil otherwise (verified per-set:
+  [.minute]/[.hour]/[.day]/[.weekday] → nil; [.month]/[.month,.day]/
+  [.era,.year,.month,.day]/[.isLeapMonth] → true/false). Our initial
+  always-populate (copied from Hebrew's "ICU always populates" precedent)
+  poisoned the GENERIC enumerate framework on leap-month dates: the match
+  verifier saw an unsolicited isLeapMonth=true against patterns with the
+  flag unset and never matched — breaking date(bySetting:), weekend
+  queries, and enumerateDates for any leap-month input. Hebrew never hit
+  this because its flag is always FALSE (nil-vs-false compares equal) and
+  it has a nextDate fast path. One-line fix in
+  `_CalendarChinese.dateComponents`.
+- Routing fact: `_CalendarICU` has NO nextDate fast path (protocol default
+  false) — ICU and our calendar both go through the generic enumerate
+  framework, so Suite B/C parity genuinely exercises the same code path
+  over both backends.
+- Debug utility: `ChineseDebugTraceProbe.swift` contains `TracingCalendar`
+  (a forwarding `_CalendarProtocol` wrapper printing every framework call)
+  + the ICU leap-flag semantics probe. Research-branch only — ⚠ do NOT
+  carry to the PR branch (it's how the M3 bug was found in minutes;
+  keep for future framework debugging).
+- Suite B (`ChinesePublicAPIComparisonProbe`, 8 topics, ~60 dates × ~140
+  public-API surfaces each): zero divergences, including bySetting,
+  bySettingHour, weekend queries, enumerateDates (CNY + Mid-Autumn),
+  compare/isDate granularities, wrapping adds, from:to diffs — with
+  leap-month dates as first-class topic.
+- Suite C (`ChineseRecurrenceRuleParityProbe`, 6 rules: yearly CNY,
+  yearly Mid-Autumn, monthly-1st across leap months, weekly Mondays,
+  yearly nth-weekday, daily-with-times; anchors straddle leap-2/4/6
+  years): zero divergences.
+- Daily sweep 1899-01-01..2102-12-31 (8 fields/day, registry exclusions):
+  zero failures. Strict-policy matrix (.chinese added) + Chinese-specific
+  strict patterns ({m4,leap,d1} biennial-skip, CNY yearly, {m6,d30}
+  short-month skip): zero failures. B/J tests in the shared probe files:
+  unaffected, still green.

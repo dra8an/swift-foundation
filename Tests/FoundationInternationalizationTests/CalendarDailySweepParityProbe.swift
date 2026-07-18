@@ -53,12 +53,15 @@ private struct CalendarDailySweepParityProbe {
 
     private static func sweep(_ icu: any _CalendarProtocol, _ ours: any _CalendarProtocol,
                               from start: Date, to end: Date, stepDays: Int = 1,
-                              labelPrefix: String, failures: inout [String]) -> Int {
+                              labelPrefix: String, skip: ((Date) -> Bool)? = nil,
+                              failures: inout [String]) -> Int {
         var date = start
         var count = 0
         let step = 86400.0 * Double(stepDays)
         while date <= end {
-            Self.compareDay(icu, ours, date: date, label: "\(labelPrefix) \(date)", failures: &failures)
+            if skip?(date) != true {
+                Self.compareDay(icu, ours, date: date, label: "\(labelPrefix) \(date)", failures: &failures)
+            }
             count += 1
             if failures.count > 200 { break }  // enough to diagnose; don't flood
             date = date.addingTimeInterval(step)
@@ -133,5 +136,26 @@ private struct CalendarDailySweepParityProbe {
             }
         }
         Self.reportAndAssert("japanese_preTaika_roundTrips", days: dates.count, failures)
+    }
+
+    // MARK: - Chinese
+
+    /// Every day 1899–2102 (baked range + both fallback seams), excluding the
+    /// documented registry windows (CHINESE_PLAN.md § 11.3): the two Apple-ICU
+    /// dom=0 artifact years and the 2101-m6 fallback divergence.
+    @Test func chinese_dailySweep_1899_2102() {
+        let icu = _CalendarICU(identifier: .chinese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
+        let ours = _CalendarChinese(identifier: .chinese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
+        let excluded: [ClosedRange<Date>] = [
+            Self.g(2057, 2, 1)...Self.g(2058, 2, 20),
+            Self.g(2097, 2, 1)...Self.g(2098, 2, 20),
+            Self.g(2101, 6, 24)...Self.g(2101, 7, 27),
+        ]
+        var failures: [String] = []
+        let days = Self.sweep(icu, ours, from: Self.g(1899, 1, 1), to: Self.g(2102, 12, 31),
+                              labelPrefix: "chn",
+                              skip: { d in excluded.contains { $0.contains(d) } },
+                              failures: &failures)
+        Self.reportAndAssert("chinese_dailySweep_1899_2102", days: days, failures)
     }
 }

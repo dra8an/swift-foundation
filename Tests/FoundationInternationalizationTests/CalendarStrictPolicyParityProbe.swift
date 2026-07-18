@@ -37,6 +37,8 @@ private struct CalendarStrictPolicyParityProbe {
             oursInner = _CalendarBuddhist(identifier: identifier, timeZone: timeZone, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         case .japanese:
             oursInner = _CalendarJapanese(identifier: identifier, timeZone: timeZone, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
+        case .chinese:
+            oursInner = _CalendarChinese(identifier: identifier, timeZone: timeZone, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         default:
             fatalError("unsupported identifier in probe")
         }
@@ -46,6 +48,7 @@ private struct CalendarStrictPolicyParityProbe {
     private static let calendars: [(String, Calendar.Identifier)] = [
         ("buddhist", .buddhist),
         ("japanese", .japanese),
+        ("chinese", .chinese),
     ]
 
     private static func g(_ y: Int, _ m: Int, _ d: Int, hour: Int = 12, minute: Int = 0, in tz: TimeZone = .gmt) -> Date {
@@ -222,5 +225,57 @@ private struct CalendarStrictPolicyParityProbe {
             }
         }
         Self.reportAndAssert("nextDate_strict", failures)
+    }
+
+    // MARK: - Chinese leap-month strict patterns (the Chinese analogue of Feb 29)
+
+    /// {month: 4, isLeapMonth: true, day: 1} exists only in leap-4 years
+    /// (2020, then 2058): `.strict` must skip all other years.
+    @Test func chineseStrict_leapMonthPattern() {
+        var failures: [String] = []
+        var dc = DateComponents(month: 4, day: 1)
+        dc.isLeapMonth = true
+        let anchors = [Self.g(2019, 6, 15), Self.g(2021, 1, 10)]
+        let (icu, ours) = Self.makePair(.chinese)
+        for policy in [Calendar.MatchingPolicy.strict, .nextTime] {
+            for anchor in anchors {
+                let i = Self.collect(icu, after: anchor, matching: dc, policy: policy, count: 2)
+                let o = Self.collect(ours, after: anchor, matching: dc, policy: policy, count: 2)
+                Self.compare("chinese leap4 \(policy) from \(anchor)", i, o, failures: &failures)
+            }
+        }
+        Self.reportAndAssert("chineseStrict_leapMonthPattern", failures)
+    }
+
+    /// CNY yearly {month: 1, day: 1} under `.strict` — always exists.
+    @Test func chineseStrict_newYearYearly() {
+        var failures: [String] = []
+        let dc = DateComponents(month: 1, day: 1)
+        let anchors = [Self.g(2019, 6, 15), Self.g(2024, 3, 1)]
+        let (icu, ours) = Self.makePair(.chinese)
+        for policy in [Calendar.MatchingPolicy.strict, .nextTime] {
+            for anchor in anchors {
+                let i = Self.collect(icu, after: anchor, matching: dc, policy: policy, count: 5)
+                let o = Self.collect(ours, after: anchor, matching: dc, policy: policy, count: 5)
+                Self.compare("chinese CNY \(policy) from \(anchor)", i, o, failures: &failures)
+            }
+        }
+        Self.reportAndAssert("chineseStrict_newYearYearly", failures)
+    }
+
+    /// {month: 6, day: 30}: Chinese m6 has 30 days only some years — `.strict` skips short-m6 years.
+    @Test func chineseStrict_day30ShortMonth() {
+        var failures: [String] = []
+        let dc = DateComponents(month: 6, day: 30)
+        let anchors = [Self.g(2020, 1, 15), Self.g(2024, 11, 2)]
+        let (icu, ours) = Self.makePair(.chinese)
+        for policy in [Calendar.MatchingPolicy.strict, .nextTime] {
+            for anchor in anchors {
+                let i = Self.collect(icu, after: anchor, matching: dc, policy: policy, count: 4)
+                let o = Self.collect(ours, after: anchor, matching: dc, policy: policy, count: 4)
+                Self.compare("chinese m6d30 \(policy) from \(anchor)", i, o, failures: &failures)
+            }
+        }
+        Self.reportAndAssert("chineseStrict_day30ShortMonth", failures)
     }
 }
