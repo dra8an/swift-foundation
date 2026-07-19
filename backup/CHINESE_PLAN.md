@@ -1201,3 +1201,35 @@ load-bearing. 6.4 machine: watch CI on all platforms anyway.
    indices, UTC+8, year packing, `_CalendarChinese`) stays in
    Calendar_Chinese.swift. All references renamed; § 12.1 now a 7-file
    pick list; CMakeLists carries Calendar_Astronomy on the research branch.
+
+### 11.18 Table-packing trade space (2026-07-19, user-driven design)
+
+Per-year information content: 13 month-length bits + 4-bit leap display +
+6-bit NY offset = 23 bits (offset is DERIVABLE: length = 29*monthCount +
+popcount(bits); NY chain from one anchor — the § 11 bits-sum invariant
+test proves the chain for all 200 years).
+
+**User's leap-extraction packing (WORKS — solves the 17-bit near-miss):**
+main array = 12 REGULAR-month length bits + 4-bit leap position = exactly
+16 bits/year (UInt16, 400 B); leap-month LENGTHS move to a side bit-array
+(one bit per year = 25 B, or rank-compacted per leap year = 10 B).
+Accessor rebuilds ordinal lengths by inserting the side bit at the leap
+ordinal. Leap positions 1..12 all representable (required: § 5c saw ICU
+compute fake m1L/m12L — never assume rarity in an encoding).
+
+**Option table:**
+| Layout | Binary | Structures | Start lookup | Note |
+|---|---|---|---|---|
+| UInt32 (shipped) | 800 B | 1 | O(1) | dumb, legible, clean pages |
+| 3 B/year (ICU4X precedent) | 600 B | 1 | O(1) | ~4-line accessor change |
+| 16-bit + leap bits + 6-bit offset side-array | ~575 B | 3 | O(1) | beats 3 B by 25 B only |
+| 16-bit + leap bits, derived starts (lazy cache) | ~425 B | 2 | O(1) after init | **+~800 B DIRTY heap** |
+| same, no cache (prefix-sum walk) | ~425 B | 2 | O(n≤200) | dateComponents ~65→~130-150 ns |
+
+**Decisive argument for review:** const tables are CLEAN, page-shared
+memory; runtime-derived arrays are DIRTY per-process memory. The 425 B
+variant trades ~375 clean bytes for ~800 dirty bytes — a net loss by the
+metric Apple perf reviewers optimize. Recommendation: ship 800 B UInt32;
+PR text offers compaction with this analysis cited. EXPERIMENTS PLANNED
+(user, next): prototype variants and measure real binary delta + bench
+delta before final call.
