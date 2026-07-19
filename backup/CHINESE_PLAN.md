@@ -1288,3 +1288,33 @@ sign, opposite decision. Bottom line: Foundation's stateless Date forces
 decode-per-call, which is precisely why the layout with the cheapest
 per-call decode — plain UInt32 — is correct here. The architecture chose
 the layout.
+
+### 11.20 File taxonomy: physics vs law (2026-07-19, design rationale)
+
+Question examined: should the Chinese lunisolar engine live in
+Calendar_Chinese or Calendar_Astronomy? Answer: **Calendar_Chinese** —
+the split is physics vs LAW:
+
+- `Calendar_Astronomy` (`_CalendarAstronomy`) = universal physics: solar
+  longitude, Meeus new-moon series, ephemeris correction, Gregorian RD
+  math. One-sentence contract: calendar-agnostic primitives ONLY — true
+  for any calendar; this is what Islamic/Hindu will reuse (they want
+  solarLongitude/nthNewMoon, emphatically NOT hasNoMajorSolarTerm).
+- `Calendar_Chinese` = calendar LAW (`_ChineseRules`: month 11 contains
+  the solstice, no-zhongqi leap rule, UTC+8 day quantization, CNY = 2nd/
+  3rd new moon after solstice) + this calendar's structures
+  (`_ChineseYear`, table, `_CalendarChinese`).
+- Gray zone, decided: winterSolstice/majorSolarTerm SOUND astronomical
+  but their outputs are law-laden (meridian day-quantization, 1..12 term
+  indexing, ICU's Dec-1 search convention) — first layer of
+  interpretation, not observation → Chinese-side.
+
+**Future seam = Dangi, not Astronomy:** the rules layer is East-Asian-
+FAMILY-shared (ICU's DangiCalendar subclasses ChineseCalendar; different
+meridian/epoch). If Dangi is ever green-lit, extract `_ChineseRules` into
+e.g. `Calendar_EastAsianLunisolar.swift` parameterized by offset (our
+`midnight` hardcodes UTC+8 today — correct for a Chinese-only PR). Do
+that refactor THEN, not now (Dangi is out of scope § 5c; speculative
+generality violates small-focused-PRs). Three-tier taxonomy for review:
+**Astronomy = universal physics; Chinese = family law + this calendar's
+structures; the seam between them is where Dangi cuts later.**
