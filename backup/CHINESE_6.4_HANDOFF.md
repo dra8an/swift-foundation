@@ -122,12 +122,6 @@ if something forces bundling).
 - Chinese additions in shared CalendarDailySweep/StrictPolicy probes
 - HKO CSV / any external data files
 
-## Verify on 6.4 before opening PR
-
-Research-branch full suite first (`swift test --filter "chinese|Chinese"`,
-~20 s, all green at c4), then feature-branch build + ChineseCalendarTests +
-RecurrenceRule probe + release-mode run (blocked on 6.3 Intel).
-
 ## Draft PR description (edit, don't expand)
 
 **Add a Swift implementation of the Chinese calendar behind a feature flag**
