@@ -120,3 +120,42 @@ private struct ChineseICULeapFlagProbe {
         #expect(Bool(true))
     }
 }
+
+@Suite("Hebrew BJ LeapFlag Shape Check")
+private struct HebrewBJLeapFlagShapeProbe {
+    /// § 11.7 item 3: report-only. Does merged Hebrew (and open-PR B/J) match
+    /// ICU's per-set isLeapMonth population rule discovered in M3?
+    @Test func hebrewBJLeapFlagShape() {
+        var gc = Calendar(identifier: .gregorian); gc.timeZone = .gmt
+        var dc = DateComponents(); dc.year = 2025; dc.month = 3; dc.day = 15; dc.hour = 12; dc.timeZone = .gmt
+        let date = gc.date(from: dc)!
+        let sets: [(String, Calendar.ComponentSet)] = [
+            ("[.minute]", [.minute]), ("[.day]", [.day]), ("[.weekday]", [.weekday]),
+            ("[.month]", [.month]), ("[.era,.year,.month,.day]", [.era, .year, .month, .day]),
+            ("[.isLeapMonth]", [.isLeapMonth]),
+        ]
+        let pairs: [(String, any _CalendarProtocol, any _CalendarProtocol)] = [
+            ("hebrew",
+             _CalendarICU(identifier: .hebrew, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil),
+             _CalendarHebrew(identifier: .hebrew, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)),
+            ("buddhist",
+             _CalendarICU(identifier: .buddhist, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil),
+             _CalendarBuddhist(identifier: .buddhist, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)),
+            ("japanese",
+             _CalendarICU(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil),
+             _CalendarJapanese(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)),
+        ]
+        for (name, icu, ours) in pairs {
+            var deviations = 0
+            for (label, set) in sets {
+                let i = icu.dateComponents(set, from: date, in: .gmt).isLeapMonth
+                let o = ours.dateComponents(set, from: date, in: .gmt).isLeapMonth
+                let match = i == o ? "match" : "DEVIATION"
+                if i != o { deviations += 1 }
+                print("LEAPSHAPE \(name) \(label): ICU=\(String(describing: i)) ours=\(String(describing: o)) \(match)")
+            }
+            print("LEAPSHAPE \(name): \(deviations)/\(sets.count) sets deviate")
+        }
+        #expect(Bool(true))  // report-only: upstream action is a user decision (§ 11.7)
+    }
+}

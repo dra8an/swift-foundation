@@ -911,10 +911,10 @@ Japanese `dateInterval(.era)`, Meiji data).
   short-month skip): zero failures. B/J tests in the shared probe files:
   unaffected, still green.
 
-### 11.7 M3.5 TODO — verification gaps found in the end-of-day audit (OPEN)
+### 11.7 M3.5 — verification gaps from the end-of-day audit (✅ CLOSED 2026-07-19, snapshot c3.5)
 
-Audit question: "any icu4swift-year-start-shaped bugs lurking?" Answer: three
-gaps, none yet closed. DO THESE FIRST next session:
+Audit question: "any icu4swift-year-start-shaped bugs lurking?" Three gaps
+were found; all closed 2026-07-19. Results per item:
 
 1. **Deep-fallback never executed by tests** (<1899 / >2102) — exactly the
    icu4swift bug shape (its non-tiling 1776 lived in untested fallback).
@@ -947,3 +947,35 @@ gaps, none yet closed. DO THESE FIRST next session:
    it violates strict parity. If confirmed: one-line guard like Chinese's;
    needs USER DECISION on how/when to upstream (Hebrew is merged; B/J PR
    #2105 still open — could fold into a review round).
+
+### 11.8 M3.5 results (2026-07-19)
+
+All three § 11.7 items closed; **zero engine bugs found** — the gaps were in
+verification coverage, not the code:
+
+1. **`ChineseInvariantProbe.swift`** (4 tests, all green first run):
+   - Tiling + structure sweep, relatedIso −2000...5000 (7,001 years,
+     ~11 s debug): 0 failures — every year tiles, 12/13 months with leap
+     iff 13, length-bits sum == span, year length ∈ [353, 385]. The
+     debug `assert(len ∈ {29,30})` now in the fallback year builder was
+     active throughout: no non-lunation gap anywhere in ±3,500 years.
+   - Historical pins (11): CNY 1776/1795/1814/1871/1890/2148 + leaps
+     1775=m10L, 1776/2148=none, 1900=m8L, 2147=m11L — all exact. The
+     § 5c adjudication is now a permanent regression gate.
+   - Far-date round-trips + year-interval adjacency at −1000, 1, 1500,
+     1681 (engine-sensitive), 3000, 4600 CE: 0 failures.
+   - min/maximumRange vs ICU, all 16 components: **0 diffs** — the
+     LIMITS-derived values are now verified, not guessed.
+2. **Hebrew isLeapMonth shape deviation: CONFIRMED** (report-only probe
+   `hebrewBJLeapFlagShape` in ChineseDebugTraceProbe.swift): merged
+   Hebrew populates `isLeapMonth=false` for ALL requested sets; ICU
+   returns nil unless the set contains .month/.isLeapMonth — 3/6 probe
+   sets deviate ([.minute], [.day], [.weekday]). ICU's per-set rule is
+   calendar-generic (same as Chinese). Functionally benign (false ≡ nil
+   under `?? false` coercion — why every Hebrew suite passed), observable
+   only via DateComponents equality / nil-checks. Fix would be the same
+   one-line guard as Chinese's. **⚠ USER DECISION pending on upstreaming;
+   Hebrew is merged, so this is a follow-up-PR question — do NOT patch
+   Calendar_Hebrew.swift on this branch without instruction.**
+3. **Buddhist + Japanese: CLEAN** (0/6 sets deviate) — no action needed,
+   PR #2105 unaffected.

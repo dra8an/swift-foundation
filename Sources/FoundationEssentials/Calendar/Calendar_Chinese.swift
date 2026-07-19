@@ -528,6 +528,7 @@ internal enum _ChineseCalendarEngine {
             var leapDisplay: UInt8 = 0
             for (i, s) in starts.enumerated() {
                 let next = (i + 1 < starts.count) ? starts[i + 1] : nyNext
+                assert(next - s == 29 || next - s == 30, "non-lunation month length \(next - s) in fallback year \(relatedIso)")
                 if next - s == 30 { bits |= UInt16(1) << i }
                 let label = state.rules.monthLabel(startingAt: s, gyear: _ChineseAstro.gregorianYear(ofRD: s))
                 if label.isLeap { leapDisplay = UInt8(label.month) }
