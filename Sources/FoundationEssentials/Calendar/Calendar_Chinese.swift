@@ -16,10 +16,7 @@ import Darwin
 import Glibc
 #endif
 
-// Chinese lunisolar calendar engine.
-// Years 1901-2100 come from a baked table generated from ICU (parity by
-// construction). Outside that range, month structure is computed with ICU's
-// chnsecal rules over Reingold/Dershowitz (Meeus) astronomy at UTC+8.
+// Chinese lunisolar calendar engine. Years 1901-2100 come from a baked table generated from ICU (parity by construction); outside that range, month structure is computed with ICU's chnsecal rules over Reingold/Dershowitz (Meeus) astronomy at UTC+8.
 
 // MARK: - Astronomy (Reingold & Dershowitz, via ICU4X calendrical_calculations)
 
@@ -564,10 +561,7 @@ internal enum _ChineseCalendarEngine {
 
 /// Pure-Swift implementation of the Chinese lunisolar calendar.
 ///
-/// Field conventions match ICU: era = 60-year cycle number since the 2637 BCE
-/// epoch, year = 1...60 within the cycle, month = 1...12 with `isLeapMonth`
-/// distinguishing the repeated month, extended year (used by
-/// `yearForWeekOfYear`) = related Gregorian year + 2637.
+/// Field conventions match ICU: era = 60-year cycle number since the 2637 BCE epoch, year = 1...60 within the cycle, month = 1...12 with `isLeapMonth` distinguishing the repeated month, extended year (used by `yearForWeekOfYear`) = related Gregorian year + 2637.
 // @unchecked Sendable: mutable state is confined to copy-on-write via copy(), matching the other pure-Swift calendar classes.
 internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
