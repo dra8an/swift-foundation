@@ -1271,3 +1271,20 @@ on the dateComponents hot path (65 ns budget), flipping the weights.
 General lesson for the PR text: no layout is best in the abstract — A
 wins for OUR access pattern, table size, and clean-page economics; a
 different hot path or a much larger table would legitimately pick B or D.
+
+**Why we can't amortize the decode like ICU4X (the architectural root):**
+ICU4X's Date<Chinese> CARRIES calendar state — creation decodes the packed
+year once into ChineseDateInner; every accessor reads the unpacked copy
+(icu4swift's packed-in-DateInner trick was the same, by design).
+Foundation.Date is a bare Double — public ABI, no calendar state, no inner
+representation to decode into — so every dateComponents call rediscovers
+the year from scratch: the amortization surface doesn't exist. The only
+alternative cache site is the shared _CalendarChinese singleton, which
+must be thread-safe: an uncontended lock (~10-20 ns) costs several times
+variant A's decode (one aligned load + shift-masks). We DO use the
+ICU4X-in-spirit pattern where it pays — the fallback LockedState year
+cache, where computation is μs-class astronomy. Same trade, opposite
+sign, opposite decision. Bottom line: Foundation's stateless Date forces
+decode-per-call, which is precisely why the layout with the cheapest
+per-call decode — plain UInt32 — is correct here. The architecture chose
+the layout.
