@@ -1256,3 +1256,18 @@ free as assumed; likely compresses under optimization but unproven here
 (Intel release SIGBUS). Decision: **ship A**; PR text offers B with these
 measurements attached. User's leap-extraction encoding (Var16) is fully
 implemented + verified in the experiment file for the record.
+
+**Why ICU4X's 3-byte layout loses here despite winning there:** (a) B is
+structurally unable to beat A — 3-byte records straddle alignment, so
+every access is i*3 + three byte loads + reassembly vs A's single aligned
+32-bit load; best case is a near-tie minus 200 B. Our +24% is debug-
+inflated (three un-elided bounds checks); release should compress it to
+~noise — first step on the 6.4 machine if a reviewer requests B. (b)
+ICU4X's economics differ: Rust release-only measurements, AND their
+packed year decodes ONCE into the DateInner at date creation with all
+field accessors reading the unpacked copy — decode is cold-path, bytes
+are hot-currency in their data-provider model. Our engine hits the table
+on the dateComponents hot path (65 ns budget), flipping the weights.
+General lesson for the PR text: no layout is best in the abstract — A
+wins for OUR access pattern, table size, and clean-page economics; a
+different hot path or a much larger table would legitimately pick B or D.
