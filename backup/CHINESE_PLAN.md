@@ -1395,3 +1395,20 @@ date(from:) era defaults from Date.now (ICU semantics; non-deterministic
 by design); yfwoy FIELD populated while interval/add diverge per S1;
 display-number month ordinality (non-unique across leap). Hebrew items:
 § 11.8 (isLeapMonth deviation + comment factually wrong).
+
+#### 11.21a Per-finding disposition (the 10 reported findings, fd9afee)
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | era×60 unchecked overflow in date(byAdding:) | ✅ FIXED (reportingOverflow → nil) |
+| 2 | ext(era:year:) overflow before ±5M guard | ✅ FIXED (optional + checked, guard merged) |
+| 3 | month-add unbounded loop hang | ✅ FIXED for crash/hang class (±66M bound → nil); O(n) in-range perf residual → S4 |
+| 4 | wrappingComponents month/year vs ucal_roll | ⏳ STAGED S2 (decision needed) |
+| 5 | quarter surfaces unverified vs ICU | ⏳ STAGED S3 (discovery probe) |
+| 6 | 4 force unwraps (3 source + 1 probe) | 🟡 PARTIAL: 3 source FIXED; probe helper → S5 |
+| 7 | per-call astronomy coefficient arrays | ⏳ STAGED S5 (hoist attempted, reverted mid-batch — needs careful scoping, not string surgery) |
+| 8 | cache removeAll() thrash | ✅ FIXED (single-key eviction, all 3 caches) |
+| 9 | weekOfYear formula in-file duplication | ⏳ STAGED S5 |
+| 10 | dead code (2 pairs) | 🟡 PARTIAL: astronomy pair DELETED; week-year helpers deliberately KEPT + TODO — they go LIVE under S1 (user decision: option B) |
+
+Score: 4 fixed, 2 partial, 4 staged. All staged detail in § 11.21 S1-S5.
