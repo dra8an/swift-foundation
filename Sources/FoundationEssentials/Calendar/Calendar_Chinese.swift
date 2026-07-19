@@ -10,10 +10,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if canImport(Darwin)
-import Darwin
+#if canImport(os)
+internal import os
+#elseif canImport(Bionic)
+@preconcurrency import Bionic
 #elseif canImport(Glibc)
-import Glibc
+@preconcurrency import Glibc
+#elseif canImport(Musl)
+@preconcurrency import Musl
+#elseif canImport(CRT)
+import CRT
+#elseif os(WASI)
+@preconcurrency import WASILibc
 #endif
 
 // Chinese lunisolar calendar engine. Years 1901-2100 come from a baked table generated from ICU (parity by construction); outside that range, month structure is computed with ICU's chnsecal rules over Reingold/Dershowitz (Meeus) astronomy at UTC+8.

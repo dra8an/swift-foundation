@@ -1175,3 +1175,12 @@ _CalendarUtility refactor as follow-up, out of scope here.
 Tightening history: § 11.13 (reviewer-pattern pass), § 11.14 (guideline
 pass), this section (final verdict). Guideline mirror:
 `backup/CONTRIBUTION_GUIDELINE_upstream.md`; permanent memory created.
+
+### 11.16 Platform-import ladder fix (2026-07-19, user catch)
+
+Our libm import block was Darwin/Glibc-only — would fail on Bionic/Musl/
+CRT/WASI (the exact itingliu Hebrew-review trap, 'cannot find floor in
+scope' on Linux-class CI). Replaced with the canonical 6-way ladder used
+verbatim by merged Calendar_Hebrew AND Calendar_Gregorian. Chinese uses
+libm heavily (sin/cos/tan/atan2/pow) so all five non-Darwin branches are
+load-bearing. 6.4 machine: watch CI on all platforms anyway.
