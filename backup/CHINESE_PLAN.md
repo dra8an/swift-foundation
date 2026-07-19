@@ -1019,7 +1019,8 @@ HebrewRegressionTests — no ICU pairing, no external data).
 
 | File | Rationale |
 |---|---|
-| `Calendar_Chinese.swift` | the implementation |
+| `Calendar_Chinese.swift` | the implementation (chnsecal rules, year structure, table, _CalendarChinese) |
+| `Calendar_Astronomy.swift` | shared `_CalendarAstronomy` (solar/lunar/ephemeris + Gregorian day math), split for Islamic/Hindu reuse |
 | `Calendar_Cache.swift` (flag + routing) | B/J shape |
 | `Calendar/CMakeLists.txt` (+Calendar_Chinese.swift) | required |
 | `BenchmarkCalendar.swift` (5-shape Chinese block, M4) | B/J shape |
@@ -1184,3 +1185,19 @@ scope' on Linux-class CI). Replaced with the canonical 6-way ladder used
 verbatim by merged Calendar_Hebrew AND Calendar_Gregorian. Chinese uses
 libm heavily (sin/cos/tan/atan2/pow) so all five non-Darwin branches are
 load-bearing. 6.4 machine: watch CI on all platforms anyway.
+
+### 11.17 User tightening round 2 (2026-07-19)
+
+1. "Pure-Swift"/"native" purged everywhere PR-facing (parkera dislikes the
+   term; permanent rule added to the contribution-guideline memory): class
+   DocC, Sendable comment, PR-draft title now say just "Swift".
+2. Empty `///` separator lines: verified UPSTREAM-COMMON (Calendar.swift
+   has 55, merged Hebrew 2) — standard DocC summary/discussion separator;
+   kept.
+3. Astronomy split: `_CalendarAstronomy` (calendar-agnostic: ephemeris
+   correction, solar longitude, Meeus new-moon series, Gregorian RD math)
+   now lives in `Calendar_Astronomy.swift` for future Islamic/Hindu reuse;
+   Chinese-family-specific code (chnsecal rules `_ChineseRules`, solar-term
+   indices, UTC+8, year packing, `_CalendarChinese`) stays in
+   Calendar_Chinese.swift. All references renamed; § 12.1 now a 7-file
+   pick list; CMakeLists carries Calendar_Astronomy on the research branch.

@@ -45,7 +45,7 @@ private struct ChineseCalendarTests {
             (1900, 9, 24, 76, 37, 8, true, 1),     // fallback year at seam (leap-8)
         ]
         for (gy, gm, gd, era, year, month, leap, day) in cases {
-            let d = Self.date(rd: _ChineseAstro.gregorianRD(gy, gm, gd))
+            let d = Self.date(rd: _CalendarAstronomy.gregorianRD(gy, gm, gd))
             let dc = c.dateComponents([.era, .year, .month, .day, .isLeapMonth], from: d, in: .gmt)
             #expect(dc.era == era && dc.year == year && dc.month == month
                     && dc.isLeapMonth == leap && dc.day == day,
@@ -56,8 +56,8 @@ private struct ChineseCalendarTests {
     @Test func roundTrips() {
         let c = Self.cal()
         var failures = 0
-        var rd = _ChineseAstro.gregorianRD(1899, 1, 1)
-        let end = _ChineseAstro.gregorianRD(2102, 12, 31)
+        var rd = _CalendarAstronomy.gregorianRD(1899, 1, 1)
+        let end = _CalendarAstronomy.gregorianRD(2102, 12, 31)
         while rd <= end {
             let d = Self.date(rd: rd)
             let dc = c.dateComponents([.era, .year, .month, .day, .isLeapMonth], from: d, in: .gmt)
@@ -78,7 +78,7 @@ private struct ChineseCalendarTests {
         ]
         for (iso, gy, gm, gd) in pins {
             #expect(_ChineseCalendarEngine.year(relatedIso: iso).newYearRD
-                    == _ChineseAstro.gregorianRD(gy, gm, gd), "CNY \(iso)")
+                    == _CalendarAstronomy.gregorianRD(gy, gm, gd), "CNY \(iso)")
         }
         let leaps: [(Int, UInt8)] = [(1775, 10), (1776, 0), (1900, 8), (2147, 11), (2148, 0)]
         for (iso, want) in leaps {
@@ -119,7 +119,7 @@ private struct ChineseCalendarTests {
         // ICU emits day=0 artifacts in two 2057/2097 months; ours must not.
         let c = Self.cal()
         for (gy, gm, gd) in [(2057, 9, 28), (2057, 10, 5), (2097, 8, 7), (2097, 8, 20)] {
-            let dc = c.dateComponents([.day], from: Self.date(rd: _ChineseAstro.gregorianRD(gy, gm, gd)), in: .gmt)
+            let dc = c.dateComponents([.day], from: Self.date(rd: _CalendarAstronomy.gregorianRD(gy, gm, gd)), in: .gmt)
             #expect((dc.day ?? 0) >= 1, "\(gy)-\(gm)-\(gd)")
         }
     }

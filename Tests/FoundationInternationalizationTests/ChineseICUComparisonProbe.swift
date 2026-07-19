@@ -38,7 +38,7 @@ private struct ChineseICUComparisonProbe {
     }
 
     private static func g(_ y: Int, _ m: Int, _ d: Int, hour: Int = 12, minute: Int = 0, second: Int = 0) -> Date {
-        let rd = _ChineseAstro.gregorianRD(y, m, d)
+        let rd = _CalendarAstronomy.gregorianRD(y, m, d)
         return Date(timeIntervalSinceReferenceDate:
             Double(rd - 730_486) * 86400.0 + Double(hour * 3600 + minute * 60 + second))
     }
@@ -50,9 +50,9 @@ private struct ChineseICUComparisonProbe {
         // Whole Chinese years 2057 and 2097: the dom=0 artifact corrupts ICU's
         // own year-level queries (e.g. range(.day,.year) = 325).
         let artifact = [
-            _ChineseAstro.gregorianRD(2057, 2, 1)..._ChineseAstro.gregorianRD(2058, 2, 20),
-            _ChineseAstro.gregorianRD(2097, 2, 1)..._ChineseAstro.gregorianRD(2098, 2, 20),
-            _ChineseAstro.gregorianRD(2101, 6, 24)..._ChineseAstro.gregorianRD(2101, 7, 26),
+            _CalendarAstronomy.gregorianRD(2057, 2, 1)..._CalendarAstronomy.gregorianRD(2058, 2, 20),
+            _CalendarAstronomy.gregorianRD(2097, 2, 1)..._CalendarAstronomy.gregorianRD(2098, 2, 20),
+            _CalendarAstronomy.gregorianRD(2101, 6, 24)..._CalendarAstronomy.gregorianRD(2101, 7, 26),
         ]
         return artifact.contains { $0.contains(rd) }
     }

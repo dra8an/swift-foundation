@@ -10,9 +10,9 @@ Mirror of BUDDHIST_JAPANESE_6.4_HANDOFF.md. Research branch: `port/chinese`
 these (§ 12.1):
 
 1. `Sources/FoundationEssentials/Calendar/Calendar_Chinese.swift`
+1b. `Sources/FoundationEssentials/Calendar/Calendar_Astronomy.swift` — shared astronomy (`_CalendarAstronomy`), split out for future Islamic/Hindu reuse
 2. `Calendar_Cache.swift` — flag (both #if branches hard-false) + routing line
-3. `Sources/FoundationEssentials/Calendar/CMakeLists.txt` — **ADD
-   Calendar_Chinese.swift — NOT registered on the research branch** (B/J lesson)
+3. `Sources/FoundationEssentials/Calendar/CMakeLists.txt` — **ADD BOTH Calendar_Chinese.swift AND Calendar_Astronomy.swift** (Astronomy is registered on the research branch now; Chinese still is not)
 4. `Benchmarks/.../BenchmarkCalendar.swift` — ChineseCalendar 5-shape block
 5. `Tests/FoundationInternationalizationTests/ChineseRecurrenceRuleParityProbe.swift`
 6. `Tests/FoundationEssentialsTests/ChineseCalendarTests.swift`
@@ -41,7 +41,7 @@ RecurrenceRule probe + release-mode run (blocked on 6.3 Intel).
 
 ## Draft PR description (edit, don't expand)
 
-**Add a pure-Swift Chinese calendar implementation behind a feature flag**
+**Add a Swift implementation of the Chinese calendar behind a feature flag**
 
 Follows the Hebrew (#1953/#2028) and Buddhist/Japanese (#2105) pattern:
 `_CalendarChinese` behind `foundation_swift_chinese_calendar_feature_enabled()`

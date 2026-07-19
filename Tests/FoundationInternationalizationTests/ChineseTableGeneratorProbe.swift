@@ -211,7 +211,7 @@ private struct ChineseConventionDiscoveryProbe {
 @Suite("Chinese Engine Parity Probe")
 private struct ChineseEngineParityProbe {
     private static func rd(_ y: Int, _ m: Int, _ d: Int) -> Int {
-        _ChineseAstro.gregorianRD(y, m, d)
+        _CalendarAstronomy.gregorianRD(y, m, d)
     }
 
     @Test func chineseEngineDailySweep() throws {
@@ -287,16 +287,16 @@ private struct ChineseM1RoundTripProbe {
                                              .yearForWeekOfYear, .weekOfMonth,
                                              .weekdayOrdinal, .quarter, .hour]
         let artifact: [ClosedRange<Int>] = [
-            _ChineseAstro.gregorianRD(2057, 9, 26)..._ChineseAstro.gregorianRD(2057, 10, 29),
-            _ChineseAstro.gregorianRD(2097, 8, 5)..._ChineseAstro.gregorianRD(2097, 9, 7),
+            _CalendarAstronomy.gregorianRD(2057, 9, 26)..._CalendarAstronomy.gregorianRD(2057, 10, 29),
+            _CalendarAstronomy.gregorianRD(2097, 8, 5)..._CalendarAstronomy.gregorianRD(2097, 9, 7),
         ]
         var fieldDiffs: [String] = []
         var roundTripFails: [String] = []
         var checked = 0
 
         // Every 13th day over 1899-2102 (in-table + both fallback seams), noon GMT.
-        var rd = _ChineseAstro.gregorianRD(1899, 1, 1)
-        let endRD = _ChineseAstro.gregorianRD(2102, 12, 31)
+        var rd = _CalendarAstronomy.gregorianRD(1899, 1, 1)
+        let endRD = _CalendarAstronomy.gregorianRD(2102, 12, 31)
         let known2101 = 767186...767215   // documented fallback divergence (m6 2101)
         while rd <= endRD {
             defer { rd += 13 }

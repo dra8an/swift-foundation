@@ -93,7 +93,7 @@ private struct ChineseInvariantProbe {
         ]
         for (iso, gy, gm, gd) in cnyPins {
             let got = _ChineseCalendarEngine.year(relatedIso: iso).newYearRD
-            let want = _ChineseAstro.gregorianRD(gy, gm, gd)
+            let want = _CalendarAstronomy.gregorianRD(gy, gm, gd)
             if got != want {
                 failures.append("CNY \(iso): got rd \(got), want \(want) (\(gy)-\(gm)-\(gd))")
             }
@@ -125,12 +125,12 @@ private struct ChineseInvariantProbe {
         var failures: [String] = []
         let fields: Calendar.ComponentSet = [.era, .year, .month, .day, .isLeapMonth]
         let sampleRDs = [
-            _ChineseAstro.gregorianRD(-1000, 6, 15),
-            _ChineseAstro.gregorianRD(1, 1, 1),
-            _ChineseAstro.gregorianRD(1500, 3, 10),
-            _ChineseAstro.gregorianRD(1681, 4, 1),    // engine-sensitive leap year (§ 5b)
-            _ChineseAstro.gregorianRD(3000, 7, 1),
-            _ChineseAstro.gregorianRD(4600, 12, 31),
+            _CalendarAstronomy.gregorianRD(-1000, 6, 15),
+            _CalendarAstronomy.gregorianRD(1, 1, 1),
+            _CalendarAstronomy.gregorianRD(1500, 3, 10),
+            _CalendarAstronomy.gregorianRD(1681, 4, 1),    // engine-sensitive leap year (§ 5b)
+            _CalendarAstronomy.gregorianRD(3000, 7, 1),
+            _CalendarAstronomy.gregorianRD(4600, 12, 31),
         ]
         for rd in sampleRDs {
             let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)
