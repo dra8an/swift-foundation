@@ -83,7 +83,6 @@ private struct ChineseRecurrenceRuleParityProbe {
             let o = Self.collect(rule: ruleOurs, from: anchor, count: 5)
             Self.compare("chineseYearly_newYear", label, i, o, failures: &failures)
         }
-        print("[chineseYearly_newYear] anchors=\(Self.anchors.count) compared=\(Self.anchors.count * 5) failures=\(failures.count)")
         #expect(failures.isEmpty, "\(failures.count) failures: \(failures.prefix(10))")
     }
 
@@ -101,7 +100,6 @@ private struct ChineseRecurrenceRuleParityProbe {
             let o = Self.collect(rule: ruleOurs, from: anchor, count: 5)
             Self.compare("chineseYearly_midAutumn", label, i, o, failures: &failures)
         }
-        print("[chineseYearly_midAutumn] anchors=\(Self.anchors.count) compared=\(Self.anchors.count * 5) failures=\(failures.count)")
         #expect(failures.isEmpty, "\(failures.count) failures: \(failures.prefix(10))")
     }
 
@@ -117,7 +115,6 @@ private struct ChineseRecurrenceRuleParityProbe {
             let o = Self.collect(rule: ruleOurs, from: anchor, count: 12)
             Self.compare("chineseMonthly_firstOfMonth", label, i, o, failures: &failures)
         }
-        print("[chineseMonthly_firstOfMonth] anchors=\(Self.anchors.count) compared=\(Self.anchors.count * 12) failures=\(failures.count)")
         #expect(failures.isEmpty, "\(failures.count) failures: \(failures.prefix(10))")
     }
 
@@ -133,7 +130,6 @@ private struct ChineseRecurrenceRuleParityProbe {
             let o = Self.collect(rule: ruleOurs, from: anchor, count: 8)
             Self.compare("chineseWeekly_mondays", label, i, o, failures: &failures)
         }
-        print("[chineseWeekly_mondays] anchors=\(Self.anchors.count) compared=\(Self.anchors.count * 8) failures=\(failures.count)")
         #expect(failures.isEmpty, "\(failures.count) failures: \(failures.prefix(10))")
     }
 
@@ -151,7 +147,6 @@ private struct ChineseRecurrenceRuleParityProbe {
             let o = Self.collect(rule: ruleOurs, from: anchor, count: 5)
             Self.compare("chineseYearly_nthWeekdayShape", label, i, o, failures: &failures)
         }
-        print("[chineseYearly_nthWeekdayShape] anchors=\(Self.anchors.count) compared=\(Self.anchors.count * 5) failures=\(failures.count)")
         #expect(failures.isEmpty, "\(failures.count) failures: \(failures.prefix(10))")
     }
 
@@ -169,7 +164,6 @@ private struct ChineseRecurrenceRuleParityProbe {
             let o = Self.collect(rule: ruleOurs, from: anchor, count: 10)
             Self.compare("chineseDaily_withTimes", label, i, o, failures: &failures)
         }
-        print("[chineseDaily_withTimes] failures=\(failures.count)")
         #expect(failures.isEmpty, "\(failures.count) failures: \(failures.prefix(10))")
     }
 }

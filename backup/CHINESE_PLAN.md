@@ -1144,3 +1144,17 @@ comments. Audit of the six § 12.1 files:
   the shipped sibling shapes; RecurrenceRule probe is the shipped B/J
   template verbatim.
 All 47 tests green after the pass.
+
+### 11.14 CONTRIBUTION_GUIDELINE compliance pass (2026-07-19)
+
+Upstream `CONTRIBUTION_GUIDELINE.md` located (not in our old fork base;
+mirrored to `backup/CONTRIBUTION_GUIDELINE_upstream.md`; permanent memory
+created). New fixes on PR-bound files: 3 force unwraps → guard+fatalError
+w/ diagnostic (2× invariant) / guard-return-nil (year-add); 6 prints
+stripped from ChineseRecurrenceRuleParityProbe ("no print in tests" — note:
+shipped B/J probes in #2105 print too and may get flagged there);
+@unchecked Sendable why-safe comment added. 47 tests green.
+Accepted deviations, defensible: loop-style probe (matches shipped B/J
+template; parameterization noted as review-response); weekNumber/utcDate
+helpers duplicated from Hebrew (cross-calendar _CalendarUtility refactor =
+prepared follow-up answer, wrong to smuggle into this PR).

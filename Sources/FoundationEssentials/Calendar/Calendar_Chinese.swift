@@ -568,6 +568,7 @@ internal enum _ChineseCalendarEngine {
 /// epoch, year = 1...60 within the cycle, month = 1...12 with `isLeapMonth`
 /// distinguishing the repeated month, extended year (used by
 /// `yearForWeekOfYear`) = related Gregorian year + 2637.
+// @unchecked Sendable: mutable state is confined to copy-on-write via copy(), matching the other pure-Swift calendar classes.
 internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     init(identifier: Calendar.Identifier, timeZone: TimeZone?, locale: Locale?, firstWeekday: Int?, minimumDaysInFirstWeek: Int?, gregorianStartDate: Date?) {
@@ -788,7 +789,9 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         let localSeconds = date.timeIntervalSinceReferenceDate + Double(totalOffset)
         let (rd, _) = Self.rataDieAndSecondsInDay(localSeconds: localSeconds)
         let y = _ChineseCalendarEngine.year(containingRD: rd)
-        let (ordinal, day) = y.ordinalAndDay(rd: rd)!
+        guard let (ordinal, day) = y.ordinalAndDay(rd: rd) else {
+            fatalError("year(containingRD:) returned a year not containing rd \(rd)")
+        }
         return (y.relatedIso + Self.extOffset, ordinal, day)
     }
 
@@ -986,7 +989,9 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         let (rd, secondsInDay) = Self.rataDieAndSecondsInDay(localSeconds: localSeconds)
 
         let y = _ChineseCalendarEngine.year(containingRD: rd)
-        let (ordinal, day) = y.ordinalAndDay(rd: rd)!
+        guard let (ordinal, day) = y.ordinalAndDay(rd: rd) else {
+            fatalError("year(containingRD:) returned a year not containing rd \(rd)")
+        }
         let label = y.label(ordinal: ordinal)
         let ext = y.relatedIso + Self.extOffset
         let (era, yearInCycle) = Self.eraAndYear(ext: ext)
