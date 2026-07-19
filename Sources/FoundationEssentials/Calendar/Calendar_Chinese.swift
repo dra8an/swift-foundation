@@ -1106,10 +1106,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     // MARK: ICU month resolution (chnsecal handleComputeMonthStart semantics)
 
-    /// Start RD of the month for (ext, display month, leap flag), using ICU's
-    /// estimate + single-bump algorithm: estimate = CNY + (display-1)*29 days,
-    /// take the month starting at the next month-start >= estimate, and bump
-    /// exactly once if the display number or leap flag mismatches.
+    /// chnsecal month resolution: estimate CNY + (display-1)*29 days, advance to the next month start, bump once on display/leap mismatch.
     private static func resolvedMonthStart(ext: Int, display: Int, leap: Bool) -> Int {
         let ny = yearData(ext: ext).newYearRD
         let target = ny + (display - 1) * 29
@@ -1136,6 +1133,12 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     // MARK: Adding
 
+    // Time-of-day in local seconds, without a DateComponents round trip.
+    private func localSecondsInDay(of date: Date, in tz: TimeZone) -> Double {
+        let localSeconds = date.timeIntervalSinceReferenceDate + Double(tz.secondsFromGMT(for: date))
+        return Self.rataDieAndSecondsInDay(localSeconds: localSeconds).secondsInDay
+    }
+
     func date(byAdding components: DateComponents, to date: Date, wrappingComponents: Bool) -> Date? {
         var result = date
 
@@ -1153,12 +1156,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let y = Self.yearData(ext: ext)
             let monthLen = y.monthLength(ordinal: ordinal)
             let newDay = ((curDay - 1 + d) % monthLen + monthLen) % monthLen + 1
-            let comps = dateComponents([.hour, .minute, .second, .nanosecond], from: result, in: tz)
-            var secondsInDay: Double = 0
-            if let h = comps.hour { secondsInDay += Double(h) * 3600 }
-            if let m = comps.minute { secondsInDay += Double(m) * 60 }
-            if let s = comps.second { secondsInDay += Double(s) }
-            if let n = comps.nanosecond { secondsInDay += Double(n) / 1e9 }
+            let secondsInDay = localSecondsInDay(of: result, in: tz)
             let rd = y.monthStartRD(ordinal: ordinal) + newDay - 1
             return utcDate(fromRataDie: rd, secondsInDay: secondsInDay, in: tz,
                            repeatedTimePolicy: .former, skippedTimePolicy: .former)
@@ -1173,12 +1171,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let y = Self.yearData(ext: ext)
             let label = y.label(ordinal: ordinal)
             let newExt = ext + yearsToAdd
-            // ICU pin semantics (Calendar::add -> pinField -> getActualMaximum):
-            // S1 = single-bump resolution of (source display, source leap);
-            // the pin length is a SECOND resolution using S1's display number
-            // with the ORIGINAL leap flag (getActualMaximum completes a clone
-            // for the month but handleGetMonthLength reads this->isLeapMonth);
-            // the final time is S1 + pinned day, spilling leniently.
+            // ICU's add-year pin: resolve the month by single-bump, pin the day via a second resolution that keeps the source leap flag, then spill leniently (Calendar::add + getActualMaximum semantics).
             let start0 = Self.resolvedMonthStart(ext: newExt, display: label.month, leap: label.isLeap)
             let y1 = _ChineseCalendarEngine.year(containingRD: start0)
             let (ord1, _) = y1.ordinalAndDay(rd: start0)!
@@ -1188,12 +1181,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let (ord2, _) = y2.ordinalAndDay(rd: start2)!
             let maxDom = y2.monthLength(ordinal: ord2)
             let pinnedDay = min(d, maxDom)
-            let comps = dateComponents([.hour, .minute, .second, .nanosecond], from: result, in: tz)
-            var secondsInDay: Double = 0
-            if let h = comps.hour { secondsInDay += Double(h) * 3600 }
-            if let m = comps.minute { secondsInDay += Double(m) * 60 }
-            if let s = comps.second { secondsInDay += Double(s) }
-            if let n = comps.nanosecond { secondsInDay += Double(n) / 1e9 }
+            let secondsInDay = localSecondsInDay(of: result, in: tz)
             let rd = start0 + pinnedDay - 1
             result = utcDate(fromRataDie: rd, secondsInDay: secondsInDay, in: tz,
                              repeatedTimePolicy: .former, skippedTimePolicy: .former)
@@ -1213,12 +1201,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             }
             let ny = Self.yearData(ext: ext)
             let clampedDay = min(d, ny.monthLength(ordinal: ordinal))
-            let comps = dateComponents([.hour, .minute, .second, .nanosecond], from: result, in: tz)
-            var secondsInDay: Double = 0
-            if let h = comps.hour { secondsInDay += Double(h) * 3600 }
-            if let m = comps.minute { secondsInDay += Double(m) * 60 }
-            if let s = comps.second { secondsInDay += Double(s) }
-            if let n = comps.nanosecond { secondsInDay += Double(n) / 1e9 }
+            let secondsInDay = localSecondsInDay(of: result, in: tz)
             let rd = ny.monthStartRD(ordinal: ordinal) + clampedDay - 1
             result = utcDate(fromRataDie: rd, secondsInDay: secondsInDay, in: tz,
                              repeatedTimePolicy: .former, skippedTimePolicy: .former)

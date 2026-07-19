@@ -1125,3 +1125,22 @@ B/J-proven shapes, leap semantics matched to ICU) should lift this bench
 into Hebrew-class territory — mirror of the Hebrew two-PR arc.** Keep the
 inherited "nextThousand" name; the 145-cap note (§ 11.10) covers the
 misnomer for framework-path calendars.
+
+### 11.13 Pre-PR review-tightening pass (2026-07-19)
+
+Mined parkera+itingliu comments from #1953/#2028 via gh (#2105 still has
+none). Their patterns: verbose comments; wrapped comments (guideline: don't
+wrap); DateComponents-in-hot-paths ("pretty expensive struct" — parkera);
+duplicated blocks; intermediary structures; force unwraps in tests; stale
+comments. Audit of the six § 12.1 files:
+- FIXED: 3× duplicated time-of-day extraction in date(byAdding:) (each a
+  DateComponents round trip) → one `localSecondsInDay(of:in:)` helper doing
+  plain arithmetic. Both parkera-pattern hits (expense + duplication) gone.
+- FIXED: pin-dance, resolvedMonthStart, and test-pin comments compressed to
+  unwrapped 1-liners (deep detail lives in § 11.2, not the code).
+- CLEAN: no deep nesting (the 28-space grep hits are poly coefficient
+  wraps); no force unwraps in shipped tests; source `ordinalAndDay!` (2×)
+  is invariant-backed, matching merged-Hebrew idiom; bench block mirrors
+  the shipped sibling shapes; RecurrenceRule probe is the shipped B/J
+  template verbatim.
+All 47 tests green after the pass.

@@ -70,10 +70,7 @@ private struct ChineseCalendarTests {
         #expect(failures == 0)
     }
 
-    // Adjudicated against the promulgated record (Liu, Academia Sinica, sxtwl;
-    // see the port's research notes). At 1795/1814/1890/2148 ICU disagrees —
-    // its lower-precision astronomy invents leap months that never existed.
-    // The divergence is intentional; do not adjust these to match ICU.
+    // Adjudicated against the promulgated historical record. ICU disagrees at 1795/1814/1890/2148 (its astronomy invents nonexistent leap months); the divergence is intentional — do not adjust these to match ICU.
     @Test func historicalPins() {
         let pins: [(Int, Int, Int, Int)] = [
             (1776, 1776, 2, 19), (1795, 1795, 1, 21), (1814, 1814, 1, 21),
