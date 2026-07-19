@@ -1047,3 +1047,35 @@ ICU parity counts, HKO cross-check (2,455/2,461 + 3 named), § 5c adjudication
 scorecard, Liu 97/100 — with § 11 as the citable archive. Upstream gets the
 claims + curated executable checks; the exhaustive machinery stays here,
 rerunnable on demand.
+
+### 11.10 M4 IN PROGRESS (2026-07-19) — state + open anomaly
+
+DONE: `Calendar_Cache.swift` wired (`foundation_swift_chinese_calendar_feature_enabled()`,
+both #if branches hard-false + routing line, B/J shape exactly);
+`BenchmarkCalendar.swift` Chinese 5-shape block added (nextThousandNewYears,
+allocationsForFixedCalendar, copyOnWritePerformance,
+dateComponents-yearMonthDay, roundTripDateComponents); main package builds,
+probes green. ICU-baseline bench run captured (flags off, debug, prefix
+filter `^ChineseCalendar-.*$` WORKS): dateComponents 211 ns/iter,
+roundTrip 530 ns/iter, allocations 25130 ns, CoW 20495 ns (1-sample benches,
+known-benign), raw at job-tmp bench_icu.txt (EPHEMERAL — regenerate via the
+§ command if gone).
+
+**⚠ OPEN ANOMALY (investigate FIRST next session, per
+feedback_anomaly_investigation): `ChineseCalendar-nextThousandNewYears`
+ICU-baseline median ~111 μs TOTAL** — implies ~111 ns per CNY match through
+ICU's generic enumerate framework: implausible by orders of magnitude.
+Suspect: enumeration terminates early (nil result stops the framework while
+`count` never reaches 0 — the closure shape only decrements on callbacks).
+Checks: (1) run the SAME shape against Hebrew/Buddhist siblings in the same
+run and compare; (2) count actual callbacks in a scratch test with
+Calendar(identifier:.chinese) in the bench package context (flags off);
+(3) if ICU's enumerate genuinely bails for {month:1,day:1}, document as an
+ICU limitation and adjust the bench shape (e.g. count via non-nil results
+only) BEFORE the flag-flip comparison. Do NOT publish ICU-vs-ours numbers
+until resolved.
+
+REMAINING for M4: resolve anomaly → flag-flip run (flip SPM-branch chinese
+flag to true, rerun, RESTORE false before committing) → side-by-side table
+in BENCHMARKS_PACKAGE.md + EXPECTED_TIMES.md entries → write the § 12.1
+self-contained `ChineseCalendarTests.swift` → commit as c4.
