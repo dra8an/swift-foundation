@@ -4,21 +4,110 @@ Mirror of BUDDHIST_JAPANESE_6.4_HANDOFF.md. Research branch: `port/chinese`
 (6.3 iMac), head = c4 `b2d5d5f`. Master context: `backup/CHINESE_PLAN.md`
 (§ 11 = findings/registry, § 12 = two-tier test strategy).
 
-## Cut the feature branch
+## Cut the feature branch — exact operational script
 
-`port/chinese-main` off `upstream/main`, code only. Cherry-pick/port EXACTLY
-these (§ 12.1):
+Environment first: Apple Silicon → release mode WORKS here (it SIGBUSes on
+the 6.3 Intel iMac; that is why all research numbers are debug).
+`export TOOLCHAINS=swift SWIFTCI_USE_LOCAL_DEPS=1` for every build.
 
-1. `Sources/FoundationEssentials/Calendar/Calendar_Chinese.swift`
-1b. `Sources/FoundationEssentials/Calendar/Calendar_Astronomy.swift` — shared astronomy (`_CalendarAstronomy`), split out for future Islamic/Hindu reuse
-2. `Calendar_Cache.swift` — flag (both #if branches hard-false) + routing line
-3. `Sources/FoundationEssentials/Calendar/CMakeLists.txt` — **ADD BOTH Calendar_Chinese.swift AND Calendar_Astronomy.swift** (Astronomy is registered on the research branch now; Chinese still is not)
-4. `Benchmarks/.../BenchmarkCalendar.swift` — ChineseCalendar 5-shape block
-5. `Tests/FoundationInternationalizationTests/ChineseRecurrenceRuleParityProbe.swift`
-6. `Tests/FoundationEssentialsTests/ChineseCalendarTests.swift`
+### Step 0 — sanity on the research branch
 
-Reconcile `Calendar_Cache.swift` with whatever #2105 merged. Check protocol
-drift vs `reference_calendar_protocol_baseline` memory before building.
+```
+git fetch origin && git fetch upstream
+git checkout port/chinese   # must be 8572c17 or later
+swift test --filter "chinese|Chinese"   # expect ~48 tests, 0 failures
+```
+
+If this fails here but passed on the 6.3 machine → environment problem,
+not code; check `swift --version` (toolchain memory) before touching code.
+
+### Step 1 — branch + whole-file copies (new files, no upstream counterpart)
+
+```
+git checkout -b port/chinese-main upstream/main
+git checkout origin/port/chinese -- \
+  Sources/FoundationEssentials/Calendar/Calendar_Chinese.swift \
+  Sources/FoundationEssentials/Calendar/Calendar_Astronomy.swift \
+  Tests/FoundationEssentialsTests/ChineseCalendarTests.swift \
+  Tests/FoundationInternationalizationTests/ChineseRecurrenceRuleParityProbe.swift
+```
+
+These four are self-contained: Chinese references `_CalendarAstronomy`
+(they travel together), tests use @testable imports only, no external data.
+
+### Step 2 — manual edits (files EXIST upstream; do NOT whole-file copy)
+
+1. `Sources/FoundationEssentials/Calendar/CMakeLists.txt`: add
+   `Calendar_Astronomy.swift` and `Calendar_Chinese.swift` to
+   target_sources, alphabetical position.
+2. `Sources/FoundationEssentials/Calendar/Calendar_Cache.swift`, two hunks
+   mirroring hebrew/B-J shape exactly:
+   - both `#if` branches: `internal func
+     foundation_swift_chinese_calendar_feature_enabled() -> Bool` hard
+     `return false` (FOUNDATION_FRAMEWORK branch carries the
+     "once Apple adds the underscored binding" comment style).
+   - `_calendarClass(identifier:)`: `else if
+     foundation_swift_chinese_calendar_feature_enabled() && identifier ==
+     .chinese { return _CalendarChinese.self }` after the hebrew line.
+   - RECONCILE: if #2105 merged, buddhist/japanese lines are already
+     there — chinese slots after them; if not, chinese sits next to
+     hebrew alone. Either is fine; match whatever main has.
+3. `Benchmarks/Benchmarks/Internationalization/BenchmarkCalendar.swift`:
+   append the `// MARK: - ChineseCalendar` 5-shape block — copy the block
+   verbatim from `origin/port/chinese` (do not whole-file copy; upstream
+   may have drifted).
+
+### Step 3 — build + test gates (in order, stop on any failure)
+
+```
+swift build                                      # zero errors
+swift test --filter "ChineseCalendarTests"       # 6 tests green
+swift test --filter "chinese"                    # RecurrenceRule probe green
+swift build -c release && swift test -c release --filter "ChineseCalendarTests"
+```
+
+### Step 4 — RELEASE benchmark re-measurement (only this machine can)
+
+Research numbers are DEBUG (§ 11.11): 65/136/1352/554 ns + framework-bound
+enumerate. Re-run BOTH sides in release and put THOSE numbers in the PR:
+
+```
+cd Benchmarks
+swift package benchmark run --target InternationalizationBenchmarks \
+  --benchmark-build-configuration release --filter "^ChineseCalendar-.*$"
+# flip the SPM-branch chinese flag to true in Calendar_Cache.swift, re-run,
+# RESTORE to false, verify with: grep "chinese_calendar_feature_enabled"
+```
+
+Expect the math-bound gaps to widen vs debug; if release shows anything
+anomalous, § 11.10-11.12 has the framework-cap/scaling explanations —
+check there before suspecting code. If a reviewer asks about table size,
+also re-run the packing experiment in release (§ 11.19 — B's +24% is
+debug-inflated; research-branch file `ChinesePackingExperiment.swift`).
+
+### Step 5 — compliance gate (mechanical, run verbatim)
+
+```
+gh api repos/swiftlang/swift-foundation/contents/CONTRIBUTION_GUIDELINE.md --jq .content | base64 -d > /tmp/cg.md && diff /tmp/cg.md <(sed '$d' backup/CONTRIBUTION_GUIDELINE_upstream.md) || echo "GUIDELINE CHANGED — re-audit"
+F="Sources/FoundationEssentials/Calendar/Calendar_Chinese.swift Sources/FoundationEssentials/Calendar/Calendar_Astronomy.swift Tests/FoundationEssentialsTests/ChineseCalendarTests.swift Tests/FoundationInternationalizationTests/ChineseRecurrenceRuleParityProbe.swift"
+grep -ci "pure\|native" $F          # expect 0 per file
+grep -c "print(" Tests/FoundationEssentialsTests/ChineseCalendarTests.swift Tests/FoundationInternationalizationTests/ChineseRecurrenceRuleParityProbe.swift   # expect 0
+grep -cE "\)!|\]!" $F              # expect 0 (no force unwraps)
+```
+
+Also diff `_CalendarProtocol` vs the baseline memory
+(reference_calendar_protocol_baseline) — if it drifted since #2028 head,
+reconcile conformance before building.
+
+### Step 6 — commit + PR
+
+Single commit, no attribution lines (user rule), message shaped like:
+`Add a Swift implementation of the Chinese calendar behind a feature flag`.
+PR body: the draft below, with Step-4 release numbers substituted and the
+verification narrative citing the § 11 registry (2057/2097 d0 artifact,
+out-of-range intentional divergences, HKO/promulgated/Liu validation).
+Standalone PR (§ 10 Q3; recommended and assumed — confirm with user only
+if something forces bundling).
 
 ## ⚠ NEVER include (§ 12.2)
 
