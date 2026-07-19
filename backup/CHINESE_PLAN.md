@@ -1003,3 +1003,47 @@ Upgrade to the § 5b claim ladder: the fallback's future century is now
 comparison, diverges from Liu in this zone at the documented § 5b rates,
 including CNY 2148 by a full month.) For the PR: this + § 5c adjudication +
 HKO in-range = every era of the calendar covered by an independent authority.
+
+## 12. Two-tier test strategy (research-exhaustive vs PR-curated)
+
+**Principle (user, 2026-07-19):** the research branch carries EXTREMELY
+detailed probes against both ICU and reference sources — absolute certainty
+of correctness. The PR branch carries a curated subset — zero upstream bloat.
+Precedent verified via `gh pr view 2105 --json files`: B/J shipped only 7
+files (2 impls, Calendar_Cache, CMakeLists, BenchmarkCalendar, 2
+RecurrenceRule probes); ALL other probes stayed on the research branch.
+Hebrew additionally shipped small SELF-CONTAINED tests (HebrewCalendarTests,
+HebrewRegressionTests — no ICU pairing, no external data).
+
+### 12.1 PR feature branch (`port/chinese-main`, cut by 6.4 machine)
+
+| File | Rationale |
+|---|---|
+| `Calendar_Chinese.swift` | the implementation |
+| `Calendar_Cache.swift` (flag + routing) | B/J shape |
+| `Calendar/CMakeLists.txt` (+Calendar_Chinese.swift) | required |
+| `BenchmarkCalendar.swift` (5-shape Chinese block, M4) | B/J shape |
+| `ChineseRecurrenceRuleParityProbe.swift` | exact B/J precedent |
+| **NEW `ChineseCalendarTests.swift`** (write at M4/M5) | Hebrew precedent: self-contained, no ICU pairing, no external data. Distill: ~20 known-date spot checks across 1901–2100 (from the baked table, incl. leap months + CNYs); round-trips; § 5c historical pins (with the do-not-fix-to-match-ICU note); tiling+bits-sum invariant over a TRIMMED span (e.g. 1800–2300, seconds not 11 s); range-limit literals (now ICU-verified); the 2057/2097 d0-artifact windows as documented expectations |
+
+### 12.2 Research branch ONLY (never cherry-picked; ⚠ list for the 6.4 handoff)
+
+| Asset | Why it stays |
+|---|---|
+| `ChineseICUComparisonProbe.swift` (Suite A) | exhaustive ICU pairing; B/J kept theirs back |
+| `ChinesePublicAPIComparisonProbe.swift` (Suite B) | same |
+| Chinese additions in `CalendarDailySweepParityProbe.swift` + `CalendarStrictPolicyParityProbe.swift` | shared files not in #2105 at all |
+| `ChineseTableGeneratorProbe.swift` | generator + discovery; regeneration is a research activity (plan § 7) |
+| `ChineseInvariantProbe.swift` (full −2000..5000) | 11 s sweep; distilled subset goes into ChineseCalendarTests |
+| `ChineseLiuReferenceProbe.swift` | **licensing caution: data extracted from Liu's GPL-3.0 repo.** Calendar dates are facts, but do not put GPL-derived tables into Apache-2.0 upstream; PR DESCRIPTION cites the validation result (97/100 exact, 3 within Liu's own uncertainty flags) instead |
+| `ChineseDebugTraceProbe.swift` (TracingCalendar, ICU leap-flag semantics, Hebrew shape check) | debug tooling + pending user decision on Hebrew |
+| HKO CSV / raw files | stay in icu4swift + § 5c provenance; PR description cites results (supersedes the earlier § 5c "copy CSV into swift-foundation test resources" action — do NOT copy; 54 KB of data upstream is exactly the bloat this section exists to prevent) |
+| `backup/` (plan, harnesses, DS port) | never ships, per standing rule |
+
+### 12.3 Evidence flow to the PR
+
+The PR description (M5) carries the verification NARRATIVE with numbers —
+ICU parity counts, HKO cross-check (2,455/2,461 + 3 named), § 5c adjudication
+scorecard, Liu 97/100 — with § 11 as the citable archive. Upstream gets the
+claims + curated executable checks; the exhaustive machinery stays here,
+rerunnable on demand.
