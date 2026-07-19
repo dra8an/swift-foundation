@@ -4,11 +4,13 @@
 
 ## ✅ CURRENT STATE (2026-07-17) — read this section, then the active plan
 
-**Chinese port research phase COMPLETE (M0–M5, 2026-07-19, head `33ad123`).
-Cold-resume: read `backup/CHINESE_6.4_HANDOFF.md`** — feature-branch pick
-list, exclusions, verification runbook, draft PR description. Deep context:
-`backup/CHINESE_PLAN.md` (§ 11 findings/registry, § 12 test tiering).
-Next actor: the 6.4 machine cuts `port/chinese-main` and opens the PR.
+**Chinese: M0–M5 + code review complete; STAGED WORK REMAINS (2026-07-19,
+head `b9bf964`). Cold-resume: `backup/CHINESE_PLAN.md` § 11.21 (staged
+S1–S5; S1 week-year rewiring = user-decided option B) and § 11.22
+(normative frame: Foundation contract, NOT ICU add/roll — read before
+S1/S2). Execute S1 minimum, then `backup/CHINESE_6.4_HANDOFF.md`** for the
+feature-branch script. Next actor after staged work: 6.4 machine cuts
+`port/chinese-main` and opens the PR.
 Open user decisions: Hebrew isLeapMonth fix vehicle (confirmed benign
 deviation, see CHINESE_PLAN § 11.8); Chinese nextDate fast-path follow-up
 PR (post-merge). Everything below is history.
@@ -19,7 +21,7 @@ PR (post-merge). Everything below is history.
 |---|---|
 | Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
 | Buddhist + Japanese | **PR #2105 OPEN** since 2026-07-12 (`port/buddhist-japanese-main`, head `08b6e889`). Awaiting first review. Watch: `gh pr view 2105 --repo swiftlang/swift-foundation`. Review responses happen on the 6.4 machine. |
-| Chinese | **RESEARCH COMPLETE M0–M5** (2026-07-19): all suites + invariants + Liu DE441 validation zero-divergence; benches 3.2–37× vs ICU; flag off. Snapshots c1–c4 + M5 + review-tightening (reviewer-pattern + CONTRIBUTION_GUIDELINE passes, § 11.13–11.15), head `e38e88c`. Handoff: `CHINESE_6.4_HANDOFF.md`. ⚠ push pending: origin 3 behind. |
+| Chinese | **M0–M5 + code review done** (2026-07-19): all suites zero-divergence; review easy batch fixed (4+2 of 10 findings), **STAGED work S1–S5 remains — CHINESE_PLAN § 11.21 (S1 week-year option B DECIDED) + § 11.22 normative frame; execute S1 before PR cut**. Head `b9bf964`, pushed. Handoff: `CHINESE_6.4_HANDOFF.md` (has the staged-work gate). |
 
 ### Branch landscape (fork = dra8an/swift-foundation)
 
