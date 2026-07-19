@@ -1075,7 +1075,20 @@ ICU limitation and adjust the bench shape (e.g. count via non-nil results
 only) BEFORE the flag-flip comparison. Do NOT publish ICU-vs-ours numbers
 until resolved.
 
-REMAINING for M4: resolve anomaly → flag-flip run (flip SPM-branch chinese
+**ANOMALY RESOLVED (2026-07-19, empirical):** both backends yield exactly
+**145 non-nil matches, identical last date CNY 2163-02-03, then the GENERIC
+FRAMEWORK stops on its own** (its internal search cap; the closure's
+count=1000 never reaches 0). Scratch timing ~108 ms/run; the bench's
+"111 μs" is that ~111 ms divided by the harness's default kilo
+scalingFactor — numbers are internally consistent. NOT a Chinese or ICU
+bug: identical behavior both sides, so the A/B comparison is fair (same
+145-match workload). Sibling note: Buddhist/Japanese "nextThousand"
+benches cap the same way (generic framework); only Hebrew truly does 1000
+(fast path bypasses the cap). Keep the inherited name for consistency.
+Verification probe: `chineseEnumerateCNYCallbackCount` in the debug-trace
+file (research-only).
+
+REMAINING for M4 next session: → flag-flip run (flip SPM-branch chinese
 flag to true, rerun, RESTORE false before committing) → side-by-side table
 in BENCHMARKS_PACKAGE.md + EXPECTED_TIMES.md entries → write the § 12.1
 self-contained `ChineseCalendarTests.swift` → commit as c4.

@@ -159,3 +159,27 @@ private struct HebrewBJLeapFlagShapeProbe {
         #expect(Bool(true))  // report-only: upstream action is a user decision (§ 11.7)
     }
 }
+
+@Suite("Chinese Bench Anomaly Check")
+private struct ChineseBenchAnomalyProbe {
+    @Test func chineseEnumerateCNYCallbackCount() {
+        let start = Date(timeIntervalSince1970: 1474666555.0)
+        let dc = DateComponents(month: 1, day: 1)
+        for (name, inner) in [("icu", _CalendarICU(identifier: .chinese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil) as any _CalendarProtocol),
+                              ("ours", _CalendarChinese(identifier: .chinese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil))] {
+            let cal = Calendar(inner: inner)
+            var callbacks = 0, nonNil = 0, count = 1000
+            var last: Date? = nil
+            let t0 = ProcessInfo.processInfo.systemUptime
+            cal.enumerateDates(startingAfter: start, matching: dc, matchingPolicy: .nextTime) { result, exact, stop in
+                callbacks += 1
+                if let r = result { nonNil += 1; last = r }
+                count -= 1
+                if count == 0 { stop = true }
+            }
+            let el = ProcessInfo.processInfo.systemUptime - t0
+            print("ANOMALY \(name): callbacks=\(callbacks) nonNil=\(nonNil) last=\(String(describing: last)) elapsedMs=\(Int(el * 1000))")
+        }
+        #expect(Bool(true))
+    }
+}
