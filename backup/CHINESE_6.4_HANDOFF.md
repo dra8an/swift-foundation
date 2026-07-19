@@ -4,6 +4,27 @@ Mirror of BUDDHIST_JAPANESE_6.4_HANDOFF.md. Research branch: `port/chinese`
 (6.3 iMac), head = c4 `b2d5d5f`. Master context: `backup/CHINESE_PLAN.md`
 (§ 11 = findings/registry, § 12 = two-tier test strategy).
 
+## Branch topology (PR branch is INDEPENDENT — not stacked on B/J)
+
+```
+Research side (6.3 iMac, fork):           PR side (this machine, fork -> upstream):
+port/hebrew                               (merged: #1953/#2028)
+  \- port/buddhist - ae2bc97              port/buddhist-japanese-main -- PR #2105 (open)
+       \- port/chinese - 173a20a+         port/chinese-main ------------- NEW standalone PR
+          (backup/ + probes + code)          \- cut fresh off upstream/main, 7 files only
+```
+
+Research branches stack (Chinese sits on Buddhist only to inherit probe
+infrastructure). PR branches NEVER stack: `port/chinese-main` starts at the
+top of `upstream/main`, contains only the seven Chinese files, zero B/J
+code, and has NO dependency on #2105 merging in either direction. The one
+shared touchpoint is `Calendar_Cache.swift` (both PRs add a flag + routing
+line to the same region) — hence Step 2's "match whatever main has":
+#2105-first -> chinese hunk slots after the B/J lines; both open -> the
+second to land resolves a trivial one-hunk rebase conflict. You will own
+two parallel unrelated PR branches: keep shepherding #2105, open
+chinese-main standalone on the user's word.
+
 ## Cut the feature branch — exact operational script
 
 Environment first: Apple Silicon → release mode WORKS here (it SIGBUSes on
