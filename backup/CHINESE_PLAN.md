@@ -808,7 +808,14 @@ Japanese `dateInterval(.era)`, Meiji data).
 ### 11.2 Verified ICU behavioral conventions (ported in M2)
 
 1. `dateInterval(.yearForWeekOfYear)` → **nil** for chinese.
+   **RECLASSIFIED (§ 11.21 S1, user option B): ICU DEFECT — deliberately
+   NOT replicated.** chnsecal.cpp:229 handleGetExtendedYear never reads
+   YEAR_WOY, so ICU's interval degenerates. We return the real week-year
+   interval (Hebrew shape). Revert recipe in the code comment.
 2. `date(byAdding: .yearForWeekOfYear)` → **no-op** for chinese.
+   **RECLASSIFIED (§ 11.21 S1, user option B): ICU DEFECT — deliberately
+   NOT replicated.** We advance by week-years (Hebrew shape, ±5M-bounded).
+   Revert recipe in the code comment.
 3. `ordinality(.month, .year)` → **display month number**, NOT ordinal
    position (leap-4 day → 4, and the month after it → 5).
 4. `dateInterval(.era)` = the 60-year cycle span (matched ICU on first try).
@@ -845,6 +852,7 @@ Japanese `dateInterval(.era)`, Meiji data).
 | 2 | ICU year-level queries corrupted in those years | whole Chinese years 2057 & 2097 (e.g. `range(.day,.year)` = 1..<325 for a ~354-day year) | same artifact propagating into actualMaximum(DOY) | Excluded whole years in probes |
 | 3 | fallback m6-2101 starts Jun 27 (ours) vs Jun 26 (ICU) | 30 days in Chinese 2101 (first fallback year) | documented Reingold-vs-Duffett-Smith conjunction class (§ 5b); our instant is astronomically right | Intentional; documented |
 | 4 | out-of-range divergence profile | <1901 / >2100 | § 5b measurements + adjudication (9/10 vs promulgated record) | Intentional; PR-defensible with citations |
+| 5 | week-year surfaces live: `dateInterval(.yearForWeekOfYear)` non-nil, `byAdding(.yearForWeekOfYear)` advances | all dates | ICU DEFECT: chnsecal.cpp:229 handleGetExtendedYear never reads YEAR_WOY → nil interval / no-op add | Deliberate (user option B, § 11.21 S1; Japanese-.era precedent). Probe exclusions annotated in Suites A+B; guard test `weekYearSemantics` in ChineseCalendarTests; revert recipe at both code sites |
 
 ### 11.4 Bugs found & fixed via probes (process log)
 
@@ -1336,8 +1344,12 @@ Review: 8-angle fan-out + verification; 10 findings reported. Disposition:
   meanTropicalYear DELETED. firstDayOfWeekYear/numWeeksInYearForWeekOfYear
   KEPT with TODO marker — wired by S1.
 
-**S1 — Week-year divergence, USER DECISION MADE: option B** (implement
-correct semantics; do NOT replicate ICU's defect). Root cause:
+**S1 — ✅ EXECUTED (2026-07-19). Week-year divergence, USER DECISION:
+option B** (implement correct semantics; do NOT replicate ICU's defect).
+Steps 1–5 landed in `fd9afee` (despite its message calling S1 staged);
+this session finished step 2's ±5M bound, removed the stale
+"currently uncalled" TODO on firstDayOfWeekYear, and did step 6
+(§ 11.2 reclassification, § 11.3 row 5, handoff PR-draft note). Root cause:
 chnsecal.cpp:229 handleGetExtendedYear reads only ERA/YEAR/EXTENDED_YEAR —
 never YEAR_WOY → ucal_add(YEAR_WOY) is a no-op and the wrapper's interval
 degenerates to nil. Precedent: B/J shipped semantically-correct Japanese

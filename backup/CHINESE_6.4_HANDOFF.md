@@ -185,6 +185,14 @@ Verification (exhaustive suites on the research branch; distilled tests here):
 - Benchmarks (debug): dateComponents 3.2×, round-trip 3.9×, allocations
   18.6×, copy-on-write 37× vs ICU. `nextDate` fast path deliberately
   deferred to a follow-up PR (leap-month match semantics), as with #2105.
+- One deliberate semantic divergence: ICU's chinese calendar cannot use
+  `yearForWeekOfYear` on the fields-to-time side (chnsecal
+  `handleGetExtendedYear` never reads YEAR_WOY), so its
+  `dateInterval(.yearForWeekOfYear)` is nil and its add is a no-op. We
+  implement Foundation's documented week-year semantics instead (same
+  shape as the merged Hebrew implementation; precedent: the Japanese
+  calendar's `.era` interval in #2105). Guarded by a dedicated test;
+  revert recipe documented at both code sites.
 
 ## Review compliance (done — keep it that way)
 
@@ -199,10 +207,11 @@ consolidation as follow-up.
 
 ## ⚠ STAGED WORK GATE
 
-A code review (CHINESE_PLAN § 11.21) fixed the easy findings but STAGED
-S1-S5 (week-year divergence rewiring — user decided option B —, wrapping
-decision, quarter discovery, cleanup batch). **Execute S1 minimum before
-cutting the PR branch**; S2/S3 need decisions/discovery first.
+A code review (CHINESE_PLAN § 11.21) fixed the easy findings and staged
+S1-S5. **S1 (week-year rewiring, user option B) is DONE** — the PR-cut
+gate is satisfied. S5 (cleanup batch) status: see § 11.21. S2 (wrapping
+decision) and S3 (quarter discovery) need user decisions first — do not
+implement without them.
 
 ## After opening
 

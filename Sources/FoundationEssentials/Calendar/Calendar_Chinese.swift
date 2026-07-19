@@ -596,7 +596,6 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         return (ext - 1, Int(py.monthCount))
     }
 
-    // TODO: currently uncalled — wired by the STAGED week-year divergence change (CHINESE_PLAN § 11.21, user decision: option B). Do not delete.
     private func firstDayOfWeekYear(_ ext: Int) -> Int {
         let rdNY = Self.yearData(ext: ext).newYearRD
         var r = rdNY % 7
@@ -1041,6 +1040,8 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let tz = self.timeZone
             let localComps = dateComponents([.yearForWeekOfYear], from: result, in: tz)
             if var yy = localComps.yearForWeekOfYear {
+                let (target, overflow) = yy.addingReportingOverflow(n)
+                guard !overflow, target > -5_000_000, target < 5_000_000 else { return nil }
                 if n > 0 {
                     for _ in 0..<n {
                         daysToAdd += numWeeksInYearForWeekOfYear(yy) * 7
