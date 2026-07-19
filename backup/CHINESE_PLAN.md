@@ -1233,3 +1233,26 @@ metric Apple perf reviewers optimize. Recommendation: ship 800 B UInt32;
 PR text offers compaction with this analysis cited. EXPERIMENTS PLANNED
 (user, next): prototype variants and measure real binary delta + bench
 delta before final call.
+
+### 11.19 Packing experiment RESULTS (2026-07-19; ChinesePackingExperiment.swift, research-only)
+
+All variants regenerated from the shipped table and proven field-identical
+to baseline for all 200 years. Microbench = year decode + start lookup +
+synthetic month walk (identical across variants → deltas isolate the
+layout cost), debug mode (same config as all our bench numbers; release
+re-measure belongs to the 6.4 machine):
+
+| Variant | Const bytes | ns/op | Δ vs A | Verdict |
+|---|---|---|---|---|
+| A UInt32 (shipped) | 800 | 334 | — | **ship** |
+| B 3-byte (ICU4X layout) | 600 | 413 | +24% | viable fallback if review demands size; re-measure in release |
+| C 16-bit + leap bits + packed 6-bit offsets | 575 | 802 | +140% | dead: 3 structures, decode dominates, saves 25 B over B |
+| D 16-bit + lazy start cache | 425 (+800 dirty heap) | 358 | +7% | perf fine; dies on clean-vs-dirty memory |
+| E 16-bit + prefix walk | 425 | 16,503 | +49× | dead, as predicted |
+
+Conclusions: § 11.18's predictions held (E catastrophic, D dirty-memory
+loss, C not worth 25 B). New data: B's decode costs +24% in DEBUG — not
+free as assumed; likely compresses under optimization but unproven here
+(Intel release SIGBUS). Decision: **ship A**; PR text offers B with these
+measurements attached. User's leap-extraction encoding (Var16) is fully
+implemented + verified in the experiment file for the record.
