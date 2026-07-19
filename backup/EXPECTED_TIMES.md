@@ -91,3 +91,11 @@ When a command exceeds the hard limit:
 Add a new row whenever a previously-untimed command becomes load-bearing,
 or revise a row when a measurement shifts ±20% from what's listed. Don't
 let stale numbers rot — outdated bounds defeat the purpose.
+
+## Chinese (added 2026-07-19)
+
+| Task | Expected | Abort at |
+|---|---|---|
+| `swift test --filter "chinese\|Chinese"` (all Chinese probes) | ~15–20 s (11 s is the 7,001-yr invariant sweep) | 40 s |
+| Chinese bench run, `^ChineseCalendar-.*$`, debug | ~60–90 s incl. build | 3 min |
+| chineseEnumerateCNYCallbackCount scratch | ~2 s | 10 s |

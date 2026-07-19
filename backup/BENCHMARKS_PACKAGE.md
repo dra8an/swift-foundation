@@ -557,3 +557,19 @@ also serve as a regression net for future Hebrew port refactors.
   the existing `allocationsForCurrentCalendar` benchmark uses
   `Calendar.current`. For Hebrew comparisons, prefer
   `Calendar(identifier: .hebrew)` to keep the comparison clean.
+
+## Chinese calendar benches (added 2026-07-19, M4)
+
+5-shape block in `BenchmarkCalendar.swift` mirroring B/J: `ChineseCalendar-{nextThousandNewYears, allocationsForFixedCalendar, copyOnWritePerformance, dateComponents-yearMonthDay, roundTripDateComponents}`. Filter `^ChineseCalendar-.*$` works (single prefix regex OK).
+
+Flag-flip results (debug, SPM, 6.3 iMac, 2026-07-19; method § of this doc):
+
+| Bench (p50) | ICU | Pure Swift | Speedup |
+|---|---|---|---|
+| dateComponents-yearMonthDay | 211 ns | 65 ns | 3.2× |
+| roundTripDateComponents | 530 ns | 136 ns | 3.9× |
+| allocationsForFixedCalendar | 25,130 ns | 1,352 ns | 18.6× |
+| copyOnWritePerformance | 20,495 ns | 554 ns | 37× |
+| nextThousandNewYears | 111 μs | 113 μs | ~1× — BOTH sides framework-bound: generic enumerate caps at 145 matches (no fast path phase 1); reported value is kilo-scaled (~111 ms real). NOT an engine ceiling; see CHINESE_PLAN § 11.10–11.12. |
+
+roundTrip bench includes an extra dateComponents([.month]) call for the isLeapMonth flag — same shape both sides, fair A/B.
