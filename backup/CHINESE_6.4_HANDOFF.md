@@ -44,6 +44,20 @@ not code; check `swift --version` (toolchain memory) before touching code.
 
 ### Step 1 — branch + whole-file copies (new files, no upstream counterpart)
 
+RECOMMENDED: create the branch as a git WORKTREE so #2105 work continues in
+parallel and the two branches never share a .build (avoids the documented
+SPM stale-artifact SIGSEGV trap — see BUILD_CACHE_PROTOCOL.md):
+
+```
+git fetch upstream
+git worktree add -b port/chinese-main ../swift-foundation-chinese upstream/main
+cd ../swift-foundation-chinese   # run ALL remaining steps here
+```
+
+(Each worktree has its own .build; refs/objects are shared; a branch can
+only be checked out in one worktree at a time. Re-export TOOLCHAINS/
+SWIFTCI_USE_LOCAL_DEPS per shell as usual.) Single-worktree alternative:
+
 ```
 git checkout -b port/chinese-main upstream/main
 git checkout origin/port/chinese -- \
