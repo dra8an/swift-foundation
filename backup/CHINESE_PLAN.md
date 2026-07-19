@@ -1389,12 +1389,17 @@ dc.quarter=0 ARE verified). Write discovery probe → match or document.
 via synodic estimate). In-range huge adds are slow (astronomy per fallback
 year). Optional redesign: estimate + newMoonNear-style correction.
 
-**S5 — cleanup batch:** hoist solarLongitude x/y/z + nthNewMoon's 7 arrays
-to static let (per-call allocs); decode-triplication helper in
-year(relatedIso:); fold double tz.secondsFromGMT in byAdding branches;
-ordinality minimal component sets; weekOfYear in-file dedup (ordinality
-inline vs needsWeekFields); rd(ext:ordinal:day:) + weekday(ofRD:) helpers;
-probe helper force unwrap → preconditionFailure.
+**S5 — ✅ EXECUTED (2026-07-19), cleanup batch:** hoist solarLongitude
+x/y/z + nthNewMoon's 7 arrays to static let (per-call allocs);
+decode-triplication helper in year(relatedIso:) (the seam walk-back
+`while end == 0` loop always ran exactly once — replaced by a direct
+last-table-year decode); fold double tz.secondsFromGMT in byAdding
+branches (fieldsAndTime helper; localSecondsInDay deleted); ordinality
+minimal component sets (per-pair dateComponents requests); weekOfYear
+in-file dedup (weekOfYearNumber helper shared by ordinality +
+needsWeekFields); rd(ext:ordinal:day:) + weekday(ofRD:) helpers (6 call
+sites); probe helper force unwrap → preconditionFailure. All 49 tests
+green after; engine sweep baselines unchanged.
 
 **S6 — framework notes (pre-existing, BOTH backends, not PR regressions):**
 Calendar_Recurrence.swift ~752 negative-ordinal monthStart DateComponents

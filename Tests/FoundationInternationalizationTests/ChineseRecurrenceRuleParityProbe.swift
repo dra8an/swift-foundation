@@ -40,7 +40,10 @@ private struct ChineseRecurrenceRuleParityProbe {
         var dc = DateComponents()
         dc.year = y; dc.month = m; dc.day = d; dc.hour = 12
         dc.timeZone = .gmt
-        return cal.date(from: dc)!
+        guard let date = cal.date(from: dc) else {
+            preconditionFailure("invalid Gregorian probe date \(y)-\(m)-\(d)")
+        }
+        return date
     }
 
     private static func compare(_ rule: String, _ start: String, _ icu: [Date], _ ours: [Date], failures: inout [String]) {
