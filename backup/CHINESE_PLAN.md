@@ -1412,3 +1412,28 @@ display-number month ordinality (non-unique across leap). Hebrew items:
 | 10 | dead code (2 pairs) | 🟡 PARTIAL: astronomy pair DELETED; week-year helpers deliberately KEPT + TODO — they go LIVE under S1 (user decision: option B) |
 
 Score: 4 fixed, 2 partial, 4 staged. All staged detail in § 11.21 S1-S5.
+
+### 11.22 Normative frame correction (user, 2026-07-19): Foundation contract, not ICU add/roll
+
+ICU's add/roll are internal mutation primitives (Java Calendar lineage);
+_CalendarICU maps wrappingComponents→ucal_roll as SCAFFOLDING, not
+contract. The Swift implementations already declared independence
+(merged Calendar_Hebrew class doc: the protocol "does not require the ICU
+ucal_set/add/roll eager recalculation semantics"). Normative chain for
+_CalendarChinese semantics: (1) Foundation's documented API contract,
+(2) _CalendarGregorian's native Swift implementation of it,
+(3) sibling precedent (Hebrew day-only wrapping passed review twice).
+ucal_roll behavior = evidence about the incumbent for exclusion notes,
+NOT the specification. Consequences:
+- **S2 REFRAMED:** decide what wrappingComponents:true MEANS for a
+  lunisolar calendar per the Foundation contract (wrap ordinal months in
+  the 12/13-month year? year within the 60-cycle? or Hebrew's day-only
+  scope) — study _CalendarGregorian.add(amount:wrappingTo:) first; ICU
+  roll consulted only to characterize incumbent behavior.
+- **S1 narrative upgraded:** not "divergence from ICU" but "implements
+  Foundation's documented semantics where the ICU-backed path is
+  defective (chnsecal ignores YEAR_WOY)". Keep the revert recipe; the
+  posture in PR text leads with the contract, not the apology.
+- **Parity protocol clarified:** it exists to catch UNINTENDED
+  differences; scaffolding artifacts of the incumbent are not truth
+  (precedents: Japanese .era, S1, d0-artifact exclusions).
