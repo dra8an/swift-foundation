@@ -4,9 +4,14 @@
 
 ## ✅ CURRENT STATE (2026-07-17) — read this section, then the active plan
 
-**Active work: Chinese calendar port. Read `backup/CHINESE_PLAN.md` — it is
-the self-contained starting point** (strategy options, sources, test plan,
-milestones, open questions). Everything below it in this file is history.
+**Chinese port research phase COMPLETE (M0–M5, 2026-07-19, head `33ad123`).
+Cold-resume: read `backup/CHINESE_6.4_HANDOFF.md`** — feature-branch pick
+list, exclusions, verification runbook, draft PR description. Deep context:
+`backup/CHINESE_PLAN.md` (§ 11 findings/registry, § 12 test tiering).
+Next actor: the 6.4 machine cuts `port/chinese-main` and opens the PR.
+Open user decisions: Hebrew isLeapMonth fix vehicle (confirmed benign
+deviation, see CHINESE_PLAN § 11.8); Chinese nextDate fast-path follow-up
+PR (post-merge). Everything below is history.
 
 ### Workstream status
 
@@ -14,7 +19,7 @@ milestones, open questions). Everything below it in this file is history.
 |---|---|
 | Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
 | Buddhist + Japanese | **PR #2105 OPEN** since 2026-07-12 (`port/buddhist-japanese-main`, head `08b6e889`). Awaiting first review. Watch: `gh pr view 2105 --repo swiftlang/swift-foundation`. Review responses happen on the 6.4 machine. |
-| Chinese | **M3 COMPLETE** (2026-07-17): Suites A/B/C + daily sweep + strict all zero-divergence vs ICU. Snapshots c1=`40be0f6`, c2=`a316747`, c3=`43c1dd4` on `port/chinese`. Findings: `CHINESE_PLAN.md` § 11. Next: M4 (benches + docs), M5 (6.4 handoff). |
+| Chinese | **RESEARCH COMPLETE M0–M5** (2026-07-19): all suites + invariants + Liu DE441 validation zero-divergence; benches 3.2–37× vs ICU; flag off. Snapshots c1–c4 + M5, head `33ad123`. Handoff: `CHINESE_6.4_HANDOFF.md`. |
 
 ### Branch landscape (fork = dra8an/swift-foundation)
 
@@ -23,7 +28,7 @@ milestones, open questions). Everything below it in this file is history.
 | `port/hebrew` | Hebrew research (v8–v26 stack). Historic. |
 | `port/buddhist` (`ae2bc97`) | B/J research + all parity probes + handoff docs. Base for `port/chinese`. |
 | `port/buddhist-japanese-main` (`08b6e889`) | PR #2105 source. 6.4 machine owns it. |
-| `port/chinese` | Chinese research — ACTIVE, head `43c1dd4` (c3). |
+| `port/chinese` | Chinese research — COMPLETE, head `33ad123` (M5). 6.4 machine: cut `port/chinese-main` per CHINESE_6.4_HANDOFF.md. |
 
 ### Environment (critical, this 6.3 iMac)
 
