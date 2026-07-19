@@ -95,8 +95,11 @@ private struct ChineseICUComparisonProbe {
         cmp("dc.yearForWeekOfYear", ic.yearForWeekOfYear, oc.yearForWeekOfYear)
         cmp("dc.dayOfYear",         ic.dayOfYear,         oc.dayOfYear)
 
+        // .yearForWeekOfYear omitted: deliberate divergence — ICU cannot use
+        // YEAR_WOY for chinese (nil interval / no-op add); we implement real
+        // week-year semantics. See CHINESE_PLAN.md § 11.21 (Japanese .era precedent).
         for c in [Calendar.Component.era, .year, .month, .day, .hour,
-                  .weekOfYear, .weekOfMonth, .yearForWeekOfYear] {
+                  .weekOfYear, .weekOfMonth] {
             let iv = icu.dateInterval(of: c, for: date)
             let ov = ours.dateInterval(of: c, for: date)
             cmp("dateInterval(\(c)).start",
@@ -130,7 +133,7 @@ private struct ChineseICUComparisonProbe {
         }
 
         for c in [Calendar.Component.day, .weekOfYear, .weekOfMonth, .weekdayOrdinal,
-                  .month, .year, .yearForWeekOfYear, .hour] {
+                  .month, .year, .hour] {   // .yearForWeekOfYear: deliberate divergence, see above
             var dc = DateComponents()
             dc.setValue(1, for: c)
             let ir = icu.date(byAdding: dc, to: date, wrappingComponents: false)

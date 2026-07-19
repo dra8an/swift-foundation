@@ -115,6 +115,23 @@ private struct ChineseCalendarTests {
         #expect(c.maximumRange(of: .weekOfYear) == 1..<56)
     }
 
+    // DELIBERATE ICU DIVERGENCE, guarded: ICU's chinese calendar cannot use YEAR_WOY on the fields-to-time side (chnsecal handleGetExtendedYear ignores it), yielding a nil interval and a no-op add; we implement Gregorian-family week-year semantics instead (precedent: the Japanese calendar's .era interval). If this test is changed to expect nil/no-op, that reversion must be an explicit decision.
+    @Test func weekYearSemantics() {
+        let c = Self.cal()
+        let d = Self.date(rd: _CalendarAstronomy.gregorianRD(2025, 7, 4))
+        guard let interval = c.dateInterval(of: .yearForWeekOfYear, for: d) else {
+            #expect(Bool(false), "week-year interval must not be nil")
+            return
+        }
+        #expect(interval.start <= d && d < interval.end)
+        let next = c.dateInterval(of: .yearForWeekOfYear, for: interval.end + 43_200)
+        #expect(next?.start == interval.end)
+        var dc = DateComponents()
+        dc.yearForWeekOfYear = 1
+        let added = c.date(byAdding: dc, to: d, wrappingComponents: false)
+        #expect((added ?? d) > d)
+    }
+
     @Test func validDaysEverywhere() {
         // ICU emits day=0 artifacts in two 2057/2097 months; ours must not.
         let c = Self.cal()

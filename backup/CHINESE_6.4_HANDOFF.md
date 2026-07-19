@@ -197,6 +197,13 @@ justified @unchecked Sendable. Prepared review responses in § 11.15:
 exit-tests N/A rationale, probe parameterization offer, _CalendarUtility
 consolidation as follow-up.
 
+## ⚠ STAGED WORK GATE
+
+A code review (CHINESE_PLAN § 11.21) fixed the easy findings but STAGED
+S1-S5 (week-year divergence rewiring — user decided option B —, wrapping
+decision, quarter discovery, cleanup batch). **Execute S1 minimum before
+cutting the PR branch**; S2/S3 need decisions/discovery first.
+
 ## After opening
 
 Watch reviews from this machine; size questions → argue absolute costs +

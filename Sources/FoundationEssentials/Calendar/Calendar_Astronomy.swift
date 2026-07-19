@@ -27,7 +27,6 @@ import CRT
 /// Shared astronomical and Gregorian day-number toolkit for the non-arithmetic calendars (Chinese today; Islamic and Hindu variants can build on it). Solar/lunar theory follows Reingold & Dershowitz via ICU4X calendrical_calculations; all APIs are calendar-agnostic.
 internal enum _CalendarAstronomy {
     static let meanSynodicMonth = 29.530588861
-    static let meanTropicalYear = 365.242189
     static let j2000 = 730120.5
     static let newMoonZero = 11.458922815770109
 
@@ -163,14 +162,6 @@ internal enum _CalendarAstronomy {
         return mod360(lambda + aberration(c) + nutation(c))
     }
 
-    static func estimatePriorSolarLongitude(angle: Double, moment: Double) -> Double {
-        let rate = meanTropicalYear / 360.0
-        let lon = solarLongitude(at: moment)
-        let tau = moment - rate * mod360(lon - angle)
-        let delta = mod360(solarLongitude(at: tau) - angle)
-        let result = tau - rate * (delta < 180.0 ? delta : delta - 360.0)
-        return min(moment, result)
-    }
 
     // Moment of the nth new moon since the 24724-indexed epoch; Meeus 24+13 terms.
     static func nthNewMoon(_ n: Int) -> Double {

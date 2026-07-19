@@ -1318,3 +1318,80 @@ that refactor THEN, not now (Dangi is out of scope § 5c; speculative
 generality violates small-focused-PRs). Three-tier taxonomy for review:
 **Astronomy = universal physics; Chinese = family law + this calendar's
 structures; the seam between them is where Dangi cuts later.**
+
+### 11.21 Code review (2026-07-19) — fixed vs STAGED work (⚠ context-clear insurance: execute staged items from THIS section)
+
+Review: 8-angle fan-out + verification; 10 findings reported. Disposition:
+
+**FIXED (easy batch, all 49 tests green):**
+- Overflow guards: ext(era:year:) → optional w/ reportingOverflow; era*60 +
+  year adds overflow-checked; newExt bounded ±5M; month-add bounded
+  ±66M months (beyond supported ext range → nil).
+- Force unwraps: 3× ordinalAndDay! → guard+fatalError (resolvedMonthStart
+  + year-add pin path). NOTE: probe helper `cal.date(from: dc)!` in
+  ChineseRecurrenceRuleParityProbe STILL UNFIXED → S5.
+- Cache eviction: removeAll() → evict one key (fallbackCache >16, solstice/
+  newYear caches >32).
+- Dead code: _CalendarAstronomy.estimatePriorSolarLongitude +
+  meanTropicalYear DELETED. firstDayOfWeekYear/numWeeksInYearForWeekOfYear
+  KEPT with TODO marker — wired by S1.
+
+**S1 — Week-year divergence, USER DECISION MADE: option B** (implement
+correct semantics; do NOT replicate ICU's defect). Root cause:
+chnsecal.cpp:229 handleGetExtendedYear reads only ERA/YEAR/EXTENDED_YEAR —
+never YEAR_WOY → ucal_add(YEAR_WOY) is a no-op and the wrapper's interval
+degenerates to nil. Precedent: B/J shipped semantically-correct Japanese
+.era interval with ICU quirk excluded from comparison. Execute:
+1. dateInterval(.yearForWeekOfYear): replace `return nil` with the
+   Hebrew-shape computation (firstDayOfWeekYear(weekYear)/(weekYear+1) →
+   utc dates → rawAndDaylightSavingTimeOffset .former → DateInterval).
+2. date(byAdding:): replace the no-op comment with the Hebrew-shape
+   yearForWeekOfYear loop (daysToAdd += numWeeksInYearForWeekOfYear(yy)*7
+   forward / -= backward). Bound n like month-add.
+3. BOTH sites get the DELIBERATE ICU DIVERGENCE comment naming
+   chnsecal.cpp:229, the Japanese-.era precedent, and the revert recipe
+   ("return nil here / delete this block") — user: we may be ASKED to
+   follow ICU's flawed behavior; make reverting trivial.
+4. Probe exclusions (Japanese-.era style, annotated): Suite A dateInterval
+   list + byAdding list drop .yearForWeekOfYear; Suite B dateInterval
+   where-clause + adds array likewise. Field VALUE comparisons stay.
+5. ChineseCalendarTests: add weekYearSemantics guard test (interval
+   non-nil, contains date, tiles with next, add advances; comment: changing
+   this to expect nil/no-op IS the ICU-reversion switch).
+6. Reclassify § 11.2 items 1-2 as "ICU DEFECT, deliberately not
+   replicated (§ 11.21)"; add § 11.3 registry row; add to handoff PR-draft
+   divergence list.
+
+**S2 — wrappingComponents month/year (DECISION NEEDED):** ICU routes
+wrapping through ucal_roll (Calendar_ICU.swift ~1926/2015) → rolls
+month/year; we wrap only day (inherited from merged Hebrew's identical
+shape). Options: (a) implement roll semantics for month/year (leap-month
+handling needed — ICU rollMonth in chnsecal), (b) document as inherited
+deviation. Either way ADD probes (none exist beyond .day).
+
+**S3 — Quarter surfaces (DISCOVERY NEEDED):** dateInterval(.quarter),
+ordinality quarter pairs never compared vs ICU (range 1..<5 and
+dc.quarter=0 ARE verified). Write discovery probe → match or document.
+
+**S4 — month-add is O(n) unit-stepping; ICU is O(1)** (chnsecal offsetMonth
+via synodic estimate). In-range huge adds are slow (astronomy per fallback
+year). Optional redesign: estimate + newMoonNear-style correction.
+
+**S5 — cleanup batch:** hoist solarLongitude x/y/z + nthNewMoon's 7 arrays
+to static let (per-call allocs); decode-triplication helper in
+year(relatedIso:); fold double tz.secondsFromGMT in byAdding branches;
+ordinality minimal component sets; weekOfYear in-file dedup (ordinality
+inline vs needsWeekFields); rd(ext:ordinal:day:) + weekday(ofRD:) helpers;
+probe helper force unwrap → preconditionFailure.
+
+**S6 — framework notes (pre-existing, BOTH backends, not PR regressions):**
+Calendar_Recurrence.swift ~752 negative-ordinal monthStart DateComponents
+sets year w/o era (wrong-cycle risk for chinese); ~813 multi-month
+recurrence drops isLeap for 2+ months (leap-month occurrences missed).
+Candidate upstream issues after the port lands.
+
+**S7 — PR-description notes (verified-parity, keep as pre-emptive):**
+date(from:) era defaults from Date.now (ICU semantics; non-deterministic
+by design); yfwoy FIELD populated while interval/add diverge per S1;
+display-number month ordinality (non-unique across leap). Hebrew items:
+§ 11.8 (isLeapMonth deviation + comment factually wrong).

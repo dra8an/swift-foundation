@@ -112,7 +112,8 @@ private struct ChinesePublicAPIComparisonProbe {
         // actual month/day. e.g. Heisei ends 2019-01-08 per ICU vs the actual
         // Reiwa start 2019-05-01. Our impl returns the semantically correct
         // [era.start, next-era.start) range, so durations diverge.
-        for c in allComps where c != .nanosecond && c != .era {
+        // .yearForWeekOfYear also omitted: deliberate ICU divergence (§ 11.21).
+        for c in allComps where c != .nanosecond && c != .era && c != .yearForWeekOfYear {
             let a = icu.dateInterval(of: c, for: d)
             let b = ours.dateInterval(of: c, for: d)
             div.compare(label, "dateInterval(\(c)).start",
@@ -159,7 +160,7 @@ private struct ChinesePublicAPIComparisonProbe {
             (.year, 1), (.year, -1), (.year, 5),
             (.hour, 1), (.hour, 24), (.minute, 1), (.second, 1),
             (.weekOfYear, 1), (.weekOfMonth, 1), (.weekdayOrdinal, 1),
-            (.yearForWeekOfYear, 1),
+            // (.yearForWeekOfYear, 1) omitted: deliberate ICU divergence (§ 11.21)
         ]
         for (c, v) in adds {
             div.compare(label, "date(byAdding:\(c), value:\(v))",
