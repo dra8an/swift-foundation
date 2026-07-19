@@ -979,3 +979,27 @@ verification coverage, not the code:
    Calendar_Hebrew.swift on this branch without instruction.**
 3. **Buddhist + Japanese: CLEAN** (0/6 sets deviate) — no action needed,
    PR #2105 unaffected.
+
+### 11.9 Liu external validation of the fallback zone (2026-07-19)
+
+`ChineseLiuReferenceProbe.swift`: our fallback (chnsecal rules + Reingold +
+UTC+8) vs Yuk Tung Liu's DE441 + Stephenson/Morrison ΔT + GB/T 33661-2017
+data for **2101–2200** — the strongest external authority for that century
+(HKO stops at 2100; nothing published exists past 2200). Data extracted from
+his `calendarData.js` (GPL-3.0), decode validated on six known years, baked
+into the probe as 100 packed rows (CNY RD + leap display + length bits).
+
+**Result: 97/100 years match EXACTLY (CNY, leap placement, all month
+lengths). The 3 diffs — 2133, 2165, 2172 — are a strict subset of Liu's own
+day-level-uncertain conjunction list**, each a single month-boundary ±1 day
+(adjacent length-bit pair swap, total days preserved), i.e. a new moon within
+ΔT-extrapolation error of midnight UTC+8: unadjudicable in principle, per the
+reference source itself. Same CNY and leap structure even in those 3 years.
+Probe gates on zero divergence OUTSIDE Liu-flagged-uncertain years; flagged
+diffs are reported, not failed.
+
+Upgrade to the § 5b claim ladder: the fallback's future century is now
+**externally validated**, not merely "better astronomy than ICU". (ICU, for
+comparison, diverges from Liu in this zone at the documented § 5b rates,
+including CNY 2148 by a full month.) For the PR: this + § 5c adjudication +
+HKO in-range = every era of the calendar covered by an independent authority.
