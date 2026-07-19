@@ -1109,3 +1109,19 @@ dominates that shape; every calendar-math-bound shape shows the expected
 3–37× win. Raw outputs: job-tmp bench_icu.txt / bench_ours.txt (ephemeral).
 Remaining M4: BENCHMARKS_PACKAGE.md results section + EXPECTED_TIMES rows +
 § 12.1 ChineseCalendarTests.swift → snapshot c4.
+
+### 11.12 Why enumerate is ~1× while Hebrew's Hanukkah bench was a blowout
+
+Hebrew ships `supportsNextDateFastPath = true` + a hand-written `nextDate`
+(#2028 deliverable): `Calendar.enumerateDates` BYPASSES the generic
+framework — near-zero overhead AND no 145-match cap (truly 1000 matches).
+Chinese phase 1 ships `false` deliberately (§ 7: leap months complicate
+match patterns — {month:4} vs m4L ambiguity; B/J precedent: port first,
+fast-path follow-up). So Chinese enumerate runs the SAME framework-bound,
+145-capped path on both backends → ~1× by construction, NOT an engine
+ceiling: dateComponents underneath is already 65 ns. **Follow-up-PR story
+for upstream: a Chinese `nextDate` fast path (CNY {month:1,day:1} + the
+B/J-proven shapes, leap semantics matched to ICU) should lift this bench
+into Hebrew-class territory — mirror of the Hebrew two-PR arc.** Keep the
+inherited "nextThousand" name; the 145-cap note (§ 11.10) covers the
+misnomer for framework-path calendars.
