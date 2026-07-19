@@ -19,7 +19,7 @@ PR (post-merge). Everything below is history.
 |---|---|
 | Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
 | Buddhist + Japanese | **PR #2105 OPEN** since 2026-07-12 (`port/buddhist-japanese-main`, head `08b6e889`). Awaiting first review. Watch: `gh pr view 2105 --repo swiftlang/swift-foundation`. Review responses happen on the 6.4 machine. |
-| Chinese | **RESEARCH COMPLETE M0–M5** (2026-07-19): all suites + invariants + Liu DE441 validation zero-divergence; benches 3.2–37× vs ICU; flag off. Snapshots c1–c4 + M5, head `33ad123`. Handoff: `CHINESE_6.4_HANDOFF.md`. |
+| Chinese | **RESEARCH COMPLETE M0–M5** (2026-07-19): all suites + invariants + Liu DE441 validation zero-divergence; benches 3.2–37× vs ICU; flag off. Snapshots c1–c4 + M5 + review-tightening (reviewer-pattern + CONTRIBUTION_GUIDELINE passes, § 11.13–11.15), head `e38e88c`. Handoff: `CHINESE_6.4_HANDOFF.md`. ⚠ push pending: origin 3 behind. |
 
 ### Branch landscape (fork = dra8an/swift-foundation)
 

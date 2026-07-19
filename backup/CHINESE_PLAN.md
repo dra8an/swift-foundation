@@ -1158,3 +1158,20 @@ Accepted deviations, defensible: loop-style probe (matches shipped B/J
 template; parameterization noted as review-response); weekNumber/utcDate
 helpers duplicated from Hebrew (cross-calendar _CalendarUtility refactor =
 prepared follow-up answer, wrong to smuggle into this PR).
+
+### 11.15 Final CONTRIBUTION_GUIDELINE compliance verdict (2026-07-19, head `e38e88c`)
+
+Point-by-point grep-verified on all six § 12.1 PR-bound files, ALL PASS:
+no wrapped comments/DocC (last two unwrapped in `e38e88c`); why-only
+comments; no PR refs; no force unwrap/cast anywhere (guard+fatalError w/
+diagnostic for invariants); no unsafe APIs; @unchecked Sendable justified;
+tests: zero prints, zero force unwraps, changed-path-relevant; benches:
+sibling shapes, setup outside measured scope; no new platform flags.
+Prepared review responses: (1) exit tests — fatalErrors guard internally
+unreachable invariants, not caller contracts; (2) probe parameterization —
+matches shipped B/J template, happy to convert; (3) shared-helper
+consolidation (weekNumber/utcDate/rataDie ↔ Hebrew) — cross-calendar
+_CalendarUtility refactor as follow-up, out of scope here.
+Tightening history: § 11.13 (reviewer-pattern pass), § 11.14 (guideline
+pass), this section (final verdict). Guideline mirror:
+`backup/CONTRIBUTION_GUIDELINE_upstream.md`; permanent memory created.

@@ -68,6 +68,17 @@ Verification (exhaustive suites on the research branch; distilled tests here):
   18.6×, copy-on-write 37× vs ICU. `nextDate` fast path deliberately
   deferred to a follow-up PR (leap-month match semantics), as with #2105.
 
+## Review compliance (done — keep it that way)
+
+Code is compliant with upstream `CONTRIBUTION_GUIDELINE.md` (mirror:
+`backup/CONTRIBUTION_GUIDELINE_upstream.md`; verdict: CHINESE_PLAN § 11.15;
+**re-fetch the guideline before opening the PR — upstream may have evolved
+it**). Any edit you make during cherry-pick/review must preserve: unwrapped
+why-only comments, no force unwraps (guard+fatalError), no prints in tests,
+justified @unchecked Sendable. Prepared review responses in § 11.15:
+exit-tests N/A rationale, probe parameterization offer, _CalendarUtility
+consolidation as follow-up.
+
 ## After opening
 
 Watch reviews from this machine; size questions → argue absolute costs +
