@@ -1092,3 +1092,20 @@ REMAINING for M4 next session: → flag-flip run (flip SPM-branch chinese
 flag to true, rerun, RESTORE false before committing) → side-by-side table
 in BENCHMARKS_PACKAGE.md + EXPECTED_TIMES.md entries → write the § 12.1
 self-contained `ChineseCalendarTests.swift` → commit as c4.
+
+### 11.11 M4 flag-flip results (2026-07-19, debug, SPM, this iMac)
+
+| Bench (p50) | ICU | Pure Swift | Speedup |
+|---|---|---|---|
+| dateComponents-yearMonthDay | 211 ns | 65 ns | 3.2× |
+| roundTripDateComponents | 530 ns | 136 ns | 3.9× |
+| allocationsForFixedCalendar | 25,130 ns | 1,352 ns | 18.6× |
+| copyOnWritePerformance | 20,495 ns | 554 ns | 37× |
+| nextThousandNewYears | 111 μs | 113 μs | ~1× (framework-bound: both sides run the generic enumerate's 145-match cap; time is framework overhead, not calendar math — same profile as B/J) |
+
+Flag restored to false after the run (verified). The user's why-parity
+question on the enumerate bench is answered: the shared generic framework
+dominates that shape; every calendar-math-bound shape shows the expected
+3–37× win. Raw outputs: job-tmp bench_icu.txt / bench_ours.txt (ephemeral).
+Remaining M4: BENCHMARKS_PACKAGE.md results section + EXPECTED_TIMES rows +
+§ 12.1 ChineseCalendarTests.swift → snapshot c4.
