@@ -132,6 +132,32 @@ private struct ChineseCalendarTests {
         #expect((added ?? d) > d)
     }
 
+    // ICU-wrapper quarter model, deliberately matched (same posture as Calendar_Hebrew): quarter = display-month block, interval = 3 ordinal months from the quarter's first regular month. A leap month inside the quarter is not absorbed — dates in/after it fall outside their own quarter interval, and range(.month,.quarter) shrinks by one. Changing these expectations means diverging from ICU; that must be an explicit decision.
+    @Test func quarterSurfaces() {
+        let c = Self.cal()
+        // Chinese 2025 is a leap-6 year; CNY Jan 29, Q2 starts Apr 28.
+        let normal = Self.date(rd: _CalendarAstronomy.gregorianRD(2025, 3, 5))
+        #expect(c.ordinality(of: .quarter, in: .year, for: normal) == 1)
+        #expect(c.ordinality(of: .month, in: .quarter, for: normal) == 2)
+        #expect(c.ordinality(of: .day, in: .quarter, for: normal) == 36)
+        #expect(c.range(of: .month, in: .quarter, for: normal) == 1..<4)
+        let q1 = c.dateInterval(of: .quarter, for: normal)
+        #expect(q1?.start == Date(timeIntervalSinceReferenceDate:
+            Double(_CalendarAstronomy.gregorianRD(2025, 1, 29) - 730_486) * 86400.0))
+        #expect(q1.map { $0.contains(normal) } == true)
+
+        let inLeap = Self.date(rd: _CalendarAstronomy.gregorianRD(2025, 8, 1))
+        #expect(c.ordinality(of: .quarter, in: .year, for: inLeap) == 2)
+        #expect(c.ordinality(of: .day, in: .quarter, for: inLeap) == 96)
+        let q2 = c.dateInterval(of: .quarter, for: inLeap)
+        #expect(q2?.duration == 88 * 86400.0)
+        #expect(q2.map { $0.contains(inLeap) } == false)   // the documented quirk
+
+        // Leap-4 1906: the leap month consumes a Q2 slot, shrinking the range.
+        let leapQuarter = Self.date(rd: _CalendarAstronomy.gregorianRD(1906, 6, 25))
+        #expect(c.range(of: .month, in: .quarter, for: leapQuarter) == 4..<6)
+    }
+
     @Test func validDaysEverywhere() {
         // ICU emits day=0 artifacts in two 2057/2097 months; ours must not.
         let c = Self.cal()

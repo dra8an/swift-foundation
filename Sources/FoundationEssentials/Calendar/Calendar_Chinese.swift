@@ -505,6 +505,19 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         case (.month, .year):
             // Number of display months is always 12 (the leap repeats a number).
             return 1..<13
+        case (.month, .quarter):
+            // ICU reports display month numbers spanned by the quarter interval;
+            // a leap month consumes one of the three ordinal slots, shrinking the
+            // upper bound (e.g. 4..<6 in a leap-4/5 year's Q2).
+            let (ext, ordinal, _) = fields(for: date, in: timeZone)
+            let y = Self.yearData(ext: ext)
+            let q = (y.label(ordinal: ordinal).month + 2) / 3
+            let firstDisplay = 3 * (q - 1) + 1
+            guard let startOrdinal = y.ordinal(month: firstDisplay, isLeap: false) else { return nil }
+            var (ey, eo) = (ext, startOrdinal)
+            for _ in 0..<2 { (ey, eo) = Self.nextOrdinalMonth(ext: ey, ordinal: eo) }
+            let lastDisplay = Self.yearData(ext: ey).label(ordinal: eo).month
+            return firstDisplay..<(lastDisplay + 1)
         default:
             break
         }
@@ -527,6 +540,19 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         case (.month, .year):
             // ICU returns the display month number, not the ordinal position.
             return dateComponents([.month], from: date, in: tz).month
+        case (.quarter, .year):
+            // ICU's mquarter mapping on the display month; a leap month is in
+            // the quarter of its base number.
+            guard let m = dateComponents([.month], from: date, in: tz).month else { return nil }
+            return (m + 2) / 3
+        case (.month, .quarter):
+            // ICU's mcount mapping — position of the display number in its quarter.
+            guard let m = dateComponents([.month], from: date, in: tz).month else { return nil }
+            return (m - 1) % 3 + 1
+        case (.day, .quarter):
+            // ICU: floor of absolute seconds since the quarter start, no tz round trip.
+            guard let interval = dateInterval(of: .quarter, for: date) else { return nil }
+            return Int((date.timeIntervalSince(interval.start) / 86400.0).rounded(.down)) + 1
         case (.weekOfYear, .year):
             let comps = dateComponents([.weekday, .dayOfYear], from: date, in: tz)
             guard let weekday = comps.weekday, let dayOfYear = comps.dayOfYear else { return nil }
@@ -669,6 +695,20 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let end = utcDate(fromRataDie: rdStart + 7, secondsInDay: 0, in: tz,
                               repeatedTimePolicy: .former, skippedTimePolicy: .former)
             return DateInterval(start: start, duration: end.timeIntervalSince(start))
+        case .quarter:
+            // ICU-wrapper quarter model, matching merged Hebrew's posture: quarter of
+            // display month m = ceil(m/3), start = day 1 of the REGULAR month with
+            // display 3(q-1)+1, end = start + 3 ordinal months. A leap month inside
+            // the quarter is not absorbed, so dates in/after it can fall outside
+            // their own quarter interval — deliberate incumbent fidelity.
+            let y = Self.yearData(ext: ext)
+            let q = (y.label(ordinal: ordinal).month + 2) / 3
+            guard let startOrdinal = y.ordinal(month: 3 * (q - 1) + 1, isLeap: false) else { return nil }
+            let start = localMidnight(ext: ext, ordinal: startOrdinal, day: 1, in: tz)
+            var (ey, eo) = (ext, startOrdinal)
+            for _ in 0..<3 { (ey, eo) = Self.nextOrdinalMonth(ext: ey, ordinal: eo) }
+            let end = localMidnight(ext: ey, ordinal: eo, day: 1, in: tz)
+            return DateInterval(start: start, duration: end.timeIntervalSince(start))
         case .day, .weekday, .weekdayOrdinal, .dayOfYear:
             let rdHere = Self.rd(ext: ext, ordinal: ordinal, day: day)
             let start = utcDate(fromRataDie: rdHere, secondsInDay: 0, in: tz,
@@ -691,7 +731,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             return DateInterval(start: Date(timeIntervalSinceReferenceDate: time.rounded(.down)), duration: 1.0)
         case .nanosecond:
             return DateInterval(start: date, duration: 1e-9)
-        case .quarter, .isLeapMonth, .isRepeatedDay, .calendar, .timeZone:
+        case .isLeapMonth, .isRepeatedDay, .calendar, .timeZone:
             return nil
         }
     }

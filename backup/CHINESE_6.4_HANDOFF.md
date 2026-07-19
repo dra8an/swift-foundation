@@ -150,6 +150,7 @@ if something forces bundling).
   user agreement) and `chncmp-harness/`
 - `ChineseICUComparisonProbe`, `ChinesePublicAPIComparisonProbe`,
   `ChineseTableGeneratorProbe`, `ChineseInvariantProbe`,
+  `ChineseQuarterParityProbe`,
   `ChineseDebugTraceProbe` (TracingCalendar + Hebrew leap-shape check —
   Hebrew fix is a PENDING USER DECISION, do not patch Calendar_Hebrew)
 - `ChineseLiuReferenceProbe` — **GPL-3.0-derived data; cite results in PR
@@ -208,10 +209,16 @@ consolidation as follow-up.
 ## ⚠ STAGED WORK GATE
 
 A code review (CHINESE_PLAN § 11.21) fixed the easy findings and staged
-S1-S5. **S1 (week-year rewiring, user option B) is DONE** — the PR-cut
-gate is satisfied. S5 (cleanup batch) status: see § 11.21. S2 (wrapping
-decision) and S3 (quarter discovery) need user decisions first — do not
-implement without them.
+S1-S5. **ALL RESOLVED (2026-07-19): S1 week-year (option B) DONE; S5
+cleanup DONE; S3 quarter surfaces DECIDED match-ICU + IMPLEMENTED
+(§ 11.23, 407-date gate green); S2 wrapping DECIDED keep Hebrew
+day-only shape (§ 11.24, no code change).** The PR-cut gate is fully
+satisfied. S4 (month-add O(1)) remains optional/deferred.
+
+Review-question ammo: wrapping is day-only like the twice-reviewed
+Calendar_Hebrew (full-contract wrapping = logged cross-calendar
+follow-up); quarter surfaces mirror the ICU wrapper exactly, incl. the
+leap-month containment quirk merged Hebrew also carries (Adar II).
 
 ## After opening
 

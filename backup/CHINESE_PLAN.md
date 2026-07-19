@@ -843,6 +843,15 @@ Japanese `dateInterval(.era)`, Meiji data).
 6. Month-add = pure lunation stepping with day pinned
    (`ChineseCalendar::add` UCAL_MONTH → `offsetMonth`); our ordinal-walk +
    clamp matches on all sampled cases incl. day-30→29.
+7. **Quarter model** (ported 2026-07-19, § 11.23): wrapper-level, not
+   chnsecal. Quarter of display m = ceil(m/3) (leap month joins its base
+   number's quarter); interval = day 1 of the quarter's first REGULAR
+   month + 3 ordinal months (leap month not absorbed → containment quirk
+   on leap dates); ordinality mcount/mquarter display mappings;
+   (.day,.quarter) = floor-seconds since start + 1; range(.month,.quarter)
+   = display numbers actually spanned (upper bound shrinks by 1 when the
+   quarter contains a leap month). dc.quarter = 0 sentinel; byAdding /
+   from:to .quarter = no-op — all three matched already.
 
 ### 11.3 Known divergences & exclusions registry (the PR's "known issues")
 
@@ -1374,16 +1383,12 @@ degenerates to nil. Precedent: B/J shipped semantically-correct Japanese
    replicated (§ 11.21)"; add § 11.3 registry row; add to handoff PR-draft
    divergence list.
 
-**S2 — wrappingComponents month/year (DECISION NEEDED):** ICU routes
-wrapping through ucal_roll (Calendar_ICU.swift ~1926/2015) → rolls
-month/year; we wrap only day (inherited from merged Hebrew's identical
-shape). Options: (a) implement roll semantics for month/year (leap-month
-handling needed — ICU rollMonth in chnsecal), (b) document as inherited
-deviation. Either way ADD probes (none exist beyond .day).
+**S2 — ✅ DECIDED (2026-07-19): keep Hebrew day-only wrapping** (user
+option i, § 11.24). No code change; follow-up logged.
 
-**S3 — Quarter surfaces (DISCOVERY NEEDED):** dateInterval(.quarter),
-ordinality quarter pairs never compared vs ICU (range 1..<5 and
-dc.quarter=0 ARE verified). Write discovery probe → match or document.
+**S3 — ✅ DECIDED + IMPLEMENTED (2026-07-19): match ICU quarter
+surfaces** (user option a, § 11.23). 407-date gate
+`ChineseQuarterParityProbe.swift` green; PR guard test added.
 
 **S4 — month-add is O(n) unit-stepping; ICU is O(1)** (chnsecal offsetMonth
 via synodic estimate). In-range huge adds are slow (astronomy per fallback
@@ -1454,3 +1459,122 @@ NOT the specification. Consequences:
 - **Parity protocol clarified:** it exists to catch UNINTENDED
   differences; scaffolding artifacts of the incumbent are not truth
   (precedents: Japanese .era, S1, d0-artifact exclusions).
+
+### 11.23 S3 quarter discovery results (2026-07-19, probe: ChineseQuarterDiscoveryProbe.swift)
+
+**ICU DOES implement quarter surfaces for chinese** — in the Swift wrapper
+(Calendar_ICU.swift), NOT in chnsecal: ordinality(.quarter,.year) is a
+hardcoded display-month lookup `mquarter = [1,1,1,2,2,2,3,3,3,4,4,4,4]`
+on 0-based UCAL_MONTH (Calendar_ICU.swift:744-755); interval/range come
+from the generic algorithm machinery. We return nil on every quarter
+surface → **72/72 sampled surfaces diff** (8 surfaces × 9 dates: table
+years, leap-6 2025, boundaries, fallback 2105, pre-table 1895).
+
+Observed ICU model (all 9 dates):
+- Quarter q = ceil(display month / 3); Q1 starts at CNY.
+- dateInterval(.quarter) start = first day of the quarter's first display
+  month; duration = **exactly 3 ordinal months** from there.
+- range(.month,.quarter) = the 3 display numbers (e.g. 4..<7);
+  range(.day,.quarter) = 1..<(3-ordinal-month span + 1);
+  range(.quarter,.year) = 1..<5.
+- ordinality(.month,.quarter) = display − 3(q−1); ordinality(.day,.quarter)
+  = days since quarter start + 1.
+- **Leap-month inconsistency (inherited from the 3-months assumption):**
+  leap-6 2025 (Aug 1) → quarter 2, interval = Apr 28 + 88 days (ends
+  Jul 25, does NOT contain the date), ordinality(.day,.quarter) = 96 >
+  range(.day,.quarter) max 88. I.e. on dates in/after a leap month within
+  its quarter, the interval/range miss the 4th (leap) month.
+- byAdding(.quarter) is a **no-op on BOTH sides** (matches
+  _CalendarGregorian's TODO at Calendar_Gregorian.swift:2531); from:to
+  .quarter = 0 both; dc.quarter = 0 both (already-verified sentinel).
+
+**Sibling precedent (IMPORTANT):** merged Calendar_Hebrew DOES implement
+quarter surfaces mirroring ICU's mquarter table (Calendar_Hebrew.swift
+:406-433, :235-245) — including the same containment quirk (leap-year
+civil-7/Adar II maps to Q4 but the Q4 interval advances only 3 real
+months from Tevet, so Adar II dates lie outside their own quarter
+interval). That passed review twice.
+
+**USER DECIDED (2026-07-19): option (a) — match ICU. ✅ IMPLEMENTED,
+407-date gate green (0 diffs), all 51 Chinese tests green.**
+- Implemented surface (mirrors merged Hebrew scope + the probe-measured
+  pairs): dateInterval(.quarter); ordinality (.quarter,.year) =
+  (display+2)/3, (.month,.quarter) = (display−1)%3+1, (.day,.quarter) =
+  ICU's floor-seconds-since-start formula; range (.month,.quarter)
+  explicit, (.quarter,.year)/(.day,.quarter) via the generic fallback.
+- **Second discovery from the broad gate sweep (the 9-date discovery
+  sample missed it): in a quarter CONTAINING a leap month, ICU's
+  range(.month,.quarter) upper bound shrinks by one** (e.g. leap-4 1906
+  Q2 = 4..<6): the leap month consumes one of the 3 ordinal slots, so
+  the interval spans only 2 distinct display numbers. Implemented by
+  walking the actual ordinal months (start + 2) and reading the last
+  display label — NOT the constant 3q−2..<3q+1 formula.
+- Quarter week/hour ordinality towers (ICU defines (.weekOfYear/
+  .weekOfMonth/.weekdayOrdinal/.weekday/.hour/.minute/.second/
+  .nanosecond, .quarter)) remain UNIMPLEMENTED — matches merged Hebrew's
+  scope exactly; not compared by any probe.
+- Gate: `ChineseQuarterParityProbe.swift` (research-only) — 407 dates
+  (1900–2099 sweep × 6/yr + leap/boundary targets, 2056–2058/2096–2098
+  skipped per d0 artifact), 8 surfaces + byAdding/from:to no-op parity.
+- PR-facing guard: `quarterSurfaces` in ChineseCalendarTests.swift pins
+  the model incl. the containment quirk (q2.contains(date)==false for
+  leap-6 2025) and the range shrink; comment marks ICU-fidelity as
+  deliberate.
+
+### 11.24 S2 wrapping decision brief (2026-07-19, pending user; § 11.22 frame)
+
+**Foundation contract:** wrappingComponents:true = the added component
+wraps within its containing unit instead of incrementing the larger unit.
+
+**_CalendarGregorian native (addAndWrap, Calendar_Gregorian.swift:2345)**
+— the normative Swift reference per § 11.22:
+- Bounded fields wrap in their container: month 1..12 (+capDay),
+  day within month, dayOfYear within year, hour/min/sec within
+  day/hour/min (DST-aware), weekday within week, weekdayOrdinal within
+  month, weekOfMonth/weekOfYear within month/year.
+- **Unbounded fields do NOT wrap:** year and yearForWeekOfYear = plain
+  add clamped at ≥1; era = no-op ("FCF ignores era"); quarter = no-op
+  (TODO); nanosecond = direct add.
+- Applied per-field in sequence (each field gets its own
+  decompose→adjust→cap→reconstruct).
+
+**Merged Hebrew shape (= our inherited shape):** ONLY single-component
+.day wraps; every other wrapping request silently falls through to the
+NON-wrapping path (Calendar_Hebrew.swift:752). Passed review twice.
+So today, byAdding(.month, wrapping: true) on Hebrew AND Chinese
+overflows into the year — deviating from both the contract and
+Gregorian. Pre-existing sibling-wide gap, not Chinese-specific.
+
+**What contract-correct wrapping would MEAN for Chinese:**
+- month: wrap the ORDINAL month within the current year's 12/13 months,
+  cap day (leap month is just an ordinal slot — no special casing).
+- year: uniquely for Chinese, year IS bounded (1..60 in the cycle) —
+  wrap within the cycle, era unchanged. (Gregorian's year doesn't wrap
+  only because it's unbounded there.) Alternatively treat year as
+  unbounded via ext (Gregorian-analog) — contract ambiguity to resolve.
+- Full contract compliance would also need hour/min/sec/weekOfYear/
+  weekOfMonth/weekday wrapping — none of which Hebrew/Chinese have.
+- ICU ucal_roll behavior: scaffolding evidence only (§ 11.22), not spec.
+
+Options for the user:
+- **(i) Keep Hebrew's day-only shape for THIS PR (recommended):** sibling
+  parity, twice-reviewed precedent, zero new divergence apparatus, keeps
+  the 6.4 gate green. Log full-contract wrapping (Hebrew + Chinese
+  together, all fields) as a cross-calendar follow-up PR / upstream
+  issue alongside the S6 framework notes.
+- **(ii) Implement contract wrapping for month(+year) now:** month wraps
+  ordinally in 12/13, year wraps 1..60 in cycle (or unbounded-ext
+  variant); add parity exclusions vs ICU roll + guard tests; PR text
+  leads with the contract. Bigger surface, new divergence class vs the
+  merged sibling.
+- **(iii) Match ICU ucal_roll for month/year:** rejected framing per
+  § 11.22 (roll is scaffolding, and chnsecal rollMonth's leap handling
+  would import ICU's quirks wholesale).
+Either way: ADD wrapping probes (nothing beyond .day exists today).
+
+**USER DECIDED (2026-07-19): option (i) — keep the Hebrew day-only
+shape for this PR.** Full-contract wrapping (Hebrew + Chinese together,
+all bounded fields per _CalendarGregorian.addAndWrap) is logged as a
+cross-calendar follow-up alongside the S6 framework notes. No code
+change; the deviation note goes in the 6.4 handoff so review questions
+can cite the twice-reviewed sibling precedent.
