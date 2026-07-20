@@ -206,7 +206,7 @@ justified @unchecked Sendable. Prepared review responses in § 11.15:
 exit-tests N/A rationale, probe parameterization offer, _CalendarUtility
 consolidation as follow-up.
 
-## ⚠ STAGED WORK GATE
+## Staged work gate — ✅ RESOLVED
 
 A code review (CHINESE_PLAN § 11.21) fixed the easy findings and staged
 S1-S5. **ALL RESOLVED (2026-07-19): S1 week-year (option B) DONE; S5

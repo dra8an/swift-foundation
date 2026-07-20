@@ -1336,7 +1336,7 @@ generality violates small-focused-PRs). Three-tier taxonomy for review:
 **Astronomy = universal physics; Chinese = family law + this calendar's
 structures; the seam between them is where Dangi cuts later.**
 
-### 11.21 Code review (2026-07-19) — fixed vs STAGED work (⚠ context-clear insurance: execute staged items from THIS section)
+### 11.21 Code review (2026-07-19) — ✅ ALL RESOLVED same day (10/10 findings, § 11.21a; S4 optional residual)
 
 Review: 8-angle fan-out + verification; 10 findings reported. Disposition:
 
@@ -1425,15 +1425,18 @@ display-number month ordinality (non-unique across leap). Hebrew items:
 | 1 | era×60 unchecked overflow in date(byAdding:) | ✅ FIXED (reportingOverflow → nil) |
 | 2 | ext(era:year:) overflow before ±5M guard | ✅ FIXED (optional + checked, guard merged) |
 | 3 | month-add unbounded loop hang | ✅ FIXED for crash/hang class (±66M bound → nil); O(n) in-range perf residual → S4 |
-| 4 | wrappingComponents month/year vs ucal_roll | ⏳ STAGED S2 (decision needed) |
-| 5 | quarter surfaces unverified vs ICU | ⏳ STAGED S3 (discovery probe) |
-| 6 | 4 force unwraps (3 source + 1 probe) | 🟡 PARTIAL: 3 source FIXED; probe helper → S5 |
-| 7 | per-call astronomy coefficient arrays | ⏳ STAGED S5 (hoist attempted, reverted mid-batch — needs careful scoping, not string surgery) |
+| 4 | wrappingComponents month/year vs ucal_roll | ✅ RESOLVED by decision (user, § 11.24): keep Hebrew day-only shape this PR; full-contract wrapping = cross-calendar follow-up. No code change |
+| 5 | quarter surfaces unverified vs ICU | ✅ FIXED (`ab887db`): discovery § 11.23 → user decided match-ICU → surfaces implemented; 407-date gate 0 diffs + PR guard test |
+| 6 | 4 force unwraps (3 source + 1 probe) | ✅ FIXED: 3 source in fd9afee; probe helper → preconditionFailure in `93c49ca` |
+| 7 | per-call astronomy coefficient arrays | ✅ FIXED (`93c49ca`): 3 solar + 7 new-moon arrays hoisted to private static let |
 | 8 | cache removeAll() thrash | ✅ FIXED (single-key eviction, all 3 caches) |
-| 9 | weekOfYear formula in-file duplication | ⏳ STAGED S5 |
-| 10 | dead code (2 pairs) | 🟡 PARTIAL: astronomy pair DELETED; week-year helpers deliberately KEPT + TODO — they go LIVE under S1 (user decision: option B) |
+| 9 | weekOfYear formula in-file duplication | ✅ FIXED (`93c49ca`): weekOfYearNumber helper shared by ordinality + needsWeekFields |
+| 10 | dead code (2 pairs) | ✅ RESOLVED: astronomy pair DELETED (fd9afee); week-year helpers went LIVE under S1 option B (`66a8c42`, stale TODO removed) |
 
-Score: 4 fixed, 2 partial, 4 staged. All staged detail in § 11.21 S1-S5.
+Score: **10/10 resolved** (9 fixed in code, 1 — finding 4 — closed by
+recorded user decision). Sole open residual: finding 3's in-range O(n)
+month-add perf (S4, optional). History of the staged phase in § 11.21
+S1-S5; commits fd9afee → 66a8c42 → 93c49ca → ab887db.
 
 ### 11.22 Normative frame correction (user, 2026-07-19): Foundation contract, not ICU add/roll
 
@@ -1521,7 +1524,7 @@ interval). That passed review twice.
   leap-6 2025) and the range shrink; comment marks ICU-fidelity as
   deliberate.
 
-### 11.24 S2 wrapping decision brief (2026-07-19, pending user; § 11.22 frame)
+### 11.24 S2 wrapping decision brief (2026-07-19, § 11.22 frame) — ✅ DECIDED: keep day-only (see end of section)
 
 **Foundation contract:** wrappingComponents:true = the added component
 wraps within its containing unit instead of incrementing the larger unit.
