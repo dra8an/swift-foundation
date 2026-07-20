@@ -70,7 +70,7 @@ private struct ChineseCalendarTests {
         #expect(failures == 0)
     }
 
-    // Adjudicated against the promulgated historical record. ICU disagrees at 1795/1814/1890/2148 (its astronomy invents nonexistent leap months); the divergence is intentional — do not adjust these to match ICU.
+    // Adjudicated against the promulgated historical record. ICU disagrees at 1795/1814/1890/2148 (its astronomy invents nonexistent leap months); the divergence is intentional, do not adjust these to match ICU.
     @Test func historicalPins() {
         let pins: [(Int, Int, Int, Int)] = [
             (1776, 1776, 2, 19), (1795, 1795, 1, 21), (1814, 1814, 1, 21),
@@ -132,7 +132,7 @@ private struct ChineseCalendarTests {
         #expect((added ?? d) > d)
     }
 
-    // Deliberately ICU-identical, quirks included: a leap month is not absorbed, so a date can fall outside its own quarter interval and range(.month,.quarter) shrinks. Changing these expectations diverges from ICU — that must be an explicit decision.
+    // Deliberately identical to ICU, quirks included: a leap month is not absorbed, so a date can fall outside its own quarter interval and range(.month,.quarter) shrinks. Changing these expectations diverges from ICU, that must be an explicit decision.
     @Test func quarterSurfaces() {
         let c = Self.cal()
         // Chinese 2025 is a leap-6 year; CNY Jan 29, Q2 starts Apr 28.

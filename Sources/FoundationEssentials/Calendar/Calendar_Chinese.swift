@@ -26,7 +26,7 @@ import CRT
 
 // Chinese lunisolar calendar engine. Years 1901-2100 come from a baked table generated from ICU (parity by construction); outside that range, month structure is computed with ICU's chnsecal rules over _CalendarAstronomy at UTC+8.
 
-// Bounded memoization caches: over the cap, evict one arbitrary entry (hash order). LRU is deliberately not attempted — a miss only recomputes.
+// Bounded memoization caches: over the cap, evict one arbitrary entry (hash order). LRU is deliberately not attempted, a miss only recomputes.
 private func evictIfNeeded<V>(_ cache: inout [Int: V], cap: Int) {
     if cache.count > cap, let victim = cache.keys.first {
         cache.removeValue(forKey: victim)
@@ -384,7 +384,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         return _CalendarChinese(identifier: identifier, timeZone: args.timeZone, locale: args.locale, firstWeekday: args.firstWeekday, minimumDaysInFirstWeek: args.minimumDaysInFirstWeek, gregorianStartDate: nil)
     }
 
-    // No fast paths in phase 1 — leap months complicate the matching patterns.
+    // No fast paths in phase 1, leap months complicate the matching patterns.
     var supportsNextDateFastPath: Bool { false }
 
     // MARK: Extended year model
@@ -516,7 +516,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             guard let span = Self.quarterSpan(ext: ext, ordinal: ordinal) else { return nil }
             return span.firstDisplay..<(span.lastDisplay + 1)
         case (.day, .quarter):
-            // ICU counts calendar days here, not 86400 s chunks — the generic interval+ordinality fallback overcounts by one in DST fall-back quarters.
+            // ICU counts calendar days here, not 86400 s chunks, the generic interval+ordinality fallback overcounts by one in DST fall-back quarters.
             let (ext, ordinal, _) = fields(for: date, in: timeZone)
             guard let span = Self.quarterSpan(ext: ext, ordinal: ordinal) else { return nil }
             let startRD = Self.rd(ext: ext, ordinal: span.startOrdinal, day: 1)
@@ -549,7 +549,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             guard let m = dateComponents([.month], from: date, in: tz).month else { return nil }
             return (m + 2) / 3
         case (.month, .quarter):
-            // ICU's mcount mapping — position of the display number in its quarter.
+            // ICU's mcount mapping, position of the display number in its quarter.
             guard let m = dateComponents([.month], from: date, in: tz).month else { return nil }
             return (m - 1) % 3 + 1
         case (.day, .quarter):
@@ -618,7 +618,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     // MARK: Date intervals
 
-    // ICU's quarter model, as in Calendar_Hebrew: quarter of display month m = ceil(m/3); span = day 1 of the regular month with display 3(q-1)+1 through 3 ordinal months. A leap month inside the quarter is not absorbed, so dates in/after it can fall outside their own quarter span and the display range shrinks — ICU-identical by design.
+    // ICU's quarter model, as in Calendar_Hebrew: quarter of display month m = ceil(m/3); span = day 1 of the regular month with display 3(q-1)+1 through 3 ordinal months. A leap month inside the quarter is not absorbed, so dates in/after it can fall outside their own quarter span and the display range shrinks, identical to ICU by design.
     private static func quarterSpan(ext: Int, ordinal: Int) -> (firstDisplay: Int, startOrdinal: Int, lastDisplay: Int, endExt: Int, endOrdinal: Int)? {
         let y = yearData(ext: ext)
         let q = (y.label(ordinal: ordinal).month + 2) / 3

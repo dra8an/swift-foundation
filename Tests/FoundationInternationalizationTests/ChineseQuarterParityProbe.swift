@@ -20,9 +20,9 @@ import Testing
 #endif
 
 // S3 gate (CHINESE_PLAN § 11.23, user decision: match ICU): quarter surfaces
-// must be ICU-identical on the implemented set — dateInterval(.quarter),
+// must be identical to ICU on the implemented set: dateInterval(.quarter),
 // ordinality (.quarter,.year)/(.month,.quarter)/(.day,.quarter), range
-// (.quarter,.year)/(.month,.quarter)/(.day,.quarter) — plus byAdding/from:to
+// (.quarter,.year)/(.month,.quarter)/(.day,.quarter), plus byAdding/from:to
 // .quarter no-op parity. The week/hour ordinality towers in .quarter stay
 // unimplemented on both Swift calendars (merged Hebrew scope) and are not
 // compared here.
