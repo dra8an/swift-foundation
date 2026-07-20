@@ -641,10 +641,6 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         return rdNY + offset
     }
 
-    private func numWeeksInYearForWeekOfYear(_ ext: Int) -> Int {
-        (firstDayOfWeekYear(ext + 1) - firstDayOfWeekYear(ext)) / 7
-    }
-
     /// Date at local midnight of (ext, ordinal, day).
     private func localMidnight(ext: Int, ordinal: Int, day: Int, in tz: TimeZone) -> Date {
         utcDate(fromRataDie: Self.rd(ext: ext, ordinal: ordinal, day: day), secondsInDay: 0, in: tz,
@@ -1056,20 +1052,11 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         if let n = components.yearForWeekOfYear, n != 0 {
             let tz = self.timeZone
             let localComps = dateComponents([.yearForWeekOfYear], from: result, in: tz)
-            if var yy = localComps.yearForWeekOfYear {
+            if let yy = localComps.yearForWeekOfYear {
                 let (target, overflow) = yy.addingReportingOverflow(n)
                 guard !overflow, target > Self.extLowerBound, target < Self.extUpperBound else { return nil }
-                if n > 0 {
-                    for _ in 0..<n {
-                        daysToAdd += numWeeksInYearForWeekOfYear(yy) * 7
-                        yy += 1
-                    }
-                } else {
-                    for _ in 0..<(-n) {
-                        yy -= 1
-                        daysToAdd -= numWeeksInYearForWeekOfYear(yy) * 7
-                    }
-                }
+                // Summed per-year week counts telescope to the distance between the two week-year anchors (both firstWeekday-aligned), so the add is O(1).
+                daysToAdd += firstDayOfWeekYear(target) - firstDayOfWeekYear(yy)
             }
         }
 
