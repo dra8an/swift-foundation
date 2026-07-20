@@ -132,7 +132,7 @@ private struct ChineseCalendarTests {
         #expect((added ?? d) > d)
     }
 
-    // ICU's quarter model, deliberately matched (as Calendar_Hebrew does): quarter = display-month block, interval = 3 ordinal months from the quarter's first regular month. A leap month inside the quarter is not absorbed — dates in/after it fall outside their own quarter interval, and range(.month,.quarter) shrinks by one. Changing these expectations means diverging from ICU; that must be an explicit decision.
+    // Deliberately ICU-identical, quirks included: a leap month is not absorbed, so a date can fall outside its own quarter interval and range(.month,.quarter) shrinks. Changing these expectations diverges from ICU — that must be an explicit decision.
     @Test func quarterSurfaces() {
         let c = Self.cal()
         // Chinese 2025 is a leap-6 year; CNY Jan 29, Q2 starts Apr 28.
