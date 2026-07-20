@@ -29,13 +29,13 @@ import Testing
 @Suite("Chinese Quarter Parity Probe")
 private struct ChineseQuarterParityProbe {
 
-    private static func makePair() -> (icu: Calendar, ours: Calendar) {
+    private static func makePair(tz: TimeZone = .gmt) -> (icu: Calendar, ours: Calendar) {
         let icuInner = _CalendarICU(
-            identifier: .chinese, timeZone: .gmt, locale: nil,
+            identifier: .chinese, timeZone: tz, locale: nil,
             firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil
         )
         let oursInner = _CalendarChinese(
-            identifier: .chinese, timeZone: .gmt, locale: nil,
+            identifier: .chinese, timeZone: tz, locale: nil,
             firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil
         )
         return (Calendar(inner: icuInner), Calendar(inner: oursInner))
@@ -130,6 +130,65 @@ private struct ChineseQuarterParityProbe {
 
         print("=== chineseQuarterParity: \(samples.count) dates, \(failures.count) diffs ===")
         for f in failures.prefix(25) { print("  \(f)") }
+        #expect(failures.isEmpty)
+    }
+
+    // R5 (§ 11.25): DST coverage for the floor-seconds (.day,.quarter) formula, plus nextDate quarter matching (generic dateAfterMatchingQuarter path, both backends).
+    @Test func quarterSurfacesDSTAndMatching() {
+        guard let la = TimeZone(identifier: "America/Los_Angeles") else {
+            preconditionFailure("missing tz database entry")
+        }
+        let (icu, ours) = Self.makePair(tz: la)
+        var failures: [String] = []
+        func cmp<T: Equatable>(_ label: String, _ name: String, _ a: T?, _ b: T?) {
+            if a != b {
+                failures.append("[\(label)] \(name): icu=\(a.map { "\($0)" } ?? "nil") ours=\(b.map { "\($0)" } ?? "nil")")
+            }
+        }
+        // Quarters straddling the 2025 US transitions (Mar 9 forward, Nov 2 back), sampled on and after the shift, plus the leap-6 quirk date.
+        let dstSamples: [(String, Date)] = [
+            ("spring-forward day", Self.g(2025, 3, 9)),
+            ("post-spring-forward", Self.g(2025, 3, 20)),
+            ("leap-6 LA", Self.g(2025, 8, 1)),
+            ("fall-back day", Self.g(2025, 11, 2)),
+            ("post-fall-back", Self.g(2025, 11, 10)),
+            ("Q4 LA", Self.g(2025, 12, 5)),
+        ]
+        for (label, d) in dstSamples {
+            let iv1 = icu.dateInterval(of: .quarter, for: d)
+            let iv2 = ours.dateInterval(of: .quarter, for: d)
+            cmp(label, "interval.start", iv1?.start, iv2?.start)
+            cmp(label, "interval.duration", iv1?.duration, iv2?.duration)
+            cmp(label, "ord(.quarter,.year)",
+                icu.ordinality(of: .quarter, in: .year, for: d),
+                ours.ordinality(of: .quarter, in: .year, for: d))
+            cmp(label, "ord(.month,.quarter)",
+                icu.ordinality(of: .month, in: .quarter, for: d),
+                ours.ordinality(of: .month, in: .quarter, for: d))
+            cmp(label, "ord(.day,.quarter)",
+                icu.ordinality(of: .day, in: .quarter, for: d),
+                ours.ordinality(of: .day, in: .quarter, for: d))
+            cmp(label, "range(.month,.quarter)",
+                icu.range(of: .month, in: .quarter, for: d),
+                ours.range(of: .month, in: .quarter, for: d))
+            cmp(label, "range(.day,.quarter)",
+                icu.range(of: .day, in: .quarter, for: d),
+                ours.range(of: .day, in: .quarter, for: d))
+        }
+        let (icuG, oursG) = Self.makePair()
+        for (pairLabel, ic, oc) in [("LA", icu, ours), ("GMT", icuG, oursG)] {
+            for q in 1...4 {
+                var dc = DateComponents()
+                dc.quarter = q
+                for (aLabel, anchor) in [("2025", Self.g(2025, 2, 10)), ("leap-2 2023", Self.g(2023, 3, 25))] {
+                    cmp("\(pairLabel) q\(q) \(aLabel)", "nextDate",
+                        ic.nextDate(after: anchor, matching: dc, matchingPolicy: .nextTime),
+                        oc.nextDate(after: anchor, matching: dc, matchingPolicy: .nextTime))
+                }
+            }
+        }
+        print("=== chineseQuarterDSTAndMatching: \(failures.count) diffs ===")
+        for f in failures.prefix(10) { print("  \(f)") }
         #expect(failures.isEmpty)
     }
 }

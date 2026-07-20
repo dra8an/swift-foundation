@@ -515,6 +515,13 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let (ext, ordinal, _) = fields(for: date, in: timeZone)
             guard let span = Self.quarterSpan(ext: ext, ordinal: ordinal) else { return nil }
             return span.firstDisplay..<(span.lastDisplay + 1)
+        case (.day, .quarter):
+            // ICU counts calendar days here, not 86400 s chunks — the generic interval+ordinality fallback overcounts by one in DST fall-back quarters.
+            let (ext, ordinal, _) = fields(for: date, in: timeZone)
+            guard let span = Self.quarterSpan(ext: ext, ordinal: ordinal) else { return nil }
+            let startRD = Self.rd(ext: ext, ordinal: span.startOrdinal, day: 1)
+            let endRD = Self.rd(ext: span.endExt, ordinal: span.endOrdinal, day: 1)
+            return 1..<(endRD - startRD + 1)
         default:
             break
         }
