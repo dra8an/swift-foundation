@@ -402,7 +402,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         yearData(ext: ext).monthStartRD(ordinal: ordinal) + day - 1
     }
 
-    // 1 = Sunday, per R.D. 1 = Monday, Jan 1, 1 CE.
+    // Foundation weekday numbering (1 = Sunday); no offset is needed because rata die day 1 (Jan 1, 1 CE) was a Monday.
     private static func weekday(ofRD rd: Int) -> Int {
         var r = rd % 7
         if r < 0 { r += 7 }
