@@ -186,14 +186,23 @@ Verification (exhaustive suites on the research branch; distilled tests here):
 - Benchmarks (debug): dateComponents 3.2×, round-trip 3.9×, allocations
   18.6×, copy-on-write 37× vs ICU. `nextDate` fast path deliberately
   deferred to a follow-up PR (leap-month match semantics), as with #2105.
-- One deliberate semantic divergence: ICU's chinese calendar cannot use
-  `yearForWeekOfYear` on the fields-to-time side (chnsecal
-  `handleGetExtendedYear` never reads YEAR_WOY), so its
-  `dateInterval(.yearForWeekOfYear)` is nil and its add is a no-op. We
-  implement Foundation's documented week-year semantics instead (same
-  shape as the merged Hebrew implementation; precedent: the Japanese
-  calendar's `.era` interval in #2105). Guarded by a dedicated test;
-  revert recipe documented at both code sites.
+- REQUIRED, do not trim: the PR body must explain the week-year
+  divergence, in this shape. chnsecal `handleGetExtendedYear` never
+  reads YEAR_WOY, so the ICU-backed calendar computes a date's
+  `yearForWeekOfYear` correctly but cannot use the field to construct
+  or step dates: `dateInterval(.yearForWeekOfYear)` degenerates to nil
+  and `date(byAdding:)` is a silent no-op. That asymmetry (readable,
+  unusable) is a wiring gap, not a policy. We implement Foundation's
+  documented week-year semantics instead: week 1 anchored by
+  firstWeekday/minimumDaysInFirstWeek on the Chinese year start,
+  intervals tile exactly, O(1) add. Same implementation shape as merged
+  Hebrew; precedent for shipping correct semantics over an ICU quirk is
+  the Japanese `.era` interval in #2105. Field values still match ICU
+  exactly. Be explicit that this is the one place the flag flip changes
+  observable behavior on valid input (nil to interval, no-op to
+  advance), that the reversion path is two lines documented at both
+  code sites, and that the weekYearSemantics guard test pins the
+  chosen behavior.
 
 ## Review compliance (done — keep it that way)
 
