@@ -677,7 +677,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let end = localMidnight(ext: ext + 1, ordinal: 1, day: 1, in: tz)
             return DateInterval(start: start, duration: end.timeIntervalSince(start))
         case .yearForWeekOfYear:
-            // DELIBERATE ICU DIVERGENCE: ICU's chinese calendar cannot use YEAR_WOY on the fields-to-time side (chnsecal handleGetExtendedYear never reads it), so its interval degenerates to nil and its add is a no-op. We implement the Gregorian-family week-year semantics instead, like Hebrew (precedent: Japanese .era interval). If ICU-exact behavior is ever required: return nil here and delete the yearForWeekOfYear block in date(byAdding:).
+            // DELIBERATE ICU DIVERGENCE: ICU's chinese calendar cannot use YEAR_WOY on the fields-to-time side (chnsecal handleGetExtendedYear never reads it), so its interval degenerates to nil and its add is a no-op. We implement the Gregorian-family week-year semantics instead, like Hebrew (precedent: Japanese .era interval). If behavior identical to ICU is ever required: return nil here and delete the yearForWeekOfYear block in date(byAdding:).
             let weekYearComps = dateComponents([.yearForWeekOfYear], from: date, in: tz)
             guard let weekYear = weekYearComps.yearForWeekOfYear else { return nil }
             let rdStart = firstDayOfWeekYear(weekYear)
@@ -704,7 +704,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
                               repeatedTimePolicy: .former, skippedTimePolicy: .former)
             return DateInterval(start: start, duration: end.timeIntervalSince(start))
         case .quarter:
-            // See quarterSpan for the ICU-wrapper model and its leap-month containment quirk.
+            // See quarterSpan for the quarter model and its leap-month containment quirk.
             guard let span = Self.quarterSpan(ext: ext, ordinal: ordinal) else { return nil }
             let start = localMidnight(ext: ext, ordinal: span.startOrdinal, day: 1, in: tz)
             let end = localMidnight(ext: span.endExt, ordinal: span.endOrdinal, day: 1, in: tz)

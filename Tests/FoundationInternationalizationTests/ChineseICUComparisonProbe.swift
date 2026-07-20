@@ -43,7 +43,7 @@ private struct ChineseICUComparisonProbe {
             Double(rd - 730_486) * 86400.0 + Double(hour * 3600 + minute * 60 + second))
     }
 
-    /// ICU-internal-inconsistency months (dom=0 artifacts) + the documented
+    /// months where ICU is internally inconsistent (dom=0 artifacts) + the documented
     /// out-of-table 2101-m6 divergence: excluded everywhere.
     private static func isExcluded(_ date: Date) -> Bool {
         let rd = Int((date.timeIntervalSinceReferenceDate / 86400.0).rounded(.down)) + 730_486
