@@ -86,8 +86,13 @@ Allocation/resolution samples are the trustworthy kind.
       -no-WMO bench-build artifact (Docs/25 already documents that
       handicap). No code change. Verdict cost ~2–3 ns/call in the
       bench build only — not worth an API-side workaround.
-- [ ] sortKey Foundation wrappers (entry ladder never ran for sortKey —
-      §29 queue item; combine with this audit).
+- [x] sortKey entry ladder — AUDITED (§43, 2026-07-16): the entry is
+      EXONERATED (TLS ~20 ns, throws ~0 — the §30 box already collected
+      it, the standing "sortKey still pays throws" note was stale). The
+      gap is the WRITER: 56–60% of sortKey on every corpus; ascii write
+      phase alone (208) exceeds ICU's whole ucol_getSortKey (194).
+      Writer round OPEN — levers and profile in §43. Ladder committed:
+      `build_sk_ladder.sh`.
 - [ ] The skRet variant allocates BY API CONTRACT (returns fresh
       [UInt8]) — documented, inout twin exists; not a defect.
 - Machine 2: run the same audit over any AS-only wiring.
@@ -1550,3 +1555,64 @@ match-path probe needs a no-match control; (3) the remaining
 match-confirmation cost is now the map walk itself (§41's noted
 second-order item: truncate at the candidate's nfdEnd) plus one
 unavoidable bounded walk for index construction.
+
+---
+
+### 43. sortKey decomposition: the entry is exonerated; the writer IS the gap
+
+**Status:** attribution complete 2026-07-16 (machine 1); writer round
+OPEN — nothing shipped yet. Ladder committed: `build_sk_ladder.sh`
+(sk-ladder/main.swift; stage clones verified byte-identical to the
+public entry over each corpus before timing).
+
+The §29-style entry ladder that never ran for sortKey. Stages: S0
+public `sortKey(for:into:)`, S1 caller-held scratch (S0−S1 = TLS),
+S2 non-throwing clone (S1−S2 = throws structure), S3 reset+collectAll
+only, S4 writer only on pre-collected CEs (verbatim buffer state,
+sentinel included), S5 reset only.
+
+**Measured (engine ladder, full WMO, K=9 min, ns/op, 2026-07-16):**
+
+| stage | ascii | latin | cjk | paths | thai |
+|---|---:|---:|---:|---:|---:|
+| S0 public | 354 | 388 | 381 | 848 | 511 |
+| S1 no-TLS | 332 | 369 | 365 | 805 | 493 |
+| S2 no-throws | 344 | 378 | 366 | 850 | 499 |
+| S3 pipeline only | 112 | 127 | 156 | 367 | 210 |
+| S4 writer only | **208** | **220** | **179** | **429** | **292** |
+| S5 reset only | 20 | 20 | 24 | 45 | 36 |
+| *ICU whole sortKey* | *194* | *208* | *222* | *671* | *270* |
+
+**Findings:**
+1. **Entry exonerated:** TLS take/give ≈ 20 ns, throws ≈ 0 (S2 lands
+   ABOVE S1 — inside codegen wobble; the §30 storage box already
+   collected the "throws tax", which was always the struct copy), glue
+   ≈ 10. The §29-for-compare story does not repeat; the standing
+   "sortKey still pays throws + reset" queue note was stale.
+2. **The writer is the whole gap:** 56–60% of sortKey everywhere; on
+   ascii the write phase alone (208) exceeds ICU's entire
+   ucol_getSortKey (194) while the CE pipeline (112) fits comfortably
+   inside it.
+3. **Writer profile (hold-loop S4 ascii, `holdS4` arg, 10 s sample):**
+   ZERO allocator traffic (the §14/§37 warm-buffer discipline holds) —
+   not an allocation box. Split: ~41% core level-byte logic, **~35%
+   Array append machinery** (append(contentsOf:) 252 samples,
+   replaceSubrange 142, memmove 150, uniqueness checks 111 +
+   capacity/mutation helpers ~90), ~14% ARC + exclusivity on the level
+   buffers.
+
+**Levers (round plan, by expected value):**
+- **(a) Writer redesign to the ICU shape** — ONE output buffer, one
+  pass per level written directly into it; eliminates the intermediate
+  level buffers and the final assembly. Attacks the 35% machinery
+  share plus part of the core. Gated hard by the byte-identical-key
+  suites — safe to experiment with, unsafe to ship without them.
+- **(b) ARC/exclusivity shave** on the level-buffer plumbing (~14%,
+  §37-style single-reference discipline).
+- **(c) TLS ~20 ns** — parked on the §21 CoreOS reserved-key ask.
+
+**Dead ends that bound this round (do not re-attempt):** §15 fusing CE
+production into the writer (rejected, +11..44%); §16 raw pointers for
+the key byte loop (aliasing reloads beat Array); §33's call-site
+closure shape (blocks WMO inlining of the writer on 6.3). §34's
+alignment band applies to ANY paths-sortKey delta measured under WMO.

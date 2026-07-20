@@ -225,9 +225,19 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   control. Plus a new A/B rule: an A/B that builds base into `.build`
   leaves it STALE — symbol-verify both sides before running.
   Docs/25's `13337d4` tables predate §42's paths-stdRange change; fold
-  at the next re-baseline. Audit boxes left: sortKey wrappers (+ the
-  §29 sortKey entry ladder), CollationOptions.from WMO check, and the
-  locale-change invalidation DESIGN NOTE for the upstream proposal.
+  at the next re-baseline. Same day: CollationOptions.from audit box
+  CLOSED (`66fced3`) — WMO object sweep shows the symbol fully
+  inlined/folded, the 85 §38-profile samples were a -no-WMO bench
+  artifact; no code change. **§43 sortKey attribution complete
+  (2026-07-16, ladder committed `build_sk_ladder.sh`): the entry is
+  EXONERATED (TLS ~20 ns, throws ~0 — §30's box already collected it);
+  the WRITER is 56–60% of sortKey on every corpus (ascii write phase
+  208 ns > ICU's whole 194); its profile is 41% core / 35% Array
+  append machinery / 14% ARC+exclusivity, zero allocs. WRITER ROUND
+  OPEN — levers (a) ICU-shape one-buffer redesign, (b) exclusivity
+  shave, (c) TLS; plan + bounding dead ends in §43.** Audit boxes
+  left: the locale-change invalidation DESIGN NOTE for the upstream
+  proposal (the last unchecked box).
   2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
   (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
   mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
@@ -241,7 +251,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   1.53× faster than system, contains 2.8–2.9×; only the two cjk range
   cells (0.84–0.86×) remain sub-parity. The thai frontier is now the NFD
   per-scalar floor — the parked Span refactor.**
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§42;
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§43;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
