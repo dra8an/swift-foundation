@@ -1627,3 +1627,30 @@ nil-guard paths, incumbent-identical containment-quirk complaints.
 Score: 10/10 FIXED (R1-R10 — commits ccd76f4/84f6516/44a08a0, 51
 tests green after each), 6 open (R4/R5/R7-R10): quality/optional only,
 NO gate items left.
+
+### 11.26 Duplicated code: upstream Hebrew vs PR #2123 Chinese (2026-07-20, mechanical body comparison)
+
+Upstream's shared surface never grew algorithm helpers: _CalendarUtility
+(#2028) holds only property/weekend plumbing (Chinese uses all of it),
+Calendar_Protocol only nextDate defaults. The per-file private helpers
+are duplicated:
+
+| Helper | Verdict |
+|---|---|
+| `orderedDiffComponents` | byte-identical (941 normalized chars) |
+| `weekNumber(...)` | identical minus one Hebrew comment; Gregorian carries a third copy |
+| `utcDate(fromRataDie:...)` | identical minus one Hebrew comment fragment |
+| `rataDieAndSecondsInDay` | identical except Hebrew's Int64 vs our Int cast |
+| `rataDieAtDateReference = 730_486` | same constant, both files |
+| `difference(inComponent:)` + from:to wrapper | same cumulative-stepping algorithm; Hebrew adds comments + a single-era fast path (Chinese era is real, goes through the loop) |
+| week-of-year formula | Chinese has the weekOfYearNumber helper, Hebrew inlines the same math twice, Gregorian once |
+
+Also shape-identical with calendar-specific internals (not liftable
+verbatim): hour/min/sec dateInterval cases, wrap-day fast path,
+yearForWeekOfYear interval/add blocks.
+
+Position (already prepared in § 11.15): consolidation into
+_CalendarUtility is the cross-calendar follow-up PR, it touches merged
+Hebrew (and Gregorian for weekNumber), so doing it inside #2123 would
+grow the diff into reviewed code. If the reviewers prefer it now, the
+lift list above is the exact scope.
