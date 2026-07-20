@@ -24,7 +24,7 @@ import CRT
 @preconcurrency import WASILibc
 #endif
 
-/// Shared astronomical and Gregorian day-number toolkit for the non-arithmetic calendars (Chinese today; Islamic and Hindu variants can build on it). Solar/lunar theory follows Reingold & Dershowitz via ICU4X calendrical_calculations; all APIs are calendar-agnostic.
+/// Shared astronomical and Gregorian day-number toolkit for the non-arithmetic calendars (Chinese today; Islamic and Hindu variants can build on it). Solar/lunar theory follows the published Reingold & Dershowitz algorithms (Calendrical Calculations); all APIs are calendar-agnostic.
 internal enum _CalendarAstronomy {
     static let meanSynodicMonth = 29.530588861
     static let j2000 = 730120.5
