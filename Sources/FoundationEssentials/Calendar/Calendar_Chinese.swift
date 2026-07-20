@@ -616,7 +616,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     // MARK: Date intervals
 
-    // ICU's quarter model: ceil(display/3), spanning 3 ordinal months from the regular month with display 3(q-1)+1. A leap month is not absorbed, so dates can fall outside their own quarter and the range shrinks, matching ICU deliberately.
+    // Like ICU, a leap month is not absorbed into its quarter: dates in it can fall outside their own quarter interval and the month range shrinks.
     private static func quarterSpan(ext: Int, ordinal: Int) -> (firstDisplay: Int, startOrdinal: Int, lastDisplay: Int, endExt: Int, endOrdinal: Int)? {
         let y = yearData(ext: ext)
         let q = (y.label(ordinal: ordinal).month + 2) / 3
