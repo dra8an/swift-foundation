@@ -1251,6 +1251,22 @@ PR text offers compaction with this analysis cited. EXPERIMENTS PLANNED
 (user, next): prototype variants and measure real binary delta + bench
 delta before final call.
 
+#### 11.18a Why the packed new-year offset anchors at Jan 19, not Jan 1 (2026-07-20)
+
+- Inherited from ICU4X PackedChineseBasedYearInfo (via icu4swift): the
+  offset is stored relative to late January because CNY always falls in
+  about [Jan 21, Feb 21].
+- Anchoring just below the earliest possible CNY minimizes the stored
+  range (real offsets ~2..33). From Jan 1 the range would be ~21..52:
+  that still fits our 6-bit field (0..63) but OVERFLOWS ICU4X native
+  5-bit field (0..31). The anchor is what makes 5-bit packing possible
+  at all; ours inherits the convention with headroom.
+- Jan 19 rather than Jan 21: a 2-day safety margin, so every valid entry
+  has offset >= 2 and raw values 0/1 never occur in real data, cheap
+  slack for any fallback-zone edge year at zero bit cost.
+- Keeping the anchor keeps our table field-for-field comparable with the
+  ICU4X format studied in § 11.18/11.19.
+
 ### 11.19 Packing experiment RESULTS (2026-07-19; ChinesePackingExperiment.swift, research-only)
 
 All variants regenerated from the shipped table and proven field-identical
