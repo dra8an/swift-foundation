@@ -684,12 +684,10 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             guard let weekYear = weekYearComps.yearForWeekOfYear else { return nil }
             let rdStart = firstDayOfWeekYear(weekYear)
             let rdEnd = firstDayOfWeekYear(weekYear + 1)
-            let utcStart = Date(timeIntervalSinceReferenceDate: Double(rdStart - Self.rataDieAtDateReference) * 86400)
-            let utcEnd = Date(timeIntervalSinceReferenceDate: Double(rdEnd - Self.rataDieAtDateReference) * 86400)
-            let (o1, d1) = tz.rawAndDaylightSavingTimeOffset(for: utcStart, repeatedTimePolicy: .former, skippedTimePolicy: .former)
-            let (o2, d2) = tz.rawAndDaylightSavingTimeOffset(for: utcEnd, repeatedTimePolicy: .former, skippedTimePolicy: .former)
-            let start = utcStart - Double(o1) - d1
-            let end = utcEnd - Double(o2) - d2
+            let start = utcDate(fromRataDie: rdStart, secondsInDay: 0, in: tz,
+                                repeatedTimePolicy: .former, skippedTimePolicy: .former)
+            let end = utcDate(fromRataDie: rdEnd, secondsInDay: 0, in: tz,
+                              repeatedTimePolicy: .former, skippedTimePolicy: .former)
             return DateInterval(start: start, duration: end.timeIntervalSince(start))
         case .month:
             let start = localMidnight(ext: ext, ordinal: ordinal, day: 1, in: tz)
