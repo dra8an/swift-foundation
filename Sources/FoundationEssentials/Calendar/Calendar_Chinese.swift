@@ -907,7 +907,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             if components.contains(.yearForWeekOfYear) { result.yearForWeekOfYear = yearForWeekOfYear }
         }
 
-        // ICU returns 0 for chinese quarter (bug); match the sentinel.
+        // TODO: Support quarter; currently unsupported, every backend returns 0.
         if components.contains(.quarter) {
             result.quarter = 0
         }
