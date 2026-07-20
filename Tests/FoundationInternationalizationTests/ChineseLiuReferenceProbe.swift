@@ -13,7 +13,7 @@
 // External validation of the fallback zone 2101-2200 against Yuk Tung Liu's
 // Chinese calendar data (https://ytliu0.github.io/ChineseCalendar/, GPL-3.0):
 // JPL DE441 ephemeris + Stephenson/Morrison ΔT + GB/T 33661-2017 modern rules,
-// UTC+8 — the same rule system our fallback implements, computed from the
+// UTC+8, the same rule system our fallback implements, computed from the
 // best available ephemeris by an independent source. Extracted 2026-07-19 from
 // src/calendarData.js (github.com/ytliu0/ChineseCalendar); decode validated
 // against six known years (2020, 2023, 2024, 2033, 1984, 2000).
@@ -139,7 +139,7 @@ private struct ChineseLiuReferenceProbe {
 
     /// Liu flags these years' boundaries as day-level uncertain in principle
     /// (ΔT/leap-second extrapolation; a conjunction or zhongqi within minutes
-    /// of midnight UTC+8). Divergence there is unadjudicable, not an error —
+    /// of midnight UTC+8). Divergence there is unadjudicable, not an error,
     /// but we still compare and report, and currently match Liu everywhere.
     private static let uncertainYears: Set<Int> = [2114, 2115, 2116, 2133, 2142, 2155, 2157, 2165, 2172, 2183, 2186, 2192]
 

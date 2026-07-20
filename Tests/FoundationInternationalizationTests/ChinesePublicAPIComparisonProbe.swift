@@ -106,7 +106,7 @@ private struct ChinesePublicAPIComparisonProbe {
                     "\(icu.startOfDay(for: d))",
                     "\(ours.startOfDay(for: d))")
 
-        // .era omitted: ICU quirk — for Japanese eras with a successor, ICU sets
+        // .era omitted: ICU quirk, for Japanese eras with a successor, ICU sets
         // the era interval's end to `start.gregorianYear + (next.gregorianYear -
         // start.gregorianYear)` at the start's month/day, ignoring the next era's
         // actual month/day. e.g. Heisei ends 2019-01-08 per ICU vs the actual

@@ -677,7 +677,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let end = localMidnight(ext: ext + 1, ordinal: 1, day: 1, in: tz)
             return DateInterval(start: start, duration: end.timeIntervalSince(start))
         case .yearForWeekOfYear:
-            // DELIBERATE ICU DIVERGENCE: ICU's chinese calendar cannot use YEAR_WOY on the fields-to-time side (chnsecal handleGetExtendedYear never reads it), so its interval degenerates to nil and its add is a no-op. We implement the Gregorian-family week-year semantics instead, like Hebrew (precedent: Japanese .era interval). If behavior identical to ICU is ever required: return nil here and delete the yearForWeekOfYear block in date(byAdding:).
+            // Deliberate divergence from ICU: ICU's chinese calendar cannot use YEAR_WOY on the fields-to-time side (chnsecal handleGetExtendedYear never reads it), so its interval degenerates to nil and its add is a no-op. We implement the Gregorian-family week-year semantics instead, like Hebrew (precedent: Japanese .era interval). If behavior identical to ICU is ever required: return nil here and delete the yearForWeekOfYear block in date(byAdding:).
             let weekYearComps = dateComponents([.yearForWeekOfYear], from: date, in: tz)
             guard let weekYear = weekYearComps.yearForWeekOfYear else { return nil }
             let rdStart = firstDayOfWeekYear(weekYear)
@@ -1055,7 +1055,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         if let wo = components.weekdayOrdinal { daysToAdd += wo * 7 }
         if let w = components.weekday { daysToAdd += w }
 
-        // DELIBERATE ICU DIVERGENCE (see dateInterval(.yearForWeekOfYear) note): ICU no-ops YEAR_WOY adds for chinese; we advance by week-years like Hebrew.
+        // Deliberate divergence from ICU (see dateInterval(.yearForWeekOfYear) note): ICU no-ops YEAR_WOY adds for chinese; we advance by week-years like Hebrew.
         if let n = components.yearForWeekOfYear, n != 0 {
             let tz = self.timeZone
             let localComps = dateComponents([.yearForWeekOfYear], from: result, in: tz)

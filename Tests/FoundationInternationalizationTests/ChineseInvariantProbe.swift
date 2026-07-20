@@ -76,7 +76,7 @@ private struct ChineseInvariantProbe {
     /// Adjudicated against the promulgated record (Liu + Academia Sinica +
     /// sxtwl + PyEphem, § 5c): these dates are permanent expectations for the
     /// fallback design. If an engine change moves one, that change is wrong.
-    /// NOTE: at 1795, 1814, 1890, and 2148 ICU disagrees — it computes leap
+    /// NOTE: at 1795, 1814, 1890, and 2148 ICU disagrees, it computes leap
     /// months that never existed (fake m12L 1794/1889, m11L 1813, m1L 2148)
     /// and shifts CNY by ~a month. Do NOT "fix" these to match ICU; the
     /// divergence is intentional and documented (CHINESE_PLAN.md § 5c/11.3).
@@ -100,7 +100,7 @@ private struct ChineseInvariantProbe {
         }
         // (relatedIso, expected leap display number; 0 = no leap)
         let leapPins: [(Int, UInt8)] = [
-            (1775, 10),   // 闰十月 — the rare leap 10th
+            (1775, 10),   // 闰十月, the rare leap 10th
             (1776, 0),
             (1900, 8),    // fallback year at the table seam
             (2147, 11),   // 闰冬月
