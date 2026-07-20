@@ -1,10 +1,4 @@
-// Reusable per-call buffers. Building the CE and NFD iterators afresh costs
-// several heap allocations per compare()/sortKey() call; a RootCollator
-// instead keeps a thread-local buffer set and resets it, so repeated calls
-// run allocation-free once the buffers have grown to the working size.
-// (ICU4C reaches the same goal with stack buffers, which Swift arrays cannot
-// express.) The public API stays thread-safe: each thread owns its own
-// buffer set, with no locking or reference counting on the checkout path.
+// Reusable per-call buffers. Building the CE and NFD iterators afresh costs several heap allocations per compare()/sortKey() call; a RootCollator instead keeps a thread-local buffer set and resets it, so repeated calls run allocation-free once the buffers have grown to the working size. (ICU4C reaches the same goal with stack buffers, which Swift arrays cannot express.) The public API stays thread-safe: each thread owns its own buffer set, with no locking or reference counting on the checkout path.
 
 import Foundation
 #if canImport(Darwin)
@@ -13,9 +7,7 @@ import Darwin
 import Glibc
 #endif
 
-/// Minimal mutual exclusion: os_unfair_lock on Darwin (a few ns uncontended,
-/// vs NSLock's objc dispatch), NSLock elsewhere. The unfair lock must live at
-/// a stable address, hence the allocation.
+/// Minimal mutual exclusion: os_unfair_lock on Darwin (a few ns uncontended, vs NSLock's objc dispatch), NSLock elsewhere. The unfair lock must live at a stable address, hence the allocation.
 struct PoolLock {
     #if canImport(Darwin)
     private let lock: UnsafeMutablePointer<os_unfair_lock>
@@ -46,16 +38,11 @@ final class ScratchBuffers {
     var nfdScalars: [UInt32] = []
     /// search: masked pattern CEs (§37 — rebuilt per call, allocation-free).
     var patternCEs: [Int64] = []
-    /// search: the annotated text-CE window (forward) / full text CEs
-    /// (backward). The per-call allocation of this array was the largest
-    /// single cost of the cjk range cells (§37).
+    /// search: the annotated text-CE window (forward) / full text CEs (backward). The per-call allocation of this array was the largest single cost of the cjk range cells (§37).
     var annotatedCEs: [AnnotatedCE] = []
     /// contains: masked text CEs.
     var maskedTextCEs: [Int64] = []
-    /// search: NFD-position → source-scalar-index map, built lazily by
-    /// confirmMatch only for a full CE match on decomposing text. Its
-    /// per-call allocation (plus per-scalar temporaries) was ~half the cost
-    /// of every matching search on accented text (§41).
+    /// search: NFD-position → source-scalar-index map, built lazily by confirmMatch only for a full CE match on decomposing text. Its per-call allocation (plus per-scalar temporaries) was ~half the cost of every matching search on accented text (§41).
     var nfdSourceMap: [Int] = []
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData,
@@ -67,18 +54,11 @@ final class ScratchBuffers {
     }
 }
 
-/// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers
-/// instance, avoiding all locking, exclusivity checks, and ARC traffic on
-/// the take/give path. If a thread re-enters (e.g. compare inside compare,
-/// which doesn't happen in practice but is sound), `take()` returns nil and
-/// the caller allocates a fresh set.
+/// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers instance, avoiding all locking, exclusivity checks, and ARC traffic on the take/give path. If a thread re-enters (e.g. compare inside compare, which doesn't happen in practice but is sound), `take()` returns nil and the caller allocates a fresh set.
 ///
-/// Implementation: a single pthread_key_t holds an UnsafeMutablePointer to
-/// a `ThreadLocalSlot` (which wraps the optional ScratchBuffers). The key's
-/// destructor frees the slot on thread exit.
+/// Implementation: a single pthread_key_t holds an UnsafeMutablePointer to a `ThreadLocalSlot` (which wraps the optional ScratchBuffers). The key's destructor frees the slot on thread exit.
 final class ThreadLocalScratch: @unchecked Sendable {
-    /// The slot stored in thread-local storage. Wrapping in a struct stored
-    /// via UnsafeMutablePointer avoids ARC on the TLS read path entirely.
+    /// The slot stored in thread-local storage. Wrapping in a struct stored via UnsafeMutablePointer avoids ARC on the TLS read path entirely.
     struct Slot {
         var buffers: ScratchBuffers?
     }
@@ -97,14 +77,11 @@ final class ThreadLocalScratch: @unchecked Sendable {
     }
 
     deinit {
-        // Note: any thread-local slots still alive at this point will be
-        // cleaned up by their thread's exit destructor. We just destroy the
-        // key itself.
+        // Note: any thread-local slots still alive at this point will be cleaned up by their thread's exit destructor. We just destroy the key itself.
         pthread_key_delete(key)
     }
 
-    /// Takes the cached buffer set for this thread, or nil if none is
-    /// stashed (first call on this thread, or re-entrant call).
+    /// Takes the cached buffer set for this thread, or nil if none is stashed (first call on this thread, or re-entrant call).
     @inline(__always)
     func take() -> ScratchBuffers? {
         guard let raw = pthread_getspecific(key) else { return nil }
@@ -114,8 +91,7 @@ final class ThreadLocalScratch: @unchecked Sendable {
         return buffers
     }
 
-    /// Stashes a buffer set back into the thread-local slot. If the slot
-    /// doesn't exist yet (first give on this thread), creates it.
+    /// Stashes a buffer set back into the thread-local slot. If the slot doesn't exist yet (first give on this thread), creates it.
     @inline(__always)
     func give(_ buffers: ScratchBuffers) {
         if let raw = pthread_getspecific(key) {
@@ -129,8 +105,7 @@ final class ThreadLocalScratch: @unchecked Sendable {
     }
 }
 
-/// One immutable fast-Latin setup: the precomputed primaries and packed
-/// options for one options word (packedOptions < 0 = unsupported).
+/// One immutable fast-Latin setup: the precomputed primaries and packed options for one options word (packedOptions < 0 = unsupported).
 final class FastLatinSetup: Sendable {
     let word: Int32
     let packedOptions: Int32
@@ -143,9 +118,7 @@ final class FastLatinSetup: Sendable {
     }
 }
 
-/// Holds the most recently used fast-Latin setup, so bail-free compares need
-/// no scratch buffers at all. Snapshots are immutable: a reader keeps using
-/// its snapshot even if another thread replaces the current one.
+/// Holds the most recently used fast-Latin setup, so bail-free compares need no scratch buffers at all. Snapshots are immutable: a reader keeps using its snapshot even if another thread replaces the current one.
 final class FastLatinCache: @unchecked Sendable {
     private let lock = PoolLock()
     private var current: FastLatinSetup?
@@ -168,11 +141,7 @@ final class FastLatinCache: @unchecked Sendable {
     }
 }
 
-/// Legacy pool kept as fallback: if thread-local take returns nil (first call
-/// or re-entrant), we try the pool before allocating fresh. In practice the
-/// thread-local handles >99% of calls; this exists only for correctness in
-/// edge cases (and for ScratchBuffers created before the thread-local was
-/// warmed up on that thread).
+/// Legacy pool kept as fallback: if thread-local take returns nil (first call or re-entrant), we try the pool before allocating fresh. In practice the thread-local handles >99% of calls; this exists only for correctness in edge cases (and for ScratchBuffers created before the thread-local was warmed up on that thread).
 final class ScratchPool: @unchecked Sendable {
     private let lock = PoolLock()
     private var free: [ScratchBuffers] = []

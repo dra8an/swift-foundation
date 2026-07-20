@@ -1,22 +1,11 @@
-// Produces the full 64-bit collation elements of a string, reading scalars
-// through the incremental-NFD front end. CE32 tag dispatch mirrors
-// CollationIterator::appendCEsFromCE32; contraction matching (including
-// discontiguous contractions per UTS #10 S2.1) mirrors
-// nextCE32FromContraction/nextCE32FromDiscontiguousContraction; prefix
-// matching mirrors getCE32FromPrefix; numeric collation (CODAN) mirrors
-// appendNumericCEs/appendNumericSegmentCEs.
+// Produces the full 64-bit collation elements of a string, reading scalars through the incremental-NFD front end. CE32 tag dispatch mirrors CollationIterator::appendCEsFromCE32; contraction matching (including discontiguous contractions per UTS #10 S2.1) mirrors nextCE32FromContraction/nextCE32FromDiscontiguousContraction; prefix matching mirrors getCE32FromPrefix; numeric collation (CODAN) mirrors appendNumericCEs/appendNumericSegmentCEs.
 //
-// Because the scalar stream is already fully NFD-normalized and canonically
-// ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and
-// discontiguous matching operates on discrete combining marks exactly as
-// UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state
-// snapshots a struct copy (replacing ICU's SkippedState machinery).
+// Because the scalar stream is already fully NFD-normalized and canonically ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and discontiguous matching operates on discrete combining marks exactly as UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state snapshots a struct copy (replacing ICU's SkippedState machinery).
 
 struct CEIterator {
     /// The tailoring data (or root when there is no tailoring).
     let data: CollationData
-    /// The base (root) data when `data` is a tailoring; lookups fall back here
-    /// when the tailoring maps a character to FALLBACK_CE32.
+    /// The base (root) data when `data` is a tailoring; lookups fall back here when the tailoring maps a character to FALLBACK_CE32.
     let base: CollationData?
     let norm: NormalizationData
     var numeric: Bool
@@ -24,33 +13,25 @@ struct CEIterator {
     /// ARC-free views used by the per-scalar dispatch (see CollationDataView).
     private let dataView: CollationDataView
     private let baseView: CollationDataView?
-    /// Pre-computed CEs for ASCII (0–127). Entry is 0 for characters that
-    /// need full pipeline processing (digits in numeric mode, U+0000, etc.).
+    /// Pre-computed CEs for ASCII (0–127). Entry is 0 for characters that need full pipeline processing (digits in numeric mode, U+0000, etc.).
     let simpleCEs: UnsafeBufferPointer<Int64>
-    /// Pre-computed CEs for the Thai block (U+0E00–0E7F), same contract:
-    /// specials (prefix-vowel contractions, digits) are 0 sentinels.
+    /// Pre-computed CEs for the Thai block (U+0E00–0E7F), same contract: specials (prefix-vowel contractions, digits) are 0 sentinels.
     let thaiCEs: UnsafeBufferPointer<Int64>
     var ces: [Int64] = []
 
-    /// Number of NFD scalars consumed so far (via popScalar + consumeAhead).
-    /// Used by CollationSearch for position tracking.
+    /// Number of NFD scalars consumed so far (via popScalar + consumeAhead). Used by CollationSearch for position tracking.
     private(set) var scalarsConsumed = 0
 
-    /// True once the NFD front end has decomposed any input scalar. While
-    /// false, NFD scalar offsets equal source scalar offsets, so
-    /// CollationSearch can report positions without an NFD→source map.
+    /// True once the NFD front end has decomposed any input scalar. While false, NFD scalar offsets equal source scalar offsets, so CollationSearch can report positions without an NFD→source map.
     var sawDecomposition: Bool { scalars.sawDecomposition }
 
     /// Normalized scalars read ahead of the current position.
     private var lookahead: [UInt32] = []
     private var lookaheadStart = 0
-    /// The two most recently processed scalars (most recent first), used for
-    /// prefix (precontext) matching. Sufficient for all CLDR prefixes: a
-    /// single starter, or a starter followed by a kana voicing mark.
+    /// The two most recently processed scalars (most recent first), used for prefix (precontext) matching. Sufficient for all CLDR prefixes: a single starter, or a starter followed by a kana voicing mark.
     private var prev1: UInt32?
     private var prev2: UInt32?
-    /// Scalars consumed as contraction suffixes / digit runs while processing
-    /// the current character; pushed into prefix history after it.
+    /// Scalars consumed as contraction suffixes / digit runs while processing the current character; pushed into prefix history after it.
     private var consumedExtras: [UInt32] = []
 
     init(data: CollationData, base: CollationData? = nil, norm: NormalizationData,
@@ -68,18 +49,14 @@ struct CEIterator {
         self.thaiCEs = thaiCEs
     }
 
-    /// Rewinds onto a new input, keeping all buffer storage so that reuse
-    /// across compares runs allocation-free. Equivalent to a fresh iterator
-    /// over the same collation data, positioned after `skippingFirst` scalars.
+    /// Rewinds onto a new input, keeping all buffer storage so that reuse across compares runs allocation-free. Equivalent to a fresh iterator over the same collation data, positioned after `skippingFirst` scalars.
     mutating func reset(numeric: Bool, scalars view: String.UnicodeScalarView, skippingFirst: Int = 0) {
         self.numeric = numeric
         scalars.reset(scalars: view, skippingFirst: skippingFirst)
         clearState()
     }
 
-    /// Resets onto an already-positioned scalar iterator plus one scalar the
-    /// caller has already pulled from it — see NFDIterator.reset(source:first:).
-    /// Avoids rebuilding a String iterator and re-walking the skipped prefix.
+    /// Resets onto an already-positioned scalar iterator plus one scalar the caller has already pulled from it — see NFDIterator.reset(source:first:). Avoids rebuilding a String iterator and re-walking the skipped prefix.
     mutating func reset(numeric: Bool, source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
         self.numeric = numeric
         scalars.reset(source: iter, first: first)
@@ -99,8 +76,7 @@ struct CEIterator {
         scalarsConsumed = 0
     }
 
-    /// Looks up the CE32 for a code point, falling back from the tailoring to
-    /// the base data. Returns the data view that owns the resulting CE32.
+    /// Looks up the CE32 for a code point, falling back from the tailoring to the base data. Returns the data view that owns the resulting CE32.
     @inline(__always)
     private func lookup(_ c: UInt32) -> (d: CollationDataView, ce32: UInt32) {
         let ce32 = dataView.trie.get(c)
@@ -161,8 +137,7 @@ struct CEIterator {
         return ces
     }
 
-    /// Pops the next scalar, bypassing the lookahead buffer when it is empty
-    /// (the common case — the buffer fills only during context matching).
+    /// Pops the next scalar, bypassing the lookahead buffer when it is empty (the common case — the buffer fills only during context matching).
     @inline(__always)
     private mutating func popScalar() -> UInt32? {
         if lookaheadStart < lookahead.count {
@@ -178,9 +153,7 @@ struct CEIterator {
         return nil
     }
 
-    /// Appends the CEs of the next character, or the NO_CE terminator at the
-    /// end of input. Returns false once terminated. Enables lazy comparison:
-    /// the primary level usually decides without generating all CEs.
+    /// Appends the CEs of the next character, or the NO_CE terminator at the end of input. Returns false once terminated. Enables lazy comparison: the primary level usually decides without generating all CEs.
     @inline(__always)
     mutating func appendMore() throws -> Bool {
         guard !terminated else { return false }
@@ -198,12 +171,7 @@ struct CEIterator {
                 return true
             }
         }
-        // Fast path: pre-computed CE for simple Thai-block scalars —
-        // consonants, sara aa, tone/vowel marks (§34 attributed ~200 ns of
-        // the thai row to CE production). Prefix-vowel contractions and
-        // digits are 0 sentinels and take the full path, identical to the
-        // ASCII table's exclusion rules. ASCII returns above and never
-        // reaches this; other scripts pay one wrapped-subtract compare.
+        // Fast path: pre-computed CE for simple Thai-block scalars — consonants, sara aa, tone/vowel marks (§34 attributed ~200 ns of the thai row to CE production). Prefix-vowel contractions and digits are 0 sentinels and take the full path, identical to the ASCII table's exclusion rules. ASCII returns above and never reaches this; other scripts pay one wrapped-subtract compare.
         if (c &- 0x0E00) < 128, !thaiCEs.isEmpty {
             let ce = thaiCEs[Int(c &- 0x0E00)]
             if ce != 0 {
@@ -212,9 +180,7 @@ struct CEIterator {
                 return true
             }
         }
-        // isEmpty guards: removeAll on a never-used array hits the shared
-        // empty-singleton storage, which is never uniquely referenced, and
-        // takes the copy-on-write slow path every time.
+        // isEmpty guards: removeAll on a never-used array hits the shared empty-singleton storage, which is never uniquely referenced, and takes the copy-on-write slow path every time.
         if !consumedExtras.isEmpty { consumedExtras.removeAll(keepingCapacity: true) }
         let (d, ce32) = lookup(c)
         try appendCEs(d: d, c: c, ce32: ce32, depth: 0)
@@ -223,8 +189,7 @@ struct CEIterator {
         return true
     }
 
-    /// The CE at index `i`, generating lazily as needed. `i` must not run
-    /// past the NO_CE terminator (all level loops stop at NO_CE).
+    /// The CE at index `i`, generating lazily as needed. `i` must not run past the NO_CE terminator (all level loops stop at NO_CE).
     mutating func ce(at i: Int) throws -> Int64 {
         while ces.count <= i {
             if try !appendMore() { break }
@@ -233,8 +198,7 @@ struct CEIterator {
     }
 
     private mutating func appendCEs(d: CollationDataView, c: UInt32, ce32 initialCE32: UInt32, depth: Int) throws {
-        // Specials never nest deeper than prefix -> contraction -> expansion
-        // (plus digit/u0000 indirections) in root data.
+        // Specials never nest deeper than prefix -> contraction -> expansion (plus digit/u0000 indirections) in root data.
         guard depth <= 6 else { throw RootCollator.CollationError.malformedData }
         var ce32 = initialCE32
         while true {
@@ -275,8 +239,7 @@ struct CEIterator {
             case .u0000:
                 ce32 = d.ce32s[0]
             case .hangul:
-                // Unreachable behind the NFD front end (syllables decompose to
-                // Jamo first), but kept for data completeness.
+                // Unreachable behind the NFD front end (syllables decompose to Jamo first), but kept for data completeness.
                 try appendHangulCEs(d: d, syllable: c, depth: depth)
                 return
             case .offset:
@@ -294,8 +257,7 @@ struct CEIterator {
 
     // MARK: Prefix (precontext) matching
 
-    /// Resolves a PREFIX_TAG CE32 by matching the preceding scalars against
-    /// the prefix trie (stored last-character-first). (getCE32FromPrefix.)
+    /// Resolves a PREFIX_TAG CE32 by matching the preceding scalars against the prefix trie (stored last-character-first). (getCE32FromPrefix.)
     private mutating func prefixCE32(d: CollationDataView, _ ce32: UInt32) -> UInt32 {
         let index = CollationConstants.indexFromCE32(ce32)
         var result = d.readContextCE32(at: index)  // default if no prefix match
@@ -310,18 +272,14 @@ struct CEIterator {
             if match.hasValue {
                 result = UInt32(bitPattern: trie.getValue())
             }
-            // Prefixes longer than two scalars do not occur in CLDR data
-            // (see Docs/02-icu4x-strategy.md); deeper history is not kept.
+            // Prefixes longer than two scalars do not occur in CLDR data (see Docs/02-icu4x-strategy.md); deeper history is not kept.
         }
         return result
     }
 
     // MARK: Contraction (suffix) matching
 
-    /// Resolves a CONTRACTION_TAG CE32 by matching following scalars against
-    /// the suffix trie, including discontiguous contractions per UTS #10 S2.1.
-    /// Matched scalars are consumed; marks skipped over by a discontiguous
-    /// match stay in the lookahead and produce their own CEs afterwards.
+    /// Resolves a CONTRACTION_TAG CE32 by matching following scalars against the suffix trie, including discontiguous contractions per UTS #10 S2.1. Matched scalars are consumed; marks skipped over by a discontiguous match stay in the lookahead and produce their own CEs afterwards.
     private mutating func contractionCE32(d: CollationDataView, _ contractionCE32: UInt32) -> UInt32 {
         let index = CollationConstants.indexFromCE32(contractionCE32)
         let defaultCE32 = d.readContextCE32(at: index)
@@ -349,13 +307,9 @@ struct CEIterator {
             match = trie.nextForCodePoint(s)
         }
 
-        // Discontiguous contractions (S2.1.1–S2.1.3): process the non-starters
-        // following the match. The stream is canonically ordered, so a
-        // candidate C is blocked iff some intervening mark has ccc >= ccc(C),
-        // i.e. iff prevCC (the ccc of the last skipped mark) >= ccc(C).
+        // Discontiguous contractions (S2.1.1–S2.1.3): process the non-starters following the match. The stream is canonically ordered, so a candidate C is blocked iff some intervening mark has ccc >= ccc(C), i.e. iff prevCC (the ccc of the last skipped mark) >= ccc(C).
         if (contractionCE32 & CollationConstants.contractTrailingCCC) != 0
-            // With CONTRACT_SINGLE_CP_NO_MATCH, discontiguous matching only
-            // extends an existing match (ICU: sinceMatch < lookAhead).
+            // With CONTRACT_SINGLE_CP_NO_MATCH, discontiguous matching only extends an existing match (ICU: sinceMatch < lookAhead).
             && ((contractionCE32 & CollationConstants.contractSingleCpNoMatch) == 0 || bestLength > 0) {
             var matchedState = stateAfterBest
             var j = bestLength
@@ -403,19 +357,12 @@ struct CEIterator {
 
     // MARK: Numeric collation (CODAN)
 
-    /// Scratch for digit runs with more than 7 significant digits (rare);
-    /// reused across runs so the slow path allocates only once per iterator.
+    /// Scratch for digit runs with more than 7 significant digits (rare); reused across runs so the slow path allocates only once per iterator.
     private var numericDigits: [Int32] = []
 
-    /// Collects the digit run starting with `firstCE32` and appends numeric CEs.
-    /// (CollationIterator::appendNumericCEs, forward direction.)
+    /// Collects the digit run starting with `firstCE32` and appends numeric CEs. (CollationIterator::appendNumericCEs, forward direction.)
     private mutating func appendNumericCEs(d: CollationDataView, firstCE32: UInt32) throws {
-        // First pass over the run (through the lookahead buffer, nothing
-        // consumed yet): accumulate the value and count significant digits.
-        // Runs of <= 7 significant digits — practically every digit run in
-        // real text — encode as a single dense CE straight from the value:
-        // no digits array, no slice copy (profiling showed the two per-run
-        // array allocations were most of numeric mode's cost).
+        // First pass over the run (through the lookahead buffer, nothing consumed yet): accumulate the value and count significant digits. Runs of <= 7 significant digits — practically every digit run in real text — encode as a single dense CE straight from the value: no digits array, no slice copy (profiling showed the two per-run array allocations were most of numeric mode's cost).
         var value = CollationConstants.digitFromCE32(firstCE32)
         var significant = value == 0 ? 0 : 1
         var count = 0
@@ -431,16 +378,14 @@ struct CEIterator {
             value = value * 10 + digit
         }
 
-        // 7-digit values past the dense encoding's capacity (>= 1_042_490)
-        // use the pair encoding, exactly like ICU's length<=7 fall-through.
+        // 7-digit values past the dense encoding's capacity (>= 1_042_490) use the pair encoding, exactly like ICU's length<=7 fall-through.
         if dense && value < 1_042_490 {
             consumeAhead(count)
             appendDenseNumericCE(value: value, numericPrimary: d.numericPrimary)
             return
         }
 
-        // Slow path (> 7 significant digits): collect the digits into the
-        // reusable scratch and run the segmented pair encoding.
+        // Slow path (> 7 significant digits): collect the digits into the reusable scratch and run the segmented pair encoding.
         if !numericDigits.isEmpty { numericDigits.removeAll(keepingCapacity: true) }
         numericDigits.append(CollationConstants.digitFromCE32(firstCE32))
         count = 0
@@ -462,9 +407,7 @@ struct CEIterator {
         } while pos < numericDigits.count
     }
 
-    /// The dense single-CE encoding for a small segment value
-    /// (callers guarantee value < 1_042_490). (The in-capacity part of the
-    /// `length <= 7` branch of ICU's appendNumericSegmentCEs.)
+    /// The dense single-CE encoding for a small segment value (callers guarantee value < 1_042_490). (The in-capacity part of the `length <= 7` branch of ICU's appendNumericSegmentCEs.)
     private mutating func appendDenseNumericCE(value: Int32, numericPrimary: UInt32) {
         var value = value
         // Primary weight second byte values:
@@ -490,9 +433,7 @@ struct CEIterator {
         value -= numBytes * 254
         firstByte += numBytes
         numBytes = 16
-        // Callers guarantee the original value < 1_042_490 (= 74 + 40*254 +
-        // 16*254*254), the dense encoding's capacity; larger values take the
-        // pair encoding instead.
+        // Callers guarantee the original value < 1_042_490 (= 74 + 40*254 + 16*254*254), the dense encoding's capacity; larger values take the pair encoding instead.
         precondition(value < numBytes * 254 * 254)
         var primary = numericPrimary | UInt32(2 + value % 254)
         value /= 254
@@ -502,8 +443,7 @@ struct CEIterator {
         ces.append(CollationConstants.makeCE(primary))
     }
 
-    /// (CollationIterator::appendNumericSegmentCEs.) Operates on
-    /// `numericDigits[start..<start+length]` in place — no slice copy.
+    /// (CollationIterator::appendNumericSegmentCEs.) Operates on `numericDigits[start..<start+length]` in place — no slice copy.
     private mutating func appendNumericSegmentCEs(d: CollationDataView, start: Int, length segmentLength: Int) {
         var length = segmentLength
         let numericPrimary = d.numericPrimary
@@ -519,9 +459,7 @@ struct CEIterator {
             // value past the dense capacity — fall through to pair encoding.
         }
 
-        // The second primary byte value 132..255 indicates the number of digit
-        // pairs (4..127), then we generate primary bytes with those pairs.
-        // Omit trailing 00 pairs. Decrement the value for the last pair.
+        // The second primary byte value 132..255 indicates the number of digit pairs (4..127), then we generate primary bytes with those pairs. Omit trailing 00 pairs. Decrement the value for the last pair.
         let numPairs = Int32((length + 1) / 2)
         var primary = numericPrimary | (UInt32(132 - 4 + numPairs) << 16)
         // Find the length without trailing 00 pairs.
@@ -542,8 +480,7 @@ struct CEIterator {
         var shift: Int32 = 8
         while pos < length {
             if shift == 0 {
-                // Every three pairs/bytes we need to store a 4-byte-primary CE
-                // and start with a new CE with the '0' primary lead byte.
+                // Every three pairs/bytes we need to store a 4-byte-primary CE and start with a new CE with the '0' primary lead byte.
                 primary |= UInt32(pair)
                 ces.append(CollationConstants.makeCE(primary))
                 primary = numericPrimary

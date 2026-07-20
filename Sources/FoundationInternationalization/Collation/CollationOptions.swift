@@ -1,6 +1,4 @@
-// Collation options, mirroring ICU4C's CollationSettings options word
-// (i18n/collationsettings.h) so the ported comparison code can use the same
-// bit tests as the original.
+// Collation options, mirroring ICU4C's CollationSettings options word (i18n/collationsettings.h) so the ported comparison code can use the same bit tests as the original.
 
 public struct CollationOptions: Sendable, Equatable {
     public enum Strength: Int32, Sendable {
@@ -46,8 +44,7 @@ public struct CollationOptions: Sendable, Equatable {
 
     public init() {}
 
-    /// Decodes a CollationSettings options word (e.g. a tailoring's defaults
-    /// from the data's IX_OPTIONS).
+    /// Decodes a CollationSettings options word (e.g. a tailoring's defaults from the data's IX_OPTIONS).
     init(icuOptionsWord word: Int32) {
         strength = Strength(rawValue: word >> Bits.strengthShift) ?? .tertiary
         alternate = (word & Bits.alternateMask) != 0 ? .shifted : .nonIgnorable
@@ -77,9 +74,7 @@ public struct CollationOptions: Sendable, Equatable {
         static let strengthShift: Int32 = 12
     }
 
-    /// The equivalent CollationSettings::options word (complete: numeric and
-    /// maxVariable included, so the word fully determines compare behavior —
-    /// the fast Latin path uses it as a cache key).
+    /// The equivalent CollationSettings::options word (complete: numeric and maxVariable included, so the word fully determines compare behavior — the fast Latin path uses it as a cache key).
     var icuOptions: Int32 {
         var options: Int32 = strength.rawValue << Bits.strengthShift
         options |= maxVariable.rawValue << Bits.maxVariableShift
@@ -105,8 +100,7 @@ public struct CollationOptions: Sendable, Equatable {
         (options & (Bits.caseLevel | Bits.caseFirst)) == Bits.caseFirst
     }
 
-    /// Tertiary-level mask: keep case bits only when caseFirst is on and
-    /// caseLevel is off.
+    /// Tertiary-level mask: keep case bits only when caseFirst is on and caseLevel is off.
     static func tertiaryMask(of options: Int32) -> UInt32 {
         isTertiaryWithCaseBits(options)
             ? CollationConstants.caseAndTertiaryMask : CollationConstants.onlyTertiaryMask

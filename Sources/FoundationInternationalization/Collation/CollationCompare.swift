@@ -1,17 +1,9 @@
-// Level-by-level CE comparison, a faithful port of
-// CollationCompare::compareUpToQuaternary (i18n/collationcompare.cpp).
+// Level-by-level CE comparison, a faithful port of CollationCompare::compareUpToQuaternary (i18n/collationcompare.cpp).
 //
-// Operates on lazily-filled CE buffers terminated by NO_CE (like ICU's
-// CollationIterator/CEBuffer): the primary loop pulls CEs on demand and
-// usually decides without generating the rest; the deeper levels run only
-// when all primaries were equal, i.e. when the buffers are already complete.
-// The primary loop may rewrite variable CEs in place (shifting them to the
-// quaternary level). Script reordering is not yet supported (milestone 7);
-// the corresponding hooks are omitted.
+// Operates on lazily-filled CE buffers terminated by NO_CE (like ICU's CollationIterator/CEBuffer): the primary loop pulls CEs on demand and usually decides without generating the rest; the deeper levels run only when all primaries were equal, i.e. when the buffers are already complete. The primary loop may rewrite variable CEs in place (shifting them to the quaternary level). Script reordering is not yet supported (milestone 7); the corresponding hooks are omitted.
 
 enum CollationCompare {
-    /// Returns -1 / 0 / +1. `variableTopValue` is the highest variable primary
-    /// (used only when options has alternate=shifted).
+    /// Returns -1 / 0 / +1. `variableTopValue` is the highest variable primary (used only when options has alternate=shifted).
     static func compareUpToQuaternary(
         _ left: inout CEIterator, _ right: inout CEIterator,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil
@@ -25,9 +17,7 @@ enum CollationCompare {
         }
         var anyVariable = false
 
-        // Fetch CEs, compare primaries, store secondary & tertiary weights.
-        // Variable CEs are shifted to quaternary: only their primary is kept
-        // (lower 32 bits zeroed); following primary ignorables are zeroed out.
+        // Fetch CEs, compare primaries, store secondary & tertiary weights. Variable CEs are shifted to quaternary: only their primary is kept (lower 32 bits zeroed); following primary ignorables are zeroed out.
         func nextPrimary(_ ces: inout CEIterator, _ i: inout Int) throws -> UInt32 {
             var primary: UInt32
             repeat {
@@ -35,8 +25,7 @@ enum CollationCompare {
                 i += 1
                 primary = UInt32(truncatingIfNeeded: ce >> 32)
                 if primary < variableTop && primary > CollationConstants.mergeSeparatorPrimary {
-                    // Variable CE, shift it to quaternary level.
-                    // Ignore all following primary ignorables, and shift further variable CEs.
+                    // Variable CE, shift it to quaternary level. Ignore all following primary ignorables, and shift further variable CEs.
                     anyVariable = true
                     repeat {
                         // Store only the primary of the variable CE.
@@ -73,9 +62,7 @@ enum CollationCompare {
             if leftPrimary == CollationConstants.noCEPrimary { break }
         }
 
-        // Compare the buffered secondary & tertiary weights.
-        // We might skip the secondary level but continue with the case level
-        // which is turned on separately.
+        // Compare the buffered secondary & tertiary weights. We might skip the secondary level but continue with the case level which is turned on separately.
         let strength = CollationOptions.strength(of: options)
         if strength >= CollationOptions.Strength.secondary.rawValue {
             if (options & CollationOptions.Bits.backwardSecondary) == 0 {
@@ -100,8 +87,7 @@ enum CollationCompare {
                     if leftSecondary == CollationConstants.noCEWeight16 { break }
                 }
             } else {
-                // The backwards secondary level compares secondary weights backwards
-                // within segments separated by the merge separator (U+FFFE, weight 02).
+                // The backwards secondary level compares secondary weights backwards within segments separated by the merge separator (U+FFFE, weight 02).
                 var leftStart = 0
                 var rightStart = 0
                 while true {
@@ -142,8 +128,7 @@ enum CollationCompare {
                         if leftSecondary == 0 { break }
                     }
 
-                    // Both strings have the same number of merge separators,
-                    // or else there would have been a primary-level difference.
+                    // Both strings have the same number of merge separators, or else there would have been a primary-level difference.
                     if p == CollationConstants.noCEPrimary { break }
                     // Skip both merge separators and continue.
                     leftStart = leftLimit + 1
@@ -160,11 +145,7 @@ enum CollationCompare {
                 var leftLower32: UInt32
                 var rightCase: UInt32
                 if strength == CollationOptions.Strength.primary.rawValue {
-                    // Primary+caseLevel: Ignore case level weights of primary ignorables.
-                    // Otherwise we would get a-umlaut > a
-                    // which is not desirable for accent-insensitive sorting.
-                    // Check for (lower 32 bits) == 0 as well because variable CEs are stored
-                    // with only primary weights.
+                    // Primary+caseLevel: Ignore case level weights of primary ignorables. Otherwise we would get a-umlaut > a which is not desirable for accent-insensitive sorting. Check for (lower 32 bits) == 0 as well because variable CEs are stored with only primary weights.
                     var ce: Int64
                     repeat {
                         ce = left.ces[leftIndex]
@@ -181,11 +162,7 @@ enum CollationCompare {
                     } while UInt32(truncatingIfNeeded: ce >> 32) == 0 || rightCase == 0
                     rightCase &= 0xc000
                 } else {
-                    // Secondary+caseLevel and Tertiary+caseLevel:
-                    // Ignore case level weights of secondary ignorables.
-                    // (Otherwise a tertiary CE's uppercase would be no greater than
-                    // a primary/secondary CE's uppercase; see UCA well-formedness
-                    // condition 2 and LDML Collation, Case Parameters.)
+                    // Secondary+caseLevel and Tertiary+caseLevel: Ignore case level weights of secondary ignorables. (Otherwise a tertiary CE's uppercase would be no greater than a primary/secondary CE's uppercase; see UCA well-formedness condition 2 and LDML Collation, Case Parameters.)
                     repeat {
                         leftCase = UInt32(truncatingIfNeeded: left.ces[leftIndex])
                         leftIndex += 1
@@ -200,9 +177,7 @@ enum CollationCompare {
                     rightCase &= 0xc000
                 }
 
-                // No need to handle NO_CE and MERGE_SEPARATOR specially:
-                // There is one case weight for each previous-level weight,
-                // so level length differences were handled there.
+                // No need to handle NO_CE and MERGE_SEPARATOR specially: There is one case weight for each previous-level weight, so level length differences were handled there.
                 if leftCase != rightCase {
                     if (options & CollationOptions.Bits.upperFirst) == 0 {
                         return leftCase < rightCase ? -1 : 1
@@ -243,11 +218,7 @@ enum CollationCompare {
 
             if leftTertiary != rightTertiary {
                 if CollationOptions.sortsTertiaryUpperCaseFirst(options) {
-                    // Pass through NO_CE and keep real tertiary weights larger than that.
-                    // Do not change the artificial uppercase weight of a tertiary CE (0.0.ut),
-                    // to keep tertiary CEs well-formed.
-                    // Their case+tertiary weights must be greater than those of
-                    // primary and secondary CEs.
+                    // Pass through NO_CE and keep real tertiary weights larger than that. Do not change the artificial uppercase weight of a tertiary CE (0.0.ut), to keep tertiary CEs well-formed. Their case+tertiary weights must be greater than those of primary and secondary CEs.
                     if leftTertiary > CollationConstants.noCEWeight16 {
                         if leftLower32 > 0xffff {
                             leftTertiary ^= 0xc000
@@ -270,8 +241,7 @@ enum CollationCompare {
         if strength <= CollationOptions.Strength.tertiary.rawValue { return 0 }
 
         if !anyVariable && (anyQuaternaries & 0xc0) == 0 {
-            // If there are no "variable" CEs and no non-zero quaternary weights,
-            // then there are no quaternary differences.
+            // If there are no "variable" CEs and no non-zero quaternary weights, then there are no quaternary differences.
             return 0
         }
 
@@ -287,8 +257,7 @@ enum CollationCompare {
                     // Variable primary or completely ignorable or NO_CE.
                     leftQuaternary = UInt32(truncatingIfNeeded: ce >> 32)
                 } else {
-                    // Regular CE, not tertiary ignorable.
-                    // Preserve the quaternary weight in bits 7..6.
+                    // Regular CE, not tertiary ignorable. Preserve the quaternary weight in bits 7..6.
                     leftQuaternary |= 0xffff_ff3f
                 }
             } while leftQuaternary == 0

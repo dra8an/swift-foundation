@@ -1,18 +1,8 @@
-// Fast Latin comparison: a faithful port of CollationFastLatin
-// (i18n/collationfastlatin.{h,cpp}, format version 2).
+// Fast Latin comparison: a faithful port of CollationFastLatin (i18n/collationfastlatin.{h,cpp}, format version 2).
 //
-// The data files carry a precompiled table of 16-bit "mini CEs" for
-// U+0000..U+017F plus general punctuation U+2000..U+203F, built by ICU's
-// CollationFastLatinBuilder from the same collation data we read. compare()
-// runs the full multi-level comparison directly on those packed words — no
-// NFD front end, no CE expansion — and returns bailOutResult for anything it
-// cannot prove correct (unsupported characters or mappings, digits under
-// numeric collation, secondary differences under backwards-secondary), in
-// which case the caller falls through to the regular pipeline.
+// The data files carry a precompiled table of 16-bit "mini CEs" for U+0000..U+017F plus general punctuation U+2000..U+203F, built by ICU's CollationFastLatinBuilder from the same collation data we read. compare() runs the full multi-level comparison directly on those packed words — no NFD front end, no CE expansion — and returns bailOutResult for anything it cannot prove correct (unsupported characters or mappings, digits under numeric collation, secondary differences under backwards-secondary), in which case the caller falls through to the regular pipeline.
 //
-// Like ICU, the scalar streams are walked once per level; the strings are
-// known to be well-formed and fully supported after the primary level, which
-// vets every character first.
+// Like ICU, the scalar streams are walked once per level; the strings are known to be well-formed and fully supported after the primary level, which vets every character first.
 
 enum CollationFastLatin {
     /// Fast Latin format version; data with any other version is ignored.
@@ -45,8 +35,7 @@ enum CollationFastLatin {
     static let minLong: UInt32 = 0xc00
     static let minShort: UInt32 = 0x1000
 
-    // Secondary weight ladder: 5 before-common (00..80), common (A0),
-    // 6 after-common (C0..160), 20 high (180..3E0), all in steps of 0x20.
+    // Secondary weight ladder: 5 before-common (00..80), common (A0), 6 after-common (C0..160), 20 high (180..3E0), all in steps of 0x20.
     static let commonSec: UInt32 = 0xa0
     static let minSecHigh: UInt32 = 0x180  // MAX_SEC_AFTER + SEC_INC
     static let secOffset: UInt32 = 0x20
@@ -71,13 +60,10 @@ enum CollationFastLatin {
 
     /// Comparison result meaning "use the regular comparison".
     static let bailOutResult: Int32 = -2
-    /// Result meaning "eligible, but the per-options setup is not cached
-    /// yet": the caller computes it and retries (once per options change).
+    /// Result meaning "eligible, but the per-options setup is not cached yet": the caller computes it and retries (once per options change).
     static let needsSetupResult: Int32 = -3
 
-    /// One side of the comparison: a scalar stream with one scalar of
-    /// lookahead (always primed; nil = end of string). Levels restart by
-    /// copying the original side, which is a trivial struct copy.
+    /// One side of the comparison: a scalar stream with one scalar of lookahead (always primed; nil = end of string). Levels restart by copying the original side, which is a trivial struct copy.
     struct Side {
         var next: UInt32?
         var rest: String.UnicodeScalarView.Iterator
@@ -91,10 +77,7 @@ enum CollationFastLatin {
         }
     }
 
-    /// Computes the options value for compare() and fills the precomputed
-    /// primary weights (LATIN_LIMIT entries). Returns -1 if the fast path is
-    /// not supported for this data and these options.
-    /// (CollationFastLatin::getOptions.)
+    /// Computes the options value for compare() and fills the precomputed primary weights (LATIN_LIMIT entries). Returns -1 if the fast path is not supported for this data and these options. (CollationFastLatin::getOptions.)
     static func getOptions(
         table: UnsafeBufferPointer<UInt16>, scriptsData: CollationData,
         reordering: Reordering?, options: Int32, primaries: inout [UInt16]
@@ -106,8 +89,7 @@ enum CollationFastLatin {
 
         let miniVarTop: UInt32
         if (options & CollationOptions.Bits.alternateMask) == 0 {
-            // No mini primaries are variable, set a variableTop just below
-            // the lowest long mini primary.
+            // No mini primaries are variable, set a variableTop just below the lowest long mini primary.
             miniVarTop = minLong - 1
         } else {
             let headerLength = Int(table[0] & 0xff)
@@ -136,8 +118,7 @@ enum CollationFastLatin {
                         // The permutation affects the groups up to Latin.
                         return -1
                     }
-                    // In the future, there might be a special group between
-                    // digits & Latin.
+                    // In the future, there might be a special group between digits & Latin.
                     if digitStart != 0 && afterDigitStart == 0 && prevStart == beforeDigitStart {
                         afterDigitStart = start
                     }
@@ -178,11 +159,7 @@ enum CollationFastLatin {
         return (Int32(bitPattern: miniVarTop << 16)) | options
     }
 
-    /// Compares the two scalar streams on the mini-CE table. Returns -1/0/1,
-    /// or bailOutResult if the regular comparison must be used.
-    /// (CollationFastLatin::compareUTF16, over scalars: every supported
-    /// character is a single BMP code unit, and everything else bails out,
-    /// so scalar order equals code unit order here.)
+    /// Compares the two scalar streams on the mini-CE table. Returns -1/0/1, or bailOutResult if the regular comparison must be used. (CollationFastLatin::compareUTF16, over scalars: every supported character is a single BMP code unit, and everything else bails out, so scalar order equals code unit order here.)
     static func compare(
         table fullTable: UnsafeBufferPointer<UInt16>, primaries: [UInt16], options optionsIn: Int32,
         left: Side, right: Side
@@ -192,9 +169,7 @@ enum CollationFastLatin {
         let variableTop = UInt32(bitPattern: optionsIn) >> 16  // see getOptions()
         let options = optionsIn & 0xffff  // needed for strength(of:) to work
 
-        // Check for supported characters, fetch mini CEs, and compare
-        // primaries. A pair holds the current mini CE in the lower 16 bits
-        // and the next one (if any) in the upper 16 bits.
+        // Check for supported characters, fetch mini CEs, and compare primaries. A pair holds the current mini CE in the lower 16 bits and the next one (if any) in the upper 16 bits.
         var l = left
         var r = right
         var leftPair: UInt32 = 0
@@ -277,12 +252,9 @@ enum CollationFastLatin {
             rightPair >>= 16
         }
 
-        // In the following, we need to re-fetch each character because we
-        // did not buffer the CEs, but we know that the string is well-formed
-        // and only contains supported characters and mappings.
+        // In the following, we need to re-fetch each character because we did not buffer the CEs, but we know that the string is well-formed and only contains supported characters and mappings.
 
-        // We might skip the secondary level but continue with the case level
-        // which is turned on separately.
+        // We might skip the secondary level but continue with the case level which is turned on separately.
         if CollationOptions.strength(of: options) >= CollationOptions.Strength.secondary.rawValue {
             l = left
             r = right
@@ -347,9 +319,7 @@ enum CollationFastLatin {
                 let rightSecondary = rightPair & 0xffff
                 if leftSecondary != rightSecondary {
                     if (options & CollationOptions.Bits.backwardSecondary) != 0 {
-                        // Full support for backwards secondary requires
-                        // backwards contraction matching and moving
-                        // backwards between merge separators.
+                        // Full support for backwards secondary requires backwards contraction matching and moving backwards between merge separators.
                         return bailOutResult
                     }
                     return leftSecondary < rightSecondary ? -1 : 1
@@ -416,8 +386,7 @@ enum CollationFastLatin {
             return 0
         }
 
-        // Remove the case bits from the tertiary weight when caseLevel is on
-        // or caseFirst is off.
+        // Remove the case bits from the tertiary weight when caseLevel is on or caseFirst is off.
         let withCaseBits = CollationOptions.isTertiaryWithCaseBits(options)
 
         l = left
@@ -459,10 +428,7 @@ enum CollationFastLatin {
             var rightTertiary = rightPair & 0xffff
             if leftTertiary != rightTertiary {
                 if CollationOptions.sortsTertiaryUpperCaseFirst(options) {
-                    // Pass through EOS and MERGE_WEIGHT and keep real
-                    // tertiary weights larger than the MERGE_WEIGHT.
-                    // Tertiary CEs (secondary ignorables) are not supported
-                    // in fast Latin.
+                    // Pass through EOS and MERGE_WEIGHT and keep real tertiary weights larger than the MERGE_WEIGHT. Tertiary CEs (secondary ignorables) are not supported in fast Latin.
                     if leftTertiary > mergeWeight {
                         leftTertiary ^= caseMask
                     }
@@ -527,13 +493,7 @@ enum CollationFastLatin {
         return 0
     }
 
-    /// Compares two well-formed UTF-8 byte streams on the mini-CE table.
-    /// Returns -1/0/1, or bailOutResult if the regular comparison must be
-    /// used. The byte variant reads characters as raw bytes — ASCII is one
-    /// load, U+0080..U+017F assemble from a 0xC2..0xC5 lead + trail — which
-    /// is what makes this the fastest path.
-    /// (CollationFastLatin::compareUTF8; kept in sync with compare() above,
-    /// like ICU keeps compareUTF16 and compareUTF8 in sync.)
+    /// Compares two well-formed UTF-8 byte streams on the mini-CE table. Returns -1/0/1, or bailOutResult if the regular comparison must be used. The byte variant reads characters as raw bytes — ASCII is one load, U+0080..U+017F assemble from a 0xC2..0xC5 lead + trail — which is what makes this the fastest path. (CollationFastLatin::compareUTF8; kept in sync with compare() above, like ICU keeps compareUTF16 and compareUTF8 in sync.)
     static func compareUTF8(
         table fullTable: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>, options optionsIn: Int32,
         left: UnsafeBufferPointer<UInt8>, leftStart: Int,
@@ -547,9 +507,7 @@ enum CollationFastLatin {
         let leftLength = left.count
         let rightLength = right.count
 
-        // Check for supported characters, fetch mini CEs, and compare
-        // primaries. There is no need to assemble code points beyond the
-        // two-byte Latin range; nextPairUTF8 reads the bytes it needs.
+        // Check for supported characters, fetch mini CEs, and compare primaries. There is no need to assemble code points beyond the two-byte Latin range; nextPairUTF8 reads the bytes it needs.
         var leftIndex = leftStart
         var rightIndex = rightStart
         var leftPair: UInt32 = 0
@@ -645,8 +603,7 @@ enum CollationFastLatin {
             rightPair >>= 16
         }
 
-        // The string is now known to be well-formed and fully supported, so
-        // the later levels use the unchecked lookups.
+        // The string is now known to be well-formed and fully supported, so the later levels use the unchecked lookups.
 
         if CollationOptions.strength(of: options) >= CollationOptions.Strength.secondary.rawValue {
             leftIndex = leftStart
@@ -918,9 +875,7 @@ enum CollationFastLatin {
         }
     }
 
-    /// Looks up a lead byte > 0x7f that the two-byte Latin fast path did not
-    /// handle: the punctuation block (E2 80 xx), U+FFFE/U+FFFF (EF BF BE/BF),
-    /// anything else bails. (CollationFastLatin::lookupUTF8.)
+    /// Looks up a lead byte > 0x7f that the two-byte Latin fast path did not handle: the punctuation block (E2 80 xx), U+FFFE/U+FFFF (EF BF BE/BF), anything else bails. (CollationFastLatin::lookupUTF8.)
     @inline(__always)
     private static func lookupUTF8(
         _ table: UnsafeBufferPointer<UInt16>, _ c: UInt32,
@@ -944,9 +899,7 @@ enum CollationFastLatin {
         return bailOut
     }
 
-    /// Unchecked lead-byte lookup for the levels after primary, which has
-    /// already vetted the whole string as well-formed and fully supported.
-    /// (CollationFastLatin::lookupUTF8Unsafe.)
+    /// Unchecked lead-byte lookup for the levels after primary, which has already vetted the whole string as well-formed and fully supported. (CollationFastLatin::lookupUTF8Unsafe.)
     @inline(__always)
     private static func lookupUTF8Unsafe(
         _ table: UnsafeBufferPointer<UInt16>, _ c: UInt32,
@@ -969,9 +922,7 @@ enum CollationFastLatin {
         }
     }
 
-    /// Byte-stream variant of nextPair (the s8 branch of
-    /// CollationFastLatin::nextPair): the contraction lookahead reads the
-    /// next character's bytes and consumes them only on a match.
+    /// Byte-stream variant of nextPair (the s8 branch of CollationFastLatin::nextPair): the contraction lookahead reads the next character's bytes and consumes them only on a match.
     private static func nextPairUTF8(
         _ table: UnsafeBufferPointer<UInt16>, _ ceIn: UInt32,
         _ s8: UnsafeBufferPointer<UInt8>, _ sIndex: inout Int, _ sLength: Int
@@ -1011,9 +962,7 @@ enum CollationFastLatin {
                         nextIndex += 2
                     }
                 }
-                // Look for the next character in the contraction suffix
-                // list, which is in ascending order of single suffix
-                // characters.
+                // Look for the next character in the contraction suffix list, which is in ascending order of single suffix characters.
                 var i = index
                 var head = Int32(table[i])  // first skip the default mapping
                 var x: Int32
@@ -1040,10 +989,7 @@ enum CollationFastLatin {
         }
     }
 
-    /// Resolves a special mini CE: expansions yield their pair; contractions
-    /// match at most one following character against the contraction list
-    /// (longer contractions bail out via length-1 entries).
-    /// (CollationFastLatin::nextPair, UTF-16 variant without NUL handling.)
+    /// Resolves a special mini CE: expansions yield their pair; contractions match at most one following character against the contraction list (longer contractions bail out via length-1 entries). (CollationFastLatin::nextPair, UTF-16 variant without NUL handling.)
     private static func nextPair(
         _ table: UnsafeBufferPointer<UInt16>, _ c: UInt32, _ ceIn: UInt32, _ side: inout Side
     ) -> UInt32 {
@@ -1054,12 +1000,10 @@ enum CollationFastLatin {
             let index = numFastChars + Int(ce & indexMask)
             return (UInt32(table[index + 1]) << 16) | UInt32(table[index])
         } else /* ce >= contraction */ {
-            // Contraction list: Default mapping followed by 0 or more
-            // single-character contraction suffix mappings.
+            // Contraction list: Default mapping followed by 0 or more single-character contraction suffix mappings.
             var index = numFastChars + Int(ce & indexMask)
             if let next = side.next {
-                // Map the lookahead character to a contraction character
-                // index, or -1 if it cannot occur in a contraction.
+                // Map the lookahead character to a contraction character index, or -1 if it cannot occur in a contraction.
                 var c2: Int32
                 if next <= latinMax {
                     c2 = Int32(next)
@@ -1070,9 +1014,7 @@ enum CollationFastLatin {
                 } else {
                     return bailOut
                 }
-                // Look for the next character in the contraction suffix
-                // list, which is in ascending order of single suffix
-                // characters.
+                // Look for the next character in the contraction suffix list, which is in ascending order of single suffix characters.
                 var i = index
                 var head = Int32(table[i])  // first skip the default mapping
                 var x: Int32
@@ -1147,16 +1089,12 @@ enum CollationFastLatin {
     }
 
     private static func getCases(_ variableTop: UInt32, _ strengthIsPrimary: Bool, _ pairIn: UInt32) -> UInt32 {
-        // Primary+caseLevel: Ignore case level weights of primary ignorables.
-        // Otherwise: Ignore case level weights of secondary ignorables.
-        // For details see the comments in the CollationCompare class.
-        // Tertiary CEs (secondary ignorables) are not supported in fast Latin.
+        // Primary+caseLevel: Ignore case level weights of primary ignorables. Otherwise: Ignore case level weights of secondary ignorables. For details see the comments in the CollationCompare class. Tertiary CEs (secondary ignorables) are not supported in fast Latin.
         var pair = pairIn
         if pair <= 0xffff {
             // one mini CE
             if pair >= minShort {
-                // A high secondary weight means we really have two CEs,
-                // a primary CE and a secondary CE.
+                // A high secondary weight means we really have two CEs, a primary CE and a secondary CE.
                 let ce = pair
                 pair &= caseMask  // explicit weight of primary CE
                 if !strengthIsPrimary && (ce & secondaryMask) >= minSecHigh {
@@ -1192,8 +1130,7 @@ enum CollationFastLatin {
         if pair <= 0xffff {
             // one mini CE
             if pair >= minShort {
-                // A high secondary weight means we really have two CEs,
-                // a primary CE and a secondary CE.
+                // A high secondary weight means we really have two CEs, a primary CE and a secondary CE.
                 let ce = pair
                 if withCaseBits {
                     pair = (pair & caseAndTertiaryMask) &+ terOffset
@@ -1239,14 +1176,12 @@ enum CollationFastLatin {
     }
 
     private static func getQuaternaries(_ variableTop: UInt32, _ pairIn: UInt32) -> UInt32 {
-        // Return the primary weight of a variable CE, or the maximum primary
-        // weight for a non-variable, not-completely-ignorable CE.
+        // Return the primary weight of a variable CE, or the maximum primary weight for a non-variable, not-completely-ignorable CE.
         var pair = pairIn
         if pair <= 0xffff {
             // one mini CE
             if pair >= minShort {
-                // A high secondary weight means we really have two CEs,
-                // a primary CE and a secondary CE.
+                // A high secondary weight means we really have two CEs, a primary CE and a secondary CE.
                 if (pair & secondaryMask) >= minSecHigh {
                     pair = twoShortPrimariesMask
                 } else {

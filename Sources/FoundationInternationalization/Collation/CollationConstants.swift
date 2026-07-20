@@ -1,9 +1,6 @@
-// Constants and bit-layout helpers for collation elements,
-// ported from ICU4C i18n/collation.h and collation.cpp (ICU 79, data format "UCol" v5).
+// Constants and bit-layout helpers for collation elements, ported from ICU4C i18n/collation.h and collation.cpp (ICU 79, data format "UCol" v5).
 //
-// A CE32 is a 32-bit encoding of one (or more) collation elements.
-// Simple CE32 (low byte < 0xc0): ppppsstt = 16-bit primary, 8-bit secondary, 8-bit tertiary.
-// Special CE32 (low byte >= 0xc0): bits 3..0 hold a tag; layout of the rest depends on the tag.
+// A CE32 is a 32-bit encoding of one (or more) collation elements. Simple CE32 (low byte < 0xc0): ppppsstt = 16-bit primary, 8-bit secondary, 8-bit tertiary. Special CE32 (low byte >= 0xc0): bits 3..0 hold a tag; layout of the rest depends on the tag.
 
 enum CollationConstants {
     // MARK: Special CE32 tags (collation.h)
@@ -129,8 +126,7 @@ enum CollationConstants {
         ce32 & 0xffff_ff00
     }
 
-    /// Primary weight of the first CE of a LATIN_EXPANSION CE32 (bits 31..24 = pp).
-    /// The second CE of a Latin expansion is always primary-ignorable.
+    /// Primary weight of the first CE of a LATIN_EXPANSION CE32 (bits 31..24 = pp). The second CE of a Latin expansion is always primary-ignorable.
     @inline(__always)
     static func latinExpansionFirstPrimary(_ ce32: UInt32) -> UInt32 {
         ce32 & 0xff00_0000
@@ -146,8 +142,7 @@ enum CollationConstants {
 
     static let unassignedImplicitByte: UInt32 = 0xfe
 
-    /// Primary weight for an unassigned code point (IMPLICIT tag).
-    /// Ported from Collation::unassignedPrimaryFromCodePoint().
+    /// Primary weight for an unassigned code point (IMPLICIT tag). Ported from Collation::unassignedPrimaryFromCodePoint().
     static func unassignedPrimaryFromCodePoint(_ c: UInt32) -> UInt32 {
         // Create a gap before U+0000. (ICU also uses c = -1 for [first unassigned].)
         var c = Int32(bitPattern: c) + 1
@@ -163,10 +158,7 @@ enum CollationConstants {
         return primary | (unassignedImplicitByte << 24)
     }
 
-    /// Primary weight for an OFFSET-tag code point.
-    /// `dataCE` upper 32 bits: three-byte primary pppppp00.
-    /// Lower 32 bits: base code point (bits 31..8), isCompressible (bit 7), step (bits 6..0).
-    /// Ported from Collation::getThreeBytePrimaryForOffsetData().
+    /// Primary weight for an OFFSET-tag code point. `dataCE` upper 32 bits: three-byte primary pppppp00. Lower 32 bits: base code point (bits 31..8), isCompressible (bit 7), step (bits 6..0). Ported from Collation::getThreeBytePrimaryForOffsetData().
     static func threeBytePrimaryForOffsetData(_ c: UInt32, _ dataCE: Int64) -> UInt32 {
         let p = UInt32(truncatingIfNeeded: dataCE >> 32)
         let lower32 = Int32(truncatingIfNeeded: dataCE)
@@ -179,13 +171,11 @@ enum CollationConstants {
     static func incThreeBytePrimaryByOffset(
         _ basePrimary: UInt32, _ isCompressible: Bool, _ offset: Int32
     ) -> UInt32 {
-        // Extract the third byte, minus the minimum byte value,
-        // plus the offset, modulo the number of usable byte values, plus the minimum.
+        // Extract the third byte, minus the minimum byte value, plus the offset, modulo the number of usable byte values, plus the minimum.
         var offset = offset + (Int32(bitPattern: basePrimary >> 8) & 0xff) - 2
         var primary = UInt32(bitPattern: (offset % 254) + 2) << 8
         offset /= 254
-        // Same with the second byte,
-        // but reserve the PRIMARY_COMPRESSION_LOW_BYTE and high byte if necessary.
+        // Same with the second byte, but reserve the PRIMARY_COMPRESSION_LOW_BYTE and high byte if necessary.
         if isCompressible {
             offset += (Int32(bitPattern: basePrimary >> 16) & 0xff) - 4
             primary |= UInt32(bitPattern: (offset % 251) + 4) << 16

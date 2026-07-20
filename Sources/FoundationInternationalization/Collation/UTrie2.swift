@@ -1,8 +1,6 @@
-// Read-only UTrie2 (32-bit values), parsed from its serialized form.
-// Ported from ICU4C common/utrie2.h, utrie2_impl.h, utrie2.cpp.
+// Read-only UTrie2 (32-bit values), parsed from its serialized form. Ported from ICU4C common/utrie2.h, utrie2_impl.h, utrie2.cpp.
 //
-// Serialized layout (little-endian on this platform):
-//   UTrie2Header (16 bytes):
+// Serialized layout (little-endian on this platform): UTrie2Header (16 bytes):
 //     u32 signature        "Tri2" = 0x54726932
 //     u16 options          bits 3..0 = valueBits (1 = 32-bit data)
 //     u16 indexLength
@@ -10,15 +8,13 @@
 //     u16 index2NullOffset
 //     u16 dataNullOffset
 //     u16 shiftedHighStart     highStart >> 11
-//   u16 index[indexLength]
-//   u32 data[shiftedDataLength << 2]
+// u16 index[indexLength] u32 data[shiftedDataLength << 2]
 
 struct UTrie2 {
     // Lookup constants (utrie2.h). SHIFT_1 = 11, SHIFT_2 = 5, INDEX_SHIFT = 2.
     private static let dataMask: UInt32 = 0x1f          // (1 << SHIFT_2) - 1
     private static let index2Mask: UInt32 = 0x3f        // (1 << (SHIFT_1 - SHIFT_2)) - 1
-    // LSCP_INDEX_2_OFFSET (0x800) - (0xd800 >> SHIFT_2): index-2 block for
-    // lead-surrogate code points D800..DBFF, stored after the regular BMP index.
+    // LSCP_INDEX_2_OFFSET (0x800) - (0xd800 >> SHIFT_2): index-2 block for lead-surrogate code points D800..DBFF, stored after the regular BMP index.
     private static let lscpAdjustedOffset: UInt32 = 0x800 - (0xd800 >> 5)  // 0x140
     // INDEX_1_OFFSET (0x840) - OMITTED_BMP_INDEX_1_LENGTH (0x20)
     private static let index1AdjustedOffset: UInt32 = 0x820
@@ -36,8 +32,7 @@ struct UTrie2 {
         case unexpectedValueWidth
     }
 
-    /// Parses a serialized 32-bit UTrie2 from `bytes` starting at `offset`,
-    /// spanning at most `length` bytes, into `storage`.
+    /// Parses a serialized 32-bit UTrie2 from `bytes` starting at `offset`, spanning at most `length` bytes, into `storage`.
     init(bytes: [UInt8], offset: Int, length: Int, storage: DataStorage) throws {
         guard length >= 16 else { throw ParseError.tooShort }
         func u16(_ at: Int) -> UInt16 {

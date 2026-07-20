@@ -37,8 +37,7 @@ extension String {
             localized: true
         )
 
-        /// Compares `String`s using a localized comparison in the current
-        /// locale.
+        /// Compares `String`s using a localized comparison in the current locale.
         public static let localized = StandardComparator(options: [], localized: true)
 #else
         /// Compares `String`s as compared by the Finder.
@@ -55,8 +54,7 @@ extension String {
             localized: true
         )
 
-        /// Compares `String`s using a localized comparison in the current
-        /// locale.
+        /// Compares `String`s using a localized comparison in the current locale.
         public static let localized = StandardComparator(options: [], localized: true)
 #endif
 
@@ -169,10 +167,7 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // collatorForCurrentLocale, NOT collator(for: .current): the
-                // Locale.current accessor cost ~90 ns PER COMPARISON here
-                // (§40) — and sorts multiply it by n·log n. Same cached
-                // resolution the localized* String APIs use.
+                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor cost ~90 ns PER COMPARISON here (§40) — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
                 let collator = CollatorCache.shared.collatorForCurrentLocale()
                 let opts = CollationOptions.from(foundationOptions: options)
                 if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
@@ -189,10 +184,7 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // collatorForCurrentLocale, NOT collator(for: .current): the
-                // Locale.current accessor cost ~90 ns PER COMPARISON here
-                // (§40) — and sorts multiply it by n·log n. Same cached
-                // resolution the localized* String APIs use.
+                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor cost ~90 ns PER COMPARISON here (§40) — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
                 let collator = CollatorCache.shared.collatorForCurrentLocale()
                 let opts = CollationOptions.from(foundationOptions: options)
                 if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
@@ -240,8 +232,7 @@ extension String {
 #if FOUNDATION_FRAMEWORK
         // https://github.com/apple/swift-foundation/issues/284
         
-        /// Creates a `String.Comparator` with the given `CompareOptions` and
-        /// `Locale`.
+        /// Creates a `String.Comparator` with the given `CompareOptions` and `Locale`.
         ///
         /// - Parameters:
         ///     - options: The options to use for comparison.
@@ -254,8 +245,7 @@ extension String {
             self.order = order
         }
 #else
-        /// Creates a `String.Comparator` with the given `CompareOptions` and
-        /// `Locale`.
+        /// Creates a `String.Comparator` with the given `CompareOptions` and `Locale`.
         ///
         /// - Parameters:
         ///     - options: The options to use for comparison.
@@ -344,8 +334,7 @@ extension SortComparator where Self == String.Comparator {
         String.Comparator(.localizedStandard)
     }
 
-    /// Compares `String`s using a localized comparison in the current
-    /// locale.
+    /// Compares `String`s using a localized comparison in the current locale.
     public static var localized: String.Comparator {
         String.Comparator(.localized)
     }

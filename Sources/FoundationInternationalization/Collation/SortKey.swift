@@ -1,10 +1,6 @@
-// Sort key generation: faithful port of
-// CollationKeys::writeSortKeyUpToQuaternary (i18n/collationkeys.{h,cpp}) and
-// the BOCSU identical-level encoder (i18n/bocsu.{h,cpp}).
+// Sort key generation: faithful port of CollationKeys::writeSortKeyUpToQuaternary (i18n/collationkeys.{h,cpp}) and the BOCSU identical-level encoder (i18n/bocsu.{h,cpp}).
 //
-// Operates on a NO_CE-terminated CE array. Script reordering hooks are
-// omitted (milestone 7). The invariant: byte-wise comparison of two sort keys
-// equals compare() at the same options.
+// Operates on a NO_CE-terminated CE array. Script reordering hooks are omitted (milestone 7). The invariant: byte-wise comparison of two sort keys equals compare() at the same options.
 
 /// Per-level byte buffer. (collationkeys.cpp SortKeyLevel.)
 struct SortKeyLevel {
@@ -40,8 +36,7 @@ struct SortKeyLevel {
         }
     }
 
-    /// Appends a 16-bit weight byte-reversed (for the backwards-secondary
-    /// level, which is re-reversed segment-wise later).
+    /// Appends a 16-bit weight byte-reversed (for the backwards-secondary level, which is re-reversed segment-wise later).
     mutating func appendReverseWeight16(_ w: UInt32) {
         assert((w & 0xffff) != 0)
         let b0 = UInt8(truncatingIfNeeded: w >> 8)
@@ -59,16 +54,14 @@ struct SortKeyLevel {
         assert(bytes.last == 1)
         let n = bytes.count - 1
         if n <= 0 { return }  // level compressed to nothing — skip the copy entirely
-        // Copy from a contiguous buffer pointer so the append takes Array's
-        // memcpy fast path, not the slice/Collection iteration path.
+        // Copy from a contiguous buffer pointer so the append takes Array's memcpy fast path, not the slice/Collection iteration path.
         bytes.withUnsafeBufferPointer { p in
             key.append(contentsOf: UnsafeBufferPointer(start: p.baseAddress, count: n))
         }
     }
 }
 
-/// Reusable storage for the four per-level buffers (lives in ScratchBuffers;
-/// writeSortKeyUpToQuaternary borrows and returns it).
+/// Reusable storage for the four per-level buffers (lives in ScratchBuffers; writeSortKeyUpToQuaternary borrows and returns it).
 struct SortKeyLevelBuffers {
     var cases = SortKeyLevel()
     var secondaries = SortKeyLevel()
@@ -119,8 +112,7 @@ enum CollationKeys {
 
     private static let levelSeparator: UInt8 = 1
 
-    /// Map from strength to the level-flag set to write (CASE_LEVEL is
-    /// independent; IDENTICAL_LEVEL is written separately).
+    /// Map from strength to the level-flag set to write (CASE_LEVEL is independent; IDENTICAL_LEVEL is written separately).
     private static func levelFlags(strength: Int32) -> UInt32 {
         switch strength {
         case CollationOptions.Strength.primary.rawValue: return 2
@@ -136,9 +128,7 @@ enum CollationKeys {
     private static let tertiaryFlag: UInt32 = 0x10
     private static let quaternaryFlag: UInt32 = 0x20
 
-    /// Writes the sort key for levels up to the strength in `options`
-    /// (without identical level and without the 00 terminator).
-    /// (CollationKeys::writeSortKeyUpToQuaternary.)
+    /// Writes the sort key for levels up to the strength in `options` (without identical level and without the 00 terminator). (CollationKeys::writeSortKeyUpToQuaternary.)
     static func writeSortKeyUpToQuaternary(
         ces: borrowing [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
@@ -159,8 +149,7 @@ enum CollationKeys {
 
         let tertiaryMask = CollationOptions.tertiaryMask(of: options)
 
-        // Borrow the reusable level buffers by swapping (not copying, so the
-        // appends below never copy-on-write); swapped back, grown, at the end.
+        // Borrow the reusable level buffers by swapping (not copying, so the appends below never copy-on-write); swapped back, grown, at the end.
         var cases = SortKeyLevel()
         var secondaries = SortKeyLevel()
         var tertiaries = SortKeyLevel()
@@ -169,8 +158,7 @@ enum CollationKeys {
         swap(&secondaries, &buffers.secondaries)
         swap(&tertiaries, &buffers.tertiaries)
         swap(&quaternaries, &buffers.quaternaries)
-        // isEmpty guards: removeAll on a never-used array hits the shared
-        // empty-singleton storage and takes the copy-on-write slow path.
+        // isEmpty guards: removeAll on a never-used array hits the shared empty-singleton storage and takes the copy-on-write slow path.
         if !cases.bytes.isEmpty { cases.bytes.removeAll(keepingCapacity: true) }
         if !secondaries.bytes.isEmpty { secondaries.bytes.removeAll(keepingCapacity: true) }
         if !tertiaries.bytes.isEmpty { tertiaries.bytes.removeAll(keepingCapacity: true) }
@@ -185,9 +173,7 @@ enum CollationKeys {
         var prevSecondary: UInt32 = 0
         var secSegmentStart = 0
 
-        // Batch primary bytes: accumulate into a fixed stack buffer and
-        // flush to `key` periodically. Converts many individual append()
-        // calls (each with an Array growth check) into fewer bulk copies.
+        // Batch primary bytes: accumulate into a fixed stack buffer and flush to `key` periodically. Converts many individual append() calls (each with an Array growth check) into fewer bulk copies.
         var primBuf = (
             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
@@ -212,8 +198,7 @@ enum CollationKeys {
             cesIndex += 1
             var p = UInt32(truncatingIfNeeded: ce >> 32)
             if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
-                // Variable CE, shift it to quaternary level.
-                // Ignore all following primary ignorables, and shift further variable CEs.
+                // Variable CE, shift it to quaternary level. Ignore all following primary ignorables, and shift further variable CEs.
                 if commonQuaternaries != 0 {
                     commonQuaternaries -= 1
                     while commonQuaternaries >= quatCommonMaxCount {
@@ -228,8 +213,7 @@ enum CollationKeys {
                     if (levels & quaternaryFlag) != 0 {
                         if let reordering { p = reordering.reorder(p) }
                         if (p >> 24) >= quatShiftedLimitByte {
-                            // Prevent shifted primary lead bytes from
-                            // overlapping with the common compression range.
+                            // Prevent shifted primary lead bytes from overlapping with the common compression range.
                             quaternaries.appendByte(quatShiftedLimitByte)
                         }
                         quaternaries.appendWeight32(p)
@@ -241,10 +225,7 @@ enum CollationKeys {
                     } while p == 0
                 } while p < variableTop && p > CollationConstants.mergeSeparatorPrimary
             }
-            // ce could be primary ignorable, or NO_CE, or the merge separator,
-            // or a regular primary CE, but it is not variable.
-            // If ce==NO_CE, then write nothing for the primary level but
-            // terminate compression on all levels and then exit the loop.
+            // ce could be primary ignorable, or NO_CE, or the merge separator, or a regular primary CE, but it is not variable. If ce==NO_CE, then write nothing for the primary level but terminate compression on all levels and then exit the loop.
             if p > CollationConstants.noCEPrimary && (levels & primaryFlag) != 0 {
                 // Test the un-reordered primary for compressibility.
                 let isCompressible = compressibleBytes[Int(p >> 24)]
@@ -313,8 +294,7 @@ enum CollationKeys {
                     }
                     secondaries.appendWeight16(s)
                 } else {
-                    // Backwards secondary: weights are appended byte-reversed;
-                    // each merge-separated segment is reversed at its end.
+                    // Backwards secondary: weights are appended byte-reversed; each merge-separated segment is reversed at its end.
                     if commonSecondaries != 0 {
                         commonSecondaries -= 1
                         // Append reverse weights. The level will be re-reversed later.
@@ -357,9 +337,7 @@ enum CollationKeys {
                         commonCases += 1
                     } else {
                         if (options & CollationOptions.Bits.upperFirst) == 0 {
-                            // lowerFirst: Compress common weights to nibbles 1..7..13, mixed=14, upper=15.
-                            // If there are only common (=lowest) weights in the whole level,
-                            // then we need not write anything.
+                            // lowerFirst: Compress common weights to nibbles 1..7..13, mixed=14, upper=15. If there are only common (=lowest) weights in the whole level, then we need not write anything.
                             if commonCases != 0 && (c > UInt32(levelSeparator) || !cases.isEmpty) {
                                 commonCases -= 1
                                 while commonCases >= caseLowerFirstCommonMaxCount {
@@ -402,8 +380,7 @@ enum CollationKeys {
                 if t == 0x0500 {  // COMMON_WEIGHT16
                     commonTertiaries += 1
                 } else if (tertiaryMask & 0x8000) == 0 {
-                    // Tertiary weights without case bits.
-                    // Move lead bytes 06..3F to C6..FF for a large common-weight range.
+                    // Tertiary weights without case bits. Move lead bytes 06..3F to C6..FF for a large common-weight range.
                     if commonTertiaries != 0 {
                         commonTertiaries -= 1
                         while commonTertiaries >= terOnlyCommonMaxCount {
@@ -419,8 +396,7 @@ enum CollationKeys {
                     if t > 0x0500 { t += 0xc000 }
                     tertiaries.appendWeight16(t)
                 } else if (options & CollationOptions.Bits.upperFirst) == 0 {
-                    // Tertiary weights with caseFirst=lowerFirst.
-                    // Move lead bytes 06..BF to 46..FF for the common-weight range.
+                    // Tertiary weights with caseFirst=lowerFirst. Move lead bytes 06..BF to 46..FF for the common-weight range.
                     if commonTertiaries != 0 {
                         commonTertiaries -= 1
                         while commonTertiaries >= terLowerFirstCommonMaxCount {
@@ -480,8 +456,7 @@ enum CollationKeys {
                 } else if q == CollationConstants.noCEWeight16
                     && (options & CollationOptions.Bits.alternateMask) == 0
                     && quaternaries.isEmpty {
-                    // If alternate=non-ignorable and there are only common quaternary
-                    // weights, then we need not write anything.
+                    // If alternate=non-ignorable and there are only common quaternary weights, then we need not write anything.
                     quaternaries.appendByte(UInt32(levelSeparator))
                 } else {
                     if q == CollationConstants.noCEWeight16 {

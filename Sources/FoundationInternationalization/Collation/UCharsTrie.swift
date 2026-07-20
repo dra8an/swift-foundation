@@ -1,11 +1,6 @@
-// Read-only UCharsTrie: matches strings of UTF-16 units against a serialized
-// trie and yields 32-bit values. Ported from ICU4C common/unicode/ucharstrie.h
-// and common/ucharstrie.cpp. Used for the collation contexts data
-// (contraction suffixes and prefix conditions).
+// Read-only UCharsTrie: matches strings of UTF-16 units against a serialized trie and yields 32-bit values. Ported from ICU4C common/unicode/ucharstrie.h and common/ucharstrie.cpp. Used for the collation contexts data (contraction suffixes and prefix conditions).
 //
-// This is a value type: copying the struct snapshots the traversal state,
-// which replaces ICU's SkippedState save/restore in discontiguous contraction
-// matching.
+// This is a value type: copying the struct snapshots the traversal state, which replaces ICU's SkippedState save/restore in discontiguous contraction matching.
 
 struct UCharsTrie {
     enum Result: Int32 {
@@ -33,8 +28,7 @@ struct UCharsTrie {
     private static let minTwoUnitDeltaLead: Int32 = 0xfc00
     private static let threeUnitDeltaLead: Int32 = 0xffff
 
-    /// The backing units (a view of the collation contexts data, kept alive
-    /// by the CollationData that owns it).
+    /// The backing units (a view of the collation contexts data, kept alive by the CollationData that owns it).
     let units: UnsafeBufferPointer<UInt16>
     /// Offset of the trie root within `units`.
     let root: Int
@@ -170,8 +164,7 @@ struct UCharsTrie {
             p += 1
         }
         length += 1
-        // The length of the branch is the number of units to select from.
-        // The data structure encodes a binary search.
+        // The length of the branch is the number of units to select from. The data structure encodes a binary search.
         while length > Self.maxBranchLinearSubNodeLength {
             if uchar < unit(p) {
                 p += 1
@@ -254,8 +247,7 @@ struct UCharsTrie {
         return p
     }
 
-    /// Skips a value whose lead unit is at `leadPos`; returns the position
-    /// after the value. (UCharsTrie::skipValue.)
+    /// Skips a value whose lead unit is at `leadPos`; returns the position after the value. (UCharsTrie::skipValue.)
     private func skipValueAt(_ leadPos: Int) -> Int {
         let leadUnit = unit(leadPos) & 0x7fff
         var p = leadPos + 1

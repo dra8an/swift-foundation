@@ -91,8 +91,7 @@ extension StringProtocol {
 
 @available(macOS 10.10, iOS 8.0, watchOS 2.0, tvOS 9.0, *)
 extension StringProtocol {
-    /// Compares the string with another using a localized comparison
-    /// in the current locale.
+    /// Compares the string with another using a localized comparison in the current locale.
     public func localizedCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         if let collator = CollatorCache.shared.collatorForCurrentLocale(),
            let result = try? collator.compare(String(self), String(aString)) {
@@ -149,9 +148,7 @@ extension StringProtocol {
         return String(substr).compare(Substring(aString), options: mask)
     }
 
-    /// Returns true if the string contains the given string using a
-    /// case-insensitive, diacritic-insensitive, locale-aware search
-    /// (Finder-style matching).
+    /// Returns true if the string contains the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
     public func localizedStandardContains<T: StringProtocol>(_ string: T) -> Bool {
         if let collator = CollatorCache.shared.collatorForCurrentLocale() {
             var opts = CollationOptions()
@@ -171,9 +168,7 @@ extension StringProtocol {
         return String(self).contains(String(string))
     }
 
-    /// Returns the range of the first occurrence of the given string using a
-    /// case-insensitive, diacritic-insensitive, locale-aware search
-    /// (Finder-style matching).
+    /// Returns the range of the first occurrence of the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
     public func localizedStandardRange<T: StringProtocol>(of string: T) -> Range<Index>? {
         let collator = CollatorCache.shared.collatorForCurrentLocale()
         if let collator {
@@ -188,8 +183,7 @@ extension StringProtocol {
         return nil
     }
 
-    /// Returns the range of the first occurrence of the given string,
-    /// searching with the specified options and locale.
+    /// Returns the range of the first occurrence of the given string, searching with the specified options and locale.
     public func range<T: StringProtocol>(of aString: T, options mask: String.CompareOptions = [], range searchRange: Range<Index>? = nil, locale: Locale?) -> Range<Index>? {
         guard let locale else { return nil }
         if mask.contains(.literal) { return nil }
@@ -216,19 +210,12 @@ extension StringProtocol {
         return nil
     }
 
-    /// Maps a range the search produced (indices into the materialized
-    /// `source` String) back into SELF's index space. Scalar-offset math on
-    /// both sides: the search's indices are scalar-aligned, and a
-    /// Substring's scalar count matches its materialized copy while its
-    /// indices stay base-string-relative — mapping through a fresh
-    /// `String(self)` returned copy-space indices, misaligned for every
-    /// Substring receiver (§39; caught by SubstringReceiverTests).
+    /// Maps a range the search produced (indices into the materialized `source` String) back into SELF's index space. Scalar-offset math on both sides: the search's indices are scalar-aligned, and a Substring's scalar count matches its materialized copy while its indices stay base-string-relative — mapping through a fresh `String(self)` returned copy-space indices, misaligned for every Substring receiver (§39; caught by SubstringReceiverTests).
     private func rebaseRange(_ range: Range<String.Index>, from source: String) -> Range<Index>? {
         rebaseRange(range, from: source, offsetBy: startIndex)
     }
 
-    /// As above, with the search having run on the slice starting at `base`
-    /// in self (the `range(of:range:)` case).
+    /// As above, with the search having run on the slice starting at `base` in self (the `range(of:range:)` case).
     private func rebaseRange(_ range: Range<String.Index>, from source: String, offsetBy base: Index) -> Range<Index>? {
         let sourceScalars = source.unicodeScalars
         let startOffset = sourceScalars.distance(from: sourceScalars.startIndex, to: range.lowerBound)

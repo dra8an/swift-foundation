@@ -1,8 +1,6 @@
-// Parser for the binary collation data format ("UCol" v5, ucadata.icu),
-// ported from ICU4C i18n/collationdatareader.h/.cpp.
+// Parser for the binary collation data format ("UCol" v5, ucadata.icu), ported from ICU4C i18n/collationdatareader.h/.cpp.
 //
-// File layout:
-//   UDataHeader:
+// File layout: UDataHeader:
 //     u16 headerSize
 //     u8  magic1 (0xda), u8 magic2 (0x27)
 //     UDataInfo: u16 size, u16 reserved, u8 isBigEndian, u8 charsetFamily,
@@ -12,12 +10,11 @@
 //   int32 indexes[indexes[0]]   -- all part offsets are byte offsets relative
 //                                  to the start of the indexes array; part i
 //                                  spans [indexes[i], indexes[i+1]).
-//   data parts (trie, ces, ce32s, contexts, ...)
+// data parts (trie, ces, ce32s, contexts, ...)
 
 import Foundation
 
-// @unchecked: the buffer views are immutable after init and their memory is
-// owned by `storage`, which the struct retains.
+// @unchecked: the buffer views are immutable after init and their memory is owned by `storage`, which the struct retains.
 public struct CollationData: @unchecked Sendable {
     // indexes[] slots (CollationDataReader::IX_*).
     private enum IX {
@@ -37,8 +34,7 @@ public struct CollationData: @unchecked Sendable {
         static let compressibleBytesOffset = 17
     }
 
-    /// Owns the memory behind all the buffer views below; copying the struct
-    /// costs one retain (the CE iterator copies it on every lookup).
+    /// Owns the memory behind all the buffer views below; copying the struct costs one retain (the CE iterator copies it on every lookup).
     let storage: DataStorage
     let trie: UTrie2
     let ce32s: UnsafeBufferPointer<UInt32>
@@ -48,26 +44,15 @@ public struct CollationData: @unchecked Sendable {
     let jamoCE32sStart: Int
     /// Single-byte primary `xx000000` used for numeric collation.
     let numericPrimary: UInt32
-    /// Script/reorder-group data: numScripts, then scriptsIndex[numScripts+16]
-    /// mapping script and special reorder codes to scriptStarts entries, then
-    /// scriptStarts (primary-weight high 16 bits per range).
+    /// Script/reorder-group data: numScripts, then scriptsIndex[numScripts+16] mapping script and special reorder codes to scriptStarts entries, then scriptStarts (primary-weight high 16 bits per range).
     let numScripts: Int
     let scriptsIndex: UnsafeBufferPointer<UInt16>
     let scriptStarts: UnsafeBufferPointer<UInt16>
-    /// Per-primary-lead-byte flags: compressible lead bytes allow primary
-    /// compression in sort keys. 256 entries.
+    /// Per-primary-lead-byte flags: compressible lead bytes allow primary compression in sort keys. 256 entries.
     let compressibleBytes: UnsafeBufferPointer<Bool>
-    /// Unsafe-backward set from the data file, as a sorted boundary list:
-    /// alternating range starts and limits; `c` is in the set iff the count
-    /// of boundaries <= c is odd. Characters in contraction suffixes etc. —
-    /// positions where restarting collation after an identical prefix is not
-    /// equivalent to full iteration. Tailoring files store only their delta
-    /// over the root set; ICU adds [:^lccc=0:] and surrogates at load time
-    /// (we check lead-ccc at runtime instead, and scalars exclude surrogates).
+    /// Unsafe-backward set from the data file, as a sorted boundary list: alternating range starts and limits; `c` is in the set iff the count of boundaries <= c is odd. Characters in contraction suffixes etc. — positions where restarting collation after an identical prefix is not equivalent to full iteration. Tailoring files store only their delta over the root set; ICU adds [:^lccc=0:] and surrogates at load time (we check lead-ccc at runtime instead, and scalars exclude surrogates).
     let unsafeBackward: UnsafeBufferPointer<UInt32>
-    /// Fast Latin mini-CE table (CollationFastLatin format), empty if the
-    /// data has none or carries an unsupported format version. Tailorings
-    /// without their own fall back to the base's at the collator level.
+    /// Fast Latin mini-CE table (CollationFastLatin format), empty if the data has none or carries an unsupported format version. Tailorings without their own fall back to the base's at the collator level.
     let fastLatinTable: UnsafeBufferPointer<UInt16>
 
     public enum ParseError: Error {
@@ -103,8 +88,7 @@ public struct CollationData: @unchecked Sendable {
                 | (Int32(bytes[b + 2]) << 16) | (Int32(bytes[b + 3]) << 24)
         }
 
-        // Tailorings may carry fewer indexes than root (e.g. ko has 13, ending
-        // at the ce32s part); absent parts are length 0 via the part() guard.
+        // Tailorings may carry fewer indexes than root (e.g. ko has 13, ending at the ce32s part); absent parts are length 0 via the part() guard.
         let indexesLength = Int(i32(0))
         guard indexesLength >= 2,
               bytes.count >= headerSize + indexesLength * 4
@@ -113,8 +97,7 @@ public struct CollationData: @unchecked Sendable {
         var indexes = [Int32](repeating: 0, count: indexesLength)
         for i in 0..<indexesLength { indexes[i] = i32(i * 4) }
 
-        // Parts whose indexes are beyond indexesLength are absent (length 0),
-        // like CollationDataReader::getIndex returning -1.
+        // Parts whose indexes are beyond indexesLength are absent (length 0), like CollationDataReader::getIndex returning -1.
         func part(_ ix: Int) -> (offset: Int, length: Int) {
             guard ix + 1 < indexesLength else { return (0, 0) }
             return (Int(indexes[ix]), Int(indexes[ix + 1] - indexes[ix]))
@@ -177,11 +160,7 @@ public struct CollationData: @unchecked Sendable {
             scriptStarts = storage.store([])
         }
 
-        // Unsafe-backward set: a serialized UnicodeSet (USerializedSet wire
-        // format): unit 0 is the boundary count with bit 0x8000 set when
-        // supplementary boundaries follow (then unit 1 is the BMP boundary
-        // count); BMP boundaries are one unit each, supplementary ones two
-        // (high, low). (uset_getSerializedSet/uset_serializedContains.)
+        // Unsafe-backward set: a serialized UnicodeSet (USerializedSet wire format): unit 0 is the boundary count with bit 0x8000 set when supplementary boundaries follow (then unit 1 is the BMP boundary count); BMP boundaries are one unit each, supplementary ones two (high, low). (uset_getSerializedSet/uset_serializedContains.)
         let (ubOffset, ubLength) = part(IX.unsafeBwdOffset)
         if ubLength >= 2 {
             func u16(_ i: Int) -> Int {
@@ -218,10 +197,7 @@ public struct CollationData: @unchecked Sendable {
             unsafeBackward = storage.store([])
         }
 
-        // Fast Latin table: gated on the format version recorded both in the
-        // options word (bits 16..23) and the table's own first unit.
-        // (CollationDataReader: a mismatch means "no fast path", not an error
-        // for us — the regular pipeline handles everything.)
+        // Fast Latin table: gated on the format version recorded both in the options word (bits 16..23) and the table's own first unit. (CollationDataReader: a mismatch means "no fast path", not an error for us — the regular pipeline handles everything.)
         let (flOffset, flLength) = part(IX.fastLatinTableOffset)
         if flLength >= 4,
            ((indexes[IX.options] >> 16) & 0xff) == Int32(CollationFastLatin.version) {
@@ -253,8 +229,7 @@ public struct CollationData: @unchecked Sendable {
     /// First special reorder code (UCOL_REORDER_CODE_FIRST = space group).
     static let reorderCodeFirst: Int32 = 0x1000
 
-    /// Index into scriptStarts for a script or special reorder code.
-    /// (CollationData::getScriptIndex.)
+    /// Index into scriptStarts for a script or special reorder code. (CollationData::getScriptIndex.)
     private func scriptIndex(of script: Int32) -> Int {
         if script < 0 {
             return 0
@@ -268,24 +243,20 @@ public struct CollationData: @unchecked Sendable {
         return Int(scriptsIndex[numScripts + Int(special)])
     }
 
-    /// First primary weight of a reorder group or script.
-    /// (CollationData::getFirstPrimaryForGroup.)
+    /// First primary weight of a reorder group or script. (CollationData::getFirstPrimaryForGroup.)
     func firstPrimaryForGroup(_ script: Int32) -> UInt32 {
         let index = scriptIndex(of: script)
         return index == 0 ? 0 : UInt32(scriptStarts[index]) << 16
     }
 
-    /// Last primary weight of a reorder group (for variableTop derivation).
-    /// (CollationData::getLastPrimaryForGroup.)
+    /// Last primary weight of a reorder group (for variableTop derivation). (CollationData::getLastPrimaryForGroup.)
     func lastPrimaryForGroup(_ script: Int32) -> UInt32 {
         let index = scriptIndex(of: script)
         if index == 0 { return 0 }
         return (UInt32(scriptStarts[index + 1]) << 16) - 1
     }
 
-    /// True if `c` is in this data's unsafe-backward boundary list (the file
-    /// part only; callers combine with the base data's list, lead-ccc, and
-    /// the numeric-digit rule).
+    /// True if `c` is in this data's unsafe-backward boundary list (the file part only; callers combine with the base data's list, lead-ccc, and the numeric-digit rule).
     @inline(__always)
     func unsafeBackwardContains(_ c: UInt32) -> Bool {
         Self.boundariesContain(unsafeBackward, c)
@@ -303,8 +274,7 @@ public struct CollationData: @unchecked Sendable {
         return lo & 1 == 1
     }
 
-    /// Reads a CE32 stored as two big-endian-ordered 16-bit units in contexts[].
-    /// (CollationData::readCE32.)
+    /// Reads a CE32 stored as two big-endian-ordered 16-bit units in contexts[]. (CollationData::readCE32.)
     @inline(__always)
     func readContextCE32(at index: Int) -> UInt32 {
         (UInt32(contexts[index]) << 16) | UInt32(contexts[index + 1])
@@ -318,8 +288,7 @@ public struct CollationData: @unchecked Sendable {
         return try CollationData(contentsOf: url)
     }
 
-    /// The bundled NFD-only root collation data (genuca -X variant: no canonical
-    /// closure, no Hangul syllable mappings; requires the NFD front end).
+    /// The bundled NFD-only root collation data (genuca -X variant: no canonical closure, no Hangul syllable mappings; requires the NFD front end).
     public static func rootICU4X() throws -> CollationData {
         guard let url = Bundle.module.url(forResource: "ucadata-icu4x", withExtension: "icu") else {
             throw ParseError.missingPart("bundled ucadata-icu4x.icu")
@@ -329,17 +298,14 @@ public struct CollationData: @unchecked Sendable {
 
     // MARK: Tailorings
 
-    /// A parsed tailoring binary (%%CollationBin): per-locale default options,
-    /// optional mappings (nil for settings-only tailorings like fr-CA), and
-    /// optional script reordering.
+    /// A parsed tailoring binary (%%CollationBin): per-locale default options, optional mappings (nil for settings-only tailorings like fr-CA), and optional script reordering.
     struct Tailoring {
         let options: Int32
         let data: CollationData?
         let reordering: Reordering?
     }
 
-    /// Parses a compiled tailoring ("UCol" v5 with data header).
-    /// (CollationDataReader::read, tailoring path.)
+    /// Parses a compiled tailoring ("UCol" v5 with data header). (CollationDataReader::read, tailoring path.)
     static func tailoring(bytes: [UInt8]) throws -> Tailoring {
         guard bytes.count >= 24, bytes[2] == 0xda, bytes[3] == 0x27 else {
             throw ParseError.badMagic
@@ -383,8 +349,7 @@ public struct CollationData: @unchecked Sendable {
             let ranges = Array(raw[(raw.count - rangesLength)...])
             let (rtOffset, rtLength) = part(IX.reorderTableOffset)
             guard rtLength >= 256 else {
-                // Regenerating an omitted reorder table requires the builder's
-                // makeReorderRanges; not needed for ICU-compiled data.
+                // Regenerating an omitted reorder table requires the builder's makeReorderRanges; not needed for ICU-compiled data.
                 throw ParseError.missingPart("reorderTable")
             }
             let table = Array(bytes[rtOffset..<(rtOffset + 256)])
@@ -404,12 +369,7 @@ public struct CollationData: @unchecked Sendable {
     }
 }
 
-/// Trivial (ARC-free) view of the CollationData fields the CE iterator's
-/// per-scalar dispatch needs. Copying CollationData retains its storage, and
-/// passing a data field alongside the iterator's inout self forces such a
-/// copy on every lookup; the view is plain pointers and ints, so those
-/// copies are free. The iterator's strong `data`/`base` keep the memory
-/// alive for as long as any view of it exists.
+/// Trivial (ARC-free) view of the CollationData fields the CE iterator's per-scalar dispatch needs. Copying CollationData retains its storage, and passing a data field alongside the iterator's inout self forces such a copy on every lookup; the view is plain pointers and ints, so those copies are free. The iterator's strong `data`/`base` keep the memory alive for as long as any view of it exists.
 struct CollationDataView {
     let trie: UTrie2
     let ce32s: UnsafeBufferPointer<UInt32>
@@ -434,9 +394,7 @@ struct CollationDataView {
     }
 }
 
-/// Script reordering: a permutation of primary lead bytes, with a range table
-/// for "split" lead bytes shared by two reordered scripts.
-/// (CollationSettings reordering, aliasReordering/reorder/reorderEx.)
+/// Script reordering: a permutation of primary lead bytes, with a range table for "split" lead bytes shared by two reordered scripts. (CollationSettings reordering, aliasReordering/reorder/reorderEx.)
 struct Reordering: Sendable {
     let table: [UInt8]      // 256 entries; 0 at non-zero index = split byte
     let ranges: [UInt32]    // (limit << 16) | offset entries from the first split byte
@@ -444,8 +402,7 @@ struct Reordering: Sendable {
 
     init(table: [UInt8], rawRanges: [UInt32]) {
         self.table = table
-        // Drop ranges before the first split byte; they are fully handled by
-        // the table. (CollationSettings::aliasReordering.)
+        // Drop ranges before the first split byte; they are fully handled by the table. (CollationSettings::aliasReordering.)
         var firstSplit = 0
         while firstSplit < rawRanges.count && (rawRanges[firstSplit] & 0xff_0000) == 0 {
             firstSplit += 1

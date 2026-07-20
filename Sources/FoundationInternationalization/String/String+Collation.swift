@@ -1,13 +1,12 @@
-//===----------------------------------------------------------------------===//
+// ===----------------------------------------------------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2024 Apple Inc. and the Swift project authors
-// Licensed under Apache License v2.0 with Runtime Library Exception
+// Copyright (c) 2024 Apple Inc. and the Swift project authors Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See https://swift.org/LICENSE.txt for license information
 //
-//===----------------------------------------------------------------------===//
+// ===----------------------------------------------------------------------===//
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials
@@ -28,19 +27,10 @@ struct CollatorCache: Sendable {
 
     private let lock = LockedState(initialState: [String: RootCollator]())
 
-    /// Fast path for Locale.current — caches the collator for the current
-    /// locale. Resolved once on first use; RootCollator is immutable and
-    /// Sendable so sharing is safe.
+    /// Fast path for Locale.current — caches the collator for the current locale. Resolved once on first use; RootCollator is immutable and Sendable so sharing is safe.
     private let currentCache = LockedState(initialState: RootCollator?(nil))
 
-    /// One-slot cache for the most recent explicit-locale resolution (§38).
-    /// Full resolution walks locale.identifier through prefix scans, a
-    /// substring, and 2–3 string-keyed dictionary probes under a lock —
-    /// profiled at ~2/3 of the whole compare(_:locale:) call. Callers
-    /// overwhelmingly pass the same Locale repeatedly; comparing its
-    /// identifier against the slot is a pointer-equality fast path when
-    /// the backing storage is shared, so a repeat resolves in
-    /// lock + compare + return.
+    /// One-slot cache for the most recent explicit-locale resolution (§38). Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes under a lock — profiled at ~2/3 of the whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in lock + compare + return.
     private struct LastLocale {
         var identifier: String? = nil
         var collator: RootCollator? = nil
