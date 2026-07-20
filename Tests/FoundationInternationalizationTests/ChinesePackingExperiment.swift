@@ -166,7 +166,9 @@ private enum VarE {   // derived starts, prefix walk, ~425 B, O(n)
 
 @Suite("Chinese Packing Experiment")
 private struct ChinesePackingExperiment {
-    @Test func packingCorrectnessAndBench() {
+    // Opt-in: the packing decision is settled (§ 11.19 banks the results); run with CHINESE_PACKING_EXPERIMENT=1 when a reviewer asks for re-measurement.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["CHINESE_PACKING_EXPERIMENT"] != nil))
+    func packingCorrectnessAndBench() {
         // Correctness: every variant decodes identically to the baseline for all 200 years.
         for i in 0..<200 {
             let a = VarA.year(i)
