@@ -505,10 +505,11 @@ public struct RootCollator: @unchecked Sendable {
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
         key.removeAll(keepingCapacity: true)
-        CollationKeys.writeSortKeyUpToQuaternary(
+        // Direct multi-pass writer (§43): one pass per level straight into the key, no level buffers. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity between the two).
+        CollationKeys.writeSortKeyUpToQuaternaryDirect(
             ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key, reusing: &scratch.levels)
+            reordering: reordering, into: &key)
         if options.strength == .identical {
             key.append(1)  // level separator
             scratch.left.scalars.reset(scalars: s.unicodeScalars)

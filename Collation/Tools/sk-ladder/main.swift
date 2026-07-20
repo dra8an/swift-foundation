@@ -87,6 +87,37 @@ extension RootCollator {
         return scratch.left.ces.count
     }
 
+    // S4b: the §43 direct multi-pass writer, on the same pre-collected CEs.
+    func skWriterDirect(
+        ces: [Int64], into key: inout [UInt8],
+        options: CollationOptions = CollationOptions()
+    ) {
+        let compressibleBytes = data.compressibleBytes.isEmpty
+            ? base!.compressibleBytes : data.compressibleBytes
+        key.removeAll(keepingCapacity: true)
+        CollationKeys.writeSortKeyUpToQuaternaryDirect(
+            ces: ces, compressibleBytes: compressibleBytes,
+            options: options.icuOptions, variableTopValue: variableTopValue(options),
+            reordering: reordering, into: &key)
+        key.append(0)
+    }
+
+    // Buffered-writer twin of skWriterDirect for the option-matrix identity
+    // check (no terminator differences: both append 0).
+    func skWriterBuffered(
+        ces: [Int64], into key: inout [UInt8], scratch: ScratchBuffers,
+        options: CollationOptions
+    ) {
+        let compressibleBytes = data.compressibleBytes.isEmpty
+            ? base!.compressibleBytes : data.compressibleBytes
+        key.removeAll(keepingCapacity: true)
+        CollationKeys.writeSortKeyUpToQuaternary(
+            ces: ces, compressibleBytes: compressibleBytes,
+            options: options.icuOptions, variableTopValue: variableTopValue(options),
+            reordering: reordering, into: &key, reusing: &scratch.levels)
+        key.append(0)
+    }
+
     // A DEDICATED probe scratch — the thread-local slot must stay free so
     // S0's internal takeScratch behaves exactly as in production (holding
     // the TLS scratch would force S0 to allocate fresh buffers per call).
@@ -122,6 +153,38 @@ for line in lines {
 print("corpus: \(lines.count) lines | S1/S2 key mismatches vs S0: \(mismatches)")
 guard mismatches == 0 else { fatalError("stage clones diverge from the public entry") }
 
+// §43 direct-writer identity check: buffered vs direct writer over an
+// option matrix (CE production is options-independent at numeric=off, so
+// one CE array serves all sets). Hook verified by the printed row.
+var optionMatrix: [(String, CollationOptions)] = []
+do {
+    var o = CollationOptions(); optionMatrix.append(("default", o))
+    o = CollationOptions(); o.strength = .primary; optionMatrix.append(("primary", o))
+    o = CollationOptions(); o.strength = .secondary; optionMatrix.append(("secondary", o))
+    o = CollationOptions(); o.strength = .quaternary; optionMatrix.append(("quaternary", o))
+    o = CollationOptions(); o.strength = .quaternary; o.alternate = .shifted
+    optionMatrix.append(("shifted", o))
+    o = CollationOptions(); o.caseLevel = true; optionMatrix.append(("caseLevel", o))
+    o = CollationOptions(); o.caseFirst = .upperFirst; optionMatrix.append(("upperFirst", o))
+    o = CollationOptions(); o.backwardSecondary = true; optionMatrix.append(("french", o))
+}
+var directMismatches: [String: Int] = [:]
+var bufKey: [UInt8] = [], dirKey: [UInt8] = []
+for (name, opts) in optionMatrix {
+    var bad = 0
+    for ces in lineCEs {
+        collator.skWriterBuffered(ces: ces, into: &bufKey, scratch: scratch, options: opts)
+        collator.skWriterDirect(ces: ces, into: &dirKey, options: opts)
+        if bufKey != dirKey { bad += 1 }
+    }
+    directMismatches[name] = bad
+}
+let identitySummary = optionMatrix.map { "\($0.0)=\(directMismatches[$0.0]!)" }.joined(separator: " ")
+print("direct-writer identity (mismatched lines): \(identitySummary)")
+guard directMismatches.values.allSatisfy({ $0 == 0 }) else {
+    fatalError("direct writer diverges from buffered writer")
+}
+
 var sink = 0
 var key: [UInt8] = []
 @MainActor func measure(_ name: String, _ body: () -> Void) {
@@ -154,6 +217,10 @@ measure("S3 pipeline-only") {
 measure("S4 writer-only  ") {
     let c = collator
     for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterOnly(ces: lineCEs[i], into: &key, scratch: scratch); sink += key.count } }
+}
+measure("S4b writer-direct") {
+    let c = collator
+    for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterDirect(ces: lineCEs[i], into: &key); sink += key.count } }
 }
 measure("S5 reset-only   ") {
     let c = collator

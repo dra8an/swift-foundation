@@ -89,10 +89,19 @@ Allocation/resolution samples are the trustworthy kind.
 - [x] sortKey entry ladder — AUDITED (§43, 2026-07-16): the entry is
       EXONERATED (TLS ~20 ns, throws ~0 — the §30 box already collected
       it, the standing "sortKey still pays throws" note was stale). The
-      gap is the WRITER: 56–60% of sortKey on every corpus; ascii write
-      phase alone (208) exceeds ICU's whole ucol_getSortKey (194).
-      Writer round OPEN — levers and profile in §43. Ladder committed:
+      gap was the WRITER: 56–60% of sortKey on every corpus. SHIPPED
+      2026-07-20: direct multi-pass writer — sortKey −11..16% on
+      ascii/latin/cjk/thai (1.44–1.53× vs ICU, was 1.67–1.81×); paths
+      +5% accepted residual (§43's paths saga). Ladder committed:
       `build_sk_ladder.sh`.
+- [ ] UPSTREAM-PREP conformance pass (CONTRIBUTION_GUIDELINE.md, read
+      2026-07-20; comment unwrap DONE at `05677e6`): remaining items —
+      force unwraps (`base!` in the engine paths; the guideline wants
+      guard/precondition shapes), §-reference comments (the guideline
+      bans PR/bug-reference comments; ours point at the technique log —
+      decide translate-or-strip before proposing), unsafe-API isolation
+      review, and swift-benchmark entries under Benchmarks/. Not a
+      bench item; schedule before the upstream proposal.
 - [ ] The skRet variant allocates BY API CONTRACT (returns fresh
       [UInt8]) — documented, inout twin exists; not a defect.
 - Machine 2: run the same audit over any AS-only wiring.
@@ -1560,10 +1569,15 @@ unavoidable bounded walk for index construction.
 
 ### 43. sortKey decomposition: the entry is exonerated; the writer IS the gap
 
-**Status:** attribution complete 2026-07-16 (machine 1); writer round
-OPEN — nothing shipped yet. Ladder committed: `build_sk_ladder.sh`
-(sk-ladder/main.swift; stage clones verified byte-identical to the
-public entry over each corpus before timing).
+**Status:** SHIPPED 2026-07-20 (machine 1) — lever (a), the direct
+multi-pass writer. Gates: 1514 tests / 121 suites green on the wired
+writer (byte-identical key suites: 21 option sets × 2 data variants vs
+ICU reference answers + 52k fuzz keys), plus the probe's own
+option-matrix identity check (8 sets incl. french/shifted/upperFirst:
+0 mismatched lines on every corpus). Ladder committed:
+`build_sk_ladder.sh` (sk-ladder/main.swift; stage clones verified
+byte-identical to the public entry over each corpus before timing).
+Shipped shape and the paths saga below, after the attribution record.
 
 The §29-style entry ladder that never ran for sortKey. Stages: S0
 public `sortKey(for:into:)`, S1 caller-held scratch (S0−S1 = TLS),
@@ -1616,3 +1630,49 @@ production into the writer (rejected, +11..44%); §16 raw pointers for
 the key byte loop (aliasing reloads beat Array); §33's call-site
 closure shape (blocks WMO inlining of the writer on 6.3). §34's
 alignment band applies to ANY paths-sortKey delta measured under WMO.
+
+**SHIPPED (lever (a)): `writeSortKeyUpToQuaternaryDirect`** — one pass
+per level written straight into the key through the 64-byte stack-batch
+idiom (the §31 primary batching generalized): no intermediate level
+buffers, no assembly copies, nibble packing inline for the case level,
+French backwards-secondary written per byte with in-place segment
+reversal in the key. Each pass replicates the variable-CE skip exactly
+(the primaries those tests depend on — zero, NO_CE, merge separator —
+are reorder-invariant, so per-pass un-reordered p is sound). The
+buffered writer STAYS as the reference implementation; the ladder's
+identity check compares the two on every run.
+
+**Writer-only (ladder, S4 buffered vs S4b direct, full WMO):** ascii
+216→177 (−18%), latin 237→192 (−19%), cjk 197→156 (−21%), thai
+245→205 (−16%), paths 438→427 (−2.5%).
+
+**Shipped totals (EngineBench full WMO, coherent K=3 at the §43
+commit, vs the `13337d4` baseline):** sortKey ascii 338→295 (1.74×→
+**1.51×**), latin 376→321 (**1.53×**), cjk 370→316 (**1.44×**), thai
+459→408 (**1.51×**), paths 782→817 (1.17×→1.22× — see below); skRet
+−7..12% except paths ~flat.
+
+**The paths saga (three findings, each §-grade):**
+1. **The §33 dead end re-confirmed, quantitatively:** the first wiring
+   wrapped the passes in `ces.withUnsafeBufferPointer { }` — paths sk
+   read +8% (EngineBench A/B vs the buffered base, interleaved;
+   consistent). Removing the closure for `borrowing [Int64]` passes
+   recovered ~40 ns. Same shape, same row, same magnitude as §33.
+2. **Writer deltas must be certified in the SHIPPING binary.** The
+   ladder's same-binary S4/S4b said direct is FASTER on paths CEs
+   (438→427); the EngineBench entry context said slower. Probe-context
+   codegen ≠ shipping codegen — the §34/§35 lesson in a new costume.
+   The EngineBench A/B is the writer's bench truth, not the ladder.
+3. **A false hypothesis, killed by corpus fact:** a CE-count dispatch
+   hybrid (direct <64 CEs, buffered above) was tried and REMOVED —
+   every paths line is 23–61 chars (median 30), the same CE counts as
+   ascii; the threshold never fired. The paths cost is the CE MIX plus
+   entry-context codegen, not length.
+
+**Accepted residual:** paths sk +35 ns (+5% same-session interleaved,
+inside the row's historical ±7% placement band but consistently
+reproduced). Rationale: four corpora win −11..16%, paths remains the
+BEST sk row vs ICU (1.22×), and machine 2's independent layout will
+arbitrate whether the residual is Intel-placement or structural. If it
+reproduces on AS and paths sortKey ever matters more, the recorded
+next idea is a mix-aware dispatch — NOT the length threshold.

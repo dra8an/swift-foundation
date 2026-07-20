@@ -523,6 +523,525 @@ enum CollationKeys {
         swap(&quaternaries, &buffers.quaternaries)
     }
 
+    // MARK: Direct multi-pass writer (§43 lever (a))
+
+    /// 64-byte stack batch: turns per-byte Array appends into pointer stores with bulk flushes — the §31 primary-batching idiom, generalized to every level pass.
+    private struct ByteBatch {
+        var storage = (
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+            UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0)
+        )
+        var count = 0
+
+        @inline(__always)
+        mutating func put(_ b: UInt8, _ key: inout [UInt8]) {
+            withUnsafeMutablePointer(to: &storage.0) { $0[count] = b }
+            count += 1
+            if count >= 58 { flush(&key) }
+        }
+
+        @inline(__always)
+        mutating func putWeight16(_ w: UInt32, _ key: inout [UInt8]) {
+            put(UInt8(truncatingIfNeeded: w >> 8), &key)
+            let b1 = UInt8(truncatingIfNeeded: w)
+            if b1 != 0 { put(b1, &key) }
+        }
+
+        @inline(__always)
+        mutating func putWeight32(_ w: UInt32, _ key: inout [UInt8]) {
+            put(UInt8(truncatingIfNeeded: w >> 24), &key)
+            let b1 = UInt8(truncatingIfNeeded: w >> 16)
+            if b1 != 0 {
+                put(b1, &key)
+                let b2 = UInt8(truncatingIfNeeded: w >> 8)
+                if b2 != 0 {
+                    put(b2, &key)
+                    let b3 = UInt8(truncatingIfNeeded: w)
+                    if b3 != 0 { put(b3, &key) }
+                }
+            }
+        }
+
+        @inline(__always)
+        mutating func flush(_ key: inout [UInt8]) {
+            if count > 0 {
+                withUnsafePointer(to: &storage.0) {
+                    key.append(contentsOf: UnsafeBufferPointer(start: $0, count: count))
+                }
+                count = 0
+            }
+        }
+    }
+
+    /// Consumes a variable CE and everything it drags down (further variable CEs and their trailing primary ignorables) exactly as the buffered writer's variable block does, WITHOUT emitting anything. Every non-quaternary pass uses this to keep its CE cursor in lockstep. On return, `ce`/`p` hold the first non-variable CE.
+    @inline(__always)
+    private static func skipVariable(
+        _ ces: borrowing [Int64], _ cesIndex: inout Int,
+        _ ce: inout Int64, _ p: inout UInt32, variableTop: UInt32
+    ) {
+        repeat {
+            repeat {
+                ce = ces[cesIndex]
+                cesIndex += 1
+                p = UInt32(truncatingIfNeeded: ce >> 32)
+            } while p == 0
+        } while p < variableTop && p > CollationConstants.mergeSeparatorPrimary
+    }
+
+    /// Primary level, written directly (same emission as the buffered writer's primary block — that one was already direct since the primary-byte batching round).
+    private static func writePrimaryDirect(
+        _ ces: borrowing [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
+        variableTop: UInt32, reordering: Reordering?, into key: inout [UInt8]
+    ) {
+        var batch = ByteBatch()
+        var prevReorderedPrimary: UInt32 = 0
+        var cesIndex = 0
+        while true {
+            var ce = ces[cesIndex]
+            cesIndex += 1
+            var p = UInt32(truncatingIfNeeded: ce >> 32)
+            if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                skipVariable(ces, &cesIndex, &ce, &p, variableTop: variableTop)
+            }
+            if p > CollationConstants.noCEPrimary {
+                let isCompressible = compressibleBytes[Int(p >> 24)]
+                if let reordering { p = reordering.reorder(p) }
+                let p1 = p >> 24
+                if !isCompressible || p1 != (prevReorderedPrimary >> 24) {
+                    if prevReorderedPrimary != 0 {
+                        if p < prevReorderedPrimary {
+                            if p1 > UInt32(CollationConstants.mergeSeparatorPrimary >> 24) {
+                                batch.put(3, &key)
+                            }
+                        } else {
+                            batch.put(0xff, &key)
+                        }
+                    }
+                    batch.put(UInt8(truncatingIfNeeded: p1), &key)
+                    prevReorderedPrimary = isCompressible ? p : 0
+                }
+                let p2 = UInt8(truncatingIfNeeded: p >> 16)
+                if p2 != 0 {
+                    batch.put(p2, &key)
+                    let p3 = UInt8(truncatingIfNeeded: p >> 8)
+                    if p3 != 0 {
+                        batch.put(p3, &key)
+                        let p4 = UInt8(truncatingIfNeeded: p)
+                        if p4 != 0 { batch.put(p4, &key) }
+                    }
+                }
+            }
+            let lower32 = UInt32(truncatingIfNeeded: ce)
+            if lower32 == 0 { continue }
+            if (lower32 >> 24) == UInt32(levelSeparator) { break }
+        }
+        batch.flush(&key)
+    }
+
+    /// Secondary level, forward mode. The buffered writer's trailing 01 (from NO_CE, dropped by appendTo) is simply never emitted here: at NO_CE the common-run flush still runs (same direction — the NO_CE weight 0x0100 is below common), then the pass ends.
+    private static func writeSecondaryDirect(
+        _ ces: borrowing [Int64], variableTop: UInt32, into key: inout [UInt8]
+    ) {
+        var batch = ByteBatch()
+        var commonSecondaries = 0
+        var cesIndex = 0
+        while true {
+            var ce = ces[cesIndex]
+            cesIndex += 1
+            var p = UInt32(truncatingIfNeeded: ce >> 32)
+            if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                skipVariable(ces, &cesIndex, &ce, &p, variableTop: variableTop)
+            }
+            let lower32 = UInt32(truncatingIfNeeded: ce)
+            if lower32 == 0 { continue }
+            let isNoCE = (lower32 >> 24) == UInt32(levelSeparator)
+            let s = lower32 >> 16
+            if s == 0 {
+                // secondary ignorable
+            } else if s == 0x0500 && !isNoCE {
+                commonSecondaries += 1
+            } else {
+                if commonSecondaries != 0 {
+                    commonSecondaries -= 1
+                    while commonSecondaries >= secCommonMaxCount {
+                        batch.put(UInt8(truncatingIfNeeded: secCommonMiddle), &key)
+                        commonSecondaries -= secCommonMaxCount
+                    }
+                    let b: UInt32 = s < 0x0500
+                        ? secCommonLow + UInt32(commonSecondaries)
+                        : secCommonHigh - UInt32(commonSecondaries)
+                    batch.put(UInt8(truncatingIfNeeded: b), &key)
+                    commonSecondaries = 0
+                }
+                if isNoCE { break }
+                batch.putWeight16(s, &key)
+            }
+            if isNoCE { break }
+        }
+        batch.flush(&key)
+    }
+
+    /// Secondary level, backwards (French) mode: written per byte straight into the key, with merge-separated segments reversed IN PLACE in the key — the level buffer becomes unnecessary. Rare path; not batched.
+    private static func writeSecondaryBackwardDirect(
+        _ ces: borrowing [Int64], variableTop: UInt32, into key: inout [UInt8]
+    ) {
+        var commonSecondaries = 0
+        var prevSecondary: UInt32 = 0
+        var secSegmentStart = key.count
+        var cesIndex = 0
+        while true {
+            var ce = ces[cesIndex]
+            cesIndex += 1
+            var p = UInt32(truncatingIfNeeded: ce >> 32)
+            if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                skipVariable(ces, &cesIndex, &ce, &p, variableTop: variableTop)
+            }
+            let lower32 = UInt32(truncatingIfNeeded: ce)
+            if lower32 == 0 { continue }
+            let isNoCE = (lower32 >> 24) == UInt32(levelSeparator)
+            let s = lower32 >> 16
+            if s == 0 {
+                // secondary ignorable
+            } else if s == 0x0500 && p != CollationConstants.mergeSeparatorPrimary {
+                commonSecondaries += 1
+            } else {
+                if commonSecondaries != 0 {
+                    commonSecondaries -= 1
+                    let remainder = commonSecondaries % secCommonMaxCount
+                    let b: UInt32 = prevSecondary < 0x0500
+                        ? secCommonLow + UInt32(remainder)
+                        : secCommonHigh - UInt32(remainder)
+                    key.append(UInt8(truncatingIfNeeded: b))
+                    commonSecondaries -= remainder
+                    while commonSecondaries > 0 {
+                        key.append(UInt8(truncatingIfNeeded: secCommonMiddle))
+                        commonSecondaries -= secCommonMaxCount
+                    }
+                }
+                if p > 0 && p <= CollationConstants.mergeSeparatorPrimary {
+                    // The merge separator or NO_CE: reverse the segment.
+                    if secSegmentStart < key.count - 1 {
+                        key[secSegmentStart...].reverse()
+                    }
+                    if isNoCE { break }
+                    key.append(UInt8(CollationConstants.mergeSeparatorPrimary >> 24))
+                    prevSecondary = 0
+                    secSegmentStart = key.count
+                } else {
+                    // Append the weight byte-reversed; re-reversed above.
+                    let b0 = UInt8(truncatingIfNeeded: s >> 8)
+                    let b1 = UInt8(truncatingIfNeeded: s)
+                    if b1 == 0 {
+                        key.append(b0)
+                    } else {
+                        key.append(b1)
+                        key.append(b0)
+                    }
+                    prevSecondary = s
+                }
+            }
+            if isNoCE { break }
+        }
+    }
+
+    /// Case level, with the nibble pairing done inline (the buffered writer packed nibbles during assembly).
+    private static func writeCaseDirect(
+        _ ces: borrowing [Int64], options: Int32, variableTop: UInt32,
+        into key: inout [UInt8]
+    ) {
+        let strengthIsPrimary =
+            CollationOptions.strength(of: options) == CollationOptions.Strength.primary.rawValue
+        let upperFirst = (options & CollationOptions.Bits.upperFirst) != 0
+        var commonCases = 0
+        var pendingNibble: UInt8 = 0
+        var emitted = false
+        var cesIndex = 0
+
+        @inline(__always)
+        func packCaseByte(_ c: UInt8, _ key: inout [UInt8]) {
+            if pendingNibble == 0 {
+                pendingNibble = c
+            } else {
+                key.append(pendingNibble | (c >> 4))
+                pendingNibble = 0
+            }
+            emitted = true
+        }
+
+        while true {
+            var ce = ces[cesIndex]
+            cesIndex += 1
+            var p = UInt32(truncatingIfNeeded: ce >> 32)
+            if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                skipVariable(ces, &cesIndex, &ce, &p, variableTop: variableTop)
+            }
+            let lower32 = UInt32(truncatingIfNeeded: ce)
+            if lower32 == 0 { continue }
+            let isNoCE = (lower32 >> 24) == UInt32(levelSeparator)
+            let ignore: Bool = strengthIsPrimary ? p == 0 : lower32 <= 0xffff
+            if !ignore {
+                var c = (lower32 >> 8) & 0xff
+                assert((c & 0xc0) != 0xc0)
+                if (c & 0xc0) == 0 && c > UInt32(levelSeparator) {
+                    commonCases += 1
+                } else {
+                    if !upperFirst {
+                        if commonCases != 0 && (c > UInt32(levelSeparator) || emitted) {
+                            commonCases -= 1
+                            while commonCases >= caseLowerFirstCommonMaxCount {
+                                packCaseByte(UInt8(truncatingIfNeeded: caseLowerFirstCommonMiddle << 4), &key)
+                                commonCases -= caseLowerFirstCommonMaxCount
+                            }
+                            let b: UInt32 = c <= UInt32(levelSeparator)
+                                ? caseLowerFirstCommonLow + UInt32(commonCases)
+                                : caseLowerFirstCommonHigh - UInt32(commonCases)
+                            packCaseByte(UInt8(truncatingIfNeeded: b << 4), &key)
+                            commonCases = 0
+                        }
+                        if c > UInt32(levelSeparator) {
+                            c = (caseLowerFirstCommonHigh + (c >> 6)) << 4
+                        }
+                    } else {
+                        if commonCases != 0 {
+                            commonCases -= 1
+                            while commonCases >= caseUpperFirstCommonMaxCount {
+                                packCaseByte(UInt8(truncatingIfNeeded: caseUpperFirstCommonLow << 4), &key)
+                                commonCases -= caseUpperFirstCommonMaxCount
+                            }
+                            packCaseByte(UInt8(truncatingIfNeeded: (caseUpperFirstCommonLow + UInt32(commonCases)) << 4), &key)
+                            commonCases = 0
+                        }
+                        if c > UInt32(levelSeparator) {
+                            c = (caseUpperFirstCommonLow - (c >> 6)) << 4
+                        }
+                    }
+                    // The buffered writer appends the NO_CE's separator byte here and drops it during nibble packing — skip it.
+                    if !isNoCE {
+                        packCaseByte(UInt8(truncatingIfNeeded: c), &key)
+                    }
+                }
+            }
+            if isNoCE { break }
+        }
+        if pendingNibble != 0 { key.append(pendingNibble) }
+    }
+
+    /// Tertiary level. Same trailing-01 rule as the secondary pass.
+    private static func writeTertiaryDirect(
+        _ ces: borrowing [Int64], options: Int32, tertiaryMask: UInt32,
+        variableTop: UInt32, into key: inout [UInt8]
+    ) {
+        let upperFirst = (options & CollationOptions.Bits.upperFirst) != 0
+        var batch = ByteBatch()
+        var commonTertiaries = 0
+        var cesIndex = 0
+        while true {
+            var ce = ces[cesIndex]
+            cesIndex += 1
+            var p = UInt32(truncatingIfNeeded: ce >> 32)
+            if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                skipVariable(ces, &cesIndex, &ce, &p, variableTop: variableTop)
+            }
+            let lower32 = UInt32(truncatingIfNeeded: ce)
+            if lower32 == 0 { continue }
+            let isNoCE = (lower32 >> 24) == UInt32(levelSeparator)
+            var t = lower32 & tertiaryMask
+            assert((lower32 & 0xc000) != 0xc000)
+            if t == 0x0500 {
+                commonTertiaries += 1
+            } else if (tertiaryMask & 0x8000) == 0 {
+                if commonTertiaries != 0 {
+                    commonTertiaries -= 1
+                    while commonTertiaries >= terOnlyCommonMaxCount {
+                        batch.put(UInt8(truncatingIfNeeded: terOnlyCommonMiddle), &key)
+                        commonTertiaries -= terOnlyCommonMaxCount
+                    }
+                    let b: UInt32 = t < 0x0500
+                        ? terOnlyCommonLow + UInt32(commonTertiaries)
+                        : terOnlyCommonHigh - UInt32(commonTertiaries)
+                    batch.put(UInt8(truncatingIfNeeded: b), &key)
+                    commonTertiaries = 0
+                }
+                if isNoCE { break }
+                if t > 0x0500 { t += 0xc000 }
+                batch.putWeight16(t, &key)
+            } else if !upperFirst {
+                if commonTertiaries != 0 {
+                    commonTertiaries -= 1
+                    while commonTertiaries >= terLowerFirstCommonMaxCount {
+                        batch.put(UInt8(truncatingIfNeeded: terLowerFirstCommonMiddle), &key)
+                        commonTertiaries -= terLowerFirstCommonMaxCount
+                    }
+                    let b: UInt32 = t < 0x0500
+                        ? terLowerFirstCommonLow + UInt32(commonTertiaries)
+                        : terLowerFirstCommonHigh - UInt32(commonTertiaries)
+                    batch.put(UInt8(truncatingIfNeeded: b), &key)
+                    commonTertiaries = 0
+                }
+                if isNoCE { break }
+                if t > 0x0500 { t += 0x4000 }
+                batch.putWeight16(t, &key)
+            } else {
+                if t <= CollationConstants.noCEWeight16 {
+                    // Keep separators unchanged.
+                } else if lower32 > 0xffff {
+                    t ^= 0xc000
+                    if t < (terUpperFirstCommonHigh << 8) {
+                        t &-= 0x4000
+                    }
+                } else {
+                    assert(0x8600 <= t && t <= 0xbfff)
+                    t += 0x4000
+                }
+                if commonTertiaries != 0 {
+                    commonTertiaries -= 1
+                    while commonTertiaries >= terUpperFirstCommonMaxCount {
+                        batch.put(UInt8(truncatingIfNeeded: terUpperFirstCommonMiddle), &key)
+                        commonTertiaries -= terUpperFirstCommonMaxCount
+                    }
+                    let b: UInt32 = t < (terUpperFirstCommonLow << 8)
+                        ? terUpperFirstCommonLow + UInt32(commonTertiaries)
+                        : terUpperFirstCommonHigh - UInt32(commonTertiaries)
+                    batch.put(UInt8(truncatingIfNeeded: b), &key)
+                    commonTertiaries = 0
+                }
+                if isNoCE { break }
+                batch.putWeight16(t, &key)
+            }
+            if isNoCE { break }
+        }
+        batch.flush(&key)
+    }
+
+    /// Quaternary level — the one pass where the variable-CE block EMITS (shifted primaries land here).
+    private static func writeQuaternaryDirect(
+        _ ces: borrowing [Int64], options: Int32, variableTop: UInt32,
+        reordering: Reordering?, into key: inout [UInt8]
+    ) {
+        let alternateOff = (options & CollationOptions.Bits.alternateMask) == 0
+        var batch = ByteBatch()
+        var commonQuaternaries = 0
+        var emitted = false
+        var cesIndex = 0
+        while true {
+            var ce = ces[cesIndex]
+            cesIndex += 1
+            var p = UInt32(truncatingIfNeeded: ce >> 32)
+            if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                if commonQuaternaries != 0 {
+                    commonQuaternaries -= 1
+                    while commonQuaternaries >= quatCommonMaxCount {
+                        batch.put(UInt8(truncatingIfNeeded: quatCommonMiddle), &key)
+                        commonQuaternaries -= quatCommonMaxCount
+                    }
+                    batch.put(UInt8(truncatingIfNeeded: quatCommonLow + UInt32(commonQuaternaries)), &key)
+                    commonQuaternaries = 0
+                    emitted = true
+                }
+                repeat {
+                    if let reordering { p = reordering.reorder(p) }
+                    if (p >> 24) >= quatShiftedLimitByte {
+                        batch.put(UInt8(truncatingIfNeeded: quatShiftedLimitByte), &key)
+                    }
+                    batch.putWeight32(p, &key)
+                    emitted = true
+                    repeat {
+                        ce = ces[cesIndex]
+                        cesIndex += 1
+                        p = UInt32(truncatingIfNeeded: ce >> 32)
+                    } while p == 0
+                } while p < variableTop && p > CollationConstants.mergeSeparatorPrimary
+            }
+            let lower32 = UInt32(truncatingIfNeeded: ce)
+            if lower32 == 0 { continue }
+            let isNoCE = (lower32 >> 24) == UInt32(levelSeparator)
+            var q = lower32 & 0xffff
+            if (q & 0xc0) == 0 && q > CollationConstants.noCEWeight16 {
+                commonQuaternaries += 1
+            } else if q == CollationConstants.noCEWeight16 && alternateOff && !emitted {
+                // Only common quaternary weights in the whole level: the buffered writer appends the lone separator that appendTo then drops — emit nothing.
+            } else {
+                if q == CollationConstants.noCEWeight16 {
+                    q = UInt32(levelSeparator)
+                } else {
+                    q = 0xfc + ((q >> 6) & 3)
+                }
+                if commonQuaternaries != 0 {
+                    commonQuaternaries -= 1
+                    while commonQuaternaries >= quatCommonMaxCount {
+                        batch.put(UInt8(truncatingIfNeeded: quatCommonMiddle), &key)
+                        commonQuaternaries -= quatCommonMaxCount
+                    }
+                    let b: UInt32 = q < quatCommonLow
+                        ? quatCommonLow + UInt32(commonQuaternaries)
+                        : quatCommonHigh - UInt32(commonQuaternaries)
+                    batch.put(UInt8(truncatingIfNeeded: b), &key)
+                    commonQuaternaries = 0
+                }
+                if !isNoCE {
+                    batch.put(UInt8(truncatingIfNeeded: q), &key)
+                    emitted = true
+                }
+            }
+            if isNoCE { break }
+        }
+        batch.flush(&key)
+    }
+
+    /// Writes the sort key for levels up to the strength in `options` — byte-identical output to `writeSortKeyUpToQuaternary`, produced by one direct pass per level with NO intermediate level buffers and no assembly copies (§43 lever (a)). The CE array is small and cache-hot; re-scanning it per level is cheaper than buffering every level's bytes twice.
+    static func writeSortKeyUpToQuaternaryDirect(
+        ces: borrowing [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
+        into key: inout [UInt8]
+    ) {
+        var levels = levelFlags(strength: CollationOptions.strength(of: options))
+        if (options & CollationOptions.Bits.caseLevel) != 0 {
+            levels |= caseFlag
+        }
+        let variableTop: UInt32
+        if (options & CollationOptions.Bits.alternateMask) == 0 {
+            variableTop = 0
+        } else {
+            variableTop = variableTopValue + 1
+        }
+        let tertiaryMask = CollationOptions.tertiaryMask(of: options)
+
+        // No withUnsafeBufferPointer closure here: that call-site shape blocks WMO inlining of the writer chain and cost paths sortKey ~+8% (the §33 dead end, re-measured for §43); borrowing-array passes compile clean.
+        writePrimaryDirect(
+            ces, compressibleBytes: compressibleBytes,
+            variableTop: variableTop, reordering: reordering, into: &key)
+        if (levels & secondaryFlag) != 0 {
+            key.append(levelSeparator)
+            if (options & CollationOptions.Bits.backwardSecondary) == 0 {
+                writeSecondaryDirect(ces, variableTop: variableTop, into: &key)
+            } else {
+                writeSecondaryBackwardDirect(ces, variableTop: variableTop, into: &key)
+            }
+        }
+        if (levels & caseFlag) != 0 {
+            key.append(levelSeparator)
+            writeCaseDirect(ces, options: options, variableTop: variableTop, into: &key)
+        }
+        if (levels & tertiaryFlag) != 0 {
+            key.append(levelSeparator)
+            writeTertiaryDirect(
+                ces, options: options, tertiaryMask: tertiaryMask,
+                variableTop: variableTop, into: &key)
+        }
+        if (levels & quaternaryFlag) != 0 {
+            key.append(levelSeparator)
+            writeQuaternaryDirect(
+                ces, options: options, variableTop: variableTop,
+                reordering: reordering, into: &key)
+        }
+    }
+
     // MARK: Identical level (BOCSU; i18n/bocsu.{h,cpp})
 
     private static let slopeMin: Int32 = 3
