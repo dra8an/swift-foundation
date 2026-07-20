@@ -199,9 +199,8 @@ internal struct _ChineseYear: Sendable {
 // MARK: - Engine: baked table + computed fallback
 
 internal enum _ChineseCalendarEngine {
-    // Chinese years keyed by related ISO year (year containing the CNY).
-    // Generated from _CalendarICU(.chinese) daily sweep; see the generator probe.
-    // Packing: bits 0-12 month lengths (1=30d), 13-16 leap display number (0=none), 17-22 new-year offset from Jan 19 of the related ISO year.
+    // One entry per Chinese year, indexed by the Gregorian year in which that Chinese year begins.
+    // Packing: bits 0-12 month lengths (1=30d), 13-16 leap display number (0=none), 17-22 new-year offset from Jan 19 of that Gregorian year.
     static let tableStart = 1901
     static let table: [UInt32] = [
     0x003E0752, 0x00280EA5, 0x0014B64A, 0x0038064B, // 1901-1904
