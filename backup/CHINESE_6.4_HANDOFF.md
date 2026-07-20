@@ -212,8 +212,15 @@ A code review (CHINESE_PLAN § 11.21) fixed the easy findings and staged
 S1-S5. **ALL RESOLVED (2026-07-19): S1 week-year (option B) DONE; S5
 cleanup DONE; S3 quarter surfaces DECIDED match-ICU + IMPLEMENTED
 (§ 11.23, 407-date gate green); S2 wrapping DECIDED keep Hebrew
-day-only shape (§ 11.24, no code change).** The PR-cut gate is fully
-satisfied. S4 (month-add O(1)) remains optional/deferred.
+day-only shape (§ 11.24, no code change).** S4 (month-add O(1)) remains
+optional/deferred.
+
+**Review round 2 (§ 11.25, 2026-07-19): 10 findings R1-R10, all OPEN,
+zero behavioral regressions.** Gate status: **R3 (manually wrapped
+quarter comments, guideline violation) MUST be fixed before the PR
+cut**; R1/R2 (bound miscalibration + week-year O(n) hang) are the
+substantive fixes, strongly recommended pre-cut; the rest are quality
+items per the § 11.25 table.
 
 Review-question ammo: wrapping is day-only like the twice-reviewed
 Calendar_Hebrew (full-contract wrapping = logged cross-calendar

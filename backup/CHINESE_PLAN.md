@@ -1581,3 +1581,32 @@ all bounded fields per _CalendarGregorian.addAndWrap) is logged as a
 cross-calendar follow-up alongside the S6 framework notes. No code
 change; the deviation note goes in the 6.4 handoff so review questions
 can cite the twice-reviewed sibling precedent.
+
+### 11.25 Code review round 2 (2026-07-19, range 528265a..ab887db) — per-finding disposition
+
+Second review round over the post-round-1 delta (the review-fix batch +
+S1 wiring, S5 refactor, S3 quarter surfaces). 8 finder angles → 30 raw
+candidates → dedup to 11 → 1-vote verify each → 10 CONFIRMED. **Zero
+behavioral regressions**: astronomy arrays verified element-by-element
+vs the deleted originals, seam walk-back + fieldsAndTime folds
+re-derived as exact, every "diverges from ICU" candidate was either the
+recorded S1 decision or an incumbent-identical quirk (parity holds; the
+quarter/enumerate interaction is parity-IMPROVING). Dropped pre-report:
+weekNumber consolidation (already-tracked § 11.15 deferral), unreachable
+nil-guard paths, incumbent-identical containment-quirk complaints.
+
+| # | Finding (verdict) | Status |
+|---|---|---|
+| R1 | ±66M month-add bound miscalibrated vs ±5M ext domain — 66M months ≥ 5.08M yrs even at 13-mo/yr floor, so near-limit adds necessarily produce exts that date(from:)/year-add reject; plus the O(n) walk = hours of astronomy (Calendar_Chinese.swift:1028) (CONFIRMED) | ⏳ OPEN. Fix: named ±5M constant + derive month bound (~61.8M) or clamp resulting ext like year path. O(n) walk itself stays S4 |
+| R2 | yearForWeekOfYear add = second O(n)-astronomy hang instance — |n| ≤ ~5M valid iterations × ~50–200 µs/fallback-year = minutes-to-tens-of-minutes on one call (:1062) (CONFIRMED) | ⏳ OPEN. Fix: O(1) week-count from firstDayOfWeekYear(target) − firstDayOfWeekYear(start), or practical cap. Same class as S4 |
+| R3 | 3 new quarter comments manually wrapped mid-sentence, violating guideline "Do not manually wrap comments or DocC." (:699-703, :509-511, :544-545); same-range week-year comments correctly unwrapped (CONFIRMED) | ⏳ OPEN — ⚠ PR-GATING, fix before 6.4 cherry-pick (rule already cost us once, e38e88c). Fix: join each to one logical line |
+| R4 | Quarter model duplicated: dateInterval walks ×3, range(.month,.quarter) re-derives + walks ×2; formulas (m+2)/3, 3(q−1)+1, (m−1)%3+1 across 4 sites (:508/:698) (CONFIRMED) | ⏳ OPEN. Fix: one quarterSpan(ext:ordinal:) helper feeding both (verified behavior-preserving) |
+| R5 | Quarter parity gate gaps: GMT-only (floor-seconds (.day,.quarter) never DST-checked; the one DST probe omits .quarter deliberately) + no nextDate/enumerate quarter coverage (dateAfterMatchingQuarter untested for chinese) (CONFIRMED; 3rd claimed gap REFUTED — stride hits displaced post-leap months in 1900/1957/2044/2071) | ⏳ OPEN. Fix: DST-tz sample block + one nextDate(matching .quarter) parity check in the probe |
+| R6 | ±5M domain as 5 bare literals + derived 66M (:443/:467/:787/:1005/:1061/:1028); merged Hebrew NAMES it (icuYearLowerBound/UpperBound); ranges inclusive of ±5M while guards strict — existing boundary asymmetry (CONFIRMED) | ⏳ OPEN. Fix: adopt Hebrew's named-constant pattern; decide inclusive-vs-strict at the same time |
+| R7 | .yearForWeekOfYear interval hand-rolls RD→Date+DST conversion ×2 instead of in-file utcDate(fromRataDie:) — verified bit-identical drop-in; only interval case bypassing the helper (shape copied from Hebrew, which shares the flaw) (:675) (CONFIRMED) | ⏳ OPEN. Fix: two utcDate calls; mirror in Hebrew as separate upstream cleanup, don't diverge siblings |
+| R8 | ChinesePackingExperiment runs multi-second benches every suite run for a settled decision (VarA verified byte-identical to shipping table) (CONFIRMED) | ⏳ OPEN. Fix: gate @Test behind opt-in env var (NOT delete — § 11.19 anticipates re-running Variant B for reviewers) |
+| R9 | Cache eviction idiom copy-pasted ×3 (:54/:106/:312); keys.first = arbitrary hash-order victim, reads as LRU but isn't (CONFIRMED) | ⏳ OPEN. Fix: one inout helper or an "arbitrary eviction intentional" comment |
+| R10 | range(.day,.quarter) via generic fallback rebuilds the quarter interval 3× (:524); cold path, low severity; ⚠ naive dedicated-case fix is off-by-one in DST fall-back quarters — must keep floor-seconds-at-end−0.1 semantics (CONFIRMED) | ⏳ OPEN. Optional; skippable per verifier. If fixed, use the floor-seconds form |
+
+Score: 0 fixed, 10 open. R3 is the only pre-PR-cut gate item;
+R1/R2 are the substantive code fixes; R4-R7 quality; R8-R10 optional.
