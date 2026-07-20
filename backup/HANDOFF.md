@@ -23,7 +23,7 @@ PR (post-merge). Everything below is history.
 |---|---|
 | Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
 | Buddhist + Japanese | **PR #2105 OPEN** since 2026-07-12 (`port/buddhist-japanese-main`, head `08b6e889`). Awaiting first review. Watch: `gh pr view 2105 --repo swiftlang/swift-foundation`. Review responses happen on the 6.4 machine. |
-| Chinese | **PR-READY** (2026-07-19): all suites zero-divergence (51 tests); staged S1–S5 resolved (§ 11.21), quarter surfaces live match-ICU (§ 11.23), wrapping day-only by decision (§ 11.24); review round 2 R1/R2/R3/R6 fixed, R4/R5/R7-R10 quality-only open (§ 11.25). Gate clear. Handoff: `CHINESE_6.4_HANDOFF.md`. |
+| Chinese | **PR #2123 OPEN** since 2026-07-20 (`port/chinese-main` @ `1452f70d`, 7 files per § 12.1). Research branch complete: 52 tests zero-divergence, § 11.25 review 10/10 fixed. Watch: `gh pr view 2123 --repo swiftlang/swift-foundation`. Review responses on the 6.4 machine; back-sync PR-branch changes to `port/chinese` here. |
 
 ### Branch landscape (fork = dra8an/swift-foundation)
 
