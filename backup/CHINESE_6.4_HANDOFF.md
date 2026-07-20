@@ -234,6 +234,17 @@ Calendar_Hebrew (full-contract wrapping = logged cross-calendar
 follow-up); quarter surfaces mirror the ICU wrapper exactly, incl. the
 leap-month containment quirk merged Hebrew also carries (Adar II).
 
+## Helper consolidation (do on THIS machine, not the research iMac)
+
+If reviewers ask for shared-helper consolidation, or once #2123 merges
+and the follow-up PR is cut: the exact lift scope is CHINESE_PLAN
+§ 11.26 (weekNumber, utcDate(fromRataDie:), rataDieAndSecondsInDay,
+rataDieAtDateReference, orderedDiffComponents, difference machinery,
+week-of-year formula) into _CalendarUtility or a protocol extension.
+Touches merged Calendar_Hebrew and Calendar_Gregorian, so it must diff
+against live upstream/main here. The research iMac then back-syncs and
+validates with the exhaustive suites.
+
 ## After opening
 
 Watch reviews from this machine; size questions → argue absolute costs +
