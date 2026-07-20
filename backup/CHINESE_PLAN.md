@@ -1605,9 +1605,9 @@ nil-guard paths, incumbent-identical containment-quirk complaints.
 | R6 | ±5M domain as 5 bare literals + derived 66M (:443/:467/:787/:1005/:1061/:1028); merged Hebrew NAMES it (icuYearLowerBound/UpperBound); ranges inclusive of ±5M while guards strict — existing boundary asymmetry (CONFIRMED) | ✅ FIXED (`84f6516`): extLowerBound/extUpperBound at all sites; inclusive-vs-strict asymmetry kept as-is (behavior unchanged) |
 | R7 | .yearForWeekOfYear interval hand-rolls RD→Date+DST conversion ×2 instead of in-file utcDate(fromRataDie:) — verified bit-identical drop-in; only interval case bypassing the helper (shape copied from Hebrew, which shares the flaw) (:675) (CONFIRMED) | ⏳ OPEN. Fix: two utcDate calls; mirror in Hebrew as separate upstream cleanup, don't diverge siblings |
 | R8 | ChinesePackingExperiment runs multi-second benches every suite run for a settled decision (VarA verified byte-identical to shipping table) (CONFIRMED) | ⏳ OPEN. Fix: gate @Test behind opt-in env var (NOT delete — § 11.19 anticipates re-running Variant B for reviewers) |
-| R9 | Cache eviction idiom copy-pasted ×3 (:54/:106/:312); keys.first = arbitrary hash-order victim, reads as LRU but isn't (CONFIRMED) | ⏳ OPEN. Fix: one inout helper or an "arbitrary eviction intentional" comment |
+| R9 | Cache eviction idiom copy-pasted ×3 (:54/:106/:312); keys.first = arbitrary hash-order victim, reads as LRU but isn't (CONFIRMED) | ✅ FIXED: one evictIfNeeded(_:cap:) inout helper at all 3 sites; arbitrary-eviction intent documented |
 | R10 | range(.day,.quarter) via generic fallback rebuilds the quarter interval 3× (:524); cold path, low severity; ⚠ naive dedicated-case fix is off-by-one in DST fall-back quarters — must keep floor-seconds-at-end−0.1 semantics (CONFIRMED) | ⏳ OPEN. Optional; skippable per verifier. If fixed, use the floor-seconds form |
 
-Score: 5 fixed (R1-R4/R6 — commits ccd76f4/84f6516/44a08a0, 51
+Score: 6 fixed (R1-R4/R6/R9 — commits ccd76f4/84f6516/44a08a0, 51
 tests green after each), 6 open (R4/R5/R7-R10): quality/optional only,
 NO gate items left.

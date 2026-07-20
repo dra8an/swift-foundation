@@ -26,6 +26,13 @@ import CRT
 
 // Chinese lunisolar calendar engine. Years 1901-2100 come from a baked table generated from ICU (parity by construction); outside that range, month structure is computed with ICU's chnsecal rules over _CalendarAstronomy at UTC+8.
 
+// Bounded memoization caches: over the cap, evict one arbitrary entry (hash order). LRU is deliberately not attempted — a miss only recomputes.
+private func evictIfNeeded<V>(_ cache: inout [Int: V], cap: Int) {
+    if cache.count > cap, let victim = cache.keys.first {
+        cache.removeValue(forKey: victim)
+    }
+}
+
 // MARK: - chnsecal rules over the astronomy (flat UTC+8, matching ICU)
 
 internal struct _ChineseRules {
@@ -51,9 +58,7 @@ internal struct _ChineseRules {
             if lon >= 270.0 && lon < 350.0 { break }
             day += 1
         }
-        if winterSolsticeCache.count > 32, let victim = winterSolsticeCache.keys.first {
-            winterSolsticeCache.removeValue(forKey: victim)
-        }
+        evictIfNeeded(&winterSolsticeCache, cap: 32)
         winterSolsticeCache[gyear] = day
         return day
     }
@@ -103,9 +108,7 @@ internal struct _ChineseRules {
         } else {
             value = newMoon2
         }
-        if newYearCache.count > 32, let victim = newYearCache.keys.first {
-            newYearCache.removeValue(forKey: victim)
-        }
+        evictIfNeeded(&newYearCache, cap: 32)
         newYearCache[gyear] = value
         return value
     }
@@ -309,9 +312,7 @@ internal enum _ChineseCalendarEngine {
                 relatedIso: relatedIso, newYearRD: ny,
                 monthLengthBits: bits, monthCount: UInt8(starts.count),
                 leapDisplay: leapDisplay)
-            if state.years.count > 16, let victim = state.years.keys.first {
-                state.years.removeValue(forKey: victim)
-            }
+            evictIfNeeded(&state.years, cap: 16)
             state.years[relatedIso] = year
             return year
         }
