@@ -215,12 +215,10 @@ cleanup DONE; S3 quarter surfaces DECIDED match-ICU + IMPLEMENTED
 day-only shape (§ 11.24, no code change).** S4 (month-add O(1)) remains
 optional/deferred.
 
-**Review round 2 (§ 11.25, 2026-07-19): 10 findings R1-R10, all OPEN,
-zero behavioral regressions.** Gate status: **R3 (manually wrapped
-quarter comments, guideline violation) MUST be fixed before the PR
-cut**; R1/R2 (bound miscalibration + week-year O(n) hang) are the
-substantive fixes, strongly recommended pre-cut; the rest are quality
-items per the § 11.25 table.
+**Review round 2 (§ 11.25, 2026-07-19): 10 findings, zero behavioral
+regressions. R1/R2/R3/R6 FIXED same day (incl. the PR-gating comment
+unwrap) — the gate is clear again.** R4/R5/R7-R10 remain open as
+quality/optional items per the § 11.25 table; none block the cut.
 
 Review-question ammo: wrapping is day-only like the twice-reviewed
 Calendar_Hebrew (full-contract wrapping = logged cross-calendar
