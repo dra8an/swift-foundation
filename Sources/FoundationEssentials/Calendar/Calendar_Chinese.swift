@@ -510,16 +510,10 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             // Number of display months is always 12 (the leap repeats a number).
             return 1..<13
         case (.month, .quarter):
-            // ICU reports display month numbers spanned by the quarter interval; a leap month consumes one of the three ordinal slots, shrinking the upper bound (e.g. 4..<6 in a leap-4/5 year's Q2).
+            // ICU reports display month numbers spanned by the quarter; the span can shrink (see quarterSpan).
             let (ext, ordinal, _) = fields(for: date, in: timeZone)
-            let y = Self.yearData(ext: ext)
-            let q = (y.label(ordinal: ordinal).month + 2) / 3
-            let firstDisplay = 3 * (q - 1) + 1
-            guard let startOrdinal = y.ordinal(month: firstDisplay, isLeap: false) else { return nil }
-            var (ey, eo) = (ext, startOrdinal)
-            for _ in 0..<2 { (ey, eo) = Self.nextOrdinalMonth(ext: ey, ordinal: eo) }
-            let lastDisplay = Self.yearData(ext: ey).label(ordinal: eo).month
-            return firstDisplay..<(lastDisplay + 1)
+            guard let span = Self.quarterSpan(ext: ext, ordinal: ordinal) else { return nil }
+            return span.firstDisplay..<(span.lastDisplay + 1)
         default:
             break
         }
@@ -616,6 +610,19 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     // MARK: Date intervals
 
+    // ICU-wrapper quarter model, matching merged Hebrew's posture: quarter of display month m = ceil(m/3); span = day 1 of the REGULAR month with display 3(q-1)+1 through 3 ordinal months. A leap month inside the quarter is not absorbed, so dates in/after it can fall outside their own quarter span and the display range shrinks — deliberate incumbent fidelity.
+    private static func quarterSpan(ext: Int, ordinal: Int) -> (firstDisplay: Int, startOrdinal: Int, lastDisplay: Int, endExt: Int, endOrdinal: Int)? {
+        let y = yearData(ext: ext)
+        let q = (y.label(ordinal: ordinal).month + 2) / 3
+        let firstDisplay = 3 * (q - 1) + 1
+        guard let startOrdinal = y.ordinal(month: firstDisplay, isLeap: false) else { return nil }
+        var (ey, eo) = (ext, startOrdinal)
+        for _ in 0..<2 { (ey, eo) = nextOrdinalMonth(ext: ey, ordinal: eo) }
+        let lastDisplay = yearData(ext: ey).label(ordinal: eo).month
+        let (endExt, endOrdinal) = nextOrdinalMonth(ext: ey, ordinal: eo)
+        return (firstDisplay, startOrdinal, lastDisplay, endExt, endOrdinal)
+    }
+
     private static func nextOrdinalMonth(ext: Int, ordinal: Int) -> (Int, Int) {
         let y = yearData(ext: ext)
         if ordinal < Int(y.monthCount) { return (ext, ordinal + 1) }
@@ -693,14 +700,10 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
                               repeatedTimePolicy: .former, skippedTimePolicy: .former)
             return DateInterval(start: start, duration: end.timeIntervalSince(start))
         case .quarter:
-            // ICU-wrapper quarter model, matching merged Hebrew's posture: quarter of display month m = ceil(m/3), start = day 1 of the REGULAR month with display 3(q-1)+1, end = start + 3 ordinal months. A leap month inside the quarter is not absorbed, so dates in/after it can fall outside their own quarter interval — deliberate incumbent fidelity.
-            let y = Self.yearData(ext: ext)
-            let q = (y.label(ordinal: ordinal).month + 2) / 3
-            guard let startOrdinal = y.ordinal(month: 3 * (q - 1) + 1, isLeap: false) else { return nil }
-            let start = localMidnight(ext: ext, ordinal: startOrdinal, day: 1, in: tz)
-            var (ey, eo) = (ext, startOrdinal)
-            for _ in 0..<3 { (ey, eo) = Self.nextOrdinalMonth(ext: ey, ordinal: eo) }
-            let end = localMidnight(ext: ey, ordinal: eo, day: 1, in: tz)
+            // See quarterSpan for the ICU-wrapper model and its leap-month containment quirk.
+            guard let span = Self.quarterSpan(ext: ext, ordinal: ordinal) else { return nil }
+            let start = localMidnight(ext: ext, ordinal: span.startOrdinal, day: 1, in: tz)
+            let end = localMidnight(ext: span.endExt, ordinal: span.endOrdinal, day: 1, in: tz)
             return DateInterval(start: start, duration: end.timeIntervalSince(start))
         case .day, .weekday, .weekdayOrdinal, .dayOfYear:
             let rdHere = Self.rd(ext: ext, ordinal: ordinal, day: day)
