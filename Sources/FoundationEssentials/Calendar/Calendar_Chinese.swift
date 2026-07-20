@@ -391,6 +391,10 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
     // extended year = related Gregorian year + 2637; era = 60-year cycle.
     static let extOffset = 2637
 
+    // Supported extended-year domain (same convention as Hebrew's icuYearLowerBound/icuYearUpperBound).
+    private static let extLowerBound = -5_000_000
+    private static let extUpperBound = 5_000_000
+
     private static func yearData(ext: Int) -> _ChineseYear {
         _ChineseCalendarEngine.year(relatedIso: ext - extOffset)
     }
@@ -440,7 +444,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         case .quarter: return 1..<5
         case .weekOfMonth: return 1..<6
         case .weekOfYear: return 1..<51
-        case .yearForWeekOfYear: return -5_000_000..<5_000_001
+        case .yearForWeekOfYear: return Self.extLowerBound..<(Self.extUpperBound + 1)
         case .nanosecond: return 0..<1_000_000_000
         case .isLeapMonth: return 0..<2
         case .isRepeatedDay: return 0..<1
@@ -464,7 +468,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         case .quarter: return 1..<5
         case .weekOfMonth: return 1..<7
         case .weekOfYear: return 1..<56
-        case .yearForWeekOfYear: return -5_000_000..<5_000_001
+        case .yearForWeekOfYear: return Self.extLowerBound..<(Self.extUpperBound + 1)
         case .nanosecond: return 0..<1_000_000_000
         case .isLeapMonth: return 0..<2
         case .isRepeatedDay: return 0..<1
@@ -777,7 +781,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         }
         guard let yearValue = components.year else { return nil }
         guard let ext = Self.ext(era: era, year: yearValue),
-              ext > -5_000_000 && ext < 5_000_000 else { return nil }
+              ext > Self.extLowerBound && ext < Self.extUpperBound else { return nil }
 
         let month = components.month ?? 1
         let isLeap = components.isLeapMonth ?? false
@@ -995,7 +999,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let y = Self.yearData(ext: ext)
             let label = y.label(ordinal: ordinal)
             let (newExt, ovf) = ext.addingReportingOverflow(yearsToAdd)
-            guard !ovf, newExt > -5_000_000, newExt < 5_000_000 else { return nil }
+            guard !ovf, newExt > Self.extLowerBound, newExt < Self.extUpperBound else { return nil }
             // ICU's add-year pin: resolve the month by single-bump, pin the day via a second resolution that keeps the source leap flag, then spill leniently (Calendar::add + getActualMaximum semantics).
             let start0 = Self.resolvedMonthStart(ext: newExt, display: label.month, leap: label.isLeap)
             let y1 = _ChineseCalendarEngine.year(containingRD: start0)
@@ -1018,9 +1022,11 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         }
 
         if monthsToAdd != 0 {
-            guard monthsToAdd > -66_000_000 && monthsToAdd < 66_000_000 else { return nil }
             let tz = self.timeZone
             var (ext, ordinal, d, secondsInDay) = fieldsAndTime(for: result, in: tz)
+            // Reject adds that provably exit the ext domain before the ordinal walk: a year has at most 13 months, so the target lies at or beyond ext + monthsToAdd/13.
+            let (reach, reachOvf) = ext.addingReportingOverflow(monthsToAdd / 13)
+            guard !reachOvf, reach > Self.extLowerBound, reach < Self.extUpperBound else { return nil }
             var remaining = monthsToAdd
             while remaining > 0 {
                 (ext, ordinal) = Self.nextOrdinalMonth(ext: ext, ordinal: ordinal)
@@ -1030,6 +1036,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
                 (ext, ordinal) = Self.prevOrdinalMonth(ext: ext, ordinal: ordinal)
                 remaining += 1
             }
+            guard ext > Self.extLowerBound && ext < Self.extUpperBound else { return nil }
             let ny = Self.yearData(ext: ext)
             let clampedDay = min(d, ny.monthLength(ordinal: ordinal))
             let rd = ny.monthStartRD(ordinal: ordinal) + clampedDay - 1
@@ -1051,7 +1058,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let localComps = dateComponents([.yearForWeekOfYear], from: result, in: tz)
             if var yy = localComps.yearForWeekOfYear {
                 let (target, overflow) = yy.addingReportingOverflow(n)
-                guard !overflow, target > -5_000_000, target < 5_000_000 else { return nil }
+                guard !overflow, target > Self.extLowerBound, target < Self.extUpperBound else { return nil }
                 if n > 0 {
                     for _ in 0..<n {
                         daysToAdd += numWeeksInYearForWeekOfYear(yy) * 7
