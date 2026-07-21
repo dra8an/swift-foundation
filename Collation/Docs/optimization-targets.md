@@ -105,13 +105,23 @@ Allocation/resolution samples are the trustworthy kind.
 - [ ] The skRet variant allocates BY API CONTRACT (returns fresh
       [UInt8]) — documented, inout twin exists; not a defect.
 - Machine 2: run the same audit over any AS-only wiring.
-- [ ] DESIGN NOTE for the upstream proposal (not a bench item): every
-      current-locale collator cache (collatorForCurrentLocale, §40's
-      comparator path) resolves ONCE and never invalidates — a mid-process
-      system-locale change keeps serving the old collator. The rigorous
-      shape is "resolve once, revalidate cheaply" against Foundation's
-      locale generation state (~few ns per call). Decide before proposing
-      upstream; expect the review question.
+- [x] Locale-change invalidation — DECIDED + SHIPPED (§44, Docs/29):
+      generation-count revalidation via LocaleNotifications (the
+      documented Calendar/TimeZone mechanism; FE's counter made
+      package-visible). Bench-build cost +15..18 ns on the localized
+      compare rows (LockedState read; framework build = relaxed atomic
+      ≈ free) — accepted, correctness contract. Regression test flips
+      the current locale mid-process (suite now 1515/122).
+- [ ] **BUG (found by §44's test, filed):** `compare`/`sortKey`/search
+      entries default to `CollationOptions()`, NOT the collator's
+      `defaultOptions` — so tailoring default SETTINGS (fr_CA
+      backwardSecondary) never apply through the no-options Foundation
+      wrappers; character-data tailorings apply fine. Diverges from
+      Darwin for fr-CA current locale. Fix needs a decision: wrappers
+      pass `collator.defaultOptions`, and the CompareOptions
+      translation should MERGE onto that base rather than start fresh.
+      Audit the fast-Latin defaultFLWord interaction (it is already
+      baked from defaultOptions — the entries just never ask for it).
 - UPSTREAM note (outside collation scope): the localized case-mapping
       entries at the top of StringProtocol+Locale.swift (capitalized/
       lowercased/uppercased with .current) evaluate Locale.current per
@@ -1676,3 +1686,41 @@ BEST sk row vs ICU (1.22×), and machine 2's independent layout will
 arbitrate whether the residual is Intel-placement or structural. If it
 reproduces on AS and paths sortKey ever matters more, the recorded
 next idea is a mix-aware dispatch — NOT the length threshold.
+
+---
+
+### 44. Locale-change invalidation shipped — and the tailoring-defaults bug it found
+
+**Status:** shipped 2026-07-20. Gates: 1515 tests / 122 suites green
+(the invalidation regression test adds one of each — NEW GATE COUNT).
+Full decision record: **Docs/29**.
+
+The last design box on the audit list. `collatorForCurrentLocale`'s
+cache now stores (collator, generation) and revalidates against
+`LocaleNotifications.cache.count()` — the documented mechanism
+Calendar/TimeZone use process-wide; FE's counter made
+package-visible (three `package` keywords, the established
+`_LocaleProtocol`/`LockedState` pattern). Generation is read BEFORE
+resolution so a racing reset can only cause one extra re-resolve,
+never staleness. The regression test flips the current locale
+mid-process via the internal hooks (en ↔ sv, "ä" vs "z" — the
+canonical sv discriminator) and verifies the very next call follows.
+
+**Measured cost (BF -no-WMO, interleaved K=3, ascii, min):**
+localizedCompare 135→151, stdCmp 167→185, caseICmp 169→184 — the
+package build's LockedState round-trip; contains/range +2..7
+(amortized); engine and explicit-locale rows neutral. The FRAMEWORK
+build pays a relaxed atomic load (~1–2 ns) instead. Accepted:
+correctness contract, and the rows stay 2.8–6× ahead of system ICU.
+Docs/25's `e232237` tables predate this (+16 on three Table-2 cells);
+fold at the next re-baseline.
+
+**The bug the test found (filed on the audit list):** the first test
+draft used the French pair ("coté"/"côte") and failed — because
+`compare()` defaults to `CollationOptions()`, NOT the collator's
+`defaultOptions`, so a tailoring's default SETTINGS (fr_CA backwards
+secondary) never apply through the no-options Foundation wrappers.
+Character-data tailorings (sv) work; settings tailorings don't.
+Divergence from Darwin for fr-CA current locale. §39's lesson repeats
+for the second time: the audit list's design items keep finding
+correctness bugs no benchmark can see.

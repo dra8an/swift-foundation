@@ -27,8 +27,12 @@ struct CollatorCache: Sendable {
 
     private let lock = LockedState(initialState: [String: RootCollator]())
 
-    /// Fast path for Locale.current — caches the collator for the current locale. Resolved once on first use; RootCollator is immutable and Sendable so sharing is safe.
-    private let currentCache = LockedState(initialState: RootCollator?(nil))
+    /// Fast path for Locale.current — caches the collator for the current locale, revalidated against Foundation's locale generation count (LocaleNotifications) so a mid-process system locale change re-resolves on the next call — the same documented mechanism Calendar and TimeZone use (design record: Docs/29). RootCollator is immutable and Sendable so sharing is safe.
+    private struct CurrentSlot {
+        var collator: RootCollator? = nil
+        var generation: Int = 0
+    }
+    private let currentCache = LockedState(initialState: CurrentSlot())
 
     /// One-slot cache for the most recent explicit-locale resolution (§38). Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes under a lock — profiled at ~2/3 of the whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in lock + compare + return.
     private struct LastLocale {
@@ -38,11 +42,13 @@ struct CollatorCache: Sendable {
     private let lastLocale = LockedState(initialState: LastLocale())
 
     func collatorForCurrentLocale() -> RootCollator? {
-        return currentCache.withLock { cached in
-            if let c = cached { return c }
+        // Generation first, resolution second: if a locale reset lands between the two, the fresh collator is stored under the OLD generation and the next call re-resolves — converging, never stale. The reverse order could pin a stale collator under the new generation.
+        let generation = LocaleNotifications.cache.count()
+        return currentCache.withLock { slot in
+            if slot.generation == generation, let c = slot.collator { return c }
             let lang = Self.resolveLanguage(for: Locale.current)
             let c = collator(forLanguage: lang)
-            cached = c
+            slot = CurrentSlot(collator: c, generation: generation)
             return c
         }
     }
