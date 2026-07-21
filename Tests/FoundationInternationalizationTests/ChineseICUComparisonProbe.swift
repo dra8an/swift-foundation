@@ -38,7 +38,7 @@ private struct ChineseICUComparisonProbe {
     }
 
     private static func g(_ y: Int, _ m: Int, _ d: Int, hour: Int = 12, minute: Int = 0, second: Int = 0) -> Date {
-        let rd = _CalendarAstronomy.gregorianRD(y, m, d)
+        let rd = _CalendarAstronomy.gregorianRataDie(y, m, d)
         return Date(timeIntervalSinceReferenceDate:
             Double(rd - 730_486) * 86400.0 + Double(hour * 3600 + minute * 60 + second))
     }
@@ -50,9 +50,9 @@ private struct ChineseICUComparisonProbe {
         // Whole Chinese years 2057 and 2097: the dom=0 artifact corrupts ICU's
         // own year-level queries (e.g. range(.day,.year) = 325).
         let artifact = [
-            _CalendarAstronomy.gregorianRD(2057, 2, 1)..._CalendarAstronomy.gregorianRD(2058, 2, 20),
-            _CalendarAstronomy.gregorianRD(2097, 2, 1)..._CalendarAstronomy.gregorianRD(2098, 2, 20),
-            _CalendarAstronomy.gregorianRD(2101, 6, 24)..._CalendarAstronomy.gregorianRD(2101, 7, 26),
+            _CalendarAstronomy.gregorianRataDie(2057, 2, 1)..._CalendarAstronomy.gregorianRataDie(2058, 2, 20),
+            _CalendarAstronomy.gregorianRataDie(2097, 2, 1)..._CalendarAstronomy.gregorianRataDie(2098, 2, 20),
+            _CalendarAstronomy.gregorianRataDie(2101, 6, 24)..._CalendarAstronomy.gregorianRataDie(2101, 7, 26),
         ]
         return artifact.contains { $0.contains(rd) }
     }
@@ -204,7 +204,7 @@ private struct ChineseICUComparisonProbe {
         var divergences: [String] = []
         var count = 0
         for iso in stride(from: 1901, through: 2100, by: 7) {
-            let ny = _ChineseCalendarEngine.year(relatedIso: iso).newYearRD
+            let ny = _ChineseCalendarEngine.year(relatedISOYear: iso).newYearRataDie
             for delta in [-1, 0, 1] {
                 let rd = ny + delta
                 let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)
@@ -222,9 +222,9 @@ private struct ChineseICUComparisonProbe {
         var divergences: [String] = []
         var count = 0
         for iso in stride(from: 1903, through: 2099, by: 3) {
-            let y = _ChineseCalendarEngine.year(relatedIso: iso)
+            let y = _ChineseCalendarEngine.year(relatedISOYear: iso)
             guard let lo = y.leapOrdinal else { continue }
-            let start = y.monthStartRD(ordinal: lo)
+            let start = y.monthStartRataDie(ordinal: lo)
             let len = y.monthLength(ordinal: lo)
             for rd in [start - 1, start, start + len - 1, start + len] {
                 let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)
@@ -261,8 +261,8 @@ private struct ChineseICUComparisonProbe {
         var divergences: [String] = []
         var count = 0
         // Daily bands across both seams: CNY 1901 ± 40d, CNY 2101 ± 40d.
-        for (iso, seam) in [(1901, _ChineseCalendarEngine.year(relatedIso: 1901).newYearRD),
-                            (2101, _ChineseCalendarEngine.year(relatedIso: 2101).newYearRD)] {
+        for (iso, seam) in [(1901, _ChineseCalendarEngine.year(relatedISOYear: 1901).newYearRataDie),
+                            (2101, _ChineseCalendarEngine.year(relatedISOYear: 2101).newYearRataDie)] {
             for delta in -40...40 {
                 let rd = seam + delta
                 let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)

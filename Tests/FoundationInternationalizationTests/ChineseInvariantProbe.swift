@@ -38,11 +38,11 @@ private struct ChineseInvariantProbe {
     /// bit and corrupt every date in the year.
     @Test func chineseInvariant_tilingAndStructure() {
         var failures: [String] = []
-        var prev = _ChineseCalendarEngine.year(relatedIso: -2000)
+        var prev = _ChineseCalendarEngine.year(relatedISOYear: -2000)
         for iso in -1999...5000 {
-            let y = _ChineseCalendarEngine.year(relatedIso: iso)
-            if prev.endRD != y.newYearRD {
-                failures.append("\(iso - 1)→\(iso): end \(prev.endRD) != next NY \(y.newYearRD)")
+            let y = _ChineseCalendarEngine.year(relatedISOYear: iso)
+            if prev.endRataDie != y.newYearRataDie {
+                failures.append("\(iso - 1)→\(iso): end \(prev.endRataDie) != next NY \(y.newYearRataDie)")
             }
             let n = Int(y.monthCount)
             if n != 12 && n != 13 {
@@ -56,7 +56,7 @@ private struct ChineseInvariantProbe {
             }
             var sum = 0
             for o in 1...n { sum += y.monthLength(ordinal: o) }
-            let span = y.endRD - y.newYearRD
+            let span = y.endRataDie - y.newYearRataDie
             if sum != span {
                 failures.append("\(iso): length-bits sum \(sum) != span \(span)")
             }
@@ -82,7 +82,7 @@ private struct ChineseInvariantProbe {
     /// divergence is intentional and documented (CHINESE_PLAN.md § 5c/11.3).
     @Test func chineseInvariant_historicalPins() {
         var failures: [String] = []
-        // (relatedIso, expected CNY gregorian y-m-d)
+        // (relatedISOYear, expected CNY gregorian y-m-d)
         let cnyPins: [(Int, Int, Int, Int)] = [
             (1776, 1776, 2, 19),
             (1795, 1795, 1, 21),
@@ -92,13 +92,13 @@ private struct ChineseInvariantProbe {
             (2148, 2148, 2, 20),
         ]
         for (iso, gy, gm, gd) in cnyPins {
-            let got = _ChineseCalendarEngine.year(relatedIso: iso).newYearRD
-            let want = _CalendarAstronomy.gregorianRD(gy, gm, gd)
+            let got = _ChineseCalendarEngine.year(relatedISOYear: iso).newYearRataDie
+            let want = _CalendarAstronomy.gregorianRataDie(gy, gm, gd)
             if got != want {
                 failures.append("CNY \(iso): got rd \(got), want \(want) (\(gy)-\(gm)-\(gd))")
             }
         }
-        // (relatedIso, expected leap display number; 0 = no leap)
+        // (relatedISOYear, expected leap display number; 0 = no leap)
         let leapPins: [(Int, UInt8)] = [
             (1775, 10),   // 闰十月, the rare leap 10th
             (1776, 0),
@@ -107,7 +107,7 @@ private struct ChineseInvariantProbe {
             (2148, 0),
         ]
         for (iso, want) in leapPins {
-            let got = _ChineseCalendarEngine.year(relatedIso: iso).leapDisplay
+            let got = _ChineseCalendarEngine.year(relatedISOYear: iso).leapDisplay
             if got != want {
                 failures.append("leap \(iso): got \(got), want \(want)")
             }
@@ -125,12 +125,12 @@ private struct ChineseInvariantProbe {
         var failures: [String] = []
         let fields: Calendar.ComponentSet = [.era, .year, .month, .day, .isLeapMonth]
         let sampleRDs = [
-            _CalendarAstronomy.gregorianRD(-1000, 6, 15),
-            _CalendarAstronomy.gregorianRD(1, 1, 1),
-            _CalendarAstronomy.gregorianRD(1500, 3, 10),
-            _CalendarAstronomy.gregorianRD(1681, 4, 1),    // engine-sensitive leap year (§ 5b)
-            _CalendarAstronomy.gregorianRD(3000, 7, 1),
-            _CalendarAstronomy.gregorianRD(4600, 12, 31),
+            _CalendarAstronomy.gregorianRataDie(-1000, 6, 15),
+            _CalendarAstronomy.gregorianRataDie(1, 1, 1),
+            _CalendarAstronomy.gregorianRataDie(1500, 3, 10),
+            _CalendarAstronomy.gregorianRataDie(1681, 4, 1),    // engine-sensitive leap year (§ 5b)
+            _CalendarAstronomy.gregorianRataDie(3000, 7, 1),
+            _CalendarAstronomy.gregorianRataDie(4600, 12, 31),
         ]
         for rd in sampleRDs {
             let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)

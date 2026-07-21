@@ -17,6 +17,12 @@ extension Calendar {
     static let _kSecondsInHour = 3600
     static let _kSecondsInMinute = 60
 
+    // Upstream renamed these without the _k prefix (guideline PR #2091); aliases until this research base is resynced.
+    static let _secondsInWeek = _kSecondsInWeek
+    static let _secondsInDay = _kSecondsInDay
+    static let _secondsInHour = _kSecondsInHour
+    static let _secondsInMinute = _kSecondsInMinute
+
     /// Sentinel used by unbounded range loops in date arithmetic.
     static let _inf_ti: TimeInterval = 4398046511104.0
 }

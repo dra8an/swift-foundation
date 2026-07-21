@@ -10,24 +10,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-/// Static helpers shared by `_CalendarProtocol` conformers. Each helper takes
-/// all the state it needs as parameters — no `self`, no protocol pollution.
-/// Calendars keep their own private storage but forward to these helpers for
-/// the duplicated logic (validation, locale-fallback resolution, etc.).
+/// Static helpers shared by `_CalendarProtocol` conformers.
 internal enum _CalendarUtility {
 
     // MARK: - firstWeekday
 
-    /// Clamps and validates a new `firstWeekday` value.
-    /// Used by `firstWeekday`'s setter in each calendar.
+    /// Validates a `firstWeekday` value (must be 1...7).
     static func validatedFirstWeekday(_ value: Int) -> Int {
         precondition(value >= 1 && value <= 7, "Weekday should be in the range of 1...7")
         return value
     }
 
-    /// Resolves `firstWeekday`: returns the explicitly-stored value if set,
-    /// else falls back to the locale's preference, else defaults to 1 (Sunday).
-    /// Used by `firstWeekday`'s getter in each calendar.
+    /// Resolves `firstWeekday`: stored value → locale preference → 1 (Sunday).
     static func resolveFirstWeekday(stored: Int?, locale: Locale?) -> Int {
         if let stored {
             return stored
@@ -40,17 +34,14 @@ internal enum _CalendarUtility {
 
     // MARK: - minimumDaysInFirstWeek
 
-    /// Clamps a new `minimumDaysInFirstWeek` value to the valid range 1...7.
-    /// Used by `minimumDaysInFirstWeek`'s setter in each calendar.
+    /// Clamps `minimumDaysInFirstWeek` to 1...7.
     static func clampedMinimumDaysInFirstWeek(_ value: Int) -> Int {
         if value < 1 { return 1 }
         if value > 7 { return 7 }
         return value
     }
 
-    /// Resolves `minimumDaysInFirstWeek`: returns the explicitly-stored value
-    /// if set, else falls back to the locale's preference, else defaults to 1.
-    /// Used by `minimumDaysInFirstWeek`'s getter in each calendar.
+    /// Resolves `minimumDaysInFirstWeek`: stored value → locale preference → 1.
     static func resolveMinimumDaysInFirstWeek(stored: Int?, locale: Locale?) -> Int {
         if let stored {
             return stored
@@ -63,10 +54,7 @@ internal enum _CalendarUtility {
 
     // MARK: - copy()
 
-    /// Resolves arguments for `copy(...)`: for each parameter, returns the
-    /// override if supplied, otherwise the current stored value.
-    /// Used by each calendar's `copy(...)` to avoid duplicating the
-    /// "override or current" logic at every call site.
+    /// Resolves `copy(...)` arguments: override if supplied, else current value.
     static func resolvedCopyArgs(
         currentTimeZone: TimeZone, changingTimeZone: TimeZone?,
         currentLocale: Locale?, changingLocale: Locale?,
@@ -82,14 +70,8 @@ internal enum _CalendarUtility {
 
     // MARK: - isDateInWeekend
 
-    /// Determines whether a date's weekday + time-of-day falls within the
-    /// given weekend range. The shared comparison logic; each calendar
-    /// produces `weekday` and `timeInDay` from its own machinery.
-    ///
-    /// `timeInDay` should be integer-second seconds-since-midnight in local
-    /// time (matching `_CalendarGregorian.timeInDay(for:)`'s convention).
-    static func isDateInWeekend(weekday: Int, timeInDay: TimeInterval,
-                                 weekendRange: WeekendRange) -> Bool {
+    /// Whether `weekday` + `timeInDay` falls within `weekendRange`.
+    static func isDateInWeekend(weekday: Int, timeInDay: TimeInterval, weekendRange: WeekendRange) -> Bool {
         if weekendRange.start == weekendRange.end && weekday != weekendRange.start {
             return false
         } else if weekendRange.start < weekendRange.end && (weekday < weekendRange.start || weekday > weekendRange.end) {
@@ -98,7 +80,6 @@ internal enum _CalendarUtility {
             return false
         }
 
-        // Day matches; check time-in-day if this day is the weekend start or end.
         if weekday == weekendRange.start {
             guard let onsetTime = weekendRange.onsetTime, onsetTime != 0 else {
                 return true
@@ -114,7 +95,53 @@ internal enum _CalendarUtility {
         }
     }
 
-    /// Default weekend range used when no locale is set (region 001 / world default).
-    /// Sat (7) through Sun (1), full day.
+    /// Default weekend range (region 001): Sat–Sun, full day.
     static let defaultWeekendRange = WeekendRange(onsetTime: 0, ceaseTime: 86400, start: 7, end: 1)
+
+    // MARK: - Rata die arithmetic (shared by the non-ICU calendars)
+
+    /// Rata die of the Foundation reference date (2001-01-01 == RD 730486).
+    static let rataDieAtDateReference = 730_486
+
+    /// Floor division rounding toward negative infinity for any sign of divisor.
+    static func floorDiv<I: FixedWidthInteger>(_ a: I, _ b: I) -> I {
+        if (a >= 0) == (b > 0) {
+            return a / b
+        } else {
+            return (a &- b &+ 1) / b
+        }
+    }
+
+    /// Splits local-seconds-since-reference into a fixed-day rata die and the seconds within that day.
+    static func rataDieAndSecondsInDay<I: FixedWidthInteger>(localSeconds: Double) -> (rataDie: I, secondsInDay: Double) {
+        let totalDays = (localSeconds / 86400).rounded(.down)
+        let rataDie = I(totalDays) &+ I(rataDieAtDateReference)
+        let secondsInDay = localSeconds - totalDays * 86400
+        return (rataDie, secondsInDay)
+    }
+
+    /// Builds a UTC `Date` from a fixed-day rata die plus local seconds within the day, subtracting the time zone offset at that local instant.
+    static func utcDate<I: FixedWidthInteger>(fromRataDie rataDie: I, secondsInDay: Double, in timeZone: TimeZone,
+                                              repeatedTimePolicy: TimeZone.DaylightSavingTimePolicy,
+                                              skippedTimePolicy: TimeZone.DaylightSavingTimePolicy) -> Date {
+        _ = skippedTimePolicy   // silenced — a fixed-day representation cannot land in a skipped interval
+        let daysSinceRef = rataDie &- I(rataDieAtDateReference)
+        let secondsAsIfUTC = Double(daysSinceRef) * 86400 + secondsInDay
+        let tmpDate = Date(timeIntervalSinceReferenceDate: secondsAsIfUTC)
+        let (tzOffset, dstOffset) = timeZone.rawAndDaylightSavingTimeOffset(
+            for: tmpDate, repeatedTimePolicy: repeatedTimePolicy)
+        return tmpDate - Double(tzOffset) - dstOffset
+    }
+
+    /// Week-of-period number using the ICU algorithm, shared across calendars.
+    static func weekNumber(desiredDay: Int, dayOfPeriod: Int, weekday: Int,
+                           firstWeekday: Int, minimumDaysInFirstWeek: Int) -> Int {
+        var periodStartDayOfWeek = (weekday - firstWeekday - dayOfPeriod + 1) % 7
+        if periodStartDayOfWeek < 0 { periodStartDayOfWeek += 7 }
+        var weekNo = (desiredDay + periodStartDayOfWeek - 1) / 7
+        if (7 - periodStartDayOfWeek) >= minimumDaysInFirstWeek {
+            weekNo += 1
+        }
+        return weekNo
+    }
 }

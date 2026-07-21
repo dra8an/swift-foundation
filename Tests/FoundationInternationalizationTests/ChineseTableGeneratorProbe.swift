@@ -211,7 +211,7 @@ private struct ChineseConventionDiscoveryProbe {
 @Suite("Chinese Engine Parity Probe")
 private struct ChineseEngineParityProbe {
     private static func rd(_ y: Int, _ m: Int, _ d: Int) -> Int {
-        _CalendarAstronomy.gregorianRD(y, m, d)
+        _CalendarAstronomy.gregorianRataDie(y, m, d)
     }
 
     @Test func chineseEngineDailySweep() throws {
@@ -239,8 +239,8 @@ private struct ChineseEngineParityProbe {
         for day in from...to {
             let date = Date(timeIntervalSince1970: Double(day - 719_163) * 86400.0 + 43_200.0)
             let c = icu.dateComponents(fields, from: date, in: .gmt)
-            let y = _ChineseCalendarEngine.year(containingRD: day)
-            guard let (ord, dom) = y.ordinalAndDay(rd: day) else {
+            let y = _ChineseCalendarEngine.year(containingRataDie: day)
+            guard let (ord, dom) = y.ordinalAndDay(rataDie: day) else {
                 inTableDiffs.append("day \(day): engine gap!")
                 continue
             }
@@ -287,16 +287,16 @@ private struct ChineseM1RoundTripProbe {
                                              .yearForWeekOfYear, .weekOfMonth,
                                              .weekdayOrdinal, .quarter, .hour]
         let artifact: [ClosedRange<Int>] = [
-            _CalendarAstronomy.gregorianRD(2057, 9, 26)..._CalendarAstronomy.gregorianRD(2057, 10, 29),
-            _CalendarAstronomy.gregorianRD(2097, 8, 5)..._CalendarAstronomy.gregorianRD(2097, 9, 7),
+            _CalendarAstronomy.gregorianRataDie(2057, 9, 26)..._CalendarAstronomy.gregorianRataDie(2057, 10, 29),
+            _CalendarAstronomy.gregorianRataDie(2097, 8, 5)..._CalendarAstronomy.gregorianRataDie(2097, 9, 7),
         ]
         var fieldDiffs: [String] = []
         var roundTripFails: [String] = []
         var checked = 0
 
         // Every 13th day over 1899-2102 (in-table + both fallback seams), noon GMT.
-        var rd = _CalendarAstronomy.gregorianRD(1899, 1, 1)
-        let endRD = _CalendarAstronomy.gregorianRD(2102, 12, 31)
+        var rd = _CalendarAstronomy.gregorianRataDie(1899, 1, 1)
+        let endRD = _CalendarAstronomy.gregorianRataDie(2102, 12, 31)
         let known2101 = 767186...767215   // documented fallback divergence (m6 2101)
         while rd <= endRD {
             defer { rd += 13 }

@@ -7,7 +7,7 @@ import Testing
 #endif
 
 // Research-only packing experiment (CHINESE_PLAN § 11.18-11.19). Never ships.
-private let anchorRD = _CalendarAstronomy.gregorianRD(1901, 1, 19) + 31
+private let anchorRD = _CalendarAstronomy.gregorianRataDie(1901, 1, 19) + 31
 
 private enum VarA {   // shipped UInt32, 800 B
     static let data: [UInt32] = [
@@ -28,7 +28,7 @@ private enum VarA {   // shipped UInt32, 800 B
     static func year(_ i: Int) -> (ny: Int, bits: UInt16, count: Int, leap: Int) {
         let v = data[i]
         let leap = Int((v >> 13) & 0xF)
-        return (_CalendarAstronomy.gregorianRD(1901 + i, 1, 19) + Int((v >> 17) & 0x3F), UInt16(v & 0x1FFF), leap == 0 ? 12 : 13, leap)
+        return (_CalendarAstronomy.gregorianRataDie(1901 + i, 1, 19) + Int((v >> 17) & 0x3F), UInt16(v & 0x1FFF), leap == 0 ? 12 : 13, leap)
     }
 }
 private enum VarB {   // 3 bytes/year, 600 B
@@ -76,7 +76,7 @@ private enum VarB {   // 3 bytes/year, 600 B
         let j = i * 3
         let v = UInt32(data[j]) | UInt32(data[j+1]) << 8 | UInt32(data[j+2]) << 16
         let leap = Int((v >> 13) & 0xF)
-        return (_CalendarAstronomy.gregorianRD(1901 + i, 1, 19) + Int((v >> 17) & 0x3F), UInt16(v & 0x1FFF), leap == 0 ? 12 : 13, leap)
+        return (_CalendarAstronomy.gregorianRataDie(1901 + i, 1, 19) + Int((v >> 17) & 0x3F), UInt16(v & 0x1FFF), leap == 0 ? 12 : 13, leap)
     }
 }
 private enum Var16 {  // shared 16-bit main + leap-length side bits, 425 B core
@@ -139,7 +139,7 @@ private enum VarC {   // + packed 6-bit offsets, ~575 B, O(1)
             if offs[p / 8] >> (p % 8) & 1 == 1 { off |= 1 << k }
         }
         let d = Var16.decode(i)
-        return (_CalendarAstronomy.gregorianRD(1901 + i, 1, 19) + off, d.bits, d.count, d.leap)
+        return (_CalendarAstronomy.gregorianRataDie(1901 + i, 1, 19) + off, d.bits, d.count, d.leap)
     }
 }
 private enum VarD {   // derived starts, lazy cache (~425 B const + 800 B heap)

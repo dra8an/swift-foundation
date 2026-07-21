@@ -32,7 +32,7 @@ import Testing
 @Suite("Chinese Liu Reference Probe")
 private struct ChineseLiuReferenceProbe {
 
-    // (relatedIso, CNY RataDie, leap display number (0 = none),
+    // (relatedISOYear, CNY RataDie, leap display number (0 = none),
     //  month-length bits: bit i set = ordinal month i+1 has 30 days)
     private static let liu: [(iso: Int, cnyRD: Int, leap: Int, bits: UInt16)] = [
         (2101, 767038, 7, 0x095B),
@@ -147,9 +147,9 @@ private struct ChineseLiuReferenceProbe {
         var failures: [String] = []
         var uncertainDiffs: [String] = []
         for (iso, cnyRD, leap, bits) in Self.liu {
-            let y = _ChineseCalendarEngine.year(relatedIso: iso)
+            let y = _ChineseCalendarEngine.year(relatedISOYear: iso)
             var diffs: [String] = []
-            if y.newYearRD != cnyRD { diffs.append("CNY rd \(y.newYearRD) vs Liu \(cnyRD)") }
+            if y.newYearRataDie != cnyRD { diffs.append("CNY rd \(y.newYearRataDie) vs Liu \(cnyRD)") }
             if Int(y.leapDisplay) != leap { diffs.append("leap \(y.leapDisplay) vs Liu \(leap)") }
             if y.monthLengthBits != bits { diffs.append("bits \(String(y.monthLengthBits, radix: 16)) vs Liu \(String(bits, radix: 16))") }
             if !diffs.isEmpty {
