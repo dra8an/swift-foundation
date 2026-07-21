@@ -1,7 +1,8 @@
 # Foundation API Benchmark: Swift Collator vs System ICU
 
-Measured 2026-07-15 on Apple Silicon (macOS 26), min of 9 passes, release
-builds. Includes all optimizations through §38 (locale-resolution cache).
+Measured 2026-07-17 on Apple Silicon (macOS 26), min of 9 passes, release
+builds. Includes all optimizations through §43 (direct multi-pass sortKey
+writer).
 
 Same Foundation APIs, two backends:
 
@@ -97,11 +98,11 @@ Same Foundation APIs, two backends:
 
 | Corpus | compare | ICU 79 | ratio | sortKey (inout) | ICU 79 | ratio | sortKey (alloc) |
 |--------|---------|--------|-------|---------|--------|-------|---------|
-| ASCII  | 17      | 9      | 1.9×  | 198     | 107    | 1.9×  | 262 |
-| Latin  | 16      | 10     | 1.6×  | 218     | 125    | 1.7×  | 282 |
-| CJK    | 27      | 42     | **0.6×** | 213  | 121    | 1.8×  | 296 |
-| Paths  | 42      | 30     | 1.4×  | 450     | 372    | 1.2×  | 529 |
-| Thai   | 286     | 192    | 1.5×  | 253     | 161    | 1.6×  | 324 |
+| ASCII  | 17      | 9      | 1.9×  | 178     | 107    | 1.7×  | 240 |
+| Latin  | 15      | 10     | 1.5×  | 190     | 125    | 1.5×  | 253 |
+| CJK    | 28      | 42     | **0.7×** | 200  | 121    | 1.7×  | 273 |
+| Paths  | 43      | 30     | 1.4×  | 433     | 372    | 1.2×  | 519 |
+| Thai   | 281     | 192    | 1.5×  | 231     | 161    | 1.4×  | 299 |
 
 ## Analysis
 
@@ -110,21 +111,17 @@ corpus.** No cells at parity or behind.
 
 **`localizedCompare` family** is 3.7–7.8× faster.
 
-**`compare(_:locale:)`** is 4.3–7.5× faster — the §38 one-slot
-locale-resolution cache (2026-07-15) eliminated ~130 ns of per-call
-identifier parsing and dictionary lookups. Previously 1.7–2.6×.
+**`compare(_:locale:)`** is 4.3–7.5× faster.
 
-**Search APIs (contains, range)** are 2.0–6.2× faster. The §37
-allocation-free refactor moved CE buffers into ScratchBuffers; the §38
-locale cache further helped the explicit-locale range APIs.
+**Search APIs (contains, range)** are 2.0–6.2× faster.
 
-**`range(of:locale:)` and `range(backwards)`** — previously our weakest
-APIs (0.4–1.6× across the optimization history) — now 2.0–4.4× faster.
+**Direct engine compare** is 1.4–1.9× behind ICU on ASCII/Latin/paths,
+**0.7× on CJK** (faster than ICU), 1.5× on Thai.
 
-**Direct engine** is 1.4–1.9× behind ICU on ASCII/Latin/paths, **0.6×
-on CJK** (faster than ICU), 1.5× on Thai.
-
-**Sort keys** are 1.2–1.9× behind ICU.
+**Sort keys** are 1.2–1.7× behind ICU (down from 1.9× before §43).
+The direct multi-pass writer eliminates intermediate level buffers —
+each level writes straight into the output key through the stack-batch
+idiom. Paths at 1.2×, Thai at 1.4×.
 
 ## How to reproduce
 
