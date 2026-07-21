@@ -1,8 +1,7 @@
 # Foundation API Benchmark: Swift Collator vs System ICU
 
-Measured 2026-07-17 on Apple Silicon (macOS 26), min of 9 passes, release
-builds. Includes all optimizations through §43 (direct multi-pass sortKey
-writer).
+Measured 2026-07-20 on Apple Silicon (macOS 26), min of 9 passes, release
+builds. Includes all optimizations through §44 (locale-change revalidation).
 
 Same Foundation APIs, two backends:
 
@@ -17,8 +16,8 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 44    | 195       | **4.4× faster** |
-| Latin  | 45    | 352       | **7.8× faster** |
+| ASCII  | 56    | 195       | **3.5× faster** |
+| Latin  | 57    | 352       | **6.2× faster** |
 | CJK    | 66    | 369       | **5.6× faster** |
 | Paths  | 77    | 299       | **3.9× faster** |
 
@@ -26,8 +25,8 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 53    | 195       | **3.7× faster** |
-| Latin  | 53    | 346       | **6.5× faster** |
+| ASCII  | 57    | 195       | **3.4× faster** |
+| Latin  | 57    | 346       | **6.1× faster** |
 | CJK    | 79    | 357       | **4.5× faster** |
 | Paths  | 93    | 322       | **3.5× faster** |
 
@@ -35,8 +34,8 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 52    | 197       | **3.8× faster** |
-| Latin  | 54    | 342       | **6.3× faster** |
+| ASCII  | 56    | 197       | **3.5× faster** |
+| Latin  | 56    | 342       | **6.1× faster** |
 | CJK    | 80    | 357       | **4.5× faster** |
 | Paths  | 87    | 309       | **3.6× faster** |
 
@@ -53,7 +52,7 @@ Same Foundation APIs, two backends:
 
 | Corpus | Swift | System ICU | Speedup |
 |--------|-------|-----------|---------|
-| ASCII  | 226   | 1006      | **4.5× faster** |
+| ASCII  | 231   | 1006      | **4.4× faster** |
 | Latin  | 242   | 1434      | **5.9× faster** |
 | CJK    | 263   | 1280      | **4.9× faster** |
 | Paths  | 245   | 983       | **4.0× faster** |
@@ -109,7 +108,9 @@ Same Foundation APIs, two backends:
 **Every Foundation API is 2.0–7.8× faster than system ICU on every
 corpus.** No cells at parity or behind.
 
-**`localizedCompare` family** is 3.7–7.8× faster.
+**`localizedCompare` family** is 3.4–6.2× faster (slightly reduced from
+3.7–7.8× by the §44 locale-change revalidation, which adds a generation-
+counter check per call — accepted for correctness).
 
 **`compare(_:locale:)`** is 4.3–7.5× faster.
 
