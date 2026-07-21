@@ -233,11 +233,25 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   EXONERATED (TLS ~20 ns, throws ~0 — §30's box already collected it);
   the WRITER is 56–60% of sortKey on every corpus (ascii write phase
   208 ns > ICU's whole 194); its profile is 41% core / 35% Array
-  append machinery / 14% ARC+exclusivity, zero allocs. WRITER ROUND
-  OPEN — levers (a) ICU-shape one-buffer redesign, (b) exclusivity
-  shave, (c) TLS; plan + bounding dead ends in §43.** Audit boxes
-  left: the locale-change invalidation DESIGN NOTE for the upstream
-  proposal (the last unchecked box).
+  append machinery / 14% ARC+exclusivity, zero allocs.**
+  2026-07-20: **CONTRIBUTION_GUIDELINE.md conformance, part 1**
+  (`05677e6`) — upstream added the guideline on main ("Do not manually
+  wrap comments or DocC"); mechanical unwrap across all collation
+  sources + our comments in the two inherited String files
+  (script-verified comment-only, suite green). Remaining conformance
+  items (force unwraps, §-reference comments, unsafe-API isolation,
+  Benchmarks/ entries) filed as the UPSTREAM-PREP audit box. Same
+  day: **§43 SHIPPED (`e232237`) — the direct multi-pass sortKey
+  writer**: one pass per level straight into the key (stack-batched,
+  no level buffers, no assembly), buffered writer retained as the
+  identity-checked reference. **sortKey ascii/latin/cjk/thai −11..16%
+  → 1.44–1.53× vs ICU C (was 1.67–1.81×)** — the biggest engine move
+  since §31; paths +5% accepted residual (§43's "paths saga": the §33
+  closure dead end re-confirmed at ~40 ns; writer deltas certified in
+  the SHIPPING binary, not probes; machine 2 to arbitrate the
+  residual). Docs/25 re-baselined at `e232237` — §42+§43 folded;
+  Table-2 floor 1.31×. Audit boxes left: the UPSTREAM-PREP
+  conformance pass and the locale-change invalidation DESIGN NOTE.
   2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
   (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
   mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
