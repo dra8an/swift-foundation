@@ -171,8 +171,8 @@ import Testing
         #expect(failures == 0, "\(failures) of \(checkedLines) checked lines failed")
         // Coverage accounting: the file has 109 rules sections and a handful
         // of unsupported locale/attribute sections.
-        #expect(checkedLines >= 300, "ran only \(checkedLines) lines — parsing regression?")
-        print("collationtest.txt: \(checkedLines) lines checked; skipped \(skippedSections) rules/locale sections, \(skippedAttrSections) attribute sections, \(skippedSurrogateLines) unpaired-surrogate lines")
+        // Skip accounting stays visible on failure (the guideline bans print in tests): the counts ride the assertion message.
+        #expect(checkedLines >= 300, "ran only \(checkedLines) lines (skipped \(skippedSections) rules/locale sections, \(skippedAttrSections) attribute sections, \(skippedSurrogateLines) unpaired-surrogate lines) — parsing regression?")
     }
 
     // MARK: Checks (CollationTest::checkCompareTwo)
