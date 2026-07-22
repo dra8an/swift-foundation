@@ -36,13 +36,13 @@ final class ScratchBuffers {
     var levels = SortKeyLevelBuffers()
     /// sortKey: NFD scalars for the identical level.
     var nfdScalars: [UInt32] = []
-    /// search: masked pattern CEs (§37 — rebuilt per call, allocation-free).
+    /// search: masked pattern CEs (rebuilt per call, allocation-free).
     var patternCEs: [Int64] = []
-    /// search: the annotated text-CE window (forward) / full text CEs (backward). The per-call allocation of this array was the largest single cost of the cjk range cells (§37).
+    /// search: the annotated text-CE window (forward) / full text CEs (backward). The per-call allocation of this array was once the largest single cost of CJK searches.
     var annotatedCEs: [AnnotatedCE] = []
     /// contains: masked text CEs.
     var maskedTextCEs: [Int64] = []
-    /// search: NFD-position → source-scalar-index map, built lazily by confirmMatch only for a full CE match on decomposing text. Its per-call allocation (plus per-scalar temporaries) was ~half the cost of every matching search on accented text (§41).
+    /// search: NFD-position → source-scalar-index map, built lazily by confirmMatch only for a full CE match on decomposing text. Its per-call allocation (plus per-scalar temporaries) was ~half the cost of every matching search on accented text.
     var nfdSourceMap: [Int] = []
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData,

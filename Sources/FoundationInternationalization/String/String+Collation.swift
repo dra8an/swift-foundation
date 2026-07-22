@@ -27,14 +27,14 @@ struct CollatorCache: Sendable {
 
     private let lock = LockedState(initialState: [String: RootCollator]())
 
-    /// Fast path for Locale.current — caches the collator for the current locale, revalidated against Foundation's locale generation count (LocaleNotifications) so a mid-process system locale change re-resolves on the next call — the same documented mechanism Calendar and TimeZone use (design record: Docs/29). RootCollator is immutable and Sendable so sharing is safe.
+    /// Fast path for Locale.current — caches the collator for the current locale, revalidated against Foundation's locale generation count (LocaleNotifications) so a mid-process system locale change re-resolves on the next call — the same documented mechanism Calendar and TimeZone use. RootCollator is immutable and Sendable so sharing is safe.
     private struct CurrentSlot {
         var collator: RootCollator? = nil
         var generation: Int = 0
     }
     private let currentCache = LockedState(initialState: CurrentSlot())
 
-    /// One-slot cache for the most recent explicit-locale resolution (§38). Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes under a lock — profiled at ~2/3 of the whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in lock + compare + return.
+    /// One-slot cache for the most recent explicit-locale resolution. Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes under a lock — profiled at ~2/3 of the whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in lock + compare + return.
     private struct LastLocale {
         var identifier: String? = nil
         var collator: RootCollator? = nil
@@ -210,7 +210,7 @@ struct CollatorCache: Sendable {
 }
 
 extension CollationOptions {
-    /// Translates CompareOptions onto `base` — the resolved collator's defaultOptions, so tailoring default settings (fr_CA backwards secondary, da upper-first) survive the translation; each Foundation option overrides just its own attribute, like setting attributes on an opened ICU collator. `base` is deliberately required: a fresh CollationOptions() base silently drops tailoring defaults (the bug §44's test found).
+    /// Translates CompareOptions onto `base` — the resolved collator's defaultOptions, so tailoring default settings (fr_CA backwards secondary, da upper-first) survive the translation; each Foundation option overrides just its own attribute, like setting attributes on an opened ICU collator. `base` is deliberately required: a fresh CollationOptions() base silently drops tailoring defaults.
     static func from(foundationOptions: String.CompareOptions, base: CollationOptions) -> CollationOptions {
         var opts = base
         if foundationOptions.contains(.caseInsensitive) {

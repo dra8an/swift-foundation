@@ -210,7 +210,7 @@ extension StringProtocol {
         return nil
     }
 
-    /// Maps a range the search produced (indices into the materialized `source` String) back into SELF's index space. Scalar-offset math on both sides: the search's indices are scalar-aligned, and a Substring's scalar count matches its materialized copy while its indices stay base-string-relative — mapping through a fresh `String(self)` returned copy-space indices, misaligned for every Substring receiver (§39; caught by SubstringReceiverTests).
+    /// Maps a range the search produced (indices into the materialized `source` String) back into SELF's index space. Scalar-offset math on both sides: the search's indices are scalar-aligned, and a Substring's scalar count matches its materialized copy while its indices stay base-string-relative — mapping through a fresh `String(self)` returned copy-space indices, misaligned for every Substring receiver (caught by SubstringReceiverTests).
     private func rebaseRange(_ range: Range<String.Index>, from source: String) -> Range<Index>? {
         rebaseRange(range, from: source, offsetBy: startIndex)
     }

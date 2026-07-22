@@ -523,9 +523,9 @@ enum CollationKeys {
         swap(&quaternaries, &buffers.quaternaries)
     }
 
-    // MARK: Direct multi-pass writer (§43 lever (a))
+    // MARK: Direct multi-pass writer
 
-    /// 64-byte stack batch: turns per-byte Array appends into pointer stores with bulk flushes — the §31 primary-batching idiom, generalized to every level pass.
+    /// 64-byte stack batch: turns per-byte Array appends into pointer stores with bulk flushes — the idiom the primary level has always used, generalized to every level pass.
     private struct ByteBatch {
         var storage = (
             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
@@ -994,7 +994,7 @@ enum CollationKeys {
         batch.flush(&key)
     }
 
-    /// Writes the sort key for levels up to the strength in `options` — byte-identical output to `writeSortKeyUpToQuaternary`, produced by one direct pass per level with NO intermediate level buffers and no assembly copies (§43 lever (a)). The CE array is small and cache-hot; re-scanning it per level is cheaper than buffering every level's bytes twice.
+    /// Writes the sort key for levels up to the strength in `options` — byte-identical output to `writeSortKeyUpToQuaternary`, produced by one direct pass per level with NO intermediate level buffers and no assembly copies. The CE array is small and cache-hot; re-scanning it per level is cheaper than buffering every level's bytes twice.
     static func writeSortKeyUpToQuaternaryDirect(
         ces: borrowing [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
@@ -1012,7 +1012,7 @@ enum CollationKeys {
         }
         let tertiaryMask = CollationOptions.tertiaryMask(of: options)
 
-        // No withUnsafeBufferPointer closure here: that call-site shape blocks WMO inlining of the writer chain and cost paths sortKey ~+8% (the §33 dead end, re-measured for §43); borrowing-array passes compile clean.
+        // No withUnsafeBufferPointer closure here: that call-site shape blocks WMO inlining of the writer chain and costs paths sortKey ~+8% (measured independently on two occasions); borrowing-array passes compile clean.
         writePrimaryDirect(
             ces, compressibleBytes: compressibleBytes,
             variableTop: variableTop, reordering: reordering, into: &key)

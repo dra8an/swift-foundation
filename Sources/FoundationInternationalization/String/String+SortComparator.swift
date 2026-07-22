@@ -167,7 +167,7 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor cost ~90 ns PER COMPARISON here (§40) — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
+                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
                 let collator = CollatorCache.shared.collatorForCurrentLocale()
                 let opts = CollationOptions.from(foundationOptions: options, base: collator?.defaultOptions ?? CollationOptions())
                 if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
@@ -184,7 +184,7 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor cost ~90 ns PER COMPARISON here (§40) — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
+                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
                 let collator = CollatorCache.shared.collatorForCurrentLocale()
                 let opts = CollationOptions.from(foundationOptions: options, base: collator?.defaultOptions ?? CollationOptions())
                 if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {

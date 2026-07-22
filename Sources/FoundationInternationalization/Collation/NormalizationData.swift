@@ -133,7 +133,7 @@ public struct NormalizationData: @unchecked Sendable {
         return true
     }
 
-    /// Number of scalars in the fully expanded canonical decomposition of `c` — 0 when `c` has none. Count-only twin of `appendDecomposition` plus the one-level recursion buildNFDSourceMap applied over its output (the pool is fully decomposed in practice, so the second level is defensive parity, not extra data). Keep in lockstep with `appendDecomposition` — the NFD→source map's entry counts must equal the scalars the NFD pipeline actually emits (§41).
+    /// Number of scalars in the fully expanded canonical decomposition of `c` — 0 when `c` has none. Count-only twin of `appendDecomposition` plus the one-level recursion buildNFDSourceMap applied over its output (the pool is fully decomposed in practice, so the second level is defensive parity, not extra data). Keep in lockstep with `appendDecomposition` — the NFD→source map's entry counts must equal the scalars the NFD pipeline actually emits.
     func fullDecompositionCount(of c: UInt32) -> Int {
         if c < 0xc0 { return 0 }
         let v = value(c)

@@ -1,4 +1,4 @@
-// Incremental NFD: adapts a Unicode scalar stream into its canonical decomposition with canonical ordering applied — the "fused decomposition" front end of the ICU4X collator model (Docs/02-icu4x-strategy.md).
+// Incremental NFD: adapts a Unicode scalar stream into its canonical decomposition with canonical ordering applied — the "fused decomposition" front end of the ICU4X collator model.
 //
 // Each refill produces one reorderable unit: a starter (or the string-initial run of non-starters) plus all following combining marks, with the marks stably sorted by canonical combining class (the Canonical Ordering Algorithm, UAX #15).
 
@@ -25,7 +25,7 @@ struct NFDIterator {
     }
 
     /// Rewinds onto a new input, keeping the buffers' storage so that reuse across compares runs allocation-free. `skippingFirst` positions the iterator after the first `n` scalars (for the identical-prefix skip; the caller guarantees that position is a clean restart boundary).
-    @inline(__always)  // §35: fell out of line after the skip-walk restructure
+    @inline(__always)  // fell out of line after the skip-walk restructure
     mutating func reset(scalars: String.UnicodeScalarView, skippingFirst n: Int = 0) {
         source = scalars.makeIterator()
         for _ in 0..<n { _ = source.next() }
@@ -109,7 +109,7 @@ struct NFDIterator {
     private mutating func refill(startingWith first: UInt32?) {
         unit.removeAll(keepingCapacity: true)
         unitNext = 0
-        // Fast path for a lone combining mark between starters (Thai tone/vowel marks): a non-decomposing mark whose follower starts with ccc 0 (or ends the input) is a complete single-mark reorderable unit by itself — nothing can sort across either boundary, so it becomes the unit with none of the absorb/ flushMarks machinery, and the peeked follower goes to `pendingFirst` (skipping the carried-scalar refill round trip). Output stays 1:1 with the source (mirrors ICU's FCD pass-through, which never buffers ordered marks). Two adjacent marks or a decomposing mark take the full path below. This check lives HERE, not in next(), so next()'s inlined copies stay byte-identical and no other corpus can be affected (optimization-targets.md §34).
+        // Fast path for a lone combining mark between starters (Thai tone/vowel marks): a non-decomposing mark whose follower starts with ccc 0 (or ends the input) is a complete single-mark reorderable unit by itself — nothing can sort across either boundary, so it becomes the unit with none of the absorb/ flushMarks machinery, and the peeked follower goes to `pendingFirst` (skipping the carried-scalar refill round trip). Output stays 1:1 with the source (mirrors ICU's FCD pass-through, which never buffers ordered marks). Two adjacent marks or a decomposing mark take the full path below. This check lives HERE, not in next(), so next()'s inlined copies stay byte-identical and no other corpus can be affected.
         if let c = first, carried.isEmpty {
             let v = norm.value(c)
             if (v >> 16) & 7 == 0, UInt8(truncatingIfNeeded: v) != 0 {

@@ -171,7 +171,7 @@ struct CEIterator {
                 return true
             }
         }
-        // Fast path: pre-computed CE for simple Thai-block scalars — consonants, sara aa, tone/vowel marks (§34 attributed ~200 ns of the thai row to CE production). Prefix-vowel contractions and digits are 0 sentinels and take the full path, identical to the ASCII table's exclusion rules. ASCII returns above and never reaches this; other scripts pay one wrapped-subtract compare.
+        // Fast path: pre-computed CE for simple Thai-block scalars — consonants, sara aa, tone/vowel marks (profiling attributed ~200 ns of Thai compares to CE production). Prefix-vowel contractions and digits are 0 sentinels and take the full path, identical to the ASCII table's exclusion rules. ASCII returns above and never reaches this; other scripts pay one wrapped-subtract compare.
         if (c &- 0x0E00) < 128, !thaiCEs.isEmpty {
             let ce = thaiCEs[Int(c &- 0x0E00)]
             if ce != 0 {
@@ -272,7 +272,7 @@ struct CEIterator {
             if match.hasValue {
                 result = UInt32(bitPattern: trie.getValue())
             }
-            // Prefixes longer than two scalars do not occur in CLDR data (see Docs/02-icu4x-strategy.md); deeper history is not kept.
+            // Prefixes longer than two scalars do not occur in CLDR data; deeper history is not kept.
         }
         return result
     }

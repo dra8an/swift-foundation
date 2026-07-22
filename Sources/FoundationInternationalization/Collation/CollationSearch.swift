@@ -2,7 +2,7 @@
 //
 // Forward search uses lazy CE production — CEs are produced on demand and matched incrementally, stopping as soon as a match is found. Backwards search pre-produces all CEs then scans from the end.
 
-/// Collation element annotated with the NFD-scalar window it was produced from. Offsets are NFD-stream positions; they are converted to source scalar offsets only when a candidate match needs boundary validation and range reporting (an identity conversion when the iterator never decomposed anything — see `confirmMatch`). One array of structs, not parallel arrays: a second array means a second per-call allocation, which measurably regresses short-line corpora (see optimization-targets.md §20).
+/// Collation element annotated with the NFD-scalar window it was produced from. Offsets are NFD-stream positions; they are converted to source scalar offsets only when a candidate match needs boundary validation and range reporting (an identity conversion when the iterator never decomposed anything — see `confirmMatch`). One array of structs, not parallel arrays: a second array means a second per-call allocation, which measurably regresses short-line corpora.
 struct AnnotatedCE {
     let ce: Int64
     let nfdStart: Int
@@ -51,7 +51,7 @@ struct CollationSearch {
             scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses the caller's thread-local scratch (iterator + CE buffers) — no per-call allocations at all (§37: the per-call pattern and window arrays were the largest cost of the cjk range cells). The scratch travels as ONE class reference so the byte-scan fast path — which never touches it — pays no exclusivity scopes at the call boundary (three inout parameters here cost ascii/paths range +30..40 ns under -no-WMO; measured 2026-07-16).
+    /// Reuses the caller's thread-local scratch (iterator + CE buffers) — no per-call allocations at all (the per-call pattern and window arrays were once the largest cost of CJK searches). The scratch travels as ONE class reference so the byte-scan fast path — which never touches it — pays no exclusivity scopes at the call boundary (three inout parameters here measured +30..40 ns on searches the byte scan resolves).
     func search(
         for pattern: String, in text: String, scratch: ScratchBuffers
     ) -> Range<String.Index>? {
@@ -89,7 +89,7 @@ struct CollationSearch {
             scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses the caller's thread-local scratch for backwards search — no per-call allocations (§37; one class reference, see `search`).
+    /// Reuses the caller's thread-local scratch for backwards search — no per-call allocations (one class reference; see `search`).
     func searchBackwards(
         for pattern: String, in text: String, scratch: ScratchBuffers
     ) -> Range<String.Index>? {
@@ -127,7 +127,7 @@ struct CollationSearch {
             scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses the caller's thread-local scratch for both the pattern and the text — no per-call allocations. `localizedStandardContains` over many strings reuses one scratch set across all calls (profiling showed fresh per-call iterators dominated `contains`; §37 removed the remaining per-call arrays).
+    /// Reuses the caller's thread-local scratch for both the pattern and the text — no per-call allocations. `localizedStandardContains` over many strings reuses one scratch set across all calls (profiling showed fresh per-call iterators and arrays dominated `contains`).
     func contains(
         pattern: String, in text: String, scratch: ScratchBuffers
     ) -> Bool {
@@ -296,7 +296,7 @@ struct CollationSearch {
 
     // MARK: - Forward search (lazy CE production)
 
-    /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match (profiling showed the upfront index table + NFD map were most of `localizedStandardRange`; §37 showed the window's per-call malloc/free was most of the cjk range cells).
+    /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match (profiling showed the upfront index table and NFD map were most of `localizedStandardRange`, and the window's per-call malloc/free most of CJK searches).
     private func searchForward(
         patternCEs: [Int64], in text: String, mask: Int64,
         iter: inout CEIterator, window buffer: inout [AnnotatedCE],
@@ -369,13 +369,13 @@ struct CollationSearch {
         return nil
     }
 
-    /// Checks the pattern CEs against `buffer` at `start`; on CE equality, converts the match's NFD offsets to source scalar offsets (building the NFD→source map lazily, and only when the iterator actually decomposed something — otherwise the streams are 1:1 and offsets carry over directly), validates the match boundaries, and returns the range in `text`. `nfdMap` is the scratch-owned map buffer; `nfdMapBuilt` tracks whether it holds THIS text's map yet (§41 — stale contents from a previous search must not be trusted).
+    /// Checks the pattern CEs against `buffer` at `start`; on CE equality, converts the match's NFD offsets to source scalar offsets (building the NFD→source map lazily, and only when the iterator actually decomposed something — otherwise the streams are 1:1 and offsets carry over directly), validates the match boundaries, and returns the range in `text`. `nfdMap` is the scratch-owned map buffer; `nfdMapBuilt` tracks whether it holds THIS text's map yet (stale contents from a previous search must not be trusted).
     private func confirmMatch(
         buffer: [AnnotatedCE], at start: Int, patternCEs: [Int64],
         text: String, sawDecomposition: Bool,
         nfdMap: inout [Int], nfdMapBuilt: inout Bool
     ) -> Range<String.Index>? {
-        // Hot head — runs at EVERY candidate position; the fail-fast CE comparison must inline into the scan loops. The once-per-match range construction lives in the @inline(never) tail below: with it inline, the whole function grew past WMO's inlining threshold and the scan loops paid an 11-argument call per candidate (§42 — no-match scans +9%; the §29 hot/cold split shape).
+        // Hot head — runs at EVERY candidate position; the fail-fast CE comparison must inline into the scan loops. The once-per-match range construction lives in the @inline(never) tail below: with it inline, the whole function grew past WMO's inlining threshold and the scan loops paid an 11-argument call per candidate (measured +9% on no-match scans).
         for patIx in 0..<patternCEs.count {
             if buffer[start + patIx].ce != patternCEs[patIx] {
                 return nil
@@ -423,7 +423,7 @@ struct CollationSearch {
             endScalar = max(srcEnd, lastSrcStart + 1)
         }
 
-        // Boundary validation fused with index construction — ONE bounded walk to startScalar plus the short hop to endScalar (§42). The old shape (separate isValidStart/EndBoundary helpers) walked to each offset separately AND paid a whole-string `scalars.count` walk per confirmed match — the top remaining match-tax leaf after §41. A boundary is valid when the scalar at it is a starter (ccc 0) or it sits at the text's edge, so the match never splits a combining sequence.
+        // Boundary validation fused with index construction — ONE bounded walk to startScalar plus the short hop to endScalar. The old shape (separate isValidStart/EndBoundary helpers) walked to each offset separately AND paid a whole-string `scalars.count` walk per confirmed match — the top match-confirmation cost in profiles. A boundary is valid when the scalar at it is a starter (ccc 0) or it sits at the text's edge, so the match never splits a combining sequence.
         let scalars = text.unicodeScalars
         guard let startIdx = scalars.index(
             scalars.startIndex, offsetBy: startScalar, limitedBy: scalars.endIndex
@@ -527,7 +527,7 @@ struct CollationSearch {
         }
     }
 
-    /// Fills `map` with each NFD scalar position's original source scalar index. Allocation-free (§41): the expansion counts come straight from the trie (`fullDecompositionCount`, the count-only twin of `appendDecomposition`) and the map is a scratch-owned buffer — the old per-call map plus two `[UInt32]` temporaries PER DECOMPOSING SCALAR were ~half of every matching search on accented text. The utf8 reserve replaces a `unicodeScalars.count` walk, which cost its own O(n) pass.
+    /// Fills `map` with each NFD scalar position's original source scalar index. Allocation-free: the expansion counts come straight from the trie (`fullDecompositionCount`, the count-only twin of `appendDecomposition`) and the map is a scratch-owned buffer — the old per-call map plus two `[UInt32]` temporaries PER DECOMPOSING SCALAR were ~half of every matching search on accented text. The utf8 reserve replaces a `unicodeScalars.count` walk, which cost its own O(n) pass.
     private func buildNFDSourceMap(for text: String, into map: inout [Int]) {
         if !map.isEmpty { map.removeAll(keepingCapacity: true) }
         map.reserveCapacity(min(text.utf8.count, 1024))

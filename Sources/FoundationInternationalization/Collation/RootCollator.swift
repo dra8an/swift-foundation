@@ -1,14 +1,10 @@
 // String comparison against the CLDR root collation.
 //
-// Milestone-4 scope (see Docs/04-milestone-plan.md):
-// - input is incrementally NFD-decomposed and canonically reordered before CE
-// lookup (the fused-decomposition front end of the ICU4X model), so arbitrary non-NFD input compares correctly
-// - all strengths (primary..quaternary, identical) and settings: alternate
-// shifted + maxVariable, case-first, case-level, backwards-secondary ("French"), numeric (CODAN)
-// - full context-dependent mappings: contraction (suffix) matching including
-// discontiguous contractions per UTS #10 S2.1, and prefix matching over the two preceding scalars (sufficient for all CLDR prefixes)
-// - root data only, no tailorings, no script reordering (milestone 7); works
-// against both the regular root data (with canonical closure) and the NFD-only ICU4X variant
+// Ported from ICU4C's "collation v2" design on the ICU4X architectural model:
+// - input is incrementally NFD-decomposed and canonically reordered before CE lookup (the fused-decomposition front end), so arbitrary non-NFD input compares correctly
+// - all strengths (primary..quaternary, identical) and settings: alternate shifted + maxVariable, case-first, case-level, backwards-secondary ("French"), numeric (CODAN)
+// - full context-dependent mappings: contraction (suffix) matching including discontiguous contractions per UTS #10 S2.1, and prefix matching over the two preceding scalars (sufficient for all CLDR prefixes)
+// - root plus compiled tailorings with script reordering; works against both the regular root data (with canonical closure) and the NFD-only variant
 
 // @unchecked: the two stored views (fast Latin table, restart safety) point into the storage owned by `data`/`base`/`norm`, which the struct retains; everything is immutable after init.
 public struct RootCollator: @unchecked Sendable {
@@ -33,7 +29,7 @@ public struct RootCollator: @unchecked Sendable {
         let baseCEs: UnsafeBufferPointer<Int64>
     }
 
-    /// All stored state lives behind one class reference so a RootCollator value is a single pointer. As a flat struct the collator was ~768 bytes; every method call materialized that copy on the stack (and a throwing call in a loop re-copied it per iteration — the optimizer cannot hoist the copy across a throwing call; see optimization-targets.md §29). Everything is immutable after init.
+    /// All stored state lives behind one class reference so a RootCollator value is a single pointer. As a flat struct the collator was ~768 bytes; every method call materialized that copy on the stack (and a throwing call in a loop re-copied it per iteration — the optimizer cannot hoist the copy across a throwing call). Everything is immutable after init.
     final class Storage: @unchecked Sendable {
         let data: CollationData
         /// The base (root) data when `data` is a tailoring.
@@ -61,7 +57,7 @@ public struct RootCollator: @unchecked Sendable {
         let fastLatinTable: UnsafeBufferPointer<UInt16>
         /// Stored for the same reason; see RestartSafety.
         let restartSafety: RestartSafety
-        /// Trivial-field views for the static quick-CJK dispatch (§31), heap-boxed so the hot path passes one pointer.
+        /// Trivial-field views for the static quick-CJK dispatch, heap-boxed so the hot path passes one pointer.
         let quickCJKSetupPtr: UnsafeMutablePointer<QuickCJKSetup>
 
         init(data: CollationData, base: CollationData?, norm: NormalizationData,
@@ -84,7 +80,7 @@ public struct RootCollator: @unchecked Sendable {
             self.defaultFLPackedOptions = packed
             self.defaultFLWord = defaultOptions.icuOptions
             self.defaultFLStorage = flStorage
-            // Pre-compute simple-CE tables: ASCII, and the Thai block (U+0E00–0E7F — the one non-Latin script whose hot scalars are mostly single simple CEs; §34's ladder put ~200 ns of the thai row in CE production). Same exclusion rules for both: specials (contractions, prefixes, digits) stay 0 and take the full path.
+            // Pre-compute simple-CE tables: ASCII, and the Thai block (U+0E00–0E7F — the one non-Latin script whose hot scalars are mostly single simple CEs; profiling put ~200 ns of Thai compares in CE production). Same exclusion rules for both: specials (contractions, prefixes, digits) stay 0 and take the full path.
             let ceStorage = DataStorage()
             self.simpleCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage)
             self.thaiCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage, from: 0x0E00)
@@ -164,7 +160,7 @@ public struct RootCollator: @unchecked Sendable {
 
     /// Compares two strings. When `options` is nil, the collator's own default options apply — the tailoring's settings (fr_CA backwards secondary, da upper-first, ...), plain tertiary defaults for root — matching a collator opened by ucol_open.
     ///
-    /// Hot/cold split: the default-options fast-Latin byte path lives in a non-throwing function (it cannot fail), so the error-handling ABI is only paid when the CE pipeline actually runs. Measured on Intel: `throws` alone cost 10 ns/call on the fast path — two thirds of the entire mini-CE comparison (see optimization-targets.md §29).
+    /// Hot/cold split: the default-options fast-Latin byte path lives in a non-throwing function (it cannot fail), so the error-handling ABI is only paid when the CE pipeline actually runs. Measured on Intel: `throws` alone cost 10 ns/call on the fast path — two thirds of the entire mini-CE comparison.
     @inline(__always)
     public func compare(_ left: String, _ right: String) throws -> Order {
         try compare(left, right, options: defaultOptions)
@@ -205,7 +201,7 @@ public struct RootCollator: @unchecked Sendable {
                     setup: self.storage.quickCJKSetupPtr,
                     numeric: options.numeric, safety: self.restartSafety)
                 if q != CollationFastLatin.bailOutResult { return q }
-                // Headed for the pipeline: decide here — while the bytes are pinned — whether compareBody's identical-prefix walk would be discarded (§35). STATIC helper, trivial params (§31).
+                // Headed for the pipeline: decide here — while the bytes are pinned — whether compareBody's identical-prefix walk would be discarded. STATIC helper with trivial parameters — instance methods or fat arguments called from these pinned-buffer closures regress every corpus.
                 unsafeRestart = RootCollator.mismatchRestartIsUnsafe(
                     lBytes, rBytes, at: mismatch,
                     safety: self.restartSafety, numeric: options.numeric)
@@ -219,7 +215,7 @@ public struct RootCollator: @unchecked Sendable {
         return nil
     }
 
-    /// True when compareBody's identical-prefix walk is provably useless: the byte scan's mismatch offset locates the first differing scalars, and if either is an unsafe restart the walk always ends in the shared=0 fallback (88% of thai dictionary pairs — §34's P7 stats), so compareBody can reset from the start directly, which is exactly the behavior those pairs get today, minus the ~123 ns walk. Conservative false when the mismatch is at either string's end (a length-divergent pair keeps its walk) or out of view. STATIC with trivial parameters (§31).
+    /// True when compareBody's identical-prefix walk is provably useless: the byte scan's mismatch offset locates the first differing scalars, and if either is an unsafe restart the walk always ends in the shared=0 fallback (88% of Thai dictionary pairs in probe statistics), so compareBody can reset from the start directly, which is exactly the behavior those pairs get today, minus the ~123 ns walk. Conservative false when the mismatch is at either string's end (a length-divergent pair keeps its walk) or out of view. STATIC with trivial parameters, like every helper called from the pinned-buffer closures.
     private static func mismatchRestartIsUnsafe(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
         at mismatch: Int, safety: RestartSafety, numeric: Bool
@@ -235,7 +231,7 @@ public struct RootCollator: @unchecked Sendable {
         return safety.isUnsafe(lc, numeric: numeric) || safety.isUnsafe(rc, numeric: numeric)
     }
 
-    /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called only after fastLatinUTF8 bails (CJK/Thai text) — Latin-resolved compares never evaluate it or its arguments. When both first-differing scalars are CJK ideographs with distinct single-CE primaries — the dominant case for CJK text — this decides the compare right here, skipping compareBody's fresh scalar iterators and re-decode (~21 ns against ~200 ns of machinery; §31).
+    /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called only after fastLatinUTF8 bails (CJK/Thai text) — Latin-resolved compares never evaluate it or its arguments. When both first-differing scalars are CJK ideographs with distinct single-CE primaries — the dominant case for CJK text — this decides the compare right here, skipping compareBody's fresh scalar iterators and re-decode (~21 ns against ~200 ns of machinery).
     ///
     /// STATIC with trivial parameters, deliberately: calling an instance method inside the contiguous-storage closures measurably degrades codegen for every corpus (+17-22% — measured twice, 07-06 and 07-13); the setup travels as one pointer for the same reason. The safety gate mirrors compareBody's: a mismatch at offset 0 has no preceding prefix, so restart safety is trivially met; deeper mismatches require both restart scalars to be safe.
     private static func quickCJKDispatch(
@@ -337,7 +333,7 @@ public struct RootCollator: @unchecked Sendable {
         _ left: String, _ right: String, options: CollationOptions, triedFastLatin: Bool,
         skipWalk: Bool = false
     ) throws -> Order {
-        // No `if left == right` shortcut here. Swift's String == is canonical equivalence, which for non-binary-equal strings runs NFC normalization to prove (in)equality — measured at ~250–400 ns per call on text with combining marks (Thai, etc.), on *every* non-equal compare. Canonical equivalence is already handled correctly by the CE pipeline below (the NFD front end yields equal CEs for equivalent strings), so the shortcut was pure cost on the non-Latin path. The byte fast path above still settles binary equality cheaply for non-identical strengths. (See Docs/13 §6.6.)
+        // No `if left == right` shortcut here. Swift's String == is canonical equivalence, which for non-binary-equal strings runs NFC normalization to prove (in)equality — measured at ~250–400 ns per call on text with combining marks (Thai, etc.), on *every* non-equal compare. Canonical equivalence is already handled correctly by the CE pipeline below (the NFD front end yields equal CEs for equivalent strings), so the shortcut was pure cost on the non-Latin path. The byte fast path above still settles binary equality cheaply for non-identical strengths.
 
         // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar prefixes produce identical CEs, so iteration can start at the first difference — when restarting there is provably equivalent to full iteration (see unsafeStart). On an unsafe boundary we compare from the start instead; ICU backs up partially, but skipping less is always sound and keeps the common path free of index arithmetic.
         var lIter = left.unicodeScalars.makeIterator()
@@ -347,7 +343,7 @@ public struct RootCollator: @unchecked Sendable {
         var rNext: Unicode.Scalar? = nil
         var fellBack = false
         if skipWalk {
-            // The byte scan already proved the first-differing scalar is an unsafe restart (mismatchRestartIsUnsafe): the walk below would end in the shared=0 fallback, so take that exit directly (§35).
+            // The byte scan already proved the first-differing scalar is an unsafe restart (mismatchRestartIsUnsafe): the walk below would end in the shared=0 fallback, so take that exit directly.
             fellBack = true
         } else {
             lNext = lIter.next()
@@ -536,7 +532,7 @@ public struct RootCollator: @unchecked Sendable {
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
         key.removeAll(keepingCapacity: true)
-        // Direct multi-pass writer (§43): one pass per level straight into the key, no level buffers. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity between the two).
+        // Direct multi-pass writer: one pass per level straight into the key, no level buffers. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity between the two).
         CollationKeys.writeSortKeyUpToQuaternaryDirect(
             ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
