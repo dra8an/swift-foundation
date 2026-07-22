@@ -24,17 +24,21 @@ import Testing
         let triplets: [[String]]
     }
 
-    static let cases: [Case] = {
-        let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
-            .appendingPathComponent("regcoll.json")
-        return try! JSONDecoder().decode(File.self, from: Data(contentsOf: url)).cases
-    }()
+    private static let _cases = Result {
+        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        let url = dir.appendingPathComponent("regcoll.json")
+        return try JSONDecoder().decode(File.self, from: Data(contentsOf: url)).cases
+    }
+    static var cases: [Case] { get throws { try _cases.get() } }
 
-    static let root = try! RootCollator()
+    private static let _root = Result { try RootCollator() }
+    static var root: RootCollator { get throws { try _root.get() } }
 
     @Test(arguments: 0..<13) func regression(caseIndex: Int) throws {
-        let c = Self.cases[caseIndex]
-        let collator = c.locale == "root" ? Self.root : try RootCollator(tailoringNamed: c.locale)
+        let c = try Self.cases[caseIndex]
+        let collator = c.locale == "root" ? try Self.root : try RootCollator(tailoringNamed: c.locale)
         var options = collator.defaultOptions
         switch c.strength {
         case "primary": options.strength = .primary
@@ -82,6 +86,6 @@ import Testing
                 )
             }
         }
-        #expect(failures == 0, "[\(Self.cases[caseIndex].name)] \(failures) triplet failures")
+        #expect(failures == 0, "[\(c.name)] \(failures) triplet failures")
     }
 }

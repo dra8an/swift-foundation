@@ -10,9 +10,12 @@ import Testing
 /// string), and byte-wise key order is documented to equal compare() at the
 /// same options. Any skip bug that changes a result breaks that agreement.
 @Suite struct PrefixSkipTests {
-    static let root = try! RootCollator()
-    static let ja = try! RootCollator(tailoringNamed: "ja")
-    static let th = try! RootCollator(tailoringNamed: "th")
+    private static let _root = Result { try RootCollator() }
+    static var root: RootCollator { get throws { try _root.get() } }
+    private static let _ja = Result { try RootCollator(tailoringNamed: "ja") }
+    static var ja: RootCollator { get throws { try _ja.get() } }
+    private static let _th = Result { try RootCollator(tailoringNamed: "th") }
+    static var th: RootCollator { get throws { try _th.get() } }
 
     /// compare() agrees with byte-wise sort key order, in both directions.
     func expectKeyAgreement(
@@ -60,7 +63,7 @@ import Testing
         #expect(try Self.root.compare("x12", "x13", options: options) == .ascending)
         #expect(try Self.root.compare("12", "123", options: options) == .ascending)
         for (a, b) in [("a12", "a2"), ("x12", "x13"), ("12", "123"), ("a02", "a2"), ("b10x", "b10y")] {
-            try expectKeyAgreementAtAllStrengths(Self.root, a, b, numeric: true)
+            try expectKeyAgreementAtAllStrengths(try Self.root, a, b, numeric: true)
         }
     }
 
@@ -68,7 +71,7 @@ import Testing
         // ja: U+30FC's mapping has kana prefix (precontext) conditions; the
         // shared prefix must back up so the mark still sees its base kana.
         for (a, b) in [("カー", "カア"), ("ミー", "ミア"), ("カアー", "カアア"), ("ピーチ", "ピアノ")] {
-            try expectKeyAgreementAtAllStrengths(Self.ja, a, b, a == "カー" ? "prolonged sound mark" : nil)
+            try expectKeyAgreementAtAllStrengths(try Self.ja, a, b, a == "カー" ? "prolonged sound mark" : nil)
         }
     }
 
@@ -81,8 +84,8 @@ import Testing
             ("a\u{0301}\u{0327}", "a\u{0327}\u{0301}"),  // canonically equivalent mark order
             ("\u{0418}\u{0306}x", "\u{0418}y"),       // Cyrillic И + breve (root contraction)
         ] {
-            try expectKeyAgreementAtAllStrengths(Self.root, a, b)
-            try expectKeyAgreementAtAllStrengths(Self.root, a, b, backwardSecondary: true)
+            try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
+            try expectKeyAgreementAtAllStrengths(try Self.root, a, b, backwardSecondary: true)
         }
     }
 
@@ -91,7 +94,7 @@ import Testing
         // contraction trailers, so a difference right after a shared prevowel
         // must back up over it.
         for (a, b) in [("เก", "เข"), ("เกา", "เขา"), ("แกะ", "แกๆ")] {
-            try expectKeyAgreementAtAllStrengths(Self.th, a, b)
+            try expectKeyAgreementAtAllStrengths(try Self.th, a, b)
         }
     }
 
@@ -101,7 +104,7 @@ import Testing
             ("가\u{1100}", "가\u{1161}"),              // syllable then raw Jamo
             ("\u{1D400}b", "\u{1D400}c"),             // supplementary-plane shared prefix
         ] {
-            try expectKeyAgreementAtAllStrengths(Self.root, a, b)
+            try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
         }
     }
 
@@ -111,7 +114,7 @@ import Testing
             ("ab", "ab\u{0001}"),    // completely ignorable tail: equal below identical
             ("ab", "ab\u{0301}"),    // secondary-only tail
         ] {
-            try expectKeyAgreementAtAllStrengths(Self.root, a, b)
+            try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
         }
     }
 

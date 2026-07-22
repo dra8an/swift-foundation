@@ -3,8 +3,10 @@ import Testing
 
 /// Behavioral tests at primary strength (the milestone-1 suite).
 @Suite struct PrimaryCompareTests {
-    static let collator = try! RootCollator()
-    var collator: PrimaryStrengthCollator { PrimaryStrengthCollator(base: Self.collator) }
+    private static let _collator = Result { try RootCollator() }
+    var collator: PrimaryStrengthCollator {
+        get throws { PrimaryStrengthCollator(base: try Self._collator.get()) }
+    }
 
     /// Wrapper fixing options at primary strength, preserving the original
     /// shape of these tests (written when compare() was primary-only).

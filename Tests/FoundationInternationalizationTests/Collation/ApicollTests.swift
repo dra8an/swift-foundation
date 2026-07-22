@@ -9,12 +9,13 @@ import Testing
 /// TestProperty's comparisons, TestCompare's strength behavior,
 /// TestCollationKey/TestSortKey's key properties, and TestMaxVariable.
 @Suite struct ApicollTests {
-    static let root = try! RootCollator()
+    private static let _root = Result { try RootCollator() }
+    static var root: RootCollator { get throws { try _root.get() } }
 
     /// TestProperty: basic comparisons at default (tertiary) strength under
     /// the en collator (root-equivalent for these strings).
     @Test func propertyComparisons() throws {
-        let c = Self.root
+        let c = try Self.root
         #expect(try c.compare("ab", "abc") == .ascending)
         #expect(try c.compare("ab", "AB") == .ascending)
         #expect(try c.compare("blackbird", "black-bird") == .descending)

@@ -42,13 +42,17 @@ import Testing
         }
     }
 
-    static let suites: [String: SuiteData] = {
-        let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
-            .appendingPathComponent("locale-suites.json")
-        return try! JSONDecoder().decode([String: SuiteData].self, from: Data(contentsOf: url))
-    }()
+    private static let _suites = Result {
+        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        let url = dir.appendingPathComponent("locale-suites.json")
+        return try JSONDecoder().decode([String: SuiteData].self, from: Data(contentsOf: url))
+    }
+    static var suites: [String: SuiteData] { get throws { try _suites.get() } }
 
-    static let root = try! RootCollator()
+    private static let _root = Result { try RootCollator() }
+    static var root: RootCollator { get throws { try _root.get() } }
 
     private func order(_ i: Int) -> RootCollator.Order {
         i < 0 ? .ascending : i == 0 ? .same : .descending
@@ -90,7 +94,7 @@ import Testing
     /// encoll.c: English (root). 38 tertiary + 5 primary + 6 secondary cases,
     /// pairwise bug list, and two full expected-order matrices.
     @Test func english() throws {
-        let s = Self.suites["en"]!
+        let s = try Self.suites["en"]!
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
         let results = s.results["results"]!.single
@@ -98,33 +102,33 @@ import Testing
 
         let tertiary = options(.tertiary)
         for i in 0..<38 {
-            try doTest(Self.root, tertiary, src[i], tgt[i], order(results[i]), "en/ter", &failures)
+            try doTest(try Self.root, tertiary, src[i], tgt[i], order(results[i]), "en/ter", &failures)
         }
         let bugs = s.arrays["testBugs"]!
         for i in 0..<bugs.count {
             for j in (i + 1)..<bugs.count {
-                try doTest(Self.root, tertiary, bugs[i], bugs[j], .ascending, "en/bugs", &failures)
+                try doTest(try Self.root, tertiary, bugs[i], bugs[j], .ascending, "en/bugs", &failures)
             }
         }
         let more = s.arrays["testMore"]!
         for i in 0..<more.count {
             for j in 0..<more.count {
-                try doTest(Self.root, tertiary, more[i], more[j],
+                try doTest(try Self.root, tertiary, more[i], more[j],
                            order(i == j ? 0 : (i < j ? -1 : 1)), "en/more", &failures)
             }
         }
         let primary = options(.primary)
         for i in 38..<43 {
-            try doTest(Self.root, primary, src[i], tgt[i], order(results[i]), "en/pri", &failures)
+            try doTest(try Self.root, primary, src[i], tgt[i], order(results[i]), "en/pri", &failures)
         }
         let secondary = options(.secondary)
         for i in 43..<49 {
-            try doTest(Self.root, secondary, src[i], tgt[i], order(results[i]), "en/sec", &failures)
+            try doTest(try Self.root, secondary, src[i], tgt[i], order(results[i]), "en/sec", &failures)
         }
         let acute = s.arrays["testAcute"]!
         for i in 0..<acute.count {
             for j in 0..<acute.count {
-                try doTest(Self.root, secondary, acute[i], acute[j],
+                try doTest(try Self.root, secondary, acute[i], acute[j],
                            order(i == j ? 0 : (i < j ? -1 : 1)), "en/acute", &failures)
             }
         }
@@ -134,21 +138,21 @@ import Testing
     /// cdetst.c: German standard (== root data). Two result columns:
     /// [0] primary, [1] tertiary.
     @Test func german() throws {
-        let s = Self.suites["de"]!
+        let s = try Self.suites["de"]!
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
         let results = s.results["results"]!.pairs
         var failures = 0
         for i in 0..<src.count {
-            try doTest(Self.root, options(.tertiary), src[i], tgt[i], order(results[i][1]), "de/ter", &failures)
-            try doTest(Self.root, options(.primary), src[i], tgt[i], order(results[i][0]), "de/pri", &failures)
+            try doTest(try Self.root, options(.tertiary), src[i], tgt[i], order(results[i][1]), "de/ter", &failures)
+            try doTest(try Self.root, options(.primary), src[i], tgt[i], order(results[i][0]), "de/pri", &failures)
         }
         #expect(failures == 0)
     }
 
     /// cestst.c: Spanish. Cases 0..<5 tertiary, 5..<9 primary.
     @Test func spanish() throws {
-        let s = Self.suites["es"]!
+        let s = try Self.suites["es"]!
         let coll = try RootCollator(tailoringNamed: "es")
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
@@ -168,7 +172,7 @@ import Testing
     /// cfrtst.c: Canadian French (backwards secondary). Tertiary cases run at
     /// shifted+quaternary; acute matrix at secondary; bug list at tertiary.
     @Test func canadianFrench() throws {
-        let s = Self.suites["fr"]!
+        let s = try Self.suites["fr"]!
         let coll = try RootCollator(tailoringNamed: "fr_CA")
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
@@ -199,7 +203,7 @@ import Testing
     /// cjaptst.c: Japanese. Source/target cases at tertiary+caseLevel, then
     /// four ascending sequences at various strengths.
     @Test func japanese() throws {
-        let s = Self.suites["ja"]!
+        let s = try Self.suites["ja"]!
         let coll = try RootCollator(tailoringNamed: "ja")
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
@@ -227,7 +231,7 @@ import Testing
 
     /// cturtst.c: Turkish. Cases 0..<8 tertiary, 8..<11 primary.
     @Test func turkish() throws {
-        let s = Self.suites["tr"]!
+        let s = try Self.suites["tr"]!
         let coll = try RootCollator(tailoringNamed: "tr")
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
@@ -246,7 +250,7 @@ import Testing
 
     /// ficoll.cpp: Finnish. Cases 0..<4 tertiary, 4..<5 primary.
     @Test func finnish() throws {
-        let s = Self.suites["fi"]!
+        let s = try Self.suites["fi"]!
         let coll = try RootCollator(tailoringNamed: "fi")
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
@@ -265,7 +269,7 @@ import Testing
 
     /// lcukocol.cpp: Korean, tertiary.
     @Test func korean() throws {
-        let s = Self.suites["ko"]!
+        let s = try Self.suites["ko"]!
         let coll = try RootCollator(tailoringNamed: "ko")
         let src = s.arrays["testSourceCases"]!
         let tgt = s.arrays["testTargetCases"]!
@@ -281,13 +285,13 @@ import Testing
     /// currcoll.cpp: all currency symbols in collation order (root), full
     /// expected-order matrix.
     @Test func currency() throws {
-        let s = Self.suites["currency"]!
+        let s = try Self.suites["currency"]!
         let symbols = s.arrays["currency"]!
         var failures = 0
         let tertiary = options(.tertiary)
         for i in 0..<symbols.count {
             for j in 0..<symbols.count {
-                try doTest(Self.root, tertiary, symbols[i], symbols[j],
+                try doTest(try Self.root, tertiary, symbols[i], symbols[j],
                            order(i == j ? 0 : (i < j ? -1 : 1)), "currency", &failures)
             }
         }

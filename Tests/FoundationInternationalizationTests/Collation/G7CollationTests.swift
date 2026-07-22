@@ -24,11 +24,14 @@ import Testing
         let orders: [[Int]]
     }
 
-    static let fixture: Fixture = {
-        let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
-            .appendingPathComponent("g7coll.json")
-        return try! JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
-    }()
+    private static let _fixture = Result {
+        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        let url = dir.appendingPathComponent("g7coll.json")
+        return try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
+    }
+    static var fixture: Fixture { get throws { try _fixture.get() } }
 
     /// en/fr-FR/de/it have no tailoring relevant to these strings (ICU's
     /// createInstance falls back to root); fr_CA and ja are bundled.
@@ -42,7 +45,7 @@ import Testing
 
     @Test(arguments: 0..<8)
     func g7Locale(index: Int) throws {
-        let fixture = Self.fixture
+        let fixture = try Self.fixture
         let locale = fixture.locales[index]
         let collator = try Self.collator(for: locale)
         let options = collator.defaultOptions

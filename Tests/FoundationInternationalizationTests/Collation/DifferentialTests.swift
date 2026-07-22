@@ -9,10 +9,11 @@ import Testing
 /// the regular data and the NFD-only ICU4X variant (ICU's verdict does not
 /// depend on which data *we* read; correct results must be identical).
 @Suite struct DifferentialTests {
-    static let collators: [(String, RootCollator)] = [
-        ("regular", try! RootCollator()),
-        ("icu4x", RootCollator(data: try! .rootICU4X(), norm: try! .standard())),
-    ]
+    private static let _collators = Result {
+        [("regular", try RootCollator()),
+         ("icu4x", RootCollator(data: try .rootICU4X(), norm: try .standard()))]
+    }
+    static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 
     /// Must match the optionSets table in Tools/gen_golden.c.
     static let optionSets: [(String, CollationOptions)] = {
@@ -39,18 +40,21 @@ import Testing
         ]
     }()
 
-    static let corpus: [String] = {
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
-        return try! String(contentsOf: golden.appendingPathComponent("corpus.txt"), encoding: .utf8)
+    private static let _corpus = Result {
+        guard let golden = Bundle.module.url(forResource: "Golden", withExtension: nil) else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        return try String(contentsOf: golden.appendingPathComponent("corpus.txt"), encoding: .utf8)
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map(String.init)
-    }()
+    }
+    static var corpus: [String] { get throws { try _corpus.get() } }
 
     @Test(arguments: 0..<13, [0, 1])
     func matchesICU(optionSetIndex: Int, collatorIndex: Int) throws {
         let (optionSetName, options) = Self.optionSets[optionSetIndex]
-        let (variant, collator) = Self.collators[collatorIndex]
-        let corpus = Self.corpus
+        let (variant, collator) = try Self.collators[collatorIndex]
+        let corpus = try Self.corpus
 
         let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
         let matrix = try String(

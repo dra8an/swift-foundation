@@ -25,20 +25,28 @@ import Testing
         let strings: [String]
     }
 
-    static let cases: [Case] = {
-        let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
-            .appendingPathComponent("cmsccoll.json")
-        return try! JSONDecoder().decode(File.self, from: Data(contentsOf: url)).cases
-    }()
+    private static let _cases = Result {
+        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        let url = dir.appendingPathComponent("cmsccoll.json")
+        return try JSONDecoder().decode(File.self, from: Data(contentsOf: url)).cases
+    }
+    static var cases: [Case] { get throws { try _cases.get() } }
 
-    static let root = try! RootCollator()
-    static let collators: [String: RootCollator] = Dictionary(
-        uniqueKeysWithValues: ["zh", "da", "fr", "ko", "ja", "th"].map {
-            ($0, try! RootCollator(tailoringNamed: $0))
+    private static let _root = Result { try RootCollator() }
+    static var root: RootCollator { get throws { try _root.get() } }
+    private static let _collators = Result {
+        Dictionary(uniqueKeysWithValues: try ["zh", "da", "fr", "ko", "ja", "th"].map {
+            ($0, try RootCollator(tailoringNamed: $0))
         })
+    }
+    static var collators: [String: RootCollator] { get throws { try _collators.get() } }
 
-    static func collator(_ locale: String) -> RootCollator {
-        locale == "root" ? root : collators[locale]!
+    static func collator(_ locale: String) throws -> RootCollator {
+        if locale == "root" { return try root }
+        guard let c = try collators[locale] else { throw CocoaError(.fileReadNoSuchFile) }
+        return c
     }
 
     private func apply(_ attrs: [[String]], to options: inout CollationOptions) {
@@ -58,8 +66,8 @@ import Testing
     }
 
     @Test(arguments: 0..<20) func cmsccoll(caseIndex: Int) throws {
-        let c = Self.cases[caseIndex]
-        let collator = Self.collator(c.locale)
+        let c = try Self.cases[caseIndex]
+        let collator = try Self.collator(c.locale)
         var options = collator.defaultOptions
         apply(c.attrs, to: &options)
         let expected: RootCollator.Order = c.expected == "equal" ? .same : .ascending

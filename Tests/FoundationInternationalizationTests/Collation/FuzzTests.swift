@@ -11,7 +11,7 @@ import Testing
     @Test(arguments: 0..<13, [0, 1])
     func fuzzKeysMatchICU(optionSetIndex: Int, collatorIndex: Int) throws {
         let (optionSetName, options) = DifferentialTests.optionSets[optionSetIndex]
-        let (variant, collator) = DifferentialTests.collators[collatorIndex]
+        let (variant, collator) = try DifferentialTests.collators[collatorIndex]
 
         let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
         let corpus = try String(

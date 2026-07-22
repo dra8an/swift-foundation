@@ -27,35 +27,36 @@ import Testing
         case less(level: Int?)  // level 1=primary 2=secondary 3=case 4=tertiary 5=quaternary 6=identical
     }
 
-    static let root = try! RootCollator()
+    private static let _root = Result { try RootCollator() }
+    static var root: RootCollator { get throws { try _root.get() } }
 
     /// Locale tags appearing in collationtest.txt, mapped to bundled
     /// tailorings (with optional option overrides) or nil (skip section).
-    static func collator(forLocale tag: String) -> (RootCollator, CollationOptions)? {
-        func tailored(_ name: String) -> (RootCollator, CollationOptions)? {
-            let c = try! RootCollator(tailoringNamed: name)
+    static func collator(forLocale tag: String) throws -> (RootCollator, CollationOptions)? {
+        func tailored(_ name: String) throws -> (RootCollator, CollationOptions)? {
+            let c = try RootCollator(tailoringNamed: name)
             return (c, c.defaultOptions)
         }
         switch tag.lowercased() {
         case "en", "de":  // standard collation == root
-            return (root, CollationOptions())
+            return (try root, CollationOptions())
         case "da":
-            return tailored("da")
+            return try tailored("da")
         case "de@collation=phonebook", "de-u-co-phonebk":
-            return tailored("de-phonebook")
+            return try tailored("de-phonebook")
         case "fr-ca-u-co-phonebk":  // no phonebook for fr -> falls back to fr-CA standard
-            return tailored("fr_CA")
+            return try tailored("fr_CA")
         case "lt":
-            return tailored("lt")
+            return try tailored("lt")
         case "th-th":
-            return tailored("th")
+            return try tailored("th")
         case "zh", "zh-u-co-pinyin":
-            return tailored("zh")
+            return try tailored("zh")
         case "zh-u-co-stroke":
-            return tailored("zh-stroke")
+            return try tailored("zh-stroke")
         case "fr@colbackwards=yes;colstrength=quaternary;kv=currency;colalternate=shifted":
             // fr standard is a settings-only tailoring; apply the keyword overrides.
-            guard var (c, o) = tailored("fr") else { return nil }
+            guard var (c, o) = try tailored("fr") else { return nil }
             o.backwardSecondary = true
             o.strength = .quaternary
             o.maxVariable = .currency
@@ -106,7 +107,7 @@ import Testing
                 continue
             }
             if line.hasPrefix("@ root") {
-                collator = Self.root
+                collator = try Self.root
                 options = CollationOptions()
                 skippingRules = false
                 continue
@@ -114,7 +115,7 @@ import Testing
             if line.hasPrefix("@ locale ") {
                 skippingRules = false
                 let tag = String(line.dropFirst(9)).trimmingCharacters(in: .whitespaces)
-                if let (c, o) = Self.collator(forLocale: tag) {
+                if let (c, o) = try Self.collator(forLocale: tag) {
                     collator = c
                     options = o
                 } else {

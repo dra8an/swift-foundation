@@ -8,7 +8,8 @@ import Testing
 /// path actually engages (returns real results, not bail-outs) where it
 /// should, and bails out where it must.
 @Suite struct FastLatinTests {
-    static let root = try! RootCollator()
+    private static let _root = Result { try RootCollator() }
+    static var root: RootCollator { get throws { try _root.get() } }
 
     static func side(_ s: String) -> CollationFastLatin.Side {
         var iterator = s.unicodeScalars.makeIterator()
@@ -17,20 +18,20 @@ import Testing
 
     /// Computes (table, primaries, packed options) for an option set, like
     /// RootCollator's per-scratch cache does.
-    static func setup(_ options: CollationOptions) -> (UnsafeBufferPointer<UInt16>, [UInt16], Int32) {
-        let table = Self.root.data.fastLatinTable
+    static func setup(_ options: CollationOptions) throws -> (UnsafeBufferPointer<UInt16>, [UInt16], Int32) {
+        let table = try Self.root.data.fastLatinTable
         var primaries: [UInt16] = []
         let packed = CollationFastLatin.getOptions(
-            table: table, scriptsData: Self.root.data, reordering: nil,
+            table: table, scriptsData: try Self.root.data, reordering: nil,
             options: options.icuOptions, primaries: &primaries)
         return (table, primaries, packed)
     }
 
     @Test func rootTableLoadsAndOptionsAreSupported() throws {
-        let table = Self.root.data.fastLatinTable
+        let table = try Self.root.data.fastLatinTable
         #expect(!table.isEmpty)
         #expect(table[0] >> 8 == CollationFastLatin.version)
-        let (_, primaries, packed) = Self.setup(CollationOptions())
+        let (_, primaries, packed) = try Self.setup(CollationOptions())
         #expect(packed >= 0)
         #expect(primaries.count == CollationFastLatin.latinLimit)
         // Letters have short primaries; with alternate=non-ignorable nothing
@@ -40,7 +41,7 @@ import Testing
     }
 
     @Test func engagesForPlainText() throws {
-        let (table, primaries, packed) = Self.setup(CollationOptions())
+        let (table, primaries, packed) = try Self.setup(CollationOptions())
         // Real results, not bail-outs, for plain ASCII and Latin-1 text.
         for (a, b, expected) in [
             ("ab", "ac", Int32(-1)),
@@ -58,7 +59,7 @@ import Testing
     }
 
     @Test func bailsOutWhereItMust() throws {
-        let (table, primaries, packed) = Self.setup(CollationOptions())
+        let (table, primaries, packed) = try Self.setup(CollationOptions())
         // Out-of-range characters bail (the integration layer normally
         // pre-checks the first scalars; mid-string ones bail here).
         #expect(CollationFastLatin.compare(
@@ -72,7 +73,7 @@ import Testing
         // Digits bail under numeric collation (their primaries are zeroed).
         var numeric = CollationOptions()
         numeric.numeric = true
-        let (_, numPrimaries, numPacked) = Self.setup(numeric)
+        let (_, numPrimaries, numPacked) = try Self.setup(numeric)
         #expect((0x30...0x39).allSatisfy { numPrimaries[$0] == 0 })
         #expect(CollationFastLatin.compare(
             table: table, primaries: numPrimaries, options: numPacked,
@@ -85,7 +86,7 @@ import Testing
         // Backwards secondary bails only when a secondary difference shows.
         var french = CollationOptions()
         french.backwardSecondary = true
-        let (_, frPrimaries, frPacked) = Self.setup(french)
+        let (_, frPrimaries, frPacked) = try Self.setup(french)
         #expect(frPacked >= 0)
         #expect(CollationFastLatin.compare(
             table: table, primaries: frPrimaries, options: frPacked,
@@ -98,7 +99,7 @@ import Testing
     @Test func shiftedPunctuationIsVariable() throws {
         var shifted = CollationOptions()
         shifted.alternate = .shifted
-        let (table, primaries, packed) = Self.setup(shifted)
+        let (table, primaries, packed) = try Self.setup(shifted)
         #expect(packed >= 0)
         // Punctuation is variable under shifted: primary zeroed in the
         // precomputed table, and "black-bird" == "blackbird" up to tertiary.
@@ -109,7 +110,7 @@ import Testing
         // At quaternary strength the variable difference resurfaces.
         var shiftedQ = shifted
         shiftedQ.strength = .quaternary
-        let (_, qPrimaries, qPacked) = Self.setup(shiftedQ)
+        let (_, qPrimaries, qPacked) = try Self.setup(shiftedQ)
         #expect(CollationFastLatin.compare(
             table: table, primaries: qPrimaries, options: qPacked,
             left: Self.side("black-bird"), right: Self.side("blackbird")) == -1)
@@ -136,7 +137,7 @@ import Testing
     /// byte-level cases: two-byte Latin assembly, the three-byte punctuation
     /// block, and bail-outs for unsupported lead bytes.
     @Test func utf8VariantMatchesScalarVariant() throws {
-        let (table, primaries, packed) = Self.setup(CollationOptions())
+        let (table, primaries, packed) = try Self.setup(CollationOptions())
         for (a, b) in [
             ("ab", "ac"), ("ab", "ab"), ("b", "a"), ("Hello", "hello"),
             ("p\u{E9}ch\u{E9}", "p\u{EA}che"),       // 2-byte Latin-1 leads

@@ -9,8 +9,8 @@ import Testing
     @Test(arguments: 0..<13, [0, 1])
     func keysMatchICUByteForByte(optionSetIndex: Int, collatorIndex: Int) throws {
         let (optionSetName, options) = DifferentialTests.optionSets[optionSetIndex]
-        let (variant, collator) = DifferentialTests.collators[collatorIndex]
-        let corpus = DifferentialTests.corpus
+        let (variant, collator) = try DifferentialTests.collators[collatorIndex]
+        let corpus = try DifferentialTests.corpus
 
         let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
         let expected = try String(
@@ -39,8 +39,8 @@ import Testing
     @Test(arguments: 0..<13)
     func keyComparisonEqualsCompare(optionSetIndex: Int) throws {
         let (optionSetName, options) = DifferentialTests.optionSets[optionSetIndex]
-        let (_, collator) = DifferentialTests.collators[0]
-        let corpus = DifferentialTests.corpus
+        let (_, collator) = try DifferentialTests.collators[0]
+        let corpus = try DifferentialTests.corpus
 
         let keys = try corpus.map { try collator.sortKey(for: $0, options: options) }
         var failures = 0

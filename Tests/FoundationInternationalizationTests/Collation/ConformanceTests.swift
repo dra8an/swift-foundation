@@ -15,10 +15,11 @@ import Testing
 /// Skipping a line compares its neighbors directly, which the files' total
 /// order permits.
 @Suite struct ConformanceTests {
-    static let collators: [(String, RootCollator)] = [
-        ("regular", try! RootCollator()),
-        ("icu4x", RootCollator(data: try! .rootICU4X(), norm: try! .standard())),
-    ]
+    private static let _collators = Result {
+        [("regular", try RootCollator()),
+         ("icu4x", RootCollator(data: try .rootICU4X(), norm: try .standard()))]
+    }
+    static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 
     static func parse(file: String) throws -> [String] {
         let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
@@ -49,7 +50,7 @@ import Testing
     }
 
     private func run(file: String, alternate: CollationOptions.Alternate, collatorIndex: Int) throws {
-        let (variant, collator) = Self.collators[collatorIndex]
+        let (variant, collator) = try Self.collators[collatorIndex]
         var options = CollationOptions()
         options.strength = .identical
         options.alternate = alternate

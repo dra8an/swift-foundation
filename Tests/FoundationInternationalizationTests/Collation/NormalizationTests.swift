@@ -3,8 +3,8 @@ import Testing
 @testable import FoundationInternationalization
 
 @Suite struct NormalizationTests {
-    static let collator = try! RootCollator()
-    var collator: RootCollator { Self.collator }
+    private static let _collator = Result { try RootCollator() }
+    var collator: RootCollator { get throws { try Self._collator.get() } }
 
     /// Differential test of the fused NFD front end against Foundation's
     /// decomposedStringWithCanonicalMapping (NFD), single scalars.
@@ -28,7 +28,7 @@ import Testing
             for v in range {
                 guard let scalar = Unicode.Scalar(v) else { continue }
                 let s = String(scalar)
-                let ours = collator.nfd(s)
+                let ours = try collator.nfd(s)
                 let foundations = s.decomposedStringWithCanonicalMapping
                 if ours != foundations {
                     mismatches += 1
@@ -53,7 +53,7 @@ import Testing
                     var s = base
                     s.unicodeScalars.append(Unicode.Scalar(m1)!)
                     s.unicodeScalars.append(Unicode.Scalar(m2)!)
-                    let ours = collator.nfd(s)
+                    let ours = try collator.nfd(s)
                     let foundations = s.decomposedStringWithCanonicalMapping
                     if ours != foundations {
                         mismatches += 1
@@ -69,18 +69,18 @@ import Testing
 
     @Test func knownDecompositions() throws {
         // Recursive expansion: ạ + circumflex, precomposed, all orders.
-        let nfd = collator.nfd("ậ").unicodeScalars.map(\.value)
+        let nfd = try collator.nfd("ậ").unicodeScalars.map(\.value)
         #expect(nfd == [0x61, 0x323, 0x302])
         // Hangul arithmetic.
-        #expect(collator.nfd("각").unicodeScalars.map(\.value) == [0x1100, 0x1161, 0x11a8])
+        #expect(try collator.nfd("각").unicodeScalars.map(\.value) == [0x1100, 0x1161, 0x11a8])
         // One-way (Å angstrom sign).
-        #expect(collator.nfd("\u{212B}").unicodeScalars.map(\.value) == [0x41, 0x30a])
+        #expect(try collator.nfd("\u{212B}").unicodeScalars.map(\.value) == [0x41, 0x30a])
         // Compatibility-only ligature does NOT decompose canonically.
-        #expect(collator.nfd("ﬁ").unicodeScalars.map(\.value) == [0xfb01])
+        #expect(try collator.nfd("ﬁ").unicodeScalars.map(\.value) == [0xfb01])
         // Tibetan composite vowel: starter-less decomposition to two non-starters.
-        #expect(collator.nfd("\u{0F73}").unicodeScalars.map(\.value) == [0x0f71, 0x0f72])
+        #expect(try collator.nfd("\u{0F73}").unicodeScalars.map(\.value) == [0x0f71, 0x0f72])
         // Canonical reordering of out-of-order marks (ccc 230 before ccc 220).
-        #expect(collator.nfd("a\u{0302}\u{0323}").unicodeScalars.map(\.value) == [0x61, 0x323, 0x302])
+        #expect(try collator.nfd("a\u{0302}\u{0323}").unicodeScalars.map(\.value) == [0x61, 0x323, 0x302])
     }
 }
 
@@ -88,10 +88,11 @@ import Testing
 /// must compare equal, against both the regular (closure) data and the
 /// NFD-only ICU4X-variant data.
 @Suite struct CanonicalEquivalenceTests {
-    static let collators: [(String, RootCollator)] = [
-        ("regular", try! RootCollator()),
-        ("icu4x", RootCollator(data: try! .rootICU4X(), norm: try! .standard())),
-    ]
+    private static let _collators = Result {
+        [("regular", try RootCollator()),
+         ("icu4x", RootCollator(data: try .rootICU4X(), norm: try .standard()))]
+    }
+    static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 
     static let equivalenceClasses: [[String]] = [
         ["é", "e\u{301}"],
@@ -109,7 +110,7 @@ import Testing
     ]
 
     @Test(arguments: [0, 1]) func equivalentFormsCompareEqual(collatorIndex: Int) throws {
-        let (name, collator) = Self.collators[collatorIndex]
+        let (name, collator) = try Self.collators[collatorIndex]
         // Canonical equivalents are equal at every strength — including
         // identical, whose tiebreaker compares NFD forms.
         for strength in [CollationOptions.Strength.tertiary, .identical] {

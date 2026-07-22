@@ -3,9 +3,14 @@ import Testing
 
 @Suite("Tailoring Compare")
 struct TailoringCompareTests {
-    let root = try! RootCollator()
-    let cs = try! RootCollator(tailoringNamed: "cs")
-    let es = try! RootCollator(tailoringNamed: "es")
+    let root: RootCollator
+    let cs: RootCollator
+    let es: RootCollator
+    init() throws {
+        root = try RootCollator()
+        cs = try RootCollator(tailoringNamed: "cs")
+        es = try RootCollator(tailoringNamed: "es")
+    }
 
     // MARK: - Czech: ch sorts as a single letter after h
 

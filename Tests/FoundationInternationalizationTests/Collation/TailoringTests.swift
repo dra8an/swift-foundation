@@ -19,17 +19,19 @@ import Testing
         ("zh", "zh"),
     ]
 
-    static let collators: [String: RootCollator] = Dictionary(
-        uniqueKeysWithValues: locales.map { ($0.0, try! RootCollator(tailoringNamed: $0.1)) })
+    private static let _collators = Result {
+        Dictionary(uniqueKeysWithValues: try locales.map { ($0.0, try RootCollator(tailoringNamed: $0.1)) })
+    }
+    static var collators: [String: RootCollator] { get throws { try _collators.get() } }
 
     @Test(arguments: 0..<8)
     func matchesICUMatrix(localeIndex: Int) throws {
         let (name, _) = Self.locales[localeIndex]
-        let collator = Self.collators[name]!
+        let collator = try #require(Self.collators[name])
         let options = collator.defaultOptions
-        let corpus = DifferentialTests.corpus
+        let corpus = try DifferentialTests.corpus
 
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
+        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
         let matrix = try String(
             contentsOf: golden.appendingPathComponent("matrix-\(name).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)
@@ -60,11 +62,11 @@ import Testing
     @Test(arguments: 0..<8)
     func keysMatchICU(localeIndex: Int) throws {
         let (name, _) = Self.locales[localeIndex]
-        let collator = Self.collators[name]!
+        let collator = try #require(Self.collators[name])
         let options = collator.defaultOptions
-        let corpus = DifferentialTests.corpus
+        let corpus = try DifferentialTests.corpus
 
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
+        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
         let expected = try String(
             contentsOf: golden.appendingPathComponent("keys-\(name).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)
@@ -87,9 +89,10 @@ import Testing
     /// Sanity checks that the locale defaults decoded from the binaries are
     /// what CLDR specifies.
     @Test func localeDefaultsDecoded() throws {
-        #expect(Self.collators["fr-CA"]!.defaultOptions.backwardSecondary)
-        #expect(Self.collators["da"]!.defaultOptions.caseFirst == .upperFirst)
-        #expect(!Self.collators["sv"]!.defaultOptions.backwardSecondary)
+        let collators = try Self.collators
+        #expect(try #require(collators["fr-CA"]).defaultOptions.backwardSecondary)
+        #expect(try #require(collators["da"]).defaultOptions.caseFirst == .upperFirst)
+        #expect(!(try #require(collators["sv"]).defaultOptions.backwardSecondary))
     }
 
     /// Classic per-locale orderings, as a readable smoke test.

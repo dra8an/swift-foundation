@@ -9,7 +9,8 @@ import Testing
 /// path that accumulates small runs into a value without a digits array).
 @Suite("Numeric collation")
 struct NumericTests {
-    let collator = try! RootCollator()
+    let collator: RootCollator
+    init() throws { collator = try RootCollator() }
     var numericOpts: CollationOptions {
         var opts = CollationOptions()
         opts.numeric = true

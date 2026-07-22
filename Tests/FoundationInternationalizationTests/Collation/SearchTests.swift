@@ -3,7 +3,8 @@ import Testing
 
 @Suite("Collation Search")
 struct CollationSearchTests {
-    let collator = try! RootCollator()
+    let collator: RootCollator
+    init() throws { collator = try RootCollator() }
 
     @Test func exactMatch() {
         let result = collator.search(for: "world", in: "hello world")
