@@ -113,7 +113,9 @@ struct UCharsTrie {
 
     /// Value for the string so far. Only valid after a result with hasValue.
     func getValue() -> Int32 {
-        let p = pos!
+        guard let p = pos else {
+            preconditionFailure("getValue() requires a preceding result with hasValue")
+        }
         let leadUnit = unit(p)
         if (leadUnit & Self.valueIsFinal) != 0 {
             return Self.readValue(units, p + 1, leadUnit & 0x7fff)
@@ -219,7 +221,11 @@ struct UCharsTrie {
     // MARK: Compact value helpers (ucharstrie.h)
 
     private static func valueResult(_ node: Int32) -> Result {
-        Result(rawValue: Result.intermediateValue.rawValue - (node >> 15))!
+        // node >> 15 is 0 or 1 by the trie encoding, so the raw value is always intermediateValue or finalValue.
+        guard let result = Result(rawValue: Result.intermediateValue.rawValue - (node >> 15)) else {
+            preconditionFailure("malformed trie node \(node)")
+        }
+        return result
     }
 
     private static func readValue(_ units: UnsafeBufferPointer<UInt16>, _ p: Int, _ leadUnit: Int32) -> Int32 {

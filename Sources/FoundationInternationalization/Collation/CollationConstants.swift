@@ -42,7 +42,11 @@ enum CollationConstants {
 
     @inline(__always)
     static func tagFromCE32(_ ce32: UInt32) -> Tag {
-        Tag(rawValue: ce32 & 0xf)!
+        // Tag covers all 16 raw values, so the masked init is total; the optimizer removes the check.
+        guard let tag = Tag(rawValue: ce32 & 0xf) else {
+            preconditionFailure("unreachable: 4-bit tag out of range")
+        }
+        return tag
     }
 
     /// 19-bit index from a special CE32 with index and length fields (bits 31..13).

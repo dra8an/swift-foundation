@@ -89,7 +89,13 @@ struct NFDIterator {
             if c < 0x0300, let quick = norm.quickDecomp(c) {
                 sawDecomposition = true
                 let following = nextSourceScalar()
-                if following == nil || (following! < 0x300 || norm.leadCCC(following!) == 0) {
+                let followerIsStarter: Bool
+                if let f = following {
+                    followerIsStarter = f < 0x300 || norm.leadCCC(f) == 0
+                } else {
+                    followerIsStarter = true
+                }
+                if followerIsStarter {
                     pendingFirst = following
                     pendingMark = quick.mark
                     return quick.base
@@ -114,7 +120,13 @@ struct NFDIterator {
             let v = norm.value(c)
             if (v >> 16) & 7 == 0, UInt8(truncatingIfNeeded: v) != 0 {
                 let following = nextSourceScalar()
-                if following == nil || (following! < 0x300 || norm.leadCCC(following!) == 0) {
+                let followerIsStarter: Bool
+                if let f = following {
+                    followerIsStarter = f < 0x300 || norm.leadCCC(f) == 0
+                } else {
+                    followerIsStarter = true
+                }
+                if followerIsStarter {
                     pendingFirst = following
                     unit.append(c)
                     return

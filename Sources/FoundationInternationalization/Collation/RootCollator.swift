@@ -57,6 +57,10 @@ public struct RootCollator: @unchecked Sendable {
         let fastLatinTable: UnsafeBufferPointer<UInt16>
         /// Stored for the same reason; see RestartSafety.
         let restartSafety: RestartSafety
+        /// Script-starts data: the root's when the tailoring omits it (resolved once — callers pass the same value used for the fast-Latin setup).
+        let scriptsData: CollationData
+        /// Compressible-lead-byte table: the tailoring's own, or the base's when the tailoring omits it (the fastLatinTable aliasing rule).
+        let compressibleBytes: UnsafeBufferPointer<Bool>
         /// Trivial-field views for the static quick-CJK dispatch, heap-boxed so the hot path passes one pointer.
         let quickCJKSetupPtr: UnsafeMutablePointer<QuickCJKSetup>
 
@@ -70,6 +74,15 @@ public struct RootCollator: @unchecked Sendable {
             self.defaultOptions = defaultOptions
             self.fastLatinTable = fastLatinTable
             self.restartSafety = RestartSafety(data: data, base: base, norm: norm)
+            self.scriptsData = scriptsData
+            if data.compressibleBytes.isEmpty {
+                guard let base else {
+                    preconditionFailure("collation data has neither its own compressible-byte table nor a base to inherit one from")
+                }
+                self.compressibleBytes = base.compressibleBytes
+            } else {
+                self.compressibleBytes = data.compressibleBytes
+            }
             // Pre-bake the default-options fast-Latin setup.
             var prims: [UInt16] = []
             let packed = CollationFastLatin.getOptions(
@@ -529,8 +542,7 @@ public struct RootCollator: @unchecked Sendable {
         defer { giveScratch(scratch) }
         scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
         _ = try scratch.left.collectAll()
-        let compressibleBytes = data.compressibleBytes.isEmpty
-            ? base!.compressibleBytes : data.compressibleBytes
+        let compressibleBytes = storage.compressibleBytes
         key.removeAll(keepingCapacity: true)
         // Direct multi-pass writer: one pass per level straight into the key, no level buffers. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity between the two).
         CollationKeys.writeSortKeyUpToQuaternaryDirect(
@@ -608,7 +620,7 @@ public struct RootCollator: @unchecked Sendable {
         if lp == rp { return 0 }
         // Variable-weight check: if alternate=shifted and either primary is variable, we can't decide at primary level alone.
         if options.alternate == .shifted {
-            let varTop = scriptsData.lastPrimaryForGroup(
+            let varTop = storage.scriptsData.lastPrimaryForGroup(
                 CollationData.reorderCodeFirst + options.maxVariable.rawValue) + 1
             if lp < varTop || rp < varTop { return 0 }
         }
@@ -652,14 +664,11 @@ public struct RootCollator: @unchecked Sendable {
 
     private func variableTopValue(_ options: CollationOptions) -> UInt32 {
         guard options.alternate == .shifted else { return 0 }
-        return scriptsData.lastPrimaryForGroup(
+        return storage.scriptsData.lastPrimaryForGroup(
             CollationData.reorderCodeFirst + options.maxVariable.rawValue)
     }
 
-    /// Scripts data lives in the root; tailorings usually omit it.
-    private var scriptsData: CollationData {
-        data.scriptStarts.isEmpty ? base! : data
-    }
+
 
     /// The cached fast-Latin setup for an options word, computing and storing it on a cache miss.
     private func resolveFastLatinSetup(_ word: Int32) -> FastLatinSetup {
@@ -668,7 +677,7 @@ public struct RootCollator: @unchecked Sendable {
         }
         var primaries: [UInt16] = []
         let packed = CollationFastLatin.getOptions(
-            table: fastLatinTable, scriptsData: scriptsData, reordering: reordering,
+            table: fastLatinTable, scriptsData: storage.scriptsData, reordering: reordering,
             options: word, primaries: &primaries)
         let setup = FastLatinSetup(word: word, packedOptions: packed, primaries: primaries)
         fastLatinCache.store(setup)
@@ -688,9 +697,9 @@ public struct RootCollator: @unchecked Sendable {
         let rLength = rBytes.count
         let minLength = min(lLength, rLength)
         var i = 0
-        if minLength >= 8 {
-            let lRaw = UnsafeRawPointer(lBytes.baseAddress!)
-            let rRaw = UnsafeRawPointer(rBytes.baseAddress!)
+        if minLength >= 8, let lBase = lBytes.baseAddress, let rBase = rBytes.baseAddress {
+            let lRaw = UnsafeRawPointer(lBase)
+            let rRaw = UnsafeRawPointer(rBase)
             let wordEnd = minLength & ~7
             while i < wordEnd {
                 let lw = lRaw.loadUnaligned(fromByteOffset: i, as: UInt64.self)
@@ -768,7 +777,10 @@ public struct RootCollator: @unchecked Sendable {
         var iter = NFDIterator(norm: norm, scalars: s.unicodeScalars)
         var result = ""
         while let c = iter.next() {
-            result.unicodeScalars.append(Unicode.Scalar(c)!)
+            guard let scalar = Unicode.Scalar(c) else {
+                preconditionFailure("NFD iterator emitted an invalid scalar value \(c)")
+            }
+            result.unicodeScalars.append(scalar)
         }
         return result
     }

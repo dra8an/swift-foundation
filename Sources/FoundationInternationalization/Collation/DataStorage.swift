@@ -14,7 +14,8 @@ final class DataStorage: @unchecked Sendable {
         allocations.append(raw)
         let typed = raw.bindMemory(to: T.self, capacity: values.count)
         values.withUnsafeBufferPointer { source in
-            typed.update(from: source.baseAddress!, count: source.count)
+            guard let base = source.baseAddress else { return }  // empty input: nothing to copy
+            typed.update(from: base, count: source.count)
         }
         return UnsafeBufferPointer(start: typed, count: values.count)
     }
