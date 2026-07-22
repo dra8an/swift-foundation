@@ -112,16 +112,13 @@ Allocation/resolution samples are the trustworthy kind.
       compare rows (LockedState read; framework build = relaxed atomic
       ≈ free) — accepted, correctness contract. Regression test flips
       the current locale mid-process (suite now 1515/122).
-- [ ] **BUG (found by §44's test, filed):** `compare`/`sortKey`/search
-      entries default to `CollationOptions()`, NOT the collator's
-      `defaultOptions` — so tailoring default SETTINGS (fr_CA
-      backwardSecondary) never apply through the no-options Foundation
-      wrappers; character-data tailorings apply fine. Diverges from
-      Darwin for fr-CA current locale. Fix needs a decision: wrappers
-      pass `collator.defaultOptions`, and the CompareOptions
-      translation should MERGE onto that base rather than start fresh.
-      Audit the fast-Latin defaultFLWord interaction (it is already
-      baked from defaultOptions — the entries just never ask for it).
+- [x] Tailoring-defaults BUG — FIXED (§45, 2026-07-22): engine
+      entries are overload pairs (no-options overload resolves the
+      collator's defaultOptions; explicit signature keeps no default
+      arg), CompareOptions translation merges onto a REQUIRED base.
+      fr_CA backwards secondary now applies through every wrapper,
+      ucol_open semantics. Compare entry zero-cost (overloads, not the
+      +2..3 ns Optional shape). Suite 1517/123.
 - UPSTREAM note (outside collation scope): the localized case-mapping
       entries at the top of StringProtocol+Locale.swift (capitalized/
       lowercased/uppercased with .current) evaluate Locale.current per
@@ -1683,9 +1680,10 @@ commit, vs the `13337d4` baseline):** sortKey ascii 338→295 (1.74×→
 inside the row's historical ±7% placement band but consistently
 reproduced). Rationale: four corpora win −11..16%, paths remains the
 BEST sk row vs ICU (1.22×), and machine 2's independent layout will
-arbitrate whether the residual is Intel-placement or structural. If it
-reproduces on AS and paths sortKey ever matters more, the recorded
-next idea is a mix-aware dispatch — NOT the length threshold.
+arbitrate whether the residual is Intel-placement or structural.
+**ARBITRATION CLOSED (2026-07-20, machine 2 `a9bf0d0`): Apple Silicon
+improved on every corpus INCLUDING paths (−4%) — the Intel residual is
+code placement, not structural. AS numbers in Docs/21.**
 
 ---
 
@@ -1724,3 +1722,62 @@ Character-data tailorings (sv) work; settings tailorings don't.
 Divergence from Darwin for fr-CA current locale. §39's lesson repeats
 for the second time: the audit list's design items keep finding
 correctness bugs no benchmark can see.
+
+---
+
+### 45. Tailoring default options: overload pairs, ucol_open semantics
+
+**Status:** shipped 2026-07-22. Gates: 1517 tests / 123 suites green
+(two regression tests + suite added — NEW GATE COUNT). The §44 test's
+discovery, fixed.
+
+**The bug:** every engine entry defaulted `options` to a fresh
+`CollationOptions()`, so a tailoring's default SETTINGS — fr_CA
+backwards secondary, and anything else the extractor recorded — never
+applied unless the caller passed them explicitly. No Foundation
+wrapper did. Character-data tailorings (sv, zh) worked; settings
+tailorings silently degraded to root behavior. Divergence from Darwin,
+where ucol_open(locale) yields a collator whose attributes ARE the
+tailoring defaults. Hidden for the whole project because the locale
+test suites pass their fixtures' options explicitly — the §39/§44
+lesson a third time: only the audit list finds this class.
+
+**Fix shape:** each public entry is now an overload PAIR — a
+no-options overload that resolves `defaultOptions` and forwards
+(@inline(__always)), and the explicit-options signature with NO
+default argument. Wrapper option-construction starts from the resolved
+collator's `defaultOptions` (11 sites), and
+`CollationOptions.from(foundationOptions:base:)` makes the base
+REQUIRED — a call site can no longer silently drop tailoring defaults.
+Root is bit-for-bit unaffected (its defaultOptions ARE the plain
+defaults). Side effect worth knowing: tailored collators' no-options
+calls now match `defaultFLWord`, so the pre-baked fast-Latin setup —
+built from defaultOptions at init since §18 but never reachable for
+tailored collators — can now engage (unmeasured; machine 2 may see
+tailored-locale Latin compares improve).
+
+**The rejected first shape (record it):** `options: CollationOptions?
+= nil` + `?? defaultOptions` inside the entry cost **+2..3 ns on the
+36 ns compare row** (EngineBench A/B, consistent) — the Optional wrap
+plus resolution branch on the hottest entry in the project. Overloads
+moved the resolution to the no-options entry only: **compare 36 = 36,
+zero cost.** Default-parameter values are invisible at call sites and
+non-overridable per-collator; overload pairs are the shape.
+
+**Certification (interleaved K=3, ascii):** EngineBench (full WMO)
+compare 36=36; sortKey 293–300 → 301–302 (worst-case +8, the
+alignment-band family, writer instruction stream untouched). BF
+(-no-WMO): localized* rows +2..4 ns (per-call defaultOptions read);
+contains/stdRange neutral; explicit-locale rows +17..22 ns — the
+defaults fetch through the Optional chain in the build that cannot
+inline cross-file; the WMO result shows the framework build does not
+pay it (the Docs/25 -no-WMO handicap class). Accepted: correctness
+contract. Binaries identified by the default-argument-generator
+symbol (present in base, gone in new — default args leave a
+fingerprint; useful ID trick when a helper inlines away).
+
+**Regression tests:** engine — fr_CA no-options compare is backwards
+(the coté/côte pair that exposed the bug), explicit forward-secondary
+restores root order, root collator unchanged; wrapper — the same pair
+flips through localizedCompare when the current locale flips to fr_CA
+(the §44 machinery).

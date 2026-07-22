@@ -262,8 +262,17 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   secondary) never apply through the no-options wrappers —
   compare() defaults to CollationOptions(), not the collator's
   defaultOptions. Darwin divergence; fix needs the options-merge
-  decision.** Audit boxes left: the tailoring-defaults BUG, and the
-  UPSTREAM-PREP conformance pass.
+  decision.** 2026-07-22: **§45 — the tailoring-defaults bug FIXED**:
+  engine entries are overload pairs (no-options overload resolves the
+  collator's defaultOptions; explicit signature keeps no default arg),
+  CompareOptions translation merges onto a REQUIRED base — fr_CA
+  backwards secondary now applies through every wrapper, ucol_open
+  semantics, root bit-for-bit unchanged. Compare entry ZERO-cost
+  (overloads; the Optional shape cost +2..3 ns and is the recorded
+  anti-pattern). **Suite gate is now 1517/123.** Machine 2 closed the
+  §43 paths arbitration (`a9bf0d0`: AS paths −4% → Intel residual =
+  placement). Audit boxes left: the UPSTREAM-PREP conformance pass
+  (the last one).
   2026-07-15: **§35 (thai round part 2)** — Thai-block simple-CE table
   (`4a73ada`, thai cmp −8% / sk −6%) and the walk-skip at the byte-scan
   mismatch (`26e340f`, cmp −17 ns; P8 probe promised −110 — standalone
@@ -277,7 +286,7 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   1.53× faster than system, contains 2.8–2.9×; only the two cjk range
   cells (0.84–0.86×) remain sub-parity. The thai frontier is now the NFD
   per-scalar floor — the parked Span refactor.**
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§44;
+  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§45;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench

@@ -162,11 +162,17 @@ public struct RootCollator: @unchecked Sendable {
 
     // MARK: Comparison
 
-    /// Compares two strings under root collation. Defaults to tertiary strength with all options off, like ICU.
+    /// Compares two strings. When `options` is nil, the collator's own default options apply — the tailoring's settings (fr_CA backwards secondary, da upper-first, ...), plain tertiary defaults for root — matching a collator opened by ucol_open.
     ///
     /// Hot/cold split: the default-options fast-Latin byte path lives in a non-throwing function (it cannot fail), so the error-handling ABI is only paid when the CE pipeline actually runs. Measured on Intel: `throws` alone cost 10 ns/call on the fast path — two thirds of the entire mini-CE comparison (see optimization-targets.md §29).
+    @inline(__always)
+    public func compare(_ left: String, _ right: String) throws -> Order {
+        try compare(left, right, options: defaultOptions)
+    }
+
+    /// Explicit-options variant; the no-options overload above forwards with the collator's defaults. Overloads, not an optional default parameter: the Optional wrap plus nil-resolution branch cost +2..3 ns on the hot entry (measured, EngineBench A/B).
     public func compare(
-        _ left: String, _ right: String, options: CollationOptions = CollationOptions()
+        _ left: String, _ right: String, options: CollationOptions
     ) throws -> Order {
         var skipWalk = false
         if let fast = compareFastPath(left, right, options: options, skipWalk: &skipWalk) {
@@ -444,8 +450,13 @@ public struct RootCollator: @unchecked Sendable {
     // MARK: Search
 
     /// Searches for `pattern` within `text` at the given collation strength. Returns the range of the first match, or nil if not found.
+    @inline(__always)
+    public func search(for pattern: String, in text: String) -> Range<String.Index>? {
+        search(for: pattern, in: text, options: defaultOptions)
+    }
+
     public func search(
-        for pattern: String, in text: String, options: CollationOptions = CollationOptions()
+        for pattern: String, in text: String, options: CollationOptions
     ) -> Range<String.Index>? {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
@@ -457,8 +468,13 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     /// Searches backwards for `pattern` in `text`. Returns the range of the last match, or nil if not found.
+    @inline(__always)
+    public func searchBackwards(for pattern: String, in text: String) -> Range<String.Index>? {
+        searchBackwards(for: pattern, in: text, options: defaultOptions)
+    }
+
     public func searchBackwards(
-        for pattern: String, in text: String, options: CollationOptions = CollationOptions()
+        for pattern: String, in text: String, options: CollationOptions
     ) -> Range<String.Index>? {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
@@ -470,8 +486,13 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     /// Returns true if `text` contains `pattern` at the given collation strength.
+    @inline(__always)
+    public func contains(pattern: String, in text: String) -> Bool {
+        contains(pattern: pattern, in: text, options: defaultOptions)
+    }
+
     public func contains(
-        pattern: String, in text: String, options: CollationOptions = CollationOptions()
+        pattern: String, in text: String, options: CollationOptions
     ) -> Bool {
         // Reuse the thread-local scratch iterator across calls — searching one pattern over many strings (the localizedStandardContains case) then allocates no per-call CEIterator or CE buffer.
         let scratch = takeScratch()
@@ -484,8 +505,13 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     /// The sort key for a string: level bytes with 01 separators, optional identical level (BOCSU over NFD), 00 terminator. Byte-wise comparison of two sort keys equals compare() at the same options.
+    @inline(__always)
+    public func sortKey(for s: String) throws -> [UInt8] {
+        try sortKey(for: s, options: defaultOptions)
+    }
+
     public func sortKey(
-        for s: String, options: CollationOptions = CollationOptions()
+        for s: String, options: CollationOptions
     ) throws -> [UInt8] {
         var key: [UInt8] = []
         try sortKey(for: s, into: &key, options: options)
@@ -495,8 +521,13 @@ public struct RootCollator: @unchecked Sendable {
     /// Generates the sort key for a string into a caller-supplied buffer. The buffer is cleared and filled with the key bytes (level bytes with 01 separators, optional identical level, 00 terminator). Reusing the same buffer across calls avoids per-call allocation — the steady-state path is zero-alloc after the buffer has grown to working capacity.
     ///
     /// This is the ICU `ucol_getSortKey(dest, destCapacity)` model: the caller owns the output memory.
+    @inline(__always)
+    public func sortKey(for s: String, into key: inout [UInt8]) throws {
+        try sortKey(for: s, into: &key, options: defaultOptions)
+    }
+
     public func sortKey(
-        for s: String, into key: inout [UInt8], options: CollationOptions = CollationOptions()
+        for s: String, into key: inout [UInt8], options: CollationOptions
     ) throws {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }

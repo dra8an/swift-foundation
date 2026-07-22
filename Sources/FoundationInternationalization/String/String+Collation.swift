@@ -210,8 +210,9 @@ struct CollatorCache: Sendable {
 }
 
 extension CollationOptions {
-    static func from(foundationOptions: String.CompareOptions) -> CollationOptions {
-        var opts = CollationOptions()
+    /// Translates CompareOptions onto `base` — the resolved collator's defaultOptions, so tailoring default settings (fr_CA backwards secondary, da upper-first) survive the translation; each Foundation option overrides just its own attribute, like setting attributes on an opened ICU collator. `base` is deliberately required: a fresh CollationOptions() base silently drops tailoring defaults (the bug §44's test found).
+    static func from(foundationOptions: String.CompareOptions, base: CollationOptions) -> CollationOptions {
+        var opts = base
         if foundationOptions.contains(.caseInsensitive) {
             opts.strength = .secondary
         }
