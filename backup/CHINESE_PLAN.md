@@ -1836,3 +1836,23 @@ Measurements to run (step 1 of § 11.28 verification, sharpened):
 window (doubles as the zone-3 prototype); optionally (m3) ICU4X vs Liu
 via their crate, numbers recorded here only. Horizon = the widest span
 where (m1) beats (m2).
+
+#### 11.28c Truth-source correction (measured 2026-07-23)
+
+Liu's published tooling covers -721 to +2200 only; it cannot be the
+truth source for the far window. Replacement found locally: the
+hindu-calendar project embeds the real Swiss Ephemeris C library with
+ephemeris data files (the same library icu4swift validated its
+astronomy against). Swiss Ephemeris is the compressed JPL ephemeris and
+spans about -13,200 to +17,191, exactly the window we want. Plan:
+- Truth data: a small generator against Swiss Ephemeris produces
+  solstice and new-moon instants over sampled years across the full
+  span (check ephe/ file coverage first; more ephemeris files are a
+  free download if the local set only covers modern centuries).
+- Liu keeps his existing role, an independent second opinion inside
+  -721..2200.
+- Licensing: Swiss Ephemeris is dual-licensed (AGPL/commercial), so it
+  gets the same research-only policy as Liu: comparison stays on this
+  machine, only resulting numbers are cited, nothing ships.
+- The horizon definition from § 11.28b is unchanged, just measured
+  against Swiss Ephemeris directly instead of via Liu.
