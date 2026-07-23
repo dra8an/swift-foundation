@@ -2030,3 +2030,51 @@ Implications for us:
 5. Their far-future remedy (nudge and keep computing) versus ours
    (honest mean calendar past a validated horizon) stay different by
    design; far-zone divergence from ICU remains documented policy.
+
+### 11.30 Extreme-date fix IMPLEMENTED (2026-07-23)
+
+Shipped in Calendar_Chinese.swift per § 11.28b/e:
+- _ChineseRules gained pluggable mean elements: an optional anchor pair
+  (solstice instant, new-moon instant). With anchors set, the three
+  astronomy primitives (solar longitude, new moon at-or-after/before)
+  become uniform mean motions; every other rule runs unchanged. Mean
+  month gaps are exactly one mean synodic month, so 29/30-day months
+  are guaranteed by construction.
+- _ChineseCalendarEngine.astronomicalYears = -12_000...16_000. Outside
+  it, year building uses mean rules anchored at the edges: the future
+  chain at the true new moon starting the year after +16,000 and the
+  true solstice of +16,000; the past chain mirrored at -12,000. Two
+  independent anchors, per the user's instruction.
+- Seam forcing mirrors the baked-table seams: the first mean year on
+  each side reuses the neighboring astronomical boundary value, so
+  table, astronomy, and mean zones all tile exactly.
+- One completion rule found necessary during verification: a 13-month
+  year can end up with no term-based leap label when the sui's termless
+  month falls across the year boundary (day quantization; true
+  astronomy avoids it by phase correlation, mean elements hit it in
+  about 40 percent of leap years, and the astronomy zone hits it too
+  near the range edges, first seen at 15,996). Completion labels the
+  first month repeating the preceding month's term index, else the
+  final month. Deterministic, structure untouched, labels only.
+
+Verification ladder status (§ 11.28):
+1. Horizon measurement: done, § 11.28d.
+2. Nothing changes inside: full suite 111 tests / 27 suites green,
+   including every ICU parity gate and the B/J net.
+3. Seams: ChineseMeanZoneProbe seam windows, zero anomalies.
+4. Far side: structure invariants + tiling sampled across the full
+   +-5M domain (prime stride 99,991 plus pinned 90,000-90,005 and the
+   domain edges), zero anomalies; round trips at +-90k/100k/1M/4.9M
+   pass.
+5. Sanity: leap rate exactly 70/190 in the sampled window (Metonic
+   7/19), 9 distinct leap display numbers. ICU4X numeric cross-check
+   skipped as advisory; design equivalence documented in § 11.28a.
+6. Speed: about 19 microseconds per dateComponents at year 4.9M
+   (was minutes), bounded in the probe at 5 ms per query average.
+7. Release-mode confirmation on the 6.4 machine: PENDING, ships with
+   the patch. ChineseMeanZoneProbe uses #expect only, so it fails
+   identically in release.
+
+PR handoff note: the patch for #2123 is the Calendar_Chinese.swift
+diff plus ChineseMeanZoneProbe as the curated test (rename for the PR
+if desired); PR text outline banked in § 11.28e.

@@ -99,3 +99,4 @@ let stale numbers rot — outdated bounds defeat the purpose.
 | `swift test --filter "[Cc]hinese"` (all Chinese probes; the `\|` alternation form silently matches 0 tests from a script — use the char class) | ~30–35 s (11 s invariant sweep + 21 s packing experiment) | 60 s |
 | Chinese bench run, `^ChineseCalendar-.*$`, debug | ~60–90 s incl. build | 3 min |
 | chineseEnumerateCNYCallbackCount scratch | ~2 s | 10 s |
+| ChineseMeanZoneProbe (filter MeanZone) | ~1 s + build | 10 s |
