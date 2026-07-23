@@ -1988,3 +1988,45 @@ For the eventual PR text (bank now, write later): root cause per
 (validated or arithmetic, nothing in between), the accuracy table from
 § 11.28d, and the pingqi description attributed to the historical rule
 and public constants, with no ICU4X mention anywhere.
+
+### 11.29 Upstream ICU motion on the Chinese calendar (tracking, started 2026-07-23)
+
+Watch list: Jira ICU-23469 (CNY 2027, reported Java-side), ICU-22230
+(1890 fake leap month), ICU-23286 (crash at Gregorian year 70,001),
+ICU-23198 (closed, working as designed), and the combined fix PR
+unicode-org/icu#4070 (open, targets 79.1, due 2026-10-15). Check the
+PR state before any future Apple-rebase reconciliation.
+
+What the PR actually does in chnsecal.cpp, read 2026-07-23:
+- Hardcodes one-day corrections for nine specific near-midnight
+  lunations in 1901-2101, validated against HKO / Purple Mountain
+  Observatory tables and Y.T. Liu's concordance (the same validator we
+  use): 1954-02-03, 1955-02-22, 1999-01-17, 2012-08-17, 2027-02-06,
+  2070-03-12 (ICU was a day late) and 2018-11-08, 2030-02-03,
+  2101-06-27 (ICU was a day early).
+- Adds direction-consistency clamps to the new-moon search.
+- For the year-70,001 crash: a defensive nudge when consecutive
+  solstices collapse to the same value. A de-crash band-aid, not a
+  correctness redesign. Their own comment blames "Keplerian orbital
+  approximations hit precision limits", independently confirming the
+  same breakdown era we measured (~72k) for the same class of fitted
+  astronomy.
+
+Implications for us:
+1. Registry row 3 (2101-06-27 vs 26) DISSOLVES on their side: upstream
+   is moving to Jun 27, which is our value. Our fallback was right.
+2. The 1890 fake leap month (ICU-22230) is being fixed the way our
+   § 5c adjudication said it should be: our fallback matched the
+   promulgated record there, ICU did not, and upstream now agrees.
+3. CNY 2027 = Feb 6 confirmed correct; our baked table already says so.
+   The nine corrected lunations align upstream with HKO, which is what
+   Apple's patched astronomy and our baked table already produce, so a
+   future Apple rebase onto 79.1+ IMPROVES flag-flip parity for us.
+4. The 1914/1916/1920 HKO deviations are NOT in their list: those
+   remain, so richgillam's open question on PR #2123 (keep ICU's three
+   HKO deviations?) is now easier to answer: upstream itself is
+   correcting toward HKO and Liu, which argues for correcting the three
+   deviations rather than preserving them. Use this when replying.
+5. Their far-future remedy (nudge and keep computing) versus ours
+   (honest mean calendar past a validated horizon) stay different by
+   design; far-zone divergence from ICU remains documented policy.
