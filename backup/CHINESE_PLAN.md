@@ -1760,3 +1760,44 @@ just to faithfully reproduce garbage).
 Deliberately not verified: parity with ICU or ICU4X beyond the horizon
 (no authority exists there; § 11.3 registry + PR text carry the
 statement). Liu material stays research-only per the GPL policy.
+
+#### 11.28a What ICU4X actually does outside its baked range (read from source, 2026-07-23)
+
+Their function is called simple(), documented as "inspired by the
+píngqì (平氣) rule used in the Ming dynasty". Mechanism:
+
+- Two real anchor moments near the year 2000, from US Naval Observatory
+  observations: the winter solstice of 1999-12-22 07:44 UTC and the new
+  moon of 2000-01-06 18:14 UTC.
+- Everything repeats uniformly from those anchors: solar terms tick at
+  exactly one twelfth of the mean year, new moons at exactly
+  29.5305888531 days (Astronomical Almanac 1992).
+- The normal Chinese rules then run on those idealized events: find the
+  winter-solstice month, walk the months, the month without a major
+  solar term is the leap month, at most one leap per sui.
+- All arithmetic is in whole milliseconds, integers only. Exact at any
+  distance, no precision decay.
+
+Design lessons adopted into our § 11.28 plan:
+- Use the GREGORIAN mean year (365.2425 days), not the astronomical
+  one. Their comment: the calendar "stays anchored in the Gregorian
+  calendar, even as the Gregorian calendar drifts from the seasons".
+  Consequence: Chinese New Year stays in late January or February
+  forever. With the true tropical year it would slowly wander through
+  the Gregorian year, ending up in July after a hundred thousand years,
+  bizarre behavior for a civil API.
+- Consider integer millisecond arithmetic for exactness at year 5M.
+- Píngqì is not a nickname: mean solar terms were the actual imperial
+  method before the 1645 Qing reform. The cheap fallback is also the
+  historically authentic algorithm for most of the calendar's history.
+- Difference kept from their design: they anchor at the year 2000
+  regardless of where their baked data ends, risking a seam mismatch at
+  their table edges. Our plan anchors the mean chain at the horizon
+  boundary itself so our two zones tile by construction.
+
+Licensing note for any adoption: implement the historical píngqì rule
+from first principles with public constants (USNO anchor instants,
+Astronomical Almanac month length, Gregorian mean year). The rule is
+centuries-old public knowledge and the constants are published
+observations, so nothing ICU4X-specific ships and no ICU4X reference
+appears in PR-bound code, consistent with the PR #2123 scrub.
