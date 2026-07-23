@@ -1899,7 +1899,7 @@ Findings:
   nothing in between): the horizon goes at the validated edge.
   PROPOSED: relatedISOYear −12,000 to +16,000 (round numbers with
   500-900 years of margin inside the measured-excellent span).
-  USER DECISION PENDING on these two numbers; then implementation.
+  DECIDED: user agreed to -12,000 / +16,000 on 2026-07-23 (§ 11.28e).
 
 #### 11.27a Root cause of the ~72,000 breakdown (identified 2026-07-23)
 
@@ -1934,3 +1934,56 @@ The quadratic slowdown (§ 11.27 defect 2) is separate: the drift term
 year 4.9M, and the index search corrects it one lunation at a time.
 Both defects vanish inside the horizon and never arise in the mean
 zone.
+
+#### 11.28e Decision record and plain-language summary (user agreed 2026-07-23)
+
+**DECIDED: the horizon is relatedISOYear -12,000 to +16,000.** Inside,
+today's astronomy runs untouched. Outside, the mean-value píngqì
+calendar takes over, anchored at the horizon so the zones tile.
+
+Plain-language summary of what the measurements established, kept here
+because the precise wording matters and was refined in discussion:
+
+- Against the real JPL ephemeris, from year -12,900 to +16,500, our
+  solar timing never errs by more than 0.07 days and our lunar timing
+  never by more than 0.18 days, about four hours at the very edges.
+  The fitted formulas hold far beyond their textbook ratings. At year
+  -900 our sun position agrees with JPL to 47 seconds.
+- Scale check to avoid a misreading that came up: that window is the
+  entire span where truth data exists, about 30,000 years, which is
+  only about 0.3 percent of the ten-million-year span the API accepts.
+  "Excellent everywhere measurable" says nothing about the other 99.7
+  percent, where no astronomy by anyone can be verified.
+- The mean-value píngqì model is ten to a hundred times worse
+  everywhere in the measured window, drifting to about 18 days of
+  solar error by year +16,500. Most of that is by design, the
+  Gregorian anchoring trade. This settles the comparison: no crossing
+  point exists inside the window, so the horizon belongs at the
+  validated edge, not at a guess beyond it.
+- The boundary has three layers, worth keeping distinct: the astronomy
+  is verifiable only to about -13,200/+17,191 (ephemeris edge);
+  physically meaningless past roughly +-30,000 (the eccentricity factor
+  leaves any sensible range, § 11.27a, even though output still looks
+  tidy); provably broken past about 72,000 (28 and 31 day months the
+  packing cannot represent). The chosen horizon takes the strictest
+  bar. The other two boundaries stop mattering because shipped code
+  never computes astronomy out there.
+- Why -12,000/+16,000 and not the raw ephemeris edges: the edge
+  measurements sit at the last data files, so the margin keeps us off
+  the rim of what was checked; round numbers make cleaner constants;
+  the pingqi anchor then sits in a region measured comfortably good.
+  Cost: about 2,400 years (0.02 percent of the domain) use pingqi
+  where astronomy was still decent.
+- Measurement provenance, recorded for honesty: the first error table
+  was garbage from two glue bugs (a tuple unpacking mistake that read
+  the elongation as the sun longitude, and two missing ephemeris
+  files). The corrected join was spot-checked by hand at -900 and 2500
+  before being believed. The harness itself (swecheck.c against the
+  hindu-calendar Swiss Ephemeris build, 38 downloaded JPL files) is
+  rebuildable in minutes.
+
+For the eventual PR text (bank now, write later): root cause per
+§ 11.27a, the three-layer boundary story, the horizon rationale
+(validated or arithmetic, nothing in between), the accuracy table from
+§ 11.28d, and the pingqi description attributed to the historical rule
+and public constants, with no ICU4X mention anywhere.
