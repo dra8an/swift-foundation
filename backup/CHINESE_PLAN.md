@@ -1800,4 +1800,7 @@ from first principles with public constants (USNO anchor instants,
 Astronomical Almanac month length, Gregorian mean year). The rule is
 centuries-old public knowledge and the constants are published
 observations, so nothing ICU4X-specific ships and no ICU4X reference
-appears in PR-bound code, consistent with the PR #2123 scrub.
+appears in ANY code, research probes included (user, 2026-07-23,
+tightened from the earlier PR-bound scope). If ICU4X numbers are ever
+wanted, run their crate in their own checkout and carry only the
+resulting numbers into backup/ notes, same policy as the Liu GPL data.
