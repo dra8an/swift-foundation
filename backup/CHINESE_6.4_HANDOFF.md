@@ -245,6 +245,16 @@ Touches merged Calendar_Hebrew and Calendar_Gregorian, so it must diff
 against live upstream/main here. The research iMac then back-syncs and
 validates with the exhaustive suites.
 
+## Future watchpoint: ICU-23167 (extended-year epoch)
+
+Upstream ICU 78.1 changed UCAL_EXTENDED_YEAR for chinese to Temporal's
+arithmetical year (era/year fields untouched). Apple's shipped ICU
+predates it; we deliberately match Apple. If a reviewer on a newer ICU
+notices different extended-year values, that is the answer. When Apple
+rebases onto 78.1+, the flag-flip parity target shifts: expected fix is
+the extOffset constant (2637) plus probe expectations, nothing
+structural. Registry row W1 in CHINESE_PLAN § 11.3.
+
 ## After opening
 
 Watch reviews from this machine; size questions → argue absolute costs +
