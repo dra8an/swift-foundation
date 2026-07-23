@@ -52,7 +52,7 @@ but the rule signals reviewer taste; avoid the debate.
 ### 3c. Generic wrapper over an era policy — RECOMMENDED
 
 ```swift
-// Policies are caseless enums, static members only: never instantiated, no allocation, no ARC.
+// Policies are enums with only static functions; they are never instantiated and cost nothing at runtime.
 protocol _GregorianEraPolicy: Sendable {
     static var identifier: Calendar.Identifier { get }
     static var eraRange: Range<Int> { get }
@@ -114,13 +114,24 @@ Open design points (need decisions):
 - 2026-07-23: problem raised by user; options 3a-3c drafted; sequencing
   proposal drafted. User comments pending, nothing decided yet.
 - 2026-07-23 (user Q1): can the variant be a struct instead of a class,
-  given Foundation's aversion to classes? ANSWER: no, structurally
-  impossible: `_CalendarProtocol: AnyObject, Sendable` is
-  class-constrained; Calendar shares one cached inner instance per
-  identifier and copies on mutation, so reference semantics are
-  load-bearing (Calendar.swift TODO about isKnownUniquelyReferenced on
-  the existential confirms). Mitigations adopted into the design: the
-  refactor is class-count-NEGATIVE (3 wrapper classes become 1 generic
-  class + typealiases); policies are caseless enums with static members
-  only (never instantiated, no ARC, no allocations); per-instance cost
-  unchanged (one wrapper object + gregorian reference, as today).
+  given that Foundation people prefer to avoid classes? Answer: no, and
+  the framework itself is the reason. The protocol every calendar
+  backend implements, `_CalendarProtocol`, is declared with AnyObject,
+  so only a class may implement it. That is not an accident: Calendar
+  keeps one backend object per identifier in a cache, and every
+  Calendar value for that identifier points at the same single backend
+  object. Only when someone changes a property (say the time zone) does
+  that calendar first make its own private copy of the backend and
+  modify that. The arrangement needs objects that can be shared by
+  pointing at them; structs get copied every time they are passed
+  around, so there would be nothing to share.
+  The concern behind the question is still satisfied, though. The
+  dislike of classes is about adding new ones that carry runtime cost,
+  and this refactor goes the opposite way: today there are three
+  separate wrapper classes (Buddhist, Japanese, and ROC would be the
+  third); afterward there is one, and the calendars are just names for
+  that one class filled in with different era rules. The new code we
+  write is not classes at all: the era rules live in enums containing
+  only static functions, never instantiated, costing nothing at
+  runtime. The only object ever created is the same one created today,
+  the wrapper holding its Gregorian helper.
