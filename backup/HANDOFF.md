@@ -1,18 +1,18 @@
 # Calendar ports — Session Handoff (master entry point)
 
-**Cold-resume: read this file first.** Last update: 2026-07-19.
+**Cold-resume: read this file first.** Last update: 2026-07-23.
 
 ## ✅ CURRENT STATE (2026-07-17) — read this section, then the active plan
 
-**Chinese: COMPLETE through review round 2 (2026-07-19). All staged work
-resolved: S1 week-year (option B) + S5 cleanup executed; S3 quarter
-surfaces user-decided match-ICU and IMPLEMENTED (407-date gate, § 11.23);
-S2 wrapping user-decided keep-day-only (§ 11.24). Round-2 review
-(§ 11.25): 10 findings, zero regressions; R1/R2/R3/R6 FIXED, R4/R5/
-R7-R10 open quality-only — GATE CLEAR. Cold-resume: CHINESE_PLAN
-§ 11.21–11.25, then `backup/CHINESE_6.4_HANDOFF.md`** for the
-feature-branch script. Next actor: 6.4 machine cuts `port/chinese-main`
-and opens the PR.
+**Chinese: extreme-date fix IMPLEMENTED (2026-07-23, commit 9fa022a).
+Mean-element (píngqì) zone outside astronomicalYears = -12,000...16,000,
+two independent edge anchors, seam forcing, leap-label completion; 111
+tests / 27 suites green. Cold-resume: CHINESE_PLAN § 11.27-11.30 (root
+cause, measurements, decisions, implementation), then memory. NEXT: user
+pushes 9fa022a; 6.4 machine runs ChineseMeanZoneProbe in RELEASE (ladder
+step 7) and lands the patch on PR #2123 (PR text outline in § 11.28e);
+answer richgillam's HKO question with § 11.29 ammo; watch upstream PR
+unicode-org/icu#4070.**
 Open user decisions: Hebrew isLeapMonth fix vehicle (confirmed benign
 deviation, see CHINESE_PLAN § 11.8); Chinese nextDate fast-path follow-up
 PR (post-merge). Everything below is history.
