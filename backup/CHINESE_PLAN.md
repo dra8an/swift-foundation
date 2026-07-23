@@ -1900,3 +1900,37 @@ Findings:
   PROPOSED: relatedISOYear −12,000 to +16,000 (round numbers with
   500-900 years of margin inside the measured-excellent span).
   USER DECISION PENDING on these two numbers; then implementation.
+
+#### 11.27a Root cause of the ~72,000 breakdown (identified 2026-07-23)
+
+The culprit is one line inside nthNewMoon: the eccentricity factor
+e = 1 - 0.002516 c - 0.0000074 c^2 (c in units of 1236.85 lunations,
+about a century). It models the slow change of the Earth orbit
+eccentricity and is a local fit, meaningful only while e stays near 1.
+Several of the periodic correction terms are multiplied by e (or e^2,
+e^3 for the multi-anomaly terms).
+
+- Near the present, e is about 1 and the total correction stays within
+  about 0.6 days, so adjacent new moons always land 29 or 30 whole days
+  apart.
+- The polynomial is quadratic with a negative leading term, so far out
+  it leaves [0, 1], crosses zero, and grows without bound in magnitude:
+  at year 72,000 (c about 696), e is about -4.3. The e-weighted terms
+  are then amplified several-fold (the 0.172-day term becomes about
+  0.75 days, e^2 and e^3 terms blow up further), so the correction can
+  swing by more than half a day between one lunation and the next.
+  That is exactly the threshold at which two adjacent new moons can
+  land 28 or 31 whole days apart, which the one-bit month-length
+  packing cannot represent: assert in debug, garbage in release.
+- The growth rate of |e| matches the measured onset: at year ~52,000
+  (c about 500) e is about -2.1, marginal; first observed violation at
+  72,200.
+- The proposed horizon keeps e comfortably sane: at +16,000 (c about
+  145) e = 0.48, at -12,000 e is about 1.2. Well inside the fit's
+  meaningful region, consistent with the excellent § 11.28d errors.
+
+The quadratic slowdown (§ 11.27 defect 2) is separate: the drift term
+0.00015437 c^2 days in the new-moon estimate grows to ~355,000 days at
+year 4.9M, and the index search corrects it one lunation at a time.
+Both defects vanish inside the horizon and never arise in the mean
+zone.
