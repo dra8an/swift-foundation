@@ -1,0 +1,114 @@
+# Gregorian-variant calendars: shared-core design (ROC + dedup)
+
+Decision-evolution log for eliminating the duplicated wrapper shell in the
+pseudo-Gregorian calendars. Started 2026-07-23 from the user's concern:
+Buddhist and Japanese each re-implement the same delegation scaffolding
+around `_CalendarGregorian` because it is `final`; adding ROC (Minguo)
+the same way would make a third copy.
+
+## § 1. Problem statement (2026-07-23)
+
+- `_CalendarGregorian` (3,055 lines) is `final`, deliberately: upstream's
+  perf posture relies on devirtualized dispatch on the hot path.
+  Inheritance is not available and un-finaling it will not pass review.
+- `_CalendarBuddhist` (153 lines) and `_CalendarJapanese` (469 lines) are
+  composition wrappers holding a `gregorian` instance. The genuinely
+  per-calendar content is small (era range, era interval, year mapping;
+  Japanese adds the era table and mid-year era boundaries). The rest is
+  a repeated shell: property forwarding (locale/timeZone/firstWeekday/
+  minimumDaysInFirstWeek), copy(), hash(), range/ordinality/dateInterval/
+  isDateInWeekend passthroughs, and the convert-in/adjust-out pattern
+  around date(from:), dateComponents, byAdding, from:to.
+- ROC repeats the shell a third time. Every future pseudo-Gregorian
+  (if any) repeats it again.
+
+## § 2. Current measurements (research branch, synced to PR #2105 final)
+
+| File | Lines | Of which shell (approx.) |
+|---|---|---|
+| Calendar_Buddhist.swift | 153 | ~110 |
+| Calendar_Japanese.swift | 469 | ~110 |
+| Calendar_Gregorian.swift | 3,055 | n/a (the delegate) |
+
+Estimated after refactor: shared variant class ~200 lines, Buddhist
+policy ~30, ROC policy ~30, Japanese policy ~250 (era table + hooks).
+Net for three calendars ≈ 510 lines vs ≈ 775 by cloning the shell again;
+each further pseudo-Gregorian ≈ +30 instead of +150.
+
+## § 3. Options considered
+
+### 3a. Subclass _CalendarGregorian — REJECTED
+Blocked by `final`; un-finaling deoptimizes the hot path (devirtualization)
+and invites fragile-base coupling. Upstream will not take it.
+
+### 3b. Protocol with default witness implementations — REJECTED (soft)
+A `_GregorianBackedCalendar` protocol refining `_CalendarProtocol` with
+defaulted forwarding methods. Works, but collides head-on with the new
+guideline rule (PR #2091, itingliu): "Do not provide a default
+protocol-witness implementation when existing conformances already
+diverge in real behavior." The forwarding defaults are uniform today,
+but the rule signals reviewer taste; avoid the debate.
+
+### 3c. Generic wrapper over an era policy — RECOMMENDED
+
+```swift
+protocol _GregorianEraPolicy: Sendable {
+    static var identifier: Calendar.Identifier { get }
+    static var eraRange: Range<Int> { get }
+    static func toGregorian(_ components: inout DateComponents)
+    static func fromGregorian(_ components: inout DateComponents, requested: Calendar.ComponentSet)
+    static func eraInterval(containing date: Date) -> DateInterval?
+}
+
+final class _CalendarGregorianVariant<Policy: _GregorianEraPolicy>: _CalendarProtocol {
+    let gregorian: _CalendarGregorian
+    // forwarding shell + convert-in/adjust-out plumbing, written once
+}
+
+typealias _CalendarBuddhist = _CalendarGregorianVariant<BuddhistEra>   // year = gregorian + 543
+typealias _CalendarROC      = _CalendarGregorianVariant<ROCEra>        // year = gregorian - 1911, era 0/1 at 1912 boundary
+typealias _CalendarJapanese = _CalendarGregorianVariant<JapaneseEra>   // policy carries the 237-entry era table
+```
+
+Why this shape wins:
+- Each specialization is still `final` and statically dispatched, so the
+  performance argument that justified `final` on Gregorian is preserved.
+- Policies are pure value-level mapping logic, trivially testable.
+- Japanese keeps its genuinely hard content (era table, mid-year era
+  starts, per-era year ranges) inside its policy; the shell dedupes.
+- Zero change to _CalendarProtocol or Gregorian itself.
+
+Open design points (need decisions):
+1. Policy hook surface for Japanese: the minimal set above suffices for
+   Buddhist/ROC; Japanese needs additional hooks (per-era year range,
+   era-boundary handling in adds, addingEra behavior). Enumerate them
+   from the current Calendar_Japanese and decide whether they become
+   optional protocol requirements with no-op defaults for Buddhist/ROC
+   (careful: same default-witness taste question as 3b, though here the
+   protocol is ours and narrow) or a single richer required surface.
+2. Class name and file layout: one file for the variant class + one per
+   policy, vs one file total. Guideline says file names track type names.
+3. ROC specifics: era 1 (minguo) from 1912; era 0 (before-minguo) counts
+   backward, mirroring ICU. Verify against _CalendarICU(.republicOfChina)
+   behavior, including the year-0/negative handling.
+4. Whether Calendar_Cache's flag routing gets one shared flag or
+   per-calendar flags (precedent: per-calendar).
+
+## § 4. Sequencing (recommended)
+
+1. Do NOT restructure PR #2105: it is approved; reopening a finished
+   review to refactor costs goodwill and time.
+2. Land #2105 and #2123 as they are.
+3. Prototype the variant refactor on THIS research branch, where the
+   exhaustive B/J probe suites (105 tests / 25 suites currently green)
+   gate behavior-neutrality of the refactor.
+4. Ship it upstream as the ROC PR: "Add the Republic of China calendar
+   by extracting a shared Gregorian-variant core." The diff adds a
+   calendar while shrinking net lines, the strongest review story this
+   refactor can have, timed exactly when the third duplication would
+   otherwise appear.
+
+## § 5. Decision log
+
+- 2026-07-23: problem raised by user; options 3a-3c drafted; sequencing
+  proposal drafted. User comments pending, nothing decided yet.

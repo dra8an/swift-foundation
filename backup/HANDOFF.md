@@ -47,6 +47,7 @@ PR (post-merge). Everything below is history.
 ### Doc map (all in backup/)
 
 - `CHINESE_PLAN.md` — **active plan (start here)**
+- `GREGORIAN_VARIANTS_PLAN.md` — ROC + Gregorian-variant dedup design (decision log, ACTIVE)
 - `BUDDHIST_JAPANESE_6.4_HANDOFF.md` — B/J cherry-pick handoff (executed; kept for pattern)
 - `BUDDHIST_JAPANESE_PR_DESCRIPTION.md` — B/J draft PR body
 - `BENCHMARKS_PACKAGE.md` — bench methodology + B/J results matrix (PR-ready)
