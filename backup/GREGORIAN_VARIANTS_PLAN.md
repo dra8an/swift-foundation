@@ -52,6 +52,7 @@ but the rule signals reviewer taste; avoid the debate.
 ### 3c. Generic wrapper over an era policy — RECOMMENDED
 
 ```swift
+// Policies are caseless enums, static members only: never instantiated, no allocation, no ARC.
 protocol _GregorianEraPolicy: Sendable {
     static var identifier: Calendar.Identifier { get }
     static var eraRange: Range<Int> { get }
@@ -112,3 +113,14 @@ Open design points (need decisions):
 
 - 2026-07-23: problem raised by user; options 3a-3c drafted; sequencing
   proposal drafted. User comments pending, nothing decided yet.
+- 2026-07-23 (user Q1): can the variant be a struct instead of a class,
+  given Foundation's aversion to classes? ANSWER: no, structurally
+  impossible: `_CalendarProtocol: AnyObject, Sendable` is
+  class-constrained; Calendar shares one cached inner instance per
+  identifier and copies on mutation, so reference semantics are
+  load-bearing (Calendar.swift TODO about isKnownUniquelyReferenced on
+  the existential confirms). Mitigations adopted into the design: the
+  refactor is class-count-NEGATIVE (3 wrapper classes become 1 generic
+  class + typealiases); policies are caseless enums with static members
+  only (never instantiated, no ARC, no allocations); per-instance cost
+  unchanged (one wrapper object + gregorian reference, as today).
