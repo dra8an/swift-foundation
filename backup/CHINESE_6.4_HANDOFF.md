@@ -245,6 +245,29 @@ Touches merged Calendar_Hebrew and Calendar_Gregorian, so it must diff
 against live upstream/main here. The research iMac then back-syncs and
 validates with the exhaustive suites.
 
+## Extreme-date fix (2026-07-23, MUST land on PR #2123)
+
+Research commit 9fa022a fixes garbage output and slowness for extreme
+years (reported by this machine): a mean-element (píngqì) zone replaces
+the fitted astronomy outside astronomicalYears = -12,000...16,000, with
+two anchors at the edges so the zones tile. Full story: CHINESE_PLAN
+§ 11.27 (root cause), § 11.28b-e (measurements, horizon decision, PR
+text outline), § 11.30 (implementation and verification).
+
+Steps on this machine:
+1. Cherry-pick the Calendar_Chinese.swift diff from 9fa022a onto
+   port/chinese-main.
+2. Copy ChineseMeanZoneProbe.swift as the curated test, STRIPPING the
+   print statements first (guideline: no prints in PR-bound tests) and
+   renaming if desired; the #expect assertions carry the gates.
+3. Ladder step 7, the release gate this machine owes: run the probe in
+   RELEASE mode and require green before pushing. The original bug was
+   silent in release only.
+4. Add the PR-body section from the § 11.28e outline: root cause, the
+   three-layer boundary story, horizon rationale, accuracy table from
+   § 11.28d, píngqì description from public sources, no ICU4X mention
+   anywhere in code or tests.
+
 ## Future watchpoint: ICU-23167 (extended-year epoch)
 
 Upstream ICU 78.1 changed UCAL_EXTENDED_YEAR for chinese to Temporal's
