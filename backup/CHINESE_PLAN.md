@@ -1654,3 +1654,44 @@ _CalendarUtility is the cross-calendar follow-up PR, it touches merged
 Hebrew (and Gregorian for weekNumber), so doing it inside #2123 would
 grow the diff into reviewed code. If the reviewers prefer it now, the
 lift list above is the exact scope.
+
+### 11.27 Extreme-date defect (reported by the 6.4 machine, diagnosed 2026-07-23)
+
+Report: garbage output for Chinese dates with year > 90000. Reproduced
+here on the first try. Two defects, one root cause: the fitted
+astronomical series (Meeus corrections) are only physically coherent
+within a few tens of millennia of the present.
+
+1. Correctness: beyond roughly year 72,000 (first failure between
+   70,200 and 72,200; negative side assumed symmetric, unverified),
+   adjacent computed new moons start landing 28 or 31 integer days
+   apart. The fallback packs month lengths as one bit (29 or 30), so
+   such months cannot be represented: debug builds trap on the
+   lunation assert ("non-lunation month length 31 in fallback year
+   90004"), release builds silently pack wrong bits and every derived
+   field is garbage. Verified clean through year 5000 by the invariant
+   probe; the breakdown sits far outside anything previously swept.
+2. Performance: numOfNewMoonAtOrAfter estimates the lunation index from
+   the mean synodic month, then corrects by stepping one index at a
+   time. The polynomial drift term (0.00015437 c^2 days) grows
+   quadratically with distance: at year 4.9M the estimate is off by
+   roughly 12,000 lunations, so a single date query steps thousands of
+   times through the full series. A scan that touched year 4.9M blew a
+   ten minute budget.
+
+Fix options (decision pending):
+- (a) Arithmetic mean-value fallback beyond a validated horizon H
+  (proposed H = plus/minus 10,000 or 20,000): inside H nothing changes;
+  beyond H replace the periodic series with mean elements (uniform sun,
+  uniform lunations) anchored at the horizon boundary so the zones tile.
+  Months are 29/30 by construction, computation is O(1), deterministic.
+  Precedent: ICU4X does exactly this outside its baked range. Diverges
+  from ICU beyond H, which is already our documented out-of-range
+  policy. RECOMMENDED.
+- (b) Shrink the supported domain to H and return nil beyond: honest but
+  regresses against ICU, which returns values (its own extreme values
+  are physically meaningless but exist), and the advertised ranges say
+  plus/minus 5M.
+- (c) Widen the year structure to store real month lengths (28..31):
+  representation surgery on the PR-critical type mid-review, and it
+  ships ICU-like garbage rather than a sane calendar.
