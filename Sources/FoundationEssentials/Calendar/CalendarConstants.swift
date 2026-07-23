@@ -17,6 +17,9 @@ extension Calendar {
     static let _kSecondsInHour = 3600
     static let _kSecondsInMinute = 60
 
+    // Upstream additions/renames not yet in this research base; aliases until resynced.
+    /// Upper bound for date interval durations in unbounded range loops.
+    static let _maxDateIntervalDuration: TimeInterval = 4398046511104.0
     // Upstream renamed these without the _k prefix (guideline PR #2091); aliases until this research base is resynced.
     static let _secondsInWeek = _kSecondsInWeek
     static let _secondsInDay = _kSecondsInDay
@@ -25,4 +28,9 @@ extension Calendar {
 
     /// Sentinel used by unbounded range loops in date arithmetic.
     static let _inf_ti: TimeInterval = 4398046511104.0
+}
+
+// Local research shim: upstream #2028 replaced the supportsNextDateFastPath property with a per-component method; this base still has the property, so provide the method form the synced calendars call.
+extension _CalendarProtocol {
+    func supportsNextDateFastPath(for components: Calendar.ComponentSet) -> Bool { supportsNextDateFastPath }
 }

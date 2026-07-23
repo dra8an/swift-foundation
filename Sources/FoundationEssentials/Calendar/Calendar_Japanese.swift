@@ -29,7 +29,8 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
 
     /// 237 Japanese eras (Taika 645 → Reiwa 2019), sorted descending. Index values match ICU's era numbering.
     // Meiji (232) uses 1868-09-08 to match Apple's runtime ICU (CLDR canonical is 1868-10-23).
-    private static let eraData: InlineArray<237, (index: Int32, year: Int16, month: Int8, day: Int8)> = [
+    // Local research divergence, not for upstream: the PR stores this as InlineArray<237, ...>, which needs the macOS 26 runtime; a plain array is semantically identical.
+    private static let eraData: [(index: Int32, year: Int16, month: Int8, day: Int8)] = [
         (236, 2019, 5, 1),
         (235, 1989, 1, 8),
         (234, 1926, 12, 25),
