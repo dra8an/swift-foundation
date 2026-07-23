@@ -1856,3 +1856,47 @@ spans about -13,200 to +17,191, exactly the window we want. Plan:
   machine, only resulting numbers are cited, nothing ships.
 - The horizon definition from § 11.28b is unchanged, just measured
   against Swiss Ephemeris directly instead of via Liu.
+
+#### 11.28d Horizon measurement results (2026-07-23, Swiss Ephemeris JPL files)
+
+Method: for sampled years across the full ephemeris span, compare (a)
+our solar longitude at a fixed instant and (b) the true elongation at
+our predicted new-moon instants against Swiss Ephemeris with real JPL
+files (downloaded into hindu-calendar/ephe, 38 files); same two
+metrics for a first-principles mean-value (píngqì) model anchored to
+our own astronomy near 2000. Errors converted to days of event timing.
+Harness: swecheck.c + dumper scratch test (job tmp dir + uncommitted
+test file); rebuild takes minutes if ever needed again.
+
+| year | ours sun | ours moon | pingqi sun | pingqi moon |
+|---|---|---|---|---|
+| -12900 | -0.052 | -0.179 | -5.860 | 4.488 |
+| -9300 | -0.020 | -0.062 | -4.086 | 3.002 |
+| -4500 | -0.011 | -0.003 | -3.167 | 0.972 |
+| -900 | -0.001 | -0.002 | -1.586 | 0.438 |
+| 2500 | 0.008 | -0.008 | -0.243 | 0.341 |
+| 5100 | 0.040 | -0.036 | -0.586 | 0.901 |
+| 8100 | 0.061 | -0.049 | -3.254 | 1.568 |
+| 11700 | 0.062 | -0.017 | -8.977 | 2.067 |
+| 13500 | 0.062 | 0.007 | -12.315 | 3.747 |
+| 16500 | 0.041 | 0.096 | -17.736 | 4.884 |
+
+(days; full 18-row table reproducible from the harness)
+
+Findings:
+- Our astronomy is excellent across the ENTIRE ephemeris span: solar
+  timing within 0.07 days, lunar within 0.18 days, even at the edges.
+  The fitted series hold far better than their nominal ratings.
+- The mean model is 1 to 2 orders of magnitude worse everywhere and its
+  solar drift grows to about 18 days by +16,500 (mostly the deliberate
+  Gregorian-anchoring trade plus the missing equation of center; the
+  lunar part is the tidal quadratic the mean model lacks by design).
+- There is NO crossing inside the ephemeris window: our astronomy beats
+  the mean model everywhere it can be measured. The crossing lies
+  somewhere between +17k and the 29/30 breakdown near 72k, where no
+  validation is possible.
+- Conclusion per the § 11.28b principle (validated or arithmetic,
+  nothing in between): the horizon goes at the validated edge.
+  PROPOSED: relatedISOYear −12,000 to +16,000 (round numbers with
+  500-900 years of margin inside the measured-excellent span).
+  USER DECISION PENDING on these two numbers; then implementation.
