@@ -1695,3 +1695,68 @@ Fix options (decision pending):
 - (c) Widen the year structure to store real month lengths (28..31):
   representation surgery on the PR-critical type mid-review, and it
   ships ICU-like garbage rather than a sane calendar.
+
+### 11.28 Extreme-date fix: approved plan of record (2026-07-23)
+
+Fix for the § 11.27 defect. The suggested design and the verification
+plan below were reviewed with the user; execution starts with step 1.
+
+**The fix: two zones with a cutover year (the horizon).**
+- Inside the horizon (somewhere between a few thousand and twenty
+  thousand years; chosen by measurement in step 1, not guessed): keep
+  exactly what we have today. Real astronomy, unchanged, already
+  validated.
+- Beyond the horizon: switch to an average-based calendar. The sun
+  advances at its average rate, new moons come exactly one average
+  month apart, and the chain is anchored at the horizon so the two
+  zones meet without a gap. Months are 29 or 30 by construction, so
+  the garbage class of bug becomes impossible. The computation is a
+  handful of multiplications, so the slowness is gone too.
+
+Why this is defensible: past a few thousand years the uncertainty in
+Earth's rotation grows so large that nobody can say which day a
+far-future new moon falls on; an average-based calendar is as correct
+as anything can be out there. ICU4X made the same choice outside its
+data range. Extreme dates stop matching ICU, but ICU's own extreme
+values come from broken-down formulas, and intentional divergence
+outside the validated range is already this PR's documented policy.
+
+Rejected alternatives: return nil beyond the horizon (ICU returns
+values there, so the API would regress); widen the data structures to
+store 28 and 31 day months (surgery on the core type in mid-review,
+just to faithfully reproduce garbage).
+
+**The verification plan, in execution order.**
+1. Find where our astronomy stops being trustworthy. Run the Liu DE441
+   comparison at increasing distances (years 3,000 / 5,000 / 8,000 /
+   12,000 / 17,000) and watch the agreement with the real ephemeris
+   decay. Where it becomes unacceptable, that is the horizon. Every
+   other step depends on this number. (DE441 itself ends near 17,191,
+   and the 29/30 breakdown near 72,000 is the distant backstop.)
+2. Prove nothing changes on the near side. Every date before the
+   horizon gives exactly the same answer as today; all 105 existing
+   tests pass unchanged, protecting every ICU parity claim in the PR.
+3. Check the boundary itself. The last astronomical year and the first
+   average-based year meet with no gap and no overlap, on both the
+   future and past sides, including operations that cross the boundary
+   (adds, intervals).
+4. Check the far side, where the garbage was. Across the full range to
+   plus and minus five million: every year has 12 or 13 months, every
+   month 29 or 30 days, years line up end to start, and every date
+   converts to components and back to the same date. The reported
+   years around 90,000 become permanent named test cases.
+5. Check the far calendar looks like a real Chinese calendar. Leap
+   years about 7 in every 19, leap months spread across month numbers,
+   plausible year lengths; compare the same statistics against ICU4X's
+   far range as a second opinion. Sanity checks, not gates.
+6. Check speed. A lookup at year 4.9 million finishes in about a
+   millisecond and is not meaningfully slower than one at year 10,000.
+   EXPECTED_TIMES rows added so a regression shows as a timing anomaly.
+7. Confirm on the other machine. The bug only showed in release
+   builds, which this iMac cannot run; the new tests ship with the
+   patch and must pass in release on the 6.4 machine before the fix
+   goes into PR #2123.
+
+Deliberately not verified: parity with ICU or ICU4X beyond the horizon
+(no authority exists there; § 11.3 registry + PR text carry the
+statement). Liu material stays research-only per the GPL policy.
