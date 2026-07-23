@@ -1804,3 +1804,35 @@ appears in ANY code, research probes included (user, 2026-07-23,
 tightened from the earlier PR-bound scope). If ICU4X numbers are ever
 wanted, run their crate in their own checkout and carry only the
 resulting numbers into backup/ notes, same policy as the Liu GPL data.
+
+#### 11.28b Updated plan of record (user decision, 2026-07-23)
+
+- Zone 1: baked table, 1901-2100, unchanged.
+- Zone 2: our astronomy, kept exactly as far as it can be validated
+  against a real ephemeris: the DE441 span, about -13,200 to +17,191,
+  subject to the measurements below confirming our astronomy actually
+  stays better than the mean method out to those edges. If it drifts
+  earlier, the horizon pulls in to where validation succeeds. The
+  horizon therefore has a principled definition: validated or
+  arithmetic, nothing in between.
+- Zone 3: the historical píngqì rule (mean solar terms, mean lunations)
+  from the horizon out to the +-5M domain edges. Anchored at the
+  horizon with values from our own astronomy, so the zones tile and no
+  outside constants are needed at all (not even the USNO instants
+  ICU4X uses; our píngqì shares only the centuries-old rule with them).
+
+Licensing assessment (user asked, answered 2026-07-23): no concerns.
+Our astronomy is from the published R&D book, already reviewed. The
+píngqì rule is centuries-old public knowledge. The mean month length is
+a published physical fact (Astronomical Almanac). Liu/DE441 stays a
+research-only validator whose numbers alone are cited in PR text
+(existing GPL policy). Running ICU4X's crate in its own checkout for
+reference numbers is use, not distribution, and touches neither our
+code nor the PR.
+
+Measurements to run (step 1 of § 11.28 verification, sharpened):
+(m1) our astronomy vs Liu across the full window Liu can produce;
+(m2) a first-principles píngqì implementation vs Liu over the same
+window (doubles as the zone-3 prototype); optionally (m3) ICU4X vs Liu
+via their crate, numbers recorded here only. Horizon = the widest span
+where (m1) beats (m2).
