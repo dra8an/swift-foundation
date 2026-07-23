@@ -10,8 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-/// Pure-Swift Thai Solar Buddhist calendar. Year = Gregorian + 543. Single era (BE).
-/// Delegates all arithmetic to a wrapped `_CalendarGregorian` instance.
+/// Buddhist calendar. Year = Gregorian + 543, single era (BE). Delegates to `_CalendarGregorian`.
 internal final class _CalendarBuddhist: _CalendarProtocol, @unchecked Sendable {
 
     static let yearOffset = 543
@@ -55,19 +54,27 @@ internal final class _CalendarBuddhist: _CalendarProtocol, @unchecked Sendable {
         return _CalendarBuddhist(identifier: identifier, timeZone: args.timeZone, locale: args.locale, firstWeekday: args.firstWeekday, minimumDaysInFirstWeek: args.minimumDaysInFirstWeek, gregorianStartDate: nil)
     }
 
-    // hash(into:) uses the protocol default impl.
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(identifier)
+        hasher.combine(timeZone)
+        hasher.combine(firstWeekday)
+        hasher.combine(minimumDaysInFirstWeek)
+        hasher.combine(localeIdentifier)
+        hasher.combine(preferredFirstWeekday)
+        hasher.combine(preferredMinimumDaysInFirstweek)
+    }
 
-    var supportsNextDateFastPath: Bool { gregorian.supportsNextDateFastPath }
+    func supportsNextDateFastPath(for components: Calendar.ComponentSet) -> Bool { gregorian.supportsNextDateFastPath(for: components) }
 
     // MARK: - Range
 
     func minimumRange(of component: Calendar.Component) -> Range<Int>? {
-        if component == .era { return 0..<1 }
+        if component == .era { return Range(0...0) }
         return gregorian.minimumRange(of: component)
     }
 
     func maximumRange(of component: Calendar.Component) -> Range<Int>? {
-        if component == .era { return 0..<1 }
+        if component == .era { return Range(0...0) }
         return gregorian.maximumRange(of: component)
     }
 
@@ -81,7 +88,7 @@ internal final class _CalendarBuddhist: _CalendarProtocol, @unchecked Sendable {
 
     func dateInterval(of component: Calendar.Component, for date: Date) -> DateInterval? {
         if component == .era {
-            return DateInterval(start: Date(timeIntervalSinceReferenceDate: -63113904000.0 - Calendar._inf_ti), duration: Calendar._inf_ti)
+            return DateInterval(start: Date(timeIntervalSinceReferenceDate: -63113904000.0 - Calendar._maxDateIntervalDuration), duration: Calendar._maxDateIntervalDuration)
         }
         return gregorian.dateInterval(of: component, for: date)
     }

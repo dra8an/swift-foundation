@@ -10,8 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-/// Pure-Swift Japanese imperial calendar. Same arithmetic as Gregorian; year
-/// is reckoned within the current era (Meiji, Taishō, Shōwa, Heisei, Reiwa).
+/// Japanese imperial calendar. Same arithmetic as Gregorian; year is reckoned within the current era. Delegates to `_CalendarGregorian`.
 internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
 
     private struct EraEntry {
@@ -19,252 +18,263 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
         let startGregorianYear: Int
         let startMonth: Int
         let startDay: Int
+
+        init(_ index: Int32, _ year: Int16, _ month: Int8, _ day: Int8) {
+            self.index = Int(index)
+            self.startGregorianYear = Int(year)
+            self.startMonth = Int(month)
+            self.startDay = Int(day)
+        }
     }
 
-    /// All 237 Japanese eras (Taika 645 → Reiwa 2019), sorted descending by start date.
-    /// Sourced from ICU4C `supplementalData.txt`. Index values match ICU's era numbering.
-    /// TODO: Meiji (232) — Apple's runtime ICU treats Meiji start as 1868-09-08 not the
-    /// CLDR-canonical 1868-10-23. Using 1868-09-08 here for runtime parity; revisit when
-    /// we have time to investigate the data source discrepancy.
-    private static let eras: [EraEntry] = [
-        EraEntry(index: 236, startGregorianYear: 2019, startMonth: 5, startDay: 1),
-        EraEntry(index: 235, startGregorianYear: 1989, startMonth: 1, startDay: 8),
-        EraEntry(index: 234, startGregorianYear: 1926, startMonth: 12, startDay: 25),
-        EraEntry(index: 233, startGregorianYear: 1912, startMonth: 7, startDay: 30),
-        EraEntry(index: 232, startGregorianYear: 1868, startMonth: 9, startDay: 8),
-        EraEntry(index: 231, startGregorianYear: 1865, startMonth: 4, startDay: 7),
-        EraEntry(index: 230, startGregorianYear: 1864, startMonth: 2, startDay: 20),
-        EraEntry(index: 229, startGregorianYear: 1861, startMonth: 2, startDay: 19),
-        EraEntry(index: 228, startGregorianYear: 1860, startMonth: 3, startDay: 18),
-        EraEntry(index: 227, startGregorianYear: 1854, startMonth: 11, startDay: 27),
-        EraEntry(index: 226, startGregorianYear: 1848, startMonth: 2, startDay: 28),
-        EraEntry(index: 225, startGregorianYear: 1844, startMonth: 12, startDay: 2),
-        EraEntry(index: 224, startGregorianYear: 1830, startMonth: 12, startDay: 10),
-        EraEntry(index: 223, startGregorianYear: 1818, startMonth: 4, startDay: 22),
-        EraEntry(index: 222, startGregorianYear: 1804, startMonth: 2, startDay: 11),
-        EraEntry(index: 221, startGregorianYear: 1801, startMonth: 2, startDay: 5),
-        EraEntry(index: 220, startGregorianYear: 1789, startMonth: 1, startDay: 25),
-        EraEntry(index: 219, startGregorianYear: 1781, startMonth: 4, startDay: 2),
-        EraEntry(index: 218, startGregorianYear: 1772, startMonth: 11, startDay: 16),
-        EraEntry(index: 217, startGregorianYear: 1764, startMonth: 6, startDay: 2),
-        EraEntry(index: 216, startGregorianYear: 1751, startMonth: 10, startDay: 27),
-        EraEntry(index: 215, startGregorianYear: 1748, startMonth: 7, startDay: 12),
-        EraEntry(index: 214, startGregorianYear: 1744, startMonth: 2, startDay: 21),
-        EraEntry(index: 213, startGregorianYear: 1741, startMonth: 2, startDay: 27),
-        EraEntry(index: 212, startGregorianYear: 1736, startMonth: 4, startDay: 28),
-        EraEntry(index: 211, startGregorianYear: 1716, startMonth: 6, startDay: 22),
-        EraEntry(index: 210, startGregorianYear: 1711, startMonth: 4, startDay: 25),
-        EraEntry(index: 209, startGregorianYear: 1704, startMonth: 3, startDay: 13),
-        EraEntry(index: 208, startGregorianYear: 1688, startMonth: 9, startDay: 30),
-        EraEntry(index: 207, startGregorianYear: 1684, startMonth: 2, startDay: 21),
-        EraEntry(index: 206, startGregorianYear: 1681, startMonth: 9, startDay: 29),
-        EraEntry(index: 205, startGregorianYear: 1673, startMonth: 9, startDay: 21),
-        EraEntry(index: 204, startGregorianYear: 1661, startMonth: 4, startDay: 25),
-        EraEntry(index: 203, startGregorianYear: 1658, startMonth: 7, startDay: 23),
-        EraEntry(index: 202, startGregorianYear: 1655, startMonth: 4, startDay: 13),
-        EraEntry(index: 201, startGregorianYear: 1652, startMonth: 9, startDay: 18),
-        EraEntry(index: 200, startGregorianYear: 1648, startMonth: 2, startDay: 15),
-        EraEntry(index: 199, startGregorianYear: 1644, startMonth: 12, startDay: 16),
-        EraEntry(index: 198, startGregorianYear: 1624, startMonth: 2, startDay: 30),
-        EraEntry(index: 197, startGregorianYear: 1615, startMonth: 7, startDay: 13),
-        EraEntry(index: 196, startGregorianYear: 1596, startMonth: 10, startDay: 27),
-        EraEntry(index: 195, startGregorianYear: 1592, startMonth: 12, startDay: 8),
-        EraEntry(index: 194, startGregorianYear: 1573, startMonth: 7, startDay: 28),
-        EraEntry(index: 193, startGregorianYear: 1570, startMonth: 4, startDay: 23),
-        EraEntry(index: 192, startGregorianYear: 1558, startMonth: 2, startDay: 28),
-        EraEntry(index: 191, startGregorianYear: 1555, startMonth: 10, startDay: 23),
-        EraEntry(index: 190, startGregorianYear: 1532, startMonth: 7, startDay: 29),
-        EraEntry(index: 189, startGregorianYear: 1528, startMonth: 8, startDay: 20),
-        EraEntry(index: 188, startGregorianYear: 1521, startMonth: 8, startDay: 23),
-        EraEntry(index: 187, startGregorianYear: 1504, startMonth: 2, startDay: 30),
-        EraEntry(index: 186, startGregorianYear: 1501, startMonth: 2, startDay: 29),
-        EraEntry(index: 185, startGregorianYear: 1492, startMonth: 7, startDay: 19),
-        EraEntry(index: 184, startGregorianYear: 1489, startMonth: 8, startDay: 21),
-        EraEntry(index: 183, startGregorianYear: 1487, startMonth: 7, startDay: 29),
-        EraEntry(index: 182, startGregorianYear: 1469, startMonth: 4, startDay: 28),
-        EraEntry(index: 181, startGregorianYear: 1467, startMonth: 3, startDay: 3),
-        EraEntry(index: 180, startGregorianYear: 1466, startMonth: 2, startDay: 28),
-        EraEntry(index: 179, startGregorianYear: 1460, startMonth: 12, startDay: 21),
-        EraEntry(index: 178, startGregorianYear: 1457, startMonth: 9, startDay: 28),
-        EraEntry(index: 177, startGregorianYear: 1455, startMonth: 7, startDay: 25),
-        EraEntry(index: 176, startGregorianYear: 1452, startMonth: 7, startDay: 25),
-        EraEntry(index: 175, startGregorianYear: 1449, startMonth: 7, startDay: 28),
-        EraEntry(index: 174, startGregorianYear: 1444, startMonth: 2, startDay: 5),
-        EraEntry(index: 173, startGregorianYear: 1441, startMonth: 2, startDay: 17),
-        EraEntry(index: 172, startGregorianYear: 1429, startMonth: 9, startDay: 5),
-        EraEntry(index: 171, startGregorianYear: 1428, startMonth: 4, startDay: 27),
-        EraEntry(index: 170, startGregorianYear: 1394, startMonth: 7, startDay: 5),
-        EraEntry(index: 169, startGregorianYear: 1390, startMonth: 3, startDay: 26),
-        EraEntry(index: 168, startGregorianYear: 1389, startMonth: 2, startDay: 9),
-        EraEntry(index: 167, startGregorianYear: 1387, startMonth: 8, startDay: 23),
-        EraEntry(index: 166, startGregorianYear: 1387, startMonth: 8, startDay: 22),
-        EraEntry(index: 165, startGregorianYear: 1384, startMonth: 4, startDay: 28),
-        EraEntry(index: 164, startGregorianYear: 1381, startMonth: 2, startDay: 10),
-        EraEntry(index: 163, startGregorianYear: 1379, startMonth: 3, startDay: 22),
-        EraEntry(index: 162, startGregorianYear: 1375, startMonth: 5, startDay: 27),
-        EraEntry(index: 161, startGregorianYear: 1372, startMonth: 4, startDay: 1),
-        EraEntry(index: 160, startGregorianYear: 1370, startMonth: 7, startDay: 24),
-        EraEntry(index: 159, startGregorianYear: 1346, startMonth: 12, startDay: 8),
-        EraEntry(index: 158, startGregorianYear: 1340, startMonth: 4, startDay: 28),
-        EraEntry(index: 157, startGregorianYear: 1336, startMonth: 2, startDay: 29),
-        EraEntry(index: 156, startGregorianYear: 1334, startMonth: 1, startDay: 29),
-        EraEntry(index: 155, startGregorianYear: 1331, startMonth: 8, startDay: 9),
-        EraEntry(index: 154, startGregorianYear: 1329, startMonth: 8, startDay: 29),
-        EraEntry(index: 153, startGregorianYear: 1326, startMonth: 4, startDay: 26),
-        EraEntry(index: 152, startGregorianYear: 1324, startMonth: 12, startDay: 9),
-        EraEntry(index: 151, startGregorianYear: 1321, startMonth: 2, startDay: 23),
-        EraEntry(index: 150, startGregorianYear: 1319, startMonth: 4, startDay: 28),
-        EraEntry(index: 149, startGregorianYear: 1317, startMonth: 2, startDay: 3),
-        EraEntry(index: 148, startGregorianYear: 1312, startMonth: 3, startDay: 20),
-        EraEntry(index: 147, startGregorianYear: 1311, startMonth: 4, startDay: 28),
-        EraEntry(index: 146, startGregorianYear: 1308, startMonth: 10, startDay: 9),
-        EraEntry(index: 145, startGregorianYear: 1306, startMonth: 12, startDay: 14),
-        EraEntry(index: 144, startGregorianYear: 1303, startMonth: 8, startDay: 5),
-        EraEntry(index: 143, startGregorianYear: 1302, startMonth: 11, startDay: 21),
-        EraEntry(index: 142, startGregorianYear: 1299, startMonth: 4, startDay: 25),
-        EraEntry(index: 141, startGregorianYear: 1293, startMonth: 8, startDay: 5),
-        EraEntry(index: 140, startGregorianYear: 1288, startMonth: 4, startDay: 28),
-        EraEntry(index: 139, startGregorianYear: 1278, startMonth: 2, startDay: 29),
-        EraEntry(index: 138, startGregorianYear: 1275, startMonth: 4, startDay: 25),
-        EraEntry(index: 137, startGregorianYear: 1264, startMonth: 2, startDay: 28),
-        EraEntry(index: 136, startGregorianYear: 1261, startMonth: 2, startDay: 20),
-        EraEntry(index: 135, startGregorianYear: 1260, startMonth: 4, startDay: 13),
-        EraEntry(index: 134, startGregorianYear: 1259, startMonth: 3, startDay: 26),
-        EraEntry(index: 133, startGregorianYear: 1257, startMonth: 3, startDay: 14),
-        EraEntry(index: 132, startGregorianYear: 1256, startMonth: 10, startDay: 5),
-        EraEntry(index: 131, startGregorianYear: 1249, startMonth: 3, startDay: 18),
-        EraEntry(index: 130, startGregorianYear: 1247, startMonth: 2, startDay: 28),
-        EraEntry(index: 129, startGregorianYear: 1243, startMonth: 2, startDay: 26),
-        EraEntry(index: 128, startGregorianYear: 1240, startMonth: 7, startDay: 16),
-        EraEntry(index: 127, startGregorianYear: 1239, startMonth: 2, startDay: 7),
-        EraEntry(index: 126, startGregorianYear: 1238, startMonth: 11, startDay: 23),
-        EraEntry(index: 125, startGregorianYear: 1235, startMonth: 9, startDay: 19),
-        EraEntry(index: 124, startGregorianYear: 1234, startMonth: 11, startDay: 5),
-        EraEntry(index: 123, startGregorianYear: 1233, startMonth: 4, startDay: 15),
-        EraEntry(index: 122, startGregorianYear: 1232, startMonth: 4, startDay: 2),
-        EraEntry(index: 121, startGregorianYear: 1229, startMonth: 3, startDay: 5),
-        EraEntry(index: 120, startGregorianYear: 1227, startMonth: 12, startDay: 10),
-        EraEntry(index: 119, startGregorianYear: 1225, startMonth: 4, startDay: 20),
-        EraEntry(index: 118, startGregorianYear: 1224, startMonth: 11, startDay: 20),
-        EraEntry(index: 117, startGregorianYear: 1222, startMonth: 4, startDay: 13),
-        EraEntry(index: 116, startGregorianYear: 1219, startMonth: 4, startDay: 12),
-        EraEntry(index: 115, startGregorianYear: 1213, startMonth: 12, startDay: 6),
-        EraEntry(index: 114, startGregorianYear: 1211, startMonth: 3, startDay: 9),
-        EraEntry(index: 113, startGregorianYear: 1207, startMonth: 10, startDay: 25),
-        EraEntry(index: 112, startGregorianYear: 1206, startMonth: 4, startDay: 27),
-        EraEntry(index: 111, startGregorianYear: 1204, startMonth: 2, startDay: 20),
-        EraEntry(index: 110, startGregorianYear: 1201, startMonth: 2, startDay: 13),
-        EraEntry(index: 109, startGregorianYear: 1199, startMonth: 4, startDay: 27),
-        EraEntry(index: 108, startGregorianYear: 1190, startMonth: 4, startDay: 11),
-        EraEntry(index: 107, startGregorianYear: 1185, startMonth: 8, startDay: 14),
-        EraEntry(index: 106, startGregorianYear: 1184, startMonth: 4, startDay: 16),
-        EraEntry(index: 105, startGregorianYear: 1182, startMonth: 5, startDay: 27),
-        EraEntry(index: 104, startGregorianYear: 1181, startMonth: 7, startDay: 14),
-        EraEntry(index: 103, startGregorianYear: 1177, startMonth: 8, startDay: 4),
-        EraEntry(index: 102, startGregorianYear: 1175, startMonth: 7, startDay: 28),
-        EraEntry(index: 101, startGregorianYear: 1171, startMonth: 4, startDay: 21),
-        EraEntry(index: 100, startGregorianYear: 1169, startMonth: 4, startDay: 8),
-        EraEntry(index: 99, startGregorianYear: 1166, startMonth: 8, startDay: 27),
-        EraEntry(index: 98, startGregorianYear: 1165, startMonth: 6, startDay: 5),
-        EraEntry(index: 97, startGregorianYear: 1163, startMonth: 3, startDay: 29),
-        EraEntry(index: 96, startGregorianYear: 1161, startMonth: 9, startDay: 4),
-        EraEntry(index: 95, startGregorianYear: 1160, startMonth: 1, startDay: 10),
-        EraEntry(index: 94, startGregorianYear: 1159, startMonth: 4, startDay: 20),
-        EraEntry(index: 93, startGregorianYear: 1156, startMonth: 4, startDay: 27),
-        EraEntry(index: 92, startGregorianYear: 1154, startMonth: 10, startDay: 28),
-        EraEntry(index: 91, startGregorianYear: 1151, startMonth: 1, startDay: 26),
-        EraEntry(index: 90, startGregorianYear: 1145, startMonth: 7, startDay: 22),
-        EraEntry(index: 89, startGregorianYear: 1144, startMonth: 2, startDay: 23),
-        EraEntry(index: 88, startGregorianYear: 1142, startMonth: 4, startDay: 28),
-        EraEntry(index: 87, startGregorianYear: 1141, startMonth: 7, startDay: 10),
-        EraEntry(index: 86, startGregorianYear: 1135, startMonth: 4, startDay: 27),
-        EraEntry(index: 85, startGregorianYear: 1132, startMonth: 8, startDay: 11),
-        EraEntry(index: 84, startGregorianYear: 1131, startMonth: 1, startDay: 29),
-        EraEntry(index: 83, startGregorianYear: 1126, startMonth: 1, startDay: 22),
-        EraEntry(index: 82, startGregorianYear: 1124, startMonth: 4, startDay: 3),
-        EraEntry(index: 81, startGregorianYear: 1120, startMonth: 4, startDay: 10),
-        EraEntry(index: 80, startGregorianYear: 1118, startMonth: 4, startDay: 3),
-        EraEntry(index: 79, startGregorianYear: 1113, startMonth: 7, startDay: 13),
-        EraEntry(index: 78, startGregorianYear: 1110, startMonth: 7, startDay: 13),
-        EraEntry(index: 77, startGregorianYear: 1108, startMonth: 8, startDay: 3),
-        EraEntry(index: 76, startGregorianYear: 1106, startMonth: 4, startDay: 9),
-        EraEntry(index: 75, startGregorianYear: 1104, startMonth: 2, startDay: 10),
-        EraEntry(index: 74, startGregorianYear: 1099, startMonth: 8, startDay: 28),
-        EraEntry(index: 73, startGregorianYear: 1097, startMonth: 11, startDay: 21),
-        EraEntry(index: 72, startGregorianYear: 1096, startMonth: 12, startDay: 17),
-        EraEntry(index: 71, startGregorianYear: 1094, startMonth: 12, startDay: 15),
-        EraEntry(index: 70, startGregorianYear: 1087, startMonth: 4, startDay: 7),
-        EraEntry(index: 69, startGregorianYear: 1084, startMonth: 2, startDay: 7),
-        EraEntry(index: 68, startGregorianYear: 1081, startMonth: 2, startDay: 10),
-        EraEntry(index: 67, startGregorianYear: 1077, startMonth: 11, startDay: 17),
-        EraEntry(index: 66, startGregorianYear: 1074, startMonth: 8, startDay: 23),
-        EraEntry(index: 65, startGregorianYear: 1069, startMonth: 4, startDay: 13),
-        EraEntry(index: 64, startGregorianYear: 1065, startMonth: 8, startDay: 2),
-        EraEntry(index: 63, startGregorianYear: 1058, startMonth: 8, startDay: 29),
-        EraEntry(index: 62, startGregorianYear: 1053, startMonth: 1, startDay: 11),
-        EraEntry(index: 61, startGregorianYear: 1046, startMonth: 4, startDay: 14),
-        EraEntry(index: 60, startGregorianYear: 1044, startMonth: 11, startDay: 24),
-        EraEntry(index: 59, startGregorianYear: 1040, startMonth: 11, startDay: 10),
-        EraEntry(index: 58, startGregorianYear: 1037, startMonth: 4, startDay: 21),
-        EraEntry(index: 57, startGregorianYear: 1028, startMonth: 7, startDay: 25),
-        EraEntry(index: 56, startGregorianYear: 1024, startMonth: 7, startDay: 13),
-        EraEntry(index: 55, startGregorianYear: 1021, startMonth: 2, startDay: 2),
-        EraEntry(index: 54, startGregorianYear: 1017, startMonth: 4, startDay: 23),
-        EraEntry(index: 53, startGregorianYear: 1012, startMonth: 12, startDay: 25),
-        EraEntry(index: 52, startGregorianYear: 1004, startMonth: 7, startDay: 20),
-        EraEntry(index: 51, startGregorianYear: 999, startMonth: 1, startDay: 13),
-        EraEntry(index: 50, startGregorianYear: 995, startMonth: 2, startDay: 22),
-        EraEntry(index: 49, startGregorianYear: 990, startMonth: 11, startDay: 7),
-        EraEntry(index: 48, startGregorianYear: 989, startMonth: 8, startDay: 8),
-        EraEntry(index: 47, startGregorianYear: 987, startMonth: 4, startDay: 5),
-        EraEntry(index: 46, startGregorianYear: 985, startMonth: 4, startDay: 27),
-        EraEntry(index: 45, startGregorianYear: 983, startMonth: 4, startDay: 15),
-        EraEntry(index: 44, startGregorianYear: 978, startMonth: 11, startDay: 29),
-        EraEntry(index: 43, startGregorianYear: 976, startMonth: 7, startDay: 13),
-        EraEntry(index: 42, startGregorianYear: 973, startMonth: 12, startDay: 20),
-        EraEntry(index: 41, startGregorianYear: 970, startMonth: 3, startDay: 25),
-        EraEntry(index: 40, startGregorianYear: 968, startMonth: 8, startDay: 13),
-        EraEntry(index: 39, startGregorianYear: 964, startMonth: 7, startDay: 10),
-        EraEntry(index: 38, startGregorianYear: 961, startMonth: 2, startDay: 16),
-        EraEntry(index: 37, startGregorianYear: 957, startMonth: 10, startDay: 27),
-        EraEntry(index: 36, startGregorianYear: 947, startMonth: 4, startDay: 22),
-        EraEntry(index: 35, startGregorianYear: 938, startMonth: 5, startDay: 22),
-        EraEntry(index: 34, startGregorianYear: 931, startMonth: 4, startDay: 26),
-        EraEntry(index: 33, startGregorianYear: 923, startMonth: 4, startDay: 11),
-        EraEntry(index: 32, startGregorianYear: 901, startMonth: 7, startDay: 15),
-        EraEntry(index: 31, startGregorianYear: 898, startMonth: 4, startDay: 26),
-        EraEntry(index: 30, startGregorianYear: 889, startMonth: 4, startDay: 27),
-        EraEntry(index: 29, startGregorianYear: 885, startMonth: 2, startDay: 21),
-        EraEntry(index: 28, startGregorianYear: 877, startMonth: 4, startDay: 16),
-        EraEntry(index: 27, startGregorianYear: 859, startMonth: 4, startDay: 15),
-        EraEntry(index: 26, startGregorianYear: 857, startMonth: 2, startDay: 21),
-        EraEntry(index: 25, startGregorianYear: 854, startMonth: 11, startDay: 30),
-        EraEntry(index: 24, startGregorianYear: 851, startMonth: 4, startDay: 28),
-        EraEntry(index: 23, startGregorianYear: 848, startMonth: 6, startDay: 13),
-        EraEntry(index: 22, startGregorianYear: 834, startMonth: 1, startDay: 3),
-        EraEntry(index: 21, startGregorianYear: 824, startMonth: 1, startDay: 5),
-        EraEntry(index: 20, startGregorianYear: 810, startMonth: 9, startDay: 19),
-        EraEntry(index: 19, startGregorianYear: 806, startMonth: 5, startDay: 18),
-        EraEntry(index: 18, startGregorianYear: 782, startMonth: 8, startDay: 19),
-        EraEntry(index: 17, startGregorianYear: 781, startMonth: 1, startDay: 1),
-        EraEntry(index: 16, startGregorianYear: 770, startMonth: 10, startDay: 1),
-        EraEntry(index: 15, startGregorianYear: 767, startMonth: 8, startDay: 16),
-        EraEntry(index: 14, startGregorianYear: 765, startMonth: 1, startDay: 7),
-        EraEntry(index: 13, startGregorianYear: 757, startMonth: 8, startDay: 18),
-        EraEntry(index: 12, startGregorianYear: 749, startMonth: 7, startDay: 2),
-        EraEntry(index: 11, startGregorianYear: 749, startMonth: 4, startDay: 14),
-        EraEntry(index: 10, startGregorianYear: 729, startMonth: 8, startDay: 5),
-        EraEntry(index: 9, startGregorianYear: 724, startMonth: 2, startDay: 4),
-        EraEntry(index: 8, startGregorianYear: 717, startMonth: 11, startDay: 17),
-        EraEntry(index: 7, startGregorianYear: 715, startMonth: 9, startDay: 2),
-        EraEntry(index: 6, startGregorianYear: 708, startMonth: 1, startDay: 11),
-        EraEntry(index: 5, startGregorianYear: 704, startMonth: 5, startDay: 10),
-        EraEntry(index: 4, startGregorianYear: 701, startMonth: 3, startDay: 21),
-        EraEntry(index: 3, startGregorianYear: 686, startMonth: 7, startDay: 20),
-        EraEntry(index: 2, startGregorianYear: 672, startMonth: 1, startDay: 1),
-        EraEntry(index: 1, startGregorianYear: 650, startMonth: 2, startDay: 15),
-        EraEntry(index: 0, startGregorianYear: 645, startMonth: 6, startDay: 19),
+    /// 237 Japanese eras (Taika 645 → Reiwa 2019), sorted descending. Index values match ICU's era numbering.
+    // Meiji (232) uses 1868-09-08 to match Apple's runtime ICU (CLDR canonical is 1868-10-23).
+    private static let eraData: InlineArray<237, (index: Int32, year: Int16, month: Int8, day: Int8)> = [
+        (236, 2019, 5, 1),
+        (235, 1989, 1, 8),
+        (234, 1926, 12, 25),
+        (233, 1912, 7, 30),
+        (232, 1868, 9, 8),
+        (231, 1865, 4, 7),
+        (230, 1864, 2, 20),
+        (229, 1861, 2, 19),
+        (228, 1860, 3, 18),
+        (227, 1854, 11, 27),
+        (226, 1848, 2, 28),
+        (225, 1844, 12, 2),
+        (224, 1830, 12, 10),
+        (223, 1818, 4, 22),
+        (222, 1804, 2, 11),
+        (221, 1801, 2, 5),
+        (220, 1789, 1, 25),
+        (219, 1781, 4, 2),
+        (218, 1772, 11, 16),
+        (217, 1764, 6, 2),
+        (216, 1751, 10, 27),
+        (215, 1748, 7, 12),
+        (214, 1744, 2, 21),
+        (213, 1741, 2, 27),
+        (212, 1736, 4, 28),
+        (211, 1716, 6, 22),
+        (210, 1711, 4, 25),
+        (209, 1704, 3, 13),
+        (208, 1688, 9, 30),
+        (207, 1684, 2, 21),
+        (206, 1681, 9, 29),
+        (205, 1673, 9, 21),
+        (204, 1661, 4, 25),
+        (203, 1658, 7, 23),
+        (202, 1655, 4, 13),
+        (201, 1652, 9, 18),
+        (200, 1648, 2, 15),
+        (199, 1644, 12, 16),
+        (198, 1624, 2, 30),
+        (197, 1615, 7, 13),
+        (196, 1596, 10, 27),
+        (195, 1592, 12, 8),
+        (194, 1573, 7, 28),
+        (193, 1570, 4, 23),
+        (192, 1558, 2, 28),
+        (191, 1555, 10, 23),
+        (190, 1532, 7, 29),
+        (189, 1528, 8, 20),
+        (188, 1521, 8, 23),
+        (187, 1504, 2, 30),
+        (186, 1501, 2, 29),
+        (185, 1492, 7, 19),
+        (184, 1489, 8, 21),
+        (183, 1487, 7, 29),
+        (182, 1469, 4, 28),
+        (181, 1467, 3, 3),
+        (180, 1466, 2, 28),
+        (179, 1460, 12, 21),
+        (178, 1457, 9, 28),
+        (177, 1455, 7, 25),
+        (176, 1452, 7, 25),
+        (175, 1449, 7, 28),
+        (174, 1444, 2, 5),
+        (173, 1441, 2, 17),
+        (172, 1429, 9, 5),
+        (171, 1428, 4, 27),
+        (170, 1394, 7, 5),
+        (169, 1390, 3, 26),
+        (168, 1389, 2, 9),
+        (167, 1387, 8, 23),
+        (166, 1387, 8, 22),
+        (165, 1384, 4, 28),
+        (164, 1381, 2, 10),
+        (163, 1379, 3, 22),
+        (162, 1375, 5, 27),
+        (161, 1372, 4, 1),
+        (160, 1370, 7, 24),
+        (159, 1346, 12, 8),
+        (158, 1340, 4, 28),
+        (157, 1336, 2, 29),
+        (156, 1334, 1, 29),
+        (155, 1331, 8, 9),
+        (154, 1329, 8, 29),
+        (153, 1326, 4, 26),
+        (152, 1324, 12, 9),
+        (151, 1321, 2, 23),
+        (150, 1319, 4, 28),
+        (149, 1317, 2, 3),
+        (148, 1312, 3, 20),
+        (147, 1311, 4, 28),
+        (146, 1308, 10, 9),
+        (145, 1306, 12, 14),
+        (144, 1303, 8, 5),
+        (143, 1302, 11, 21),
+        (142, 1299, 4, 25),
+        (141, 1293, 8, 5),
+        (140, 1288, 4, 28),
+        (139, 1278, 2, 29),
+        (138, 1275, 4, 25),
+        (137, 1264, 2, 28),
+        (136, 1261, 2, 20),
+        (135, 1260, 4, 13),
+        (134, 1259, 3, 26),
+        (133, 1257, 3, 14),
+        (132, 1256, 10, 5),
+        (131, 1249, 3, 18),
+        (130, 1247, 2, 28),
+        (129, 1243, 2, 26),
+        (128, 1240, 7, 16),
+        (127, 1239, 2, 7),
+        (126, 1238, 11, 23),
+        (125, 1235, 9, 19),
+        (124, 1234, 11, 5),
+        (123, 1233, 4, 15),
+        (122, 1232, 4, 2),
+        (121, 1229, 3, 5),
+        (120, 1227, 12, 10),
+        (119, 1225, 4, 20),
+        (118, 1224, 11, 20),
+        (117, 1222, 4, 13),
+        (116, 1219, 4, 12),
+        (115, 1213, 12, 6),
+        (114, 1211, 3, 9),
+        (113, 1207, 10, 25),
+        (112, 1206, 4, 27),
+        (111, 1204, 2, 20),
+        (110, 1201, 2, 13),
+        (109, 1199, 4, 27),
+        (108, 1190, 4, 11),
+        (107, 1185, 8, 14),
+        (106, 1184, 4, 16),
+        (105, 1182, 5, 27),
+        (104, 1181, 7, 14),
+        (103, 1177, 8, 4),
+        (102, 1175, 7, 28),
+        (101, 1171, 4, 21),
+        (100, 1169, 4, 8),
+        (99, 1166, 8, 27),
+        (98, 1165, 6, 5),
+        (97, 1163, 3, 29),
+        (96, 1161, 9, 4),
+        (95, 1160, 1, 10),
+        (94, 1159, 4, 20),
+        (93, 1156, 4, 27),
+        (92, 1154, 10, 28),
+        (91, 1151, 1, 26),
+        (90, 1145, 7, 22),
+        (89, 1144, 2, 23),
+        (88, 1142, 4, 28),
+        (87, 1141, 7, 10),
+        (86, 1135, 4, 27),
+        (85, 1132, 8, 11),
+        (84, 1131, 1, 29),
+        (83, 1126, 1, 22),
+        (82, 1124, 4, 3),
+        (81, 1120, 4, 10),
+        (80, 1118, 4, 3),
+        (79, 1113, 7, 13),
+        (78, 1110, 7, 13),
+        (77, 1108, 8, 3),
+        (76, 1106, 4, 9),
+        (75, 1104, 2, 10),
+        (74, 1099, 8, 28),
+        (73, 1097, 11, 21),
+        (72, 1096, 12, 17),
+        (71, 1094, 12, 15),
+        (70, 1087, 4, 7),
+        (69, 1084, 2, 7),
+        (68, 1081, 2, 10),
+        (67, 1077, 11, 17),
+        (66, 1074, 8, 23),
+        (65, 1069, 4, 13),
+        (64, 1065, 8, 2),
+        (63, 1058, 8, 29),
+        (62, 1053, 1, 11),
+        (61, 1046, 4, 14),
+        (60, 1044, 11, 24),
+        (59, 1040, 11, 10),
+        (58, 1037, 4, 21),
+        (57, 1028, 7, 25),
+        (56, 1024, 7, 13),
+        (55, 1021, 2, 2),
+        (54, 1017, 4, 23),
+        (53, 1012, 12, 25),
+        (52, 1004, 7, 20),
+        (51, 999, 1, 13),
+        (50, 995, 2, 22),
+        (49, 990, 11, 7),
+        (48, 989, 8, 8),
+        (47, 987, 4, 5),
+        (46, 985, 4, 27),
+        (45, 983, 4, 15),
+        (44, 978, 11, 29),
+        (43, 976, 7, 13),
+        (42, 973, 12, 20),
+        (41, 970, 3, 25),
+        (40, 968, 8, 13),
+        (39, 964, 7, 10),
+        (38, 961, 2, 16),
+        (37, 957, 10, 27),
+        (36, 947, 4, 22),
+        (35, 938, 5, 22),
+        (34, 931, 4, 26),
+        (33, 923, 4, 11),
+        (32, 901, 7, 15),
+        (31, 898, 4, 26),
+        (30, 889, 4, 27),
+        (29, 885, 2, 21),
+        (28, 877, 4, 16),
+        (27, 859, 4, 15),
+        (26, 857, 2, 21),
+        (25, 854, 11, 30),
+        (24, 851, 4, 28),
+        (23, 848, 6, 13),
+        (22, 834, 1, 3),
+        (21, 824, 1, 5),
+        (20, 810, 9, 19),
+        (19, 806, 5, 18),
+        (18, 782, 8, 19),
+        (17, 781, 1, 1),
+        (16, 770, 10, 1),
+        (15, 767, 8, 16),
+        (14, 765, 1, 7),
+        (13, 757, 8, 18),
+        (12, 749, 7, 2),
+        (11, 749, 4, 14),
+        (10, 729, 8, 5),
+        (9, 724, 2, 4),
+        (8, 717, 11, 17),
+        (7, 715, 9, 2),
+        (6, 708, 1, 11),
+        (5, 704, 5, 10),
+        (4, 701, 3, 21),
+        (3, 686, 7, 20),
+        (2, 672, 1, 1),
+        (1, 650, 2, 15),
+        (0, 645, 6, 19),
     ]
+
+    private static let eraCount = 237
+
+    private static func era(at i: Int) -> EraEntry {
+        let raw = eraData[i]
+        return EraEntry(raw.index, raw.year, raw.month, raw.day)
+    }
 
     private let gregorian: _CalendarGregorian
 
@@ -305,18 +315,28 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
         return _CalendarJapanese(identifier: identifier, timeZone: args.timeZone, locale: args.locale, firstWeekday: args.firstWeekday, minimumDaysInFirstWeek: args.minimumDaysInFirstWeek, gregorianStartDate: nil)
     }
 
-    var supportsNextDateFastPath: Bool { gregorian.supportsNextDateFastPath }
+    func supportsNextDateFastPath(for components: Calendar.ComponentSet) -> Bool { gregorian.supportsNextDateFastPath(for: components) }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(identifier)
+        hasher.combine(timeZone)
+        hasher.combine(firstWeekday)
+        hasher.combine(minimumDaysInFirstWeek)
+        hasher.combine(localeIdentifier)
+        hasher.combine(preferredFirstWeekday)
+        hasher.combine(preferredMinimumDaysInFirstweek)
+    }
 
     // MARK: - Range
 
     func minimumRange(of component: Calendar.Component) -> Range<Int>? {
-        if component == .era { return 0..<(Self.eras.last!.index + Self.eras.count) }
-        if component == .year { return 1..<2 }
+        if component == .era { return Range(0...Self.era(at: 0).index) }
+        if component == .year { return Range(1...1) }
         return gregorian.minimumRange(of: component)
     }
 
     func maximumRange(of component: Calendar.Component) -> Range<Int>? {
-        if component == .era { return 0..<(Self.eras.first!.index + 1) }
+        if component == .era { return Range(0...Self.era(at: 0).index) }
         return gregorian.maximumRange(of: component)
     }
 
@@ -362,9 +382,6 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
     }
 
     func dateComponents(_ components: Calendar.ComponentSet, from start: Date, to end: Date) -> DateComponents {
-        // Gregorian's calendar-aware diff is correct for the imperial calendar too:
-        // same-era spans collapse year/month/day naturally, and cross-era spans
-        // share the same Gregorian-year arithmetic since era boundaries don't shift days.
         gregorian.dateComponents(components, from: start, to: end)
     }
 
@@ -375,7 +392,8 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
     // MARK: - Era helpers
 
     private func eraEntry(forGregorianYear y: Int, month m: Int, day d: Int) -> EraEntry? {
-        for era in Self.eras {
+        for i in 0..<Self.eraCount {
+            let era = Self.era(at: i)
             if (y, m, d) >= (era.startGregorianYear, era.startMonth, era.startDay) {
                 return era
             }
@@ -384,7 +402,10 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
     }
 
     private func eraEntry(byIndex index: Int) -> EraEntry? {
-        Self.eras.first(where: { $0.index == index })
+        let i = Self.eraCount - 1 - index
+        guard i >= 0 && i < Self.eraCount else { return nil }
+        let era = Self.era(at: i)
+        return era.index == index ? era : nil
     }
 
     private func eraInterval(containing date: Date) -> DateInterval? {
@@ -393,23 +414,17 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
         guard let era = eraEntry(forGregorianYear: y, month: m, day: d) else {
             return gregorian.dateInterval(of: .era, for: date)
         }
-        var startDC = DateComponents()
-        startDC.year = era.startGregorianYear
-        startDC.month = era.startMonth
-        startDC.day = era.startDay
-        startDC.hour = 0; startDC.minute = 0; startDC.second = 0
+        let startDC = DateComponents(year: era.startGregorianYear, month: era.startMonth, day: era.startDay, hour: 0, minute: 0, second: 0)
         guard let start = gregorian.date(from: startDC) else { return nil }
         let endDate: Date
-        if let next = Self.eras.lastIndex(where: { $0.index == era.index }).flatMap({ idx in idx > 0 ? Self.eras[idx - 1] : nil }) {
-            var endDC = DateComponents()
-            endDC.year = next.startGregorianYear
-            endDC.month = next.startMonth
-            endDC.day = next.startDay
-            endDC.hour = 0; endDC.minute = 0; endDC.second = 0
+        let position = Self.eraCount - 1 - era.index
+        if position > 0 {
+            let next = Self.era(at: position - 1)
+            let endDC = DateComponents(year: next.startGregorianYear, month: next.startMonth, day: next.startDay, hour: 0, minute: 0, second: 0)
             guard let e = gregorian.date(from: endDC) else { return nil }
             endDate = e
         } else {
-            endDate = start.addingTimeInterval(Calendar._inf_ti)
+            endDate = start.addingTimeInterval(Calendar._maxDateIntervalDuration)
         }
         return DateInterval(start: start, end: endDate)
     }
@@ -419,10 +434,8 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
     private func convertedToGregorian(_ components: DateComponents) -> DateComponents {
         var dc = components
         if let year = dc.year {
-            // Year is era-relative. If era is missing (as in slow-path enumeration,
-            // where _adjustedComponents writes back year without era), default to the
-            // latest era — matches ICU's behaviour when no explicit era is given.
-            let eraIndex = dc.era ?? Self.eras.first!.index
+            // Default to latest era when era is missing (matches ICU).
+            let eraIndex = dc.era ?? Self.era(at: 0).index
             if let eraEntry = eraEntry(byIndex: eraIndex) {
                 dc.year = year + eraEntry.startGregorianYear - 1
             }
@@ -440,8 +453,8 @@ internal final class _CalendarJapanese: _CalendarProtocol, @unchecked Sendable {
             if requested.contains(.era) { dc.era = era.index }
             if requested.contains(.year) { dc.year = extendedYear - era.startGregorianYear + 1 }
         } else {
-            // Pre-Taika: ICU clamps to the first era; year counts from its start (≤ 0).
-            let first = Self.eras.last!
+            // Pre-Taika: ICU clamps to the first era.
+            let first = Self.era(at: Self.eraCount - 1)
             if requested.contains(.era) { dc.era = first.index }
             if requested.contains(.year) { dc.year = extendedYear - first.startGregorianYear + 1 }
         }

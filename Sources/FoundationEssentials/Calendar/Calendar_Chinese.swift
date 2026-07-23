@@ -257,65 +257,66 @@ internal enum _ChineseCalendarEngine {
     0x00300B45, 0x001A0A8B, 0x0004549B, 0x002A04AB, // 2097-2100
     ]
 
-    static let fallbackCache = Mutex<(rules: _ChineseRules, years: [Int: _ChineseYear])>(
-        (_ChineseRules(), [:]))
+    // Cross-instance memoization of computed out-of-range years only (pre-1901 / post-2100); in-range dates read the baked table and never touch this. Bounded to 16 entries, so it never needs clearing.
+    static let fallbackCache = Mutex<[Int: _ChineseYear]>([:])
 
     private static func decodeTableYear(relatedISOYear: Int) -> _ChineseYear {
         let v = table[relatedISOYear - tableStart]
         let leap = UInt8((v >> 13) & 0xF)
-        return _ChineseYear(
-            relatedISOYear: relatedISOYear,
-            newYearRataDie: _CalendarAstronomy.gregorianRataDie(relatedISOYear, 1, 19) + Int((v >> 17) & 0x3F),
-            monthLengthBits: UInt16(v & 0x1FFF),
-            monthCount: leap == 0 ? 12 : 13,
-            leapDisplay: leap)
+        return _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: _CalendarAstronomy.gregorianRataDie(relatedISOYear, 1, 19) + Int((v >> 17) & 0x3F), monthLengthBits: UInt16(v & 0x1FFF), monthCount: leap == 0 ? 12 : 13, leapDisplay: leap)
     }
 
+    /// Month structure for the Chinese year whose New Year falls in Gregorian `relatedISOYear`.
+    ///
+    /// In the baked range (1901...2100) this is a direct table decode. Outside it the structure is computed from astronomy and memoized: locate this year's New Year and the next year's, walk the new moons between them to get each month's first day, record 29- vs 30-day lengths as bits, and mark the leap month (the month carrying no major solar term). The seam years at the table edges reuse the table's own New Year so the computed and baked spans tile exactly.
     static func year(relatedISOYear: Int) -> _ChineseYear {
         let idx = relatedISOYear - tableStart
         if idx >= 0 && idx < table.count {
             return decodeTableYear(relatedISOYear: relatedISOYear)
         }
-        return fallbackCache.withLock { state in
-            if let cached = state.years[relatedISOYear] { return cached }
-            // Tile exactly with the baked table at the seams.
-            let ny: Int
-            if relatedISOYear == tableStart + table.count {
-                ny = decodeTableYear(relatedISOYear: relatedISOYear - 1).endRataDie
-            } else {
-                ny = state.rules.newYear(relatedISOYear)
-            }
-            let nyNext: Int
-            if relatedISOYear + 1 == tableStart {
-                nyNext = decodeTableYear(relatedISOYear: tableStart).newYearRataDie
-            } else {
-                nyNext = state.rules.newYear(relatedISOYear + 1)
-            }
-            var starts = [ny]
-            var cur = ny
-            while true {
-                let nxt = state.rules.newMoonNear(cur + _ChineseRules.synodicGap, true)
-                if nxt >= nyNext { break }
-                starts.append(nxt)
-                cur = nxt
-            }
-            var bits: UInt16 = 0
-            var leapDisplay: UInt8 = 0
-            for (i, s) in starts.enumerated() {
-                let next = (i + 1 < starts.count) ? starts[i + 1] : nyNext
-                assert(next - s == 29 || next - s == 30, "non-lunation month length \(next - s) in fallback year \(relatedISOYear)")
-                if next - s == 30 { bits |= UInt16(1) << i }
-                let label = state.rules.monthLabel(startingAt: s, gregorianYear: _CalendarAstronomy.gregorianYear(ofRataDie: s))
-                if label.isLeap { leapDisplay = UInt8(label.month) }
-            }
-            let year = _ChineseYear(
-                relatedISOYear: relatedISOYear, newYearRataDie: ny,
-                monthLengthBits: bits, monthCount: UInt8(starts.count),
-                leapDisplay: leapDisplay)
-            evictIfNeeded(&state.years, capacity: 16)
-            state.years[relatedISOYear] = year
-            return year
+        if let cached = fallbackCache.withLock({ $0[relatedISOYear] }) {
+            return cached
         }
+        // Compute outside the lock with a local rules instance; the shared cache is only touched under the minimal critical section below.
+        var rules = _ChineseRules()
+        // Tile exactly with the baked table at the seams.
+        let ny: Int
+        if relatedISOYear == tableStart + table.count {
+            ny = decodeTableYear(relatedISOYear: relatedISOYear - 1).endRataDie
+        } else {
+            ny = rules.newYear(relatedISOYear)
+        }
+        let nyNext: Int
+        if relatedISOYear + 1 == tableStart {
+            nyNext = decodeTableYear(relatedISOYear: tableStart).newYearRataDie
+        } else {
+            nyNext = rules.newYear(relatedISOYear + 1)
+        }
+        // Collect each month's first day: successive new moons from this New Year up to (but not including) the next year's New Year.
+        var starts = [ny]
+        var cur = ny
+        while true {
+            let nxt = rules.newMoonNear(cur + _ChineseRules.synodicGap, true)
+            if nxt >= nyNext { break }
+            starts.append(nxt)
+            cur = nxt
+        }
+        // Pack month lengths (30-day months set a bit) and record the leap month, if any.
+        var bits: UInt16 = 0
+        var leapDisplay: UInt8 = 0
+        for (i, s) in starts.enumerated() {
+            let next = (i + 1 < starts.count) ? starts[i + 1] : nyNext
+            assert(next - s == 29 || next - s == 30, "non-lunation month length \(next - s) in fallback year \(relatedISOYear)")
+            if next - s == 30 { bits |= UInt16(1) << i }
+            let label = rules.monthLabel(startingAt: s, gregorianYear: _CalendarAstronomy.gregorianYear(ofRataDie: s))
+            if label.isLeap { leapDisplay = UInt8(label.month) }
+        }
+        let year = _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: ny, monthLengthBits: bits, monthCount: UInt8(starts.count), leapDisplay: leapDisplay)
+        fallbackCache.withLock {
+            evictIfNeeded(&$0, capacity: 16)
+            $0[relatedISOYear] = year
+        }
+        return year
     }
 
     static func year(containingRataDie rataDie: Int) -> _ChineseYear {
@@ -437,23 +438,23 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     func minimumRange(of component: Calendar.Component) -> Range<Int>? {
         switch component {
-        case .era: return 1..<83334          // ICU chnsecal LIMITS
-        case .year: return 1..<61
-        case .month: return 1..<13
-        case .day: return 1..<30
-        case .hour: return 0..<24
-        case .minute: return 0..<60
-        case .second: return 0..<60
-        case .weekday: return 1..<8
-        case .weekdayOrdinal: return -1..<6
-        case .quarter: return 1..<5
-        case .weekOfMonth: return 1..<6
-        case .weekOfYear: return 1..<51
-        case .yearForWeekOfYear: return Self.extendedYearLowerBound..<(Self.extendedYearUpperBound + 1)
-        case .nanosecond: return 0..<1_000_000_000
-        case .isLeapMonth: return 0..<2
-        case .isRepeatedDay: return 0..<1
-        case .dayOfYear: return 1..<354
+        case .era: return Range(1...83333)          // ICU chnsecal LIMITS
+        case .year: return Range(1...60)
+        case .month: return Range(1...12)
+        case .day: return Range(1...29)
+        case .hour: return Range(0...23)
+        case .minute: return Range(0...59)
+        case .second: return Range(0...59)
+        case .weekday: return Range(1...7)
+        case .weekdayOrdinal: return Range(-1...5)
+        case .quarter: return Range(1...4)
+        case .weekOfMonth: return Range(1...5)
+        case .weekOfYear: return Range(1...50)
+        case .yearForWeekOfYear: return Range(Self.extendedYearLowerBound...Self.extendedYearUpperBound)
+        case .nanosecond: return Range(0...999_999_999)
+        case .isLeapMonth: return Range(0...1)
+        case .isRepeatedDay: return Range(0...0)
+        case .dayOfYear: return Range(1...353)
         case .calendar, .timeZone:
             return nil
         }
@@ -461,23 +462,23 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
 
     func maximumRange(of component: Calendar.Component) -> Range<Int>? {
         switch component {
-        case .era: return 1..<83334
-        case .year: return 1..<61
-        case .month: return 1..<13
-        case .day: return 1..<31
-        case .hour: return 0..<24
-        case .minute: return 0..<60
-        case .second: return 0..<60
-        case .weekday: return 1..<8
-        case .weekdayOrdinal: return -1..<6
-        case .quarter: return 1..<5
-        case .weekOfMonth: return 1..<7
-        case .weekOfYear: return 1..<56
-        case .yearForWeekOfYear: return Self.extendedYearLowerBound..<(Self.extendedYearUpperBound + 1)
-        case .nanosecond: return 0..<1_000_000_000
-        case .isLeapMonth: return 0..<2
-        case .isRepeatedDay: return 0..<1
-        case .dayOfYear: return 1..<386
+        case .era: return Range(1...83333)
+        case .year: return Range(1...60)
+        case .month: return Range(1...12)
+        case .day: return Range(1...30)
+        case .hour: return Range(0...23)
+        case .minute: return Range(0...59)
+        case .second: return Range(0...59)
+        case .weekday: return Range(1...7)
+        case .weekdayOrdinal: return Range(-1...5)
+        case .quarter: return Range(1...4)
+        case .weekOfMonth: return Range(1...6)
+        case .weekOfYear: return Range(1...55)
+        case .yearForWeekOfYear: return Range(Self.extendedYearLowerBound...Self.extendedYearUpperBound)
+        case .nanosecond: return Range(0...999_999_999)
+        case .isLeapMonth: return Range(0...1)
+        case .isRepeatedDay: return Range(0...0)
+        case .dayOfYear: return Range(1...385)
         case .calendar, .timeZone:
             return nil
         }
@@ -513,19 +514,19 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         switch (smaller, larger) {
         case (.month, .year):
             // Number of display months is always 12 (the leap repeats a number).
-            return 1..<13
+            return Range(1...12)
         case (.month, .quarter):
             // ICU reports display month numbers spanned by the quarter; the span can shrink (see quarterSpan).
             let (extendedYear, ordinal, _) = fields(for: date, in: timeZone)
             guard let span = Self.quarterSpan(extendedYear: extendedYear, ordinal: ordinal) else { return nil }
-            return span.firstDisplay..<(span.lastDisplay + 1)
+            return Range(span.firstDisplay...span.lastDisplay)
         case (.day, .quarter):
             // ICU counts calendar days here, not 86400 s chunks, the generic interval+ordinality fallback overcounts by one in DST fall-back quarters.
             let (extendedYear, ordinal, _) = fields(for: date, in: timeZone)
             guard let span = Self.quarterSpan(extendedYear: extendedYear, ordinal: ordinal) else { return nil }
             let startRataDie = Self.rataDie(extendedYear: extendedYear, ordinal: span.startOrdinal, day: 1)
             let endRataDie = Self.rataDie(extendedYear: span.endExtendedYear, ordinal: span.endOrdinal, day: 1)
-            return 1..<(endRataDie - startRataDie + 1)
+            return Range(1...(endRataDie - startRataDie))
         default:
             break
         }
@@ -533,7 +534,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         guard let ord1 = ordinality(of: smaller, in: larger, for: interval.start + 0.1) else { return nil }
         guard let ord2 = ordinality(of: smaller, in: larger, for: interval.start + interval.duration - 0.1) else { return nil }
         if ord2 < ord1 { return ord1..<ord1 }
-        return ord1..<(ord2 + 1)
+        return Range(ord1...ord2)
     }
 
     // MARK: Ordinality
