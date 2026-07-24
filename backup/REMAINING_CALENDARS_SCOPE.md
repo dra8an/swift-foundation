@@ -74,11 +74,44 @@ which doubles as proof the new shape works.
 | `ethiopicAmeteAlem` | `ethiopic-amete-alem` | `CalendarComplex/EthiopianAmeteAlem.swift` | simple arithmetic | Ethiopic with the alternate era system. |
 | `indian` | `indian` | `CalendarComplex/Indian.swift` | simple arithmetic | Saka; fixed month lengths, Gregorian-tied leap rule. |
 | `persian` | `persian` | `CalendarComplex/Persian.swift` | moderate arithmetic | icu4swift uses the 33-year rule + 78-entry correction table. ⚠ see §5.2. |
-| `dangi` | `dangi` (`dangical.cpp`, derived from `chnsecal.cpp`) | Chinese/Dangi in `CalendarAstronomical` + `Docs/Dangi.md` | astronomical | Chinese engine, Korean meridian. Heaviest item in PR A. |
+| `dangi` | `dangi` — ✅ `class DangiCalendar : public ChineseCalendar`, overriding only `getType`, `getRelatedYear`/`setRelatedYear`, `getSetting` (epoch + zone) | Chinese/Dangi in `CalendarAstronomical` + `Docs/Dangi.md` | astronomical, **but thin** | Engine is fully reused; see §2.4. |
 | `vietnamese` | ⚠ **absent from ICU's `gCalTypes`** | none | unknown | See §5.1 — may not be a real calendar at all. |
 
 Three of the eight (Coptic + both Ethiopic) collapse onto one arithmetic
 core, so PR A is realistically **five implementations + one refactor**.
+
+### 2.4 Dangi — corrected assessment
+
+An earlier draft called Dangi "the heaviest item in PR A." ✅ Source check
+says otherwise: ICU's `DangiCalendar` *subclasses* `ChineseCalendar` and
+overrides only four members — `getType`, `getRelatedYear`/`setRelatedYear`,
+and `getSetting` (which supplies the epoch year and the astronomer time
+zone). Structurally it really is "the Chinese engine at a different
+meridian," exactly as intuition suggests.
+
+The engine work does **not** repeat: packed year data, bit-op field math,
+extreme-date/píngqì handling all carry over from `_CalendarChinese`.
+
+What genuinely remains, and it is modest:
+
+1. **Its own baked table** — under the bake-from-ICU strategy the data is
+   per-identifier. Generation is automated (parameterize the existing
+   generator by identifier); a range decision is needed, same shape as
+   Chinese.
+2. **A specific edge-case band worth targeted probes.** ✅ Korea's
+   astronomer zone is piecewise-historical, not a flat UTC+9
+   (`dangical.cpp` comments): ≤1908-04-01 GMT+8; 1908-04-01→1911-12-31
+   GMT+8.5; 1912-01-01→1954-03-20 GMT+9; 1954-03-21→1961-08-09 GMT+8.5;
+   1961-08-10→ GMT+9. **Crucially, bake-from-ICU absorbs this** — we record
+   what ICU computes and never reimplement the zone logic — but those five
+   transition years are exactly where a table-generation bug would hide, so
+   they get dense probe coverage.
+3. **Era/related-year semantics** — `getRelatedYear` is overridden, so the
+   cycle/era field mapping needs its own discovery probe rather than an
+   assumption that it matches Chinese.
+
+Revised: Dangi is **cheaper than Persian**, whose reference-verification
+risk (§5.2) and correction table make it the riskier item in PR A.
 
 ## 3. PR B — Islamic family
 
@@ -143,7 +176,53 @@ If reviewers balk at the size, split at the natural seam:
 **A3** = Dangi (+ Vietnamese if real).
 Deciding this in advance means a split costs a rebase, not a redesign.
 
-## 6. Test strategy — marginal cost is now low
+## 6. Shared-core dedup across the OTHER families
+
+The Gregorian-variant refactor is not a one-off — **every remaining family
+has the same shape**, and ICU itself is the evidence: it models each family
+as a base class plus thin subclasses. We cannot use inheritance
+(`_CalendarGregorian` and friends are `final` for devirtualization, and
+un-finaling will not pass review — `GREGORIAN_VARIANTS_PLAN.md` §3a), so
+the sanctioned Swift shape is the same one chosen there:
+
+> **a generic wrapper parameterized by a static policy type** (§3c) — NOT
+> protocol-witness defaults (§3b, rejected on reviewer-taste grounds after
+> PR #2091: don't default a witness when conformances diverge in real
+> behavior).
+
+Family-by-family opportunity:
+
+| Family | ICU's own structure | Dedup shape | Prior art |
+|---|---|---|---|
+| Gregorian variants — buddhist, japanese, roc | separate classes, shared Gregorian math | **planned**: generic wrapper + era policy | `GREGORIAN_VARIANTS_PLAN.md` |
+| Coptic / Ethiopic ×2 | `CopticCalendar`, `EthiopicCalendar` (+ amete-alem mode) | one arithmetic core + epoch/era policy | icu4swift `CopticArithmetic.swift` shared by Coptic + both Ethiopic ✅ |
+| Islamic civil / tabular | epoch-differing tabular math | one arithmetic core, epoch-parameterized | icu4swift: literally one impl for both ✅ |
+| Lunisolar — chinese, dangi (+vietnamese?) | `DangiCalendar : ChineseCalendar` ✅ | one engine + per-calendar (epoch, zone, data) policy | `_CalendarChinese` already exists |
+| Hindu ×9 | `HinduLunarCalendar` → `HinduSolarCalendar` → 9 regional subclasses ✅ | **two engines + nine ~30-line policies** | icu4swift `CalendarHindu` |
+
+**Sequencing rule — dedup follows evidence, with one exception.** The
+Gregorian refactor is justified because three concrete instances exist and
+the duplication was measured. For a family being written fresh, prefer:
+implement, observe the real duplication, then extract. The exception is a
+family whose homogeneity is already proven by ICU's own hierarchy — Coptic/
+Ethiopic and especially Hindu ×9 — where designing the shared core up front
+is obviously correct; cloning a wrapper shell nine times would be absurd.
+
+**Practical implication per PR:**
+- **PR A** — ships the Gregorian-variant wrapper; writes Coptic/Ethiopic
+  against a shared arithmetic core from the start; Dangi as a policy over
+  the Chinese engine.
+- **PR B** — civil/tabular share one epoch-parameterized core; UmmAlQura
+  layers a baked table over it (and already falls back to Civil outside its
+  range, per icu4swift).
+- **PR C** — the shared-core design *is* the plan: two engines, nine
+  policies. Do the mapping study first (§4), then build the cores.
+
+Net effect: the per-calendar marginal cost keeps falling — the last nine
+calendars should be the cheapest of the whole effort, not the most
+expensive.
+
+## 7. Test strategy — marginal cost is now low
 
 The probe infrastructure built for B/J and Chinese is parameterized, so each
 new calendar costs far less than the first ones did:
@@ -165,7 +244,7 @@ documented ICU quirk or one real bug per calendar.
 Parity bar is unchanged and non-negotiable: zero divergences vs
 `_CalendarICU`, per `PARITY_PROTOCOL.md`.
 
-## 7. Sequencing summary
+## 8. Sequencing summary
 
 ```
 #2105 + #2123 merge
@@ -182,7 +261,7 @@ PR C: Hindu ×9  (mapping study first)
 After PR C, Foundation's entire 27-identifier calendar set has a pure-Swift
 implementation behind feature flags.
 
-## 8. Effort shape (relative, not calendar-time)
+## 9. Effort shape (relative, not calendar-time)
 
 Anchored on actuals: Hebrew was the expensive one (new protocol surface,
 fast paths, two PRs, months of review); Buddhist+Japanese were ~2 thin
@@ -194,7 +273,7 @@ wrappers; Chinese was one heavy astronomical calendar with prior art.
 | Coptic + Ethiopic ×2 | ~1 calendar total | one shared arithmetic core, three facades |
 | Indian | ~0.75 calendar | straightforward arithmetic |
 | Persian | ~1 calendar | correction table + reference-verification risk (§5.2) |
-| Dangi | ~1.5 calendars | astronomical; engine exists but needs its own data + validation |
+| Dangi | ~0.75 calendar | engine fully reused (§2.4); cost is its own baked table + zone-transition probes |
 | Islamic ×3 (civil/tbla/umalqura) | ~1 calendar total | shared arithmetic + one baked table |
 | `islamic` (astronomical) | ~2 calendars | least predictable ICU parity |
 | Hindu ×9 | ~4 calendars | mapping study + two engines + nine facades |
