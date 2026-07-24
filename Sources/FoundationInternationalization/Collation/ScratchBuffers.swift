@@ -15,7 +15,7 @@ struct PoolLock {
         lock = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         lock.initialize(to: os_unfair_lock())
     }
-    func deallocate() { lock.deallocate() }
+    func deallocate() { lock.deinitialize(count: 1); lock.deallocate() }
     @inline(__always) func acquire() { os_unfair_lock_lock(lock) }
     @inline(__always) func release() { os_unfair_lock_unlock(lock) }
     #else
@@ -134,28 +134,6 @@ final class FastLatinCache: @unchecked Sendable {
         lock.acquire()
         defer { lock.release() }
         current = setup
-    }
-
-    deinit {
-        lock.deallocate()
-    }
-}
-
-/// Legacy pool kept as fallback: if thread-local take returns nil (first call or re-entrant), we try the pool before allocating fresh. In practice the thread-local handles >99% of calls; this exists only for correctness in edge cases (and for ScratchBuffers created before the thread-local was warmed up on that thread).
-final class ScratchPool: @unchecked Sendable {
-    private let lock = PoolLock()
-    private var free: [ScratchBuffers] = []
-
-    func take() -> ScratchBuffers? {
-        lock.acquire()
-        defer { lock.release() }
-        return free.popLast()
-    }
-
-    func give(_ buffers: ScratchBuffers) {
-        lock.acquire()
-        defer { lock.release() }
-        if free.count < 4 { free.append(buffers) }
     }
 
     deinit {

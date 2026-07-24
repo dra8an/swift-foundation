@@ -253,6 +253,7 @@ public struct CollationData: @unchecked Sendable {
     func lastPrimaryForGroup(_ script: Int32) -> UInt32 {
         let index = scriptIndex(of: script)
         if index == 0 { return 0 }
+        guard index + 1 < scriptStarts.count else { return 0 }
         return (UInt32(scriptStarts[index + 1]) << 16) - 1
     }
 
@@ -431,7 +432,8 @@ struct Reordering: Sendable {
         // Round up p so that the comparison ignores the offset bits.
         let q = p | 0xffff
         var i = 0
-        while q >= ranges[i] { i += 1 }
+        while i < ranges.count && q >= ranges[i] { i += 1 }
+        guard i < ranges.count else { return p }
         return p &+ (ranges[i] << 24)
     }
 }
