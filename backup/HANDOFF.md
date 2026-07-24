@@ -2,17 +2,21 @@
 
 **Cold-resume: read this file first.** Last update: 2026-07-23.
 
-## ✅ CURRENT STATE (2026-07-17) — read this section, then the active plan
+## ✅ CURRENT STATE (2026-07-24) — read this section, then the active plan
 
-**Chinese: extreme-date fix IMPLEMENTED (2026-07-23, commit 9fa022a).
-Mean-element (píngqì) zone outside astronomicalYears = -12,000...16,000,
-two independent edge anchors, seam forcing, leap-label completion; 111
-tests / 27 suites green. Cold-resume: CHINESE_PLAN § 11.27-11.30 (root
-cause, measurements, decisions, implementation), then memory. NEXT: user
-pushes 9fa022a; 6.4 machine runs ChineseMeanZoneProbe in RELEASE (ladder
-step 7) and lands the patch on PR #2123 (PR text outline in § 11.28e);
-answer richgillam's HKO question with § 11.29 ammo; watch upstream PR
-unicode-org/icu#4070.**
+**Chinese: extreme-date fix IMPLEMENTED (2026-07-23, commit 9fa022a,
+pushed). Mean-element (píngqì) zone outside astronomicalYears =
+-12,000...16,000, two independent edge anchors, seam forcing, leap-label
+completion; 111 tests / 27 suites green. Cold-resume: CHINESE_PLAN
+§ 11.27-11.30 (root cause, measurements, decisions, implementation),
+then memory. NEXT: user pushes the local commits (backup docs through
+ad7779f + the 2026-07-24 Japanese back-sync pair 6e1b9f2/c5d3e91);
+6.4 machine runs ChineseMeanZoneProbe in RELEASE (ladder step 7) and
+lands the patch on PR #2123 (PR text outline in § 11.28e); answer
+richgillam's HKO question with § 11.29 ammo; watch upstream PRs
+unicode-org/icu#4070 and icu#4019.**
+**Japanese: pre-Meiji era trim LANDED on PR #2105 (`9e65da05`,
+2026-07-24) and back-synced same day (`6e1b9f2`); see workstream row.**
 Open user decisions: Hebrew isLeapMonth fix vehicle (confirmed benign
 deviation, see CHINESE_PLAN § 11.8); Chinese nextDate fast-path follow-up
 PR (post-merge). Everything below is history.
@@ -32,7 +36,7 @@ PR (post-merge). Everything below is history.
 | `port/hebrew` | Hebrew research (v8–v26 stack). Historic. |
 | `port/buddhist` (`ae2bc97`) | B/J research + all parity probes + handoff docs. Base for `port/chinese`. |
 | `port/buddhist-japanese-main` (`08b6e889`) | PR #2105 source. 6.4 machine owns it. |
-| `port/chinese` | Chinese research — COMPLETE, head `33ad123` (M5). 6.4 machine: cut `port/chinese-main` per CHINESE_6.4_HANDOFF.md. |
+| `port/chinese` | Chinese research + ongoing back-sync target (extreme-date fix `9fa022a`, Japanese era-trim back-sync `6e1b9f2`). 6.4 machine: lands the extreme-date patch per CHINESE_6.4_HANDOFF.md. |
 
 ### Environment (critical, this 6.3 iMac)
 

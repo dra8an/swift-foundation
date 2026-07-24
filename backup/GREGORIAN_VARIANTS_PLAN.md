@@ -27,12 +27,13 @@ the same way would make a third copy.
 | File | Lines | Of which shell (approx.) |
 |---|---|---|
 | Calendar_Buddhist.swift | 153 | ~110 |
-| Calendar_Japanese.swift | 469 | ~110 |
+| Calendar_Japanese.swift | 245 (was 469 before the 2026-07-24 era trim) | ~110 |
 | Calendar_Gregorian.swift | 3,055 | n/a (the delegate) |
 
 Estimated after refactor: shared variant class ~200 lines, Buddhist
-policy ~30, ROC policy ~30, Japanese policy ~250 (era table + hooks).
-Net for three calendars ≈ 510 lines vs ≈ 775 by cloning the shell again;
+policy ~30, ROC policy ~30, Japanese policy ~90 after the 2026-07-24
+era trim (~250 before it; see the § 5 landed entry).
+Net for three calendars ≈ 350 lines vs ≈ 550 by cloning the shell again;
 each further pseudo-Gregorian ≈ +30 instead of +150.
 
 ## § 3. Options considered
@@ -68,7 +69,7 @@ final class _CalendarGregorianVariant<Policy: _GregorianEraPolicy>: _CalendarPro
 
 typealias _CalendarBuddhist = _CalendarGregorianVariant<BuddhistEra>   // year = gregorian + 543
 typealias _CalendarROC      = _CalendarGregorianVariant<ROCEra>        // year = gregorian - 1911, era 0/1 at 1912 boundary
-typealias _CalendarJapanese = _CalendarGregorianVariant<JapaneseEra>   // policy carries the 237-entry era table
+typealias _CalendarJapanese = _CalendarGregorianVariant<JapaneseEra>   // policy carries the era table (5 modern eras since the 2026-07-24 trim)
 ```
 
 Why this shape wins:

@@ -3,6 +3,11 @@
 > Status: DRAFT, written 2026-06-11. To be used when the combined PR is cut
 > from `port/buddhist-japanese-main` after PR #2028 merges. Numbers are
 > debug-mode Intel; re-capture on Apple Silicon before posting.
+>
+> SUPERSEDED 2026-07-24: PR #2105 is live and has evolved past this draft.
+> The era table is now the 5 modern eras with pre-Meiji dates inheriting
+> Gregorian eras (commit `9e65da05`, per unicode-org/icu#4019); the 237-era
+> claims below are stale. The PR page itself is authoritative.
 
 ---
 
