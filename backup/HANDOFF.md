@@ -22,7 +22,7 @@ PR (post-merge). Everything below is history.
 | Effort | Status |
 |---|---|
 | Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
-| Buddhist + Japanese | **PR #2105 APPROVED** (richgillam, 2026-07-22, head `d140a7cf` after 3 review commits, back-synced). Awaiting merge. |
+| Buddhist + Japanese | **PR #2105 APPROVED** (richgillam, 2026-07-22). 2026-07-24: pre-Meiji era trim LANDED as head `9e65da05` — 5 eras (Meiji 232..Reiwa 236, sparse), pre-Meiji inherits Gregorian eras per unicode-org/icu#4019 / ICU-23341 (matches unreleased ICU; bundled ICU differs until Apple rebases). Back-synced same day: code + golden tests taken, 5 pre-Meiji-vs-ICU probes disabled with re-enable notes, 1868 sweep starts at Meiji's start (see GREGORIAN_VARIANTS_PLAN § 5). Awaiting merge. |
 | Chinese | **PR #2123 APPROVED** (richgillam, 2026-07-22, parkera + itingliu engaged). Back-synced through c4f4a401 (InlineArray tail excluded, see divergence registry in memory). Extreme-date fix implemented locally (9fa022a), 6.4 machine lands it per CHINESE_6.4_HANDOFF.md. Open: richgillam HKO question (§ 11.29 ammo). |
 
 ### Branch landscape (fork = dra8an/swift-foundation)

@@ -97,6 +97,7 @@ let stale numbers rot — outdated bounds defeat the purpose.
 | Task | Expected | Abort at |
 |---|---|---|
 | `swift test --filter "[Cc]hinese"` (all Chinese probes; the `\|` alternation form silently matches 0 tests from a script — use the char class) | ~30–35 s (11 s invariant sweep + 21 s packing experiment) | 60 s |
+| `swift test --filter "[Jj]apanese" --filter "DailySweep" --filter "StrictPolicy"` (Japanese suites + B/J sweeps/strict + era-inheritance golden tests, 51 tests; measured 2026-07-24) | ~6 s tests, plus ~4 min build after a FoundationEssentials edit | 30 s tests |
 | Chinese bench run, `^ChineseCalendar-.*$`, debug | ~60–90 s incl. build | 3 min |
 | chineseEnumerateCNYCallbackCount scratch | ~2 s | 10 s |
 | ChineseMeanZoneProbe (filter MeanZone) | ~1 s + build | 10 s |

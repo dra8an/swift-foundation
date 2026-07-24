@@ -135,3 +135,35 @@ Open design points (need decisions):
   only static functions, never instantiated, costing nothing at
   runtime. The only object ever created is the same one created today,
   the wrapper holding its Gregorian helper.
+- 2026-07-24: Japanese era table TRIMMED by decision: all pre-Meiji
+  eras removed, 5 remain (Meiji 232, Taisho 233, Showa 234, Heisei 235,
+  Reiwa 236). ICU index numbering must be preserved — renumbering 1-5
+  would break every modern date's era value vs ICU and shipping
+  Foundation; verify at back-sync. Executed by the 6.4 machine on the
+  PR branch; research branch follows by back-sync. Consequences for
+  this design: the Japanese policy shrinks from ~250 lines to roughly
+  90 — the drop is pure data deletion (237 table rows → 5); the ~80
+  lines of era logic (lookups, eraInterval, year mapping both ways,
+  first-era clamp) survive unchanged, since they are needed for 5 eras
+  exactly as for 237. § 2 estimates shift accordingly. Japanese remains
+  the largest policy and still needs its extra hooks, so open point 1
+  (hook surface) narrows but does not go away.
+  Pre-Meiji behavior: see the landed entry below, which supersedes
+  the clamp assumption this entry was written with.
+- 2026-07-24 (landed): the trim shipped as PR #2105 commit 9e65da05
+  with a better mechanism than the clamp assumed above. CLDR dropped
+  the pre-Meiji era data and ICU is adopting inheritEras: gregorian
+  (unicode-org/icu#4019, ICU-23341), so dates before Meiji report the
+  inherited Gregorian era (0 = BCE, 1 = CE) with Gregorian years,
+  falling straight out of the existing _CalendarGregorian delegation
+  (the CE era interval is clipped at Meiji's start). Numbering
+  verified sparse and preserved (Meiji 232 … Reiwa 236; 2…231
+  undefined). This is NOT a deliberate divergence from ICU: it
+  matches unreleased ICU; only the bundled ICU (still shipping the
+  237-era data) differs, so the pre-Meiji parity probes are disabled
+  with re-enable-on-Apple-rebase notes rather than carved out of
+  PARITY_PROTOCOL. Golden values pinned ICU-independently in
+  JapaneseGregorianEraInheritanceTests. The first-era clamp is gone
+  from the policy hook surface (pre-Meiji needs no Japanese logic at
+  all, delegation covers it). Watch item: icu#4019 joins icu#4070
+  for Apple-rebase reconciliation.
