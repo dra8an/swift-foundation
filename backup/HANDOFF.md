@@ -52,6 +52,7 @@ PR (post-merge). Everything below is history.
 
 - `CHINESE_PLAN.md` — **active plan (start here)**
 - `POST_MERGE_CLEANUP.md` — **branch reconciliation model + merge-event playbooks** (invariants, #2105/#2123 checklists, Gregorian-refactor placement)
+- `REMAINING_CALENDARS_SCOPE.md` — **scope for the remaining 21 identifiers**: PR A (the rest + variant refactor) → PR B (Islamic) → PR C (Hindu, last); per-calendar prior art, open questions, effort shape
 - `GREGORIAN_VARIANTS_PLAN.md` — ROC + Gregorian-variant dedup design (decision log, ACTIVE)
 - `BUDDHIST_JAPANESE_6.4_HANDOFF.md` — B/J cherry-pick handoff (executed; kept for pattern)
 - `BUDDHIST_JAPANESE_PR_DESCRIPTION.md` — B/J draft PR body

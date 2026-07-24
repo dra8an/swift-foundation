@@ -95,8 +95,12 @@ port/hebrew (FROZEN @ 67c538c, v26)
   run them after every Gregorian-touching back-sync.
 - **The active design is `GREGORIAN_VARIANTS_PLAN.md`** (ROC +
   Gregorian-variant dedup) — this playbook governs its branch/PR placement;
-  that doc governs its content. The older deferred SHAREABLE_APIS Gregorian
-  dedup (#2028-era, see `PR_PLAN.md`) folds into the same workstream.
+  that doc governs its content. It ships INSIDE PR A (see
+  `REMAINING_CALENDARS_SCOPE.md`) because it only touches the flag-gated
+  variant wrappers, not `_CalendarGregorian`.
+- **Keep separate:** the older deferred SHAREABLE_APIS dedup *inside*
+  `_CalendarGregorian` (#2028-era, `PR_PLAN.md`) touches live, non-gated
+  code. Its own PR, any time after PR A.
 
 ## 5. End state after full cleanup
 
