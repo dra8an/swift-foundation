@@ -328,7 +328,8 @@ private struct JapaneseICUComparisonProbe {
 
     // MARK: - Pre-Meiji era coverage
 
-    @Test func preMeiji_eraSpread() {
+    // Gated 2026-07-24: following CLDR/ICU (unicode-org/icu#4019, ICU-23341) the pre-Meiji eras were dropped and dates before Meiji inherit the Gregorian era. The bundled ICU predates that change and still reports the 237 historical eras, so these two ICU comparisons diverge by design. Re-enable them as the parity gate when Apple's ICU rebases onto ICU 79.1 or later; until then the behavior is pinned by JapaneseGregorianEraInheritanceTests.
+    @Test(.disabled("bundled ICU predates the icu#4019 pre-Meiji era removal")) func preMeiji_eraSpread() {
         let (icu, ours) = Self.makePair()
         var divergences: [String] = []
         let dates: [(String, Date)] = [
@@ -364,7 +365,7 @@ private struct JapaneseICUComparisonProbe {
         Self.reportAndAssert("preMeiji_eraSpread", divergences, dateCount: dates.count)
     }
 
-    @Test func preMeiji_eraTransitions() {
+    @Test(.disabled("bundled ICU predates the icu#4019 pre-Meiji era removal")) func preMeiji_eraTransitions() {
         let (icu, ours) = Self.makePair()
         var divergences: [String] = []
         // Each pair: last day of old era, first day of new era. Tests boundary precision.

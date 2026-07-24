@@ -24,6 +24,9 @@ import Testing
 /// is compared on the core field set, so an era/year/week divergence anywhere
 /// in the range cannot hide between anchors. Also covers pre-Taika dates
 /// (before the first Japanese era, 645-06-19), which no other suite touches.
+/// The pre-Meiji comparisons are gated since 2026-07-24: pre-Meiji eras were
+/// dropped per CLDR/ICU (unicode-org/icu#4019, ICU-23341) and dates before
+/// Meiji inherit the Gregorian era, which the bundled ICU predates.
 @Suite("Buddhist+Japanese Daily Sweep Parity Probe")
 private struct CalendarDailySweepParityProbe {
 
@@ -77,13 +80,15 @@ private struct CalendarDailySweepParityProbe {
 
     // MARK: - Daily sweeps
 
-    /// Every day from Meiji 1 (1868) through 2100 — covers all five modern era
-    /// transitions and every week/year wrap in the range.
+    /// Every day from Meiji's start (1868-09-08) through 2100, covering all five
+    /// modern era transitions and every week/year wrap in the range. Days before
+    /// Meiji's start inherit the Gregorian era per icu#4019, which the bundled
+    /// ICU predates, so the sweep starts at the boundary.
     @Test func japanese_dailySweep_1868_2100() {
         let icu = _CalendarICU(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         let ours = _CalendarJapanese(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         var failures: [String] = []
-        let days = Self.sweep(icu, ours, from: Self.g(1868, 1, 1), to: Self.g(2100, 12, 31),
+        let days = Self.sweep(icu, ours, from: Self.g(1868, 9, 8), to: Self.g(2100, 12, 31),
                               labelPrefix: "ja", failures: &failures)
         Self.reportAndAssert("japanese_dailySweep_1868_2100", days: days, failures)
     }
@@ -101,7 +106,7 @@ private struct CalendarDailySweepParityProbe {
     // MARK: - Pre-Taika (before the first Japanese era, 645-06-19)
 
     /// Sampled sweep well before the first era: every 30 days, years 200–643.
-    @Test func japanese_preTaika_sampled() {
+    @Test(.disabled("bundled ICU predates the icu#4019 pre-Meiji era removal")) func japanese_preTaika_sampled() {
         let icu = _CalendarICU(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         let ours = _CalendarJapanese(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         var failures: [String] = []
@@ -111,7 +116,7 @@ private struct CalendarDailySweepParityProbe {
     }
 
     /// Daily band across the Taika boundary itself (645-06-19).
-    @Test func japanese_preTaika_boundaryBand() {
+    @Test(.disabled("bundled ICU predates the icu#4019 pre-Meiji era removal")) func japanese_preTaika_boundaryBand() {
         let icu = _CalendarICU(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         let ours = _CalendarJapanese(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         var failures: [String] = []
@@ -121,7 +126,7 @@ private struct CalendarDailySweepParityProbe {
     }
 
     /// Round-trip `dateComponents → date(from:)` parity for pre-Taika dates.
-    @Test func japanese_preTaika_roundTrips() {
+    @Test(.disabled("bundled ICU predates the icu#4019 pre-Meiji era removal")) func japanese_preTaika_roundTrips() {
         let icu = _CalendarICU(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         let ours = _CalendarJapanese(identifier: .japanese, timeZone: .gmt, locale: nil, firstWeekday: nil, minimumDaysInFirstWeek: nil, gregorianStartDate: nil)
         var failures: [String] = []
