@@ -94,6 +94,81 @@ Allocation/resolution samples are the trustworthy kind.
       ascii/latin/cjk/thai (1.44–1.53× vs ICU, was 1.67–1.81×); paths
       +5% accepted residual (§43's paths saga). Ladder committed:
       `build_sk_ladder.sh`.
+- [ ] UPSTREAM-PREP: extract buffered sort key writer from production.
+      `writeSortKeyUpToQuaternary` + `SortKeyLevel` + `SortKeyLevelBuffers`
+      (~520 lines in SortKey.swift) plus the `levels` field on
+      `ScratchBuffers` exist only for the sk-ladder verification tool —
+      no production code calls them. They must not ship in the production
+      module. Blocked on the constants being `private static` inside the
+      `CollationKeys` enum (shared with the direct writer); widening them
+      to internal is unacceptable API creep. Options: (a) duplicate the
+      ~30 constants into the tool file, (b) restructure `CollationKeys`
+      to separate constants from methods, (c) move the buffered writer
+      into a test target that can access internals via `@testable import`.
+      Option (c) is cleanest but needs the upstream package structure.
+- [ ] CODE REVIEW FINDINGS (2026-07-24, machine 2, 4-angle automated
+      review of Sources/FoundationInternationalization/Collation/).
+      **Fixed (committed e5e9f51):**
+      - `reorderEx` unbounded while loop — added `i < ranges.count` guard
+      - `lastPrimaryForGroup` unchecked `scriptStarts[index + 1]` — added
+        `guard index + 1 < scriptStarts.count`
+      - `PoolLock.deallocate()` missing `deinitialize(count: 1)` — added
+      - Dead `ScratchPool` class (21 lines, never instantiated) — removed
+      **Documented above (buffered writer extraction):**
+      - 520 lines of test-only code in production (`writeSortKeyUpToQuaternary`
+        + `SortKeyLevel` + `SortKeyLevelBuffers` + `ScratchBuffers.levels`)
+      **Accepted as-is (with rationale):**
+      - `pthread_key_delete` race in `ThreadLocalScratch.deinit`
+        (ScratchBuffers.swift:79): PLAUSIBLE but mitigated — `Storage`
+        is long-lived (cached in `CollatorCache`), so deinit practically
+        never fires while threads are exiting. Fixing requires either
+        leaking the key (never delete) or a ref-counted slot scheme.
+        Accepted: the race window is near-zero in practice.
+      - `scalarAt` reads continuation bytes without bounds check
+        (RootCollator.swift:749): CONFIRMED but standard Swift practice —
+        callers pass UTF-8 from native `String` whose well-formedness is
+        a language invariant. Adding bounds checks would cost ~2 ns/scalar
+        on the hot compare path for a condition that cannot occur with
+        `String` input.
+      - `quickCJKPrimary` (static) / `quickPrimary` (instance) duplication
+        (RootCollator.swift:279+639): CONFIRMED, intentional. The static
+        variant exists for codegen reasons (instance methods called from
+        pinned-buffer closures regress every corpus +17-22%). Documented
+        as kept-in-sync via differential suites.
+      - `followerIsStarter` 6-line pattern duplicated in `next()` and
+        `refill()` (NFDIterator.swift:92+123): CONFIRMED but extracting
+        into a helper risks inlining changes on the NFD hot path.
+        Trivial, low divergence risk.
+      - Big-endian word-at-a-time prefix scan (RootCollator.swift:700):
+        uses `trailingZeroBitCount >> 3` which assumes little-endian.
+        All Apple platforms are LE; swift-foundation on s390x Linux
+        would need a `#if` gate. Not actionable until that platform
+        is a real target.
+      - CJK Extensions C-I omitted from `isCJKUnified`
+        (RootCollator.swift:572): performance-only — rare characters
+        miss the quick-primary shortcut and take the full CE pipeline
+        (correct results, ~200 ns vs ~21 ns). Low priority.
+      - `appendHangulCEs` passes syllable `c` to recursive `appendCEs`
+        instead of individual Jamo (CollationElements.swift:350): latent
+        — unreachable behind the NFD front-end (syllables decompose to
+        Jamo first). Would matter only if NFD were bypassed.
+      - `ce(at:)` no bounds guard after `appendMore()` returns false
+        (CollationElements.swift:197): latent — current callers break
+        on `noCEPrimary`/`noCEWeight16` before overrunning.
+      - Trailing-zero trimming loop no lower-bound guard
+        (CollationElements.swift:466): latent — leading-zero skip
+        guarantees `numericDigits[start]` is nonzero, preventing
+        underflow. Fragile under refactoring.
+      - `clearBuffers()` doesn't reset `pendingMark`
+        (NFDIterator.swift): latent — both `reset` methods clear
+        `pendingMark` before calling `clearBuffers()`.
+      - 18 copy-pasted common-weight flush blocks in SortKey.swift:
+        9 in the buffered writer (to be extracted, see above), 9 in
+        the direct writer. The direct writer's 9 could be unified
+        with an `@inline(__always)` helper parameterized on
+        `(low, middle, high, maxCount)`, but the risk of inlining
+        changes on the sort-key hot path outweighs the maintenance
+        cost of 9 small blocks with different constant tuples.
 - [ ] UPSTREAM-PREP conformance pass (CONTRIBUTION_GUIDELINE.md, read
       2026-07-20; comment unwrap DONE at `05677e6`): remaining items —
       force unwraps (`base!` in the engine paths; the guideline wants
