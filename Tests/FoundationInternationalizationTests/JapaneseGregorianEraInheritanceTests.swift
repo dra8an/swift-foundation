@@ -108,6 +108,39 @@ private struct JapaneseGregorianEraInheritanceTests {
         #expect(back.day == c.day)
     }
 
+    struct AddCase: Sendable, CustomTestStringConvertible {
+        let label: String
+        let fromEra, fromYear, fromMonth, fromDay: Int
+        let component: Calendar.Component
+        let amount: Int
+        let expectedEra, expectedYear, expectedMonth, expectedDay: Int
+        var testDescription: String { label }
+    }
+
+    // date(byAdding:) works in Gregorian year-space and only relabels the era on read-back, so crossing the Meiji lower edge downward lands on the inherited Gregorian era (CE, then BCE).
+    static let addAcrossMeijiCases: [AddCase] = [
+        AddCase(label: "Meiji 1 + day(-1) -> CE 1868", fromEra: meiji, fromYear: 1, fromMonth: 9, fromDay: 8, component: .day, amount: -1, expectedEra: ce, expectedYear: 1868, expectedMonth: 9, expectedDay: 7),
+        AddCase(label: "Meiji 1 + month(-1) -> CE 1868", fromEra: meiji, fromYear: 1, fromMonth: 9, fromDay: 8, component: .month, amount: -1, expectedEra: ce, expectedYear: 1868, expectedMonth: 8, expectedDay: 8),
+        AddCase(label: "Meiji 1 + year(-1) -> CE 1867", fromEra: meiji, fromYear: 1, fromMonth: 9, fromDay: 8, component: .year, amount: -1, expectedEra: ce, expectedYear: 1867, expectedMonth: 9, expectedDay: 8),
+        AddCase(label: "Meiji 1 + year(-1867) -> CE 1", fromEra: meiji, fromYear: 1, fromMonth: 9, fromDay: 8, component: .year, amount: -1867, expectedEra: ce, expectedYear: 1, expectedMonth: 9, expectedDay: 8),
+        AddCase(label: "Meiji 1 + year(-1868) -> BCE 1", fromEra: meiji, fromYear: 1, fromMonth: 9, fromDay: 8, component: .year, amount: -1868, expectedEra: bce, expectedYear: 1, expectedMonth: 9, expectedDay: 8),
+        AddCase(label: "Meiji 1 Dec + month(-4) -> CE 1868", fromEra: meiji, fromYear: 1, fromMonth: 12, fromDay: 1, component: .month, amount: -4, expectedEra: ce, expectedYear: 1868, expectedMonth: 8, expectedDay: 1),
+    ]
+
+    @Test(arguments: addAcrossMeijiCases)
+    func addAcrossMeijiLowerEdge(_ c: AddCase) throws {
+        let cal = Self.japanese()
+        var dc = DateComponents()
+        dc.era = c.fromEra; dc.year = c.fromYear; dc.month = c.fromMonth; dc.day = c.fromDay; dc.hour = 12
+        let from = try #require(cal.date(from: dc))
+        let result = try #require(cal.date(byAdding: c.component, value: c.amount, to: from))
+        let back = cal.dateComponents([.era, .year, .month, .day], from: result)
+        #expect(back.era == c.expectedEra)
+        #expect(back.year == c.expectedYear)
+        #expect(back.month == c.expectedMonth)
+        #expect(back.day == c.expectedDay)
+    }
+
     @Test func eraRangeSpansBceToReiwa() {
         let cal = Self.japanese()
         #expect(cal.maximumRange(of: .era) == 0..<237)
