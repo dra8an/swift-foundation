@@ -150,7 +150,7 @@ private struct ChineseLiuReferenceProbe {
             let y = _ChineseCalendarEngine.year(relatedISOYear: iso)
             var diffs: [String] = []
             if y.newYearRataDie != cnyRD { diffs.append("CNY rd \(y.newYearRataDie) vs Liu \(cnyRD)") }
-            if Int(y.leapDisplay) != leap { diffs.append("leap \(y.leapDisplay) vs Liu \(leap)") }
+            if Int(y.leapMonthNumber) != leap { diffs.append("leap \(y.leapMonthNumber) vs Liu \(leap)") }
             if y.monthLengthBits != bits { diffs.append("bits \(String(y.monthLengthBits, radix: 16)) vs Liu \(String(bits, radix: 16))") }
             if !diffs.isEmpty {
                 let msg = "\(iso): \(diffs.joined(separator: "; "))"

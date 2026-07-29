@@ -48,11 +48,11 @@ private struct ChineseInvariantProbe {
             if n != 12 && n != 13 {
                 failures.append("\(iso): monthCount \(n)")
             }
-            if (n == 13) != (y.leapDisplay != 0) {
-                failures.append("\(iso): monthCount \(n) but leapDisplay \(y.leapDisplay)")
+            if (n == 13) != (y.leapMonthNumber != 0) {
+                failures.append("\(iso): monthCount \(n) but leapMonthNumber \(y.leapMonthNumber)")
             }
-            if y.leapDisplay > 12 {
-                failures.append("\(iso): leapDisplay \(y.leapDisplay) out of range")
+            if y.leapMonthNumber > 12 {
+                failures.append("\(iso): leapMonthNumber \(y.leapMonthNumber) out of range")
             }
             var sum = 0
             for o in 1...n { sum += y.monthLength(ordinal: o) }
@@ -107,7 +107,7 @@ private struct ChineseInvariantProbe {
             (2148, 0),
         ]
         for (iso, want) in leapPins {
-            let got = _ChineseCalendarEngine.year(relatedISOYear: iso).leapDisplay
+            let got = _ChineseCalendarEngine.year(relatedISOYear: iso).leapMonthNumber
             if got != want {
                 failures.append("leap \(iso): got \(got), want \(want)")
             }

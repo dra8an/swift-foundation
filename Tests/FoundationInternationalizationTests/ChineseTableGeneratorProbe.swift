@@ -244,7 +244,7 @@ private struct ChineseEngineParityProbe {
                 inTableDiffs.append("day \(day): engine gap!")
                 continue
             }
-            let label = y.label(ordinal: ord)
+            let label = y.monthLabel(ordinal: ord)
             let match = c.month == label.month && (c.isLeapMonth ?? false) == label.isLeap && c.day == dom
             if !match {
                 let desc = "rd \(day): icu m\(c.month!)\((c.isLeapMonth ?? false) ? "L" : "") d\(c.day!) vs ours m\(label.month)\(label.isLeap ? "L" : "") d\(dom)"

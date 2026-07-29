@@ -35,7 +35,7 @@ private struct ChineseMeanZoneProbe {
         if sum != y.endRataDie - y.newYearRataDie {
             bad.append("\(y.relatedISOYear): bits sum \(sum) vs span \(y.endRataDie - y.newYearRataDie)")
         }
-        if (n == 13) != (y.leapDisplay != 0) { bad.append("\(y.relatedISOYear): leap flag") }
+        if (n == 13) != (y.leapMonthNumber != 0) { bad.append("\(y.relatedISOYear): leap flag") }
     }
 
     @Test func seamsTileExactly() {
@@ -102,9 +102,9 @@ private struct ChineseMeanZoneProbe {
         var displays = Set<UInt8>()
         for y in 200_000...200_189 {
             let yr = _ChineseCalendarEngine.year(relatedISOYear: y)
-            if yr.leapDisplay != 0 {
+            if yr.leapMonthNumber != 0 {
                 leapCount += 1
-                displays.insert(yr.leapDisplay)
+                displays.insert(yr.leapMonthNumber)
             }
         }
         print("=== chineseMeanLeapRate: \(leapCount)/190 leap years, \(displays.count) distinct display numbers ===")

@@ -28,146 +28,152 @@ internal import Synchronization
 
 // Chinese lunisolar calendar engine. Years 1901-2100 come from a baked table generated from ICU (parity by construction); outside that range but within the validated astronomical range, month structure is computed with ICU's chnsecal rules over _CalendarAstronomy at UTC+8; beyond that, the same rules run over mean elements (the historical píngqì method) anchored at the range edges.
 
-// Bounded memoization caches: over the capacity, evict one arbitrary entry (hash order). LRU is deliberately not attempted, a miss only recomputes.
+// Small caches of already-computed results, capped at `capacity`. Over the cap, drop one entry (whichever the dictionary lists first). We skip least-recently-used tracking on purpose: a dropped entry is just recomputed next time, and that recompute is cheap, so a smarter cache or a new dependency is not worth it.
 private func evictIfNeeded<V>(_ cache: inout [Int: V], capacity: Int) {
     if cache.count > capacity, let victim = cache.keys.first {
         cache.removeValue(forKey: victim)
     }
 }
 
-// MARK: - chnsecal rules over the astronomy (flat UTC+8, matching ICU)
+// MARK: - Month-structure rules over the astronomy engine. Days are reckoned at a fixed UTC+8 offset (no daylight saving, no historical time-zone changes), matching ICU's Chinese calendar (chnsecal).
+//
+// Winter solstice and New Year lookups are memoized; callers own the caches and thread them through explicitly (rather than a stateful type) so a single fallback computation in `_ChineseCalendarEngine.year(relatedISOYear:)` can build them once on the stack. The two caches are bundled here (rather than passed as separate parameters) so a function that only touches one cache directly can still hand the bundle down to a callee that needs the other.
+fileprivate struct _ChineseCaches {
+    var winterSolstice: [Int: Int] = [:]
+    var newYear: [Int: Int] = [:]
+    // nil = fitted astronomy. Set = mean elements, the historical píngqì rule: the sun advances uniformly from the solstice anchor and new moons repeat uniformly from the new-moon anchor. Used beyond the validated range, see _ChineseCalendarEngine.astronomicalYears. Carried alongside the caches because every rule below already threads this bundle through.
+    var meanAnchors: (solsticeInstant: Double, newMoonInstant: Double)? = nil
+}
 
-internal struct _ChineseRules {
-    static let synodicGap = 25
-    // Gregorian mean year, so the mean-element zone stays anchored to Gregorian dates at any distance instead of drifting through the seasons' calendar dates.
-    static let meanGregorianYear = 365.2425
-    var winterSolsticeCache: [Int: Int] = [:]
-    var newYearCache: [Int: Int] = [:]
-    // nil = fitted astronomy. Set = mean elements, the historical píngqì rule: the sun advances uniformly from the solstice anchor and new moons repeat uniformly from the new-moon anchor. Used beyond the validated range, see _ChineseCalendarEngine.astronomicalYears.
-    let meanAnchors: (solsticeInstant: Double, newMoonInstant: Double)?
+fileprivate let chineseSynodicGap = 25
 
-    init(meanAnchors: (solsticeInstant: Double, newMoonInstant: Double)? = nil) {
-        self.meanAnchors = meanAnchors
+// Gregorian mean year, so the mean-element zone stays anchored to Gregorian dates at any distance instead of drifting through the seasons' calendar dates.
+fileprivate let chineseMeanGregorianYear = 365.2425
+
+// Cache-size caps. The exact number is not tuned: over the cap we drop one entry and recompute it later, which is cheap, so any small bound works. This per-computation cap comfortably covers the handful of neighboring years one `year(relatedISOYear:)` fallback touches.
+fileprivate let chineseRuleCacheCapacity = 32
+
+// Local UTC+8 midnight of an RD day, as a universal moment.
+fileprivate func chineseMidnight(_ rataDie: Int) -> Double {
+    Double(rataDie) - 1.0 + 16.0 / 24.0
+}
+
+fileprivate func chineseLocalDay(_ moment: Double) -> Int {
+    Int((moment + 8.0 / 24.0).rounded(.down))
+}
+
+// The three astronomy primitives every rule below is built from. Without anchors they are the fitted series; with anchors they become uniform mean motions, so the rules themselves run unchanged in either zone.
+fileprivate func chineseSolarLongitude(at moment: Double, anchors: (solsticeInstant: Double, newMoonInstant: Double)?) -> Double {
+    guard let anchors else {
+        return _CalendarAstronomy.solarLongitude(at: moment)
     }
+    let lon = (270.0 + 360.0 * (moment - anchors.solsticeInstant) / chineseMeanGregorianYear).truncatingRemainder(dividingBy: 360.0)
+    return lon < 0 ? lon + 360.0 : lon
+}
 
-    // Local UTC+8 midnight of an RD day, as a universal moment.
-    private func midnight(_ rataDie: Int) -> Double {
-        Double(rataDie) - 1.0 + 16.0 / 24.0
+fileprivate func chineseNewMoon(atOrAfter moment: Double, anchors: (solsticeInstant: Double, newMoonInstant: Double)?) -> Double {
+    guard let anchors else {
+        return _CalendarAstronomy.newMoonAtOrAfter(moment)
     }
+    let lunations = ((moment - anchors.newMoonInstant) / _CalendarAstronomy.meanSynodicMonth).rounded(.up)
+    return anchors.newMoonInstant + lunations * _CalendarAstronomy.meanSynodicMonth
+}
 
-    private func toLocalDay(_ moment: Double) -> Int {
-        Int((moment + 8.0 / 24.0).rounded(.down))
+fileprivate func chineseNewMoon(before moment: Double, anchors: (solsticeInstant: Double, newMoonInstant: Double)?) -> Double {
+    guard let anchors else {
+        return _CalendarAstronomy.newMoonBefore(moment)
     }
+    let lunations = ((moment - anchors.newMoonInstant) / _CalendarAstronomy.meanSynodicMonth).rounded(.up) - 1
+    return anchors.newMoonInstant + lunations * _CalendarAstronomy.meanSynodicMonth
+}
 
-    private func solarLongitude(at moment: Double) -> Double {
-        guard let anchors = meanAnchors else {
-            return _CalendarAstronomy.solarLongitude(at: moment)
-        }
-        let lon = (270.0 + 360.0 * (moment - anchors.solsticeInstant) / Self.meanGregorianYear).truncatingRemainder(dividingBy: 360.0)
-        return lon < 0 ? lon + 360.0 : lon
+// Winter solstice day on or after Dec 1 (chnsecal winterSolstice).
+fileprivate func chineseWinterSolstice(_ gregorianYear: Int, caches: inout _ChineseCaches) -> Int {
+    if let cached = caches.winterSolstice[gregorianYear] { return cached }
+    var day = _CalendarAstronomy.gregorianRataDie(gregorianYear, 12, 10)
+    while true {
+        let lon = chineseSolarLongitude(at: chineseMidnight(day + 1), anchors: caches.meanAnchors)
+        if lon >= 270.0 && lon < 350.0 { break }
+        day += 1
     }
+    evictIfNeeded(&caches.winterSolstice, capacity: chineseRuleCacheCapacity)
+    caches.winterSolstice[gregorianYear] = day
+    return day
+}
 
-    private func newMoon(atOrAfter moment: Double) -> Double {
-        guard let anchors = meanAnchors else {
-            return _CalendarAstronomy.newMoonAtOrAfter(moment)
-        }
-        let lunations = ((moment - anchors.newMoonInstant) / _CalendarAstronomy.meanSynodicMonth).rounded(.up)
-        return anchors.newMoonInstant + lunations * _CalendarAstronomy.meanSynodicMonth
-    }
+fileprivate func chineseNewMoonNear(_ days: Int, _ after: Bool, anchors: (solsticeInstant: Double, newMoonInstant: Double)?) -> Int {
+    let m = chineseMidnight(days)
+    let nm = after ? chineseNewMoon(atOrAfter: m, anchors: anchors) : chineseNewMoon(before: m, anchors: anchors)
+    return chineseLocalDay(nm)
+}
 
-    private func newMoon(before moment: Double) -> Double {
-        guard let anchors = meanAnchors else {
-            return _CalendarAstronomy.newMoonBefore(moment)
-        }
-        let lunations = ((moment - anchors.newMoonInstant) / _CalendarAstronomy.meanSynodicMonth).rounded(.up) - 1
-        return anchors.newMoonInstant + lunations * _CalendarAstronomy.meanSynodicMonth
-    }
+fileprivate func chineseSynodicMonthsBetween(_ day1: Int, _ day2: Int) -> Int {
+    let r = Double(day2 - day1) / _CalendarAstronomy.meanSynodicMonth
+    return Int(r + (r >= 0 ? 0.5 : -0.5))
+}
 
-    // Winter solstice day on or after Dec 1 (chnsecal winterSolstice).
-    mutating func winterSolstice(_ gregorianYear: Int) -> Int {
-        if let cached = winterSolsticeCache[gregorianYear] { return cached }
-        var day = _CalendarAstronomy.gregorianRataDie(gregorianYear, 12, 10)
-        while true {
-            let lon = solarLongitude(at: midnight(day + 1))
-            if lon >= 270.0 && lon < 350.0 { break }
-            day += 1
-        }
-        evictIfNeeded(&winterSolsticeCache, capacity: 32)
-        winterSolsticeCache[gregorianYear] = day
-        return day
-    }
+fileprivate func chineseMajorSolarTerm(_ days: Int, anchors: (solsticeInstant: Double, newMoonInstant: Double)?) -> Int {
+    let lon = chineseSolarLongitude(at: chineseMidnight(days), anchors: anchors)
+    var term = (Int(lon / 30.0) + 2) % 12
+    if term < 1 { term += 12 }
+    return term
+}
 
-    func newMoonNear(_ days: Int, _ after: Bool) -> Int {
-        let m = midnight(days)
-        return toLocalDay(after ? newMoon(atOrAfter: m) : newMoon(before: m))
-    }
+fileprivate func chineseHasNoMajorSolarTerm(_ newMoon: Int, anchors: (solsticeInstant: Double, newMoonInstant: Double)?) -> Bool {
+    chineseMajorSolarTerm(newMoon, anchors: anchors) == chineseMajorSolarTerm(chineseNewMoonNear(newMoon + chineseSynodicGap, true, anchors: anchors), anchors: anchors)
+}
 
-    static func synodicMonthsBetween(_ day1: Int, _ day2: Int) -> Int {
-        let r = Double(day2 - day1) / _CalendarAstronomy.meanSynodicMonth
-        return Int(r + (r >= 0 ? 0.5 : -0.5))
+fileprivate func chineseIsLeapMonthBetween(_ newMoon1: Int, _ newMoon2: Int, anchors: (solsticeInstant: Double, newMoonInstant: Double)?) -> Bool {
+    var m2 = newMoon2
+    while m2 >= newMoon1 {
+        if chineseHasNoMajorSolarTerm(m2, anchors: anchors) { return true }
+        m2 = chineseNewMoonNear(m2 - chineseSynodicGap, false, anchors: anchors)
     }
+    return false
+}
 
-    func majorSolarTerm(_ days: Int) -> Int {
-        let lon = solarLongitude(at: midnight(days))
-        var term = (Int(lon / 30.0) + 2) % 12
-        if term < 1 { term += 12 }
-        return term
+fileprivate func chineseNewYear(_ gregorianYear: Int, caches: inout _ChineseCaches) -> Int {
+    if let cached = caches.newYear[gregorianYear] { return cached }
+    let solsticeBefore = chineseWinterSolstice(gregorianYear - 1, caches: &caches)
+    let solsticeAfter = chineseWinterSolstice(gregorianYear, caches: &caches)
+    let anchors = caches.meanAnchors
+    let newMoon1 = chineseNewMoonNear(solsticeBefore + 1, true, anchors: anchors)
+    let newMoon2 = chineseNewMoonNear(newMoon1 + chineseSynodicGap, true, anchors: anchors)
+    let newMoon11 = chineseNewMoonNear(solsticeAfter + 1, false, anchors: anchors)
+    let value: Int
+    if chineseSynodicMonthsBetween(newMoon1, newMoon11) == 12 &&
+        (chineseHasNoMajorSolarTerm(newMoon1, anchors: anchors) || chineseHasNoMajorSolarTerm(newMoon2, anchors: anchors)) {
+        value = chineseNewMoonNear(newMoon2 + chineseSynodicGap, true, anchors: anchors)
+    } else {
+        value = newMoon2
     }
+    evictIfNeeded(&caches.newYear, capacity: chineseRuleCacheCapacity)
+    caches.newYear[gregorianYear] = value
+    return value
+}
 
-    func hasNoMajorSolarTerm(_ newMoon: Int) -> Bool {
-        majorSolarTerm(newMoon) == majorSolarTerm(newMoonNear(newMoon + Self.synodicGap, true))
+// (month, isLeapMonth) label for the month starting at new moon `start`.
+fileprivate func chineseMonthLabel(startingAt start: Int, gregorianYear: Int, caches: inout _ChineseCaches) -> (month: Int, isLeap: Bool) {
+    var solsticeBefore: Int
+    var solsticeAfter = chineseWinterSolstice(gregorianYear, caches: &caches)
+    if start < solsticeAfter {
+        solsticeBefore = chineseWinterSolstice(gregorianYear - 1, caches: &caches)
+    } else {
+        solsticeBefore = solsticeAfter
+        solsticeAfter = chineseWinterSolstice(gregorianYear + 1, caches: &caches)
     }
-
-    func isLeapMonthBetween(_ newMoon1: Int, _ newMoon2: Int) -> Bool {
-        var m2 = newMoon2
-        while m2 >= newMoon1 {
-            if hasNoMajorSolarTerm(m2) { return true }
-            m2 = newMoonNear(m2 - Self.synodicGap, false)
-        }
-        return false
+    let anchors = caches.meanAnchors
+    let firstMoon = chineseNewMoonNear(solsticeBefore + 1, true, anchors: anchors)
+    let lastMoon = chineseNewMoonNear(solsticeAfter + 1, false, anchors: anchors)
+    let hasLeap = chineseSynodicMonthsBetween(firstMoon, lastMoon) == 12
+    var month = chineseSynodicMonthsBetween(firstMoon, start)
+    if hasLeap && chineseIsLeapMonthBetween(firstMoon, start, anchors: anchors) {
+        month -= 1
     }
-
-    mutating func newYear(_ gregorianYear: Int) -> Int {
-        if let cached = newYearCache[gregorianYear] { return cached }
-        let solsticeBefore = winterSolstice(gregorianYear - 1)
-        let solsticeAfter = winterSolstice(gregorianYear)
-        let newMoon1 = newMoonNear(solsticeBefore + 1, true)
-        let newMoon2 = newMoonNear(newMoon1 + Self.synodicGap, true)
-        let newMoon11 = newMoonNear(solsticeAfter + 1, false)
-        let value: Int
-        if Self.synodicMonthsBetween(newMoon1, newMoon11) == 12 &&
-            (hasNoMajorSolarTerm(newMoon1) || hasNoMajorSolarTerm(newMoon2)) {
-            value = newMoonNear(newMoon2 + Self.synodicGap, true)
-        } else {
-            value = newMoon2
-        }
-        evictIfNeeded(&newYearCache, capacity: 32)
-        newYearCache[gregorianYear] = value
-        return value
-    }
-
-    // (month, isLeapMonth) label for the month starting at new moon `start`.
-    mutating func monthLabel(startingAt start: Int, gregorianYear: Int) -> (month: Int, isLeap: Bool) {
-        var solsticeBefore: Int
-        var solsticeAfter = winterSolstice(gregorianYear)
-        if start < solsticeAfter {
-            solsticeBefore = winterSolstice(gregorianYear - 1)
-        } else {
-            solsticeBefore = solsticeAfter
-            solsticeAfter = winterSolstice(gregorianYear + 1)
-        }
-        let firstMoon = newMoonNear(solsticeBefore + 1, true)
-        let lastMoon = newMoonNear(solsticeAfter + 1, false)
-        let hasLeap = Self.synodicMonthsBetween(firstMoon, lastMoon) == 12
-        var month = Self.synodicMonthsBetween(firstMoon, start)
-        if hasLeap && isLeapMonthBetween(firstMoon, start) {
-            month -= 1
-        }
-        if month < 1 { month += 12 }
-        let isLeap = hasLeap && hasNoMajorSolarTerm(start) &&
-            !isLeapMonthBetween(firstMoon, newMoonNear(start - Self.synodicGap, false))
-        return (month, isLeap)
-    }
+    if month < 1 { month += 12 }
+    let isLeap = hasLeap && chineseHasNoMajorSolarTerm(start, anchors: anchors) &&
+        !chineseIsLeapMonthBetween(firstMoon, chineseNewMoonNear(start - chineseSynodicGap, false, anchors: anchors), anchors: anchors)
+    return (month, isLeap)
 }
 
 // MARK: - Year structure
@@ -177,10 +183,10 @@ internal struct _ChineseYear: Sendable {
     let newYearRataDie: Int
     let monthLengthBits: UInt16    // bit i set = ordinal month i+1 has 30 days
     let monthCount: UInt8          // 12 or 13
-    let leapDisplay: UInt8         // 0 = none; else leap month repeats this number
+    let leapMonthNumber: UInt8         // 0 = no leap month; otherwise the leap month shows as this month number (the year has a second month with this number)
 
     // Ordinal position (1-based) of the leap month, if any.
-    var leapOrdinal: Int? { leapDisplay == 0 ? nil : Int(leapDisplay) + 1 }
+    var leapOrdinal: Int? { leapMonthNumber == 0 ? nil : Int(leapMonthNumber) + 1 }
 
     func monthLength(ordinal: Int) -> Int {
         (monthLengthBits >> (ordinal - 1)) & 1 == 1 ? 30 : 29
@@ -200,9 +206,10 @@ internal struct _ChineseYear: Sendable {
 
     var endRataDie: Int { newYearRataDie + daysInYear }
 
-    func label(ordinal: Int) -> (month: Int, isLeap: Bool) {
+    // The displayed month number and leap flag for the given ordinal (1-based) position in the year. In a leap year the leap month shares the previous month's number and is returned with isLeap set to true.
+    func monthLabel(ordinal: Int) -> (month: Int, isLeap: Bool) {
         guard let lo = leapOrdinal else { return (ordinal, false) }
-        if ordinal == lo { return (Int(leapDisplay), true) }
+        if ordinal == lo { return (Int(leapMonthNumber), true) }
         if ordinal > lo { return (ordinal - 1, false) }
         return (ordinal, false)
     }
@@ -211,7 +218,7 @@ internal struct _ChineseYear: Sendable {
         guard month >= 1 && month <= 12 else { return nil }
         guard let lo = leapOrdinal else { return isLeap ? nil : month }
         if isLeap {
-            return month == Int(leapDisplay) ? lo : nil
+            return month == Int(leapMonthNumber) ? lo : nil
         }
         return month < lo ? month : month + 1
     }
@@ -233,8 +240,13 @@ internal struct _ChineseYear: Sendable {
 
 internal enum _ChineseCalendarEngine {
     // One entry per Chinese year, indexed by the Gregorian year in which that Chinese year begins.
-    // Packing: bits 0-12 month lengths (1=30d), 13-16 leap display number (0=none), 17-22 new-year offset from Jan 19 of that Gregorian year.
-    static let tableStart = 1901
+    // Each entry packs one Chinese year into a UInt32:
+    //   bits 0-12: month lengths, one bit per month starting at month 1, where 1 means a 30-day month and 0 means a 29-day month.
+    //   bits 13-16: the leap month number, 0 for no leap month; otherwise the leap month shares this number (N means the leap month follows month N).
+    //   bits 17-22: the New Year offset, the number of days from January 19 of this Gregorian year to Chinese New Year.
+    // Worked example: 0x003E0752. Bits 0-12 = 0b0_0111_0101_0010, so months 2, 5, 7, 9, 10, and 11 have 30 days and the rest have 29. Bits 13-16 = 0, so there is no leap month. Bits 17-22 = 31, so New Year is January 19 plus 31 days.
+    static let firstTableYear = 1901
+    // Local research divergence, not for upstream: the PR stores this as InlineArray<200, UInt32>, which needs the macOS 26 runtime; a plain array is semantically identical.
     static let table: [UInt32] = [
     0x003E0752, 0x00280EA5, 0x0014B64A, 0x0038064B, // 1901-1904
     0x00200A9B, 0x000C9556, 0x0032056A, 0x001C0B59, // 1905-1908
@@ -288,7 +300,8 @@ internal enum _ChineseCalendarEngine {
     0x00300B45, 0x001A0A8B, 0x0004549B, 0x002A04AB, // 2097-2100
     ]
 
-    // Cross-instance memoization of computed out-of-range years only (pre-1901 / post-2100); in-range dates read the baked table and never touch this. Bounded to 16 entries, so it never needs clearing.
+    // A shared cache of the month structure computed for years outside the baked table (before 1901 or after 2100). Key: the extended year. Value: that year's computed structure. In-range dates (1901-2100) read the baked table directly, so they never reach this cache. Over the cap, `evictIfNeeded` drops one entry and that year is recomputed on the next lookup. The cap is smaller than the per-computation caps because out-of-range lookups are rare and usually clustered, so a small working set is enough.
+    static let fallbackCacheCapacity = 16
     static let fallbackCache = Mutex<[Int: _ChineseYear]>([:])
 
     // The fitted astronomy runs only where it was validated against the JPL ephemeris, with margin inside the ephemeris limits. Beyond this range the fitted series cannot be checked, degrade physically, and eventually produce impossible month lengths; month structure there comes from mean elements anchored at these edges so the two zones tile.
@@ -329,83 +342,82 @@ internal enum _ChineseCalendarEngine {
     }()
 
     private static func decodeTableYear(relatedISOYear: Int) -> _ChineseYear {
-        let v = table[relatedISOYear - tableStart]
+        let v = table[relatedISOYear - firstTableYear]
         let leap = UInt8((v >> 13) & 0xF)
-        return _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: _CalendarAstronomy.gregorianRataDie(relatedISOYear, 1, 19) + Int((v >> 17) & 0x3F), monthLengthBits: UInt16(v & 0x1FFF), monthCount: leap == 0 ? 12 : 13, leapDisplay: leap)
+        return _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: _CalendarAstronomy.gregorianRataDie(relatedISOYear, 1, 19) + Int((v >> 17) & 0x3F), monthLengthBits: UInt16(v & 0x1FFF), monthCount: leap == 0 ? 12 : 13, leapMonthNumber: leap)
     }
 
     /// Month structure for the Chinese year whose New Year falls in Gregorian `relatedISOYear`.
     ///
     /// In the baked range (1901...2100) this is a direct table decode. Outside it the structure is computed and memoized: locate this year's New Year and the next year's, walk the new moons between them to get each month's first day, record 29- vs 30-day lengths as bits, and mark the leap month (the month carrying no major solar term). Within `astronomicalYears` the events come from the fitted astronomy; beyond, from mean elements anchored at the range edges. Seam years reuse the neighboring zone's boundary value so all three spans tile exactly.
     static func year(relatedISOYear: Int) -> _ChineseYear {
-        let idx = relatedISOYear - tableStart
+        let idx = relatedISOYear - firstTableYear
         if idx >= 0 && idx < table.count {
             return decodeTableYear(relatedISOYear: relatedISOYear)
         }
         if let cached = fallbackCache.withLock({ $0[relatedISOYear] }) {
             return cached
         }
-        // Compute outside the lock with a local rules instance; the shared cache is only touched under the minimal critical section below.
-        var rules: _ChineseRules
+        // Compute outside the lock with a local cache bundle; the shared cache is only touched under the minimal critical section below.
+        var caches = _ChineseCaches()
+        // Beyond the validated astronomical range the rules run over mean elements anchored at the range edges.
         if relatedISOYear > Self.astronomicalYears.upperBound {
-            rules = _ChineseRules(meanAnchors: Self.futureMeanAnchors)
+            caches.meanAnchors = Self.futureMeanAnchors
         } else if relatedISOYear < Self.astronomicalYears.lowerBound {
-            rules = _ChineseRules(meanAnchors: Self.pastMeanAnchors)
-        } else {
-            rules = _ChineseRules()
+            caches.meanAnchors = Self.pastMeanAnchors
         }
         // Tile exactly with the baked table and with the astronomical range at their seams.
         let ny: Int
-        if relatedISOYear == tableStart + table.count {
+        if relatedISOYear == firstTableYear + table.count {
             ny = decodeTableYear(relatedISOYear: relatedISOYear - 1).endRataDie
         } else if relatedISOYear == Self.astronomicalYears.upperBound + 1 {
             ny = year(relatedISOYear: relatedISOYear - 1).endRataDie
         } else {
-            ny = rules.newYear(relatedISOYear)
+            ny = chineseNewYear(relatedISOYear, caches: &caches)
         }
         let nyNext: Int
-        if relatedISOYear + 1 == tableStart {
-            nyNext = decodeTableYear(relatedISOYear: tableStart).newYearRataDie
+        if relatedISOYear + 1 == firstTableYear {
+            nyNext = decodeTableYear(relatedISOYear: firstTableYear).newYearRataDie
         } else if relatedISOYear == Self.astronomicalYears.lowerBound - 1 {
             nyNext = year(relatedISOYear: relatedISOYear + 1).newYearRataDie
         } else {
-            nyNext = rules.newYear(relatedISOYear + 1)
+            nyNext = chineseNewYear(relatedISOYear + 1, caches: &caches)
         }
         // Collect each month's first day: successive new moons from this New Year up to (but not including) the next year's New Year.
         var starts = [ny]
         var cur = ny
         while true {
-            let nxt = rules.newMoonNear(cur + _ChineseRules.synodicGap, true)
+            let nxt = chineseNewMoonNear(cur + chineseSynodicGap, true, anchors: caches.meanAnchors)
             if nxt >= nyNext { break }
             starts.append(nxt)
             cur = nxt
         }
         // Pack month lengths (30-day months set a bit) and record the leap month, if any.
-        var bits: UInt16 = 0
-        var leapDisplay: UInt8 = 0
+        var monthLengthBits: UInt16 = 0
+        var leapMonthNumber: UInt8 = 0
         for (i, s) in starts.enumerated() {
             let next = (i + 1 < starts.count) ? starts[i + 1] : nyNext
             assert(next - s == 29 || next - s == 30, "non-lunation month length \(next - s) in fallback year \(relatedISOYear)")
-            if next - s == 30 { bits |= UInt16(1) << i }
-            let label = rules.monthLabel(startingAt: s, gregorianYear: _CalendarAstronomy.gregorianYear(ofRataDie: s))
-            if label.isLeap { leapDisplay = UInt8(label.month) }
+            if next - s == 30 { monthLengthBits |= UInt16(1) << i }
+            let label = chineseMonthLabel(startingAt: s, gregorianYear: _CalendarAstronomy.gregorianYear(ofRataDie: s), caches: &caches)
+            if label.isLeap { leapMonthNumber = UInt8(label.month) }
         }
-        if starts.count == 13 && leapDisplay == 0 {
+        if starts.count == 13 && leapMonthNumber == 0 {
             // Day-quantized term positions can leave a 13-month year without a term-based leap label when the sui's termless month falls across the year boundary. Complete deterministically: the first month that repeats the preceding month's term index, or the final month if every term advances.
-            leapDisplay = 12
-            var previousTerm = rules.majorSolarTerm(starts[0])
+            leapMonthNumber = 12
+            var previousTerm = chineseMajorSolarTerm(starts[0], anchors: caches.meanAnchors)
             for i in 1..<13 {
-                let term = rules.majorSolarTerm(starts[i])
+                let term = chineseMajorSolarTerm(starts[i], anchors: caches.meanAnchors)
                 if term == previousTerm {
-                    leapDisplay = UInt8(i)
+                    leapMonthNumber = UInt8(i)
                     break
                 }
                 previousTerm = term
             }
         }
-        let year = _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: ny, monthLengthBits: bits, monthCount: UInt8(starts.count), leapDisplay: leapDisplay)
+        let year = _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: ny, monthLengthBits: monthLengthBits, monthCount: UInt8(starts.count), leapMonthNumber: leapMonthNumber)
         fallbackCache.withLock {
-            evictIfNeeded(&$0, capacity: 16)
+            evictIfNeeded(&$0, capacity: Self.fallbackCacheCapacity)
             $0[relatedISOYear] = year
         }
         return year
@@ -718,12 +730,12 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
     // Like ICU, a leap month is not absorbed into its quarter: dates in it can fall outside their own quarter interval and the month range shrinks.
     private static func quarterSpan(extendedYear: Int, ordinal: Int) -> (firstDisplay: Int, startOrdinal: Int, lastDisplay: Int, endExtendedYear: Int, endOrdinal: Int)? {
         let y = yearData(extendedYear: extendedYear)
-        let q = (y.label(ordinal: ordinal).month + 2) / 3
+        let q = (y.monthLabel(ordinal: ordinal).month + 2) / 3
         let firstDisplay = 3 * (q - 1) + 1
         guard let startOrdinal = y.ordinal(month: firstDisplay, isLeap: false) else { return nil }
         var (ey, eo) = (extendedYear, startOrdinal)
         for _ in 0..<2 { (ey, eo) = nextOrdinalMonth(extendedYear: ey, ordinal: eo) }
-        let lastDisplay = yearData(extendedYear: ey).label(ordinal: eo).month
+        let lastDisplay = yearData(extendedYear: ey).monthLabel(ordinal: eo).month
         let (endExtendedYear, endOrdinal) = nextOrdinalMonth(extendedYear: ey, ordinal: eo)
         return (firstDisplay, startOrdinal, lastDisplay, endExtendedYear, endOrdinal)
     }
@@ -903,7 +915,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         guard let (ordinal, day) = y.ordinalAndDay(rataDie: rataDie) else {
             fatalError("year(containingRataDie:) returned a year not containing rataDie \(rataDie)")
         }
-        let label = y.label(ordinal: ordinal)
+        let label = y.monthLabel(ordinal: ordinal)
         let extendedYear = y.relatedISOYear + Self.extendedYearOffset
         let (era, yearInCycle) = Self.eraAndYear(extendedYear: extendedYear)
 
@@ -1011,14 +1023,15 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         if est < target {   // target mid-month: next month start
             (est, y, ordinal) = Self.nextMonthStart(after: y, ordinal: ordinal)
         }
-        let lbl = y.label(ordinal: ordinal)
+        let lbl = y.monthLabel(ordinal: ordinal)
         if lbl.month != display || lbl.isLeap != leap {
             (est, y, ordinal) = Self.nextMonthStart(after: y, ordinal: ordinal)
         }
         return est
     }
 
-    private static func nextMonthStart(after y: _ChineseYear, ordinal: Int) -> (Int, _ChineseYear, Int) {
+    // Returns the start of the month after (`y`, `ordinal`): its rata die, the year it falls in, and its ordinal within that year (rolling into the next year when past the last month).
+    private static func nextMonthStart(after y: _ChineseYear, ordinal: Int) -> (rataDie: Int, year: _ChineseYear, ordinal: Int) {
         if ordinal < Int(y.monthCount) {
             return (y.monthStartRataDie(ordinal: ordinal + 1), y, ordinal + 1)
         }
@@ -1064,7 +1077,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             let timeZone = self.timeZone
             let (extendedYear, ordinal, d, secondsInDay) = fieldsAndTime(for: result, in: timeZone)
             let y = Self.yearData(extendedYear: extendedYear)
-            let label = y.label(ordinal: ordinal)
+            let label = y.monthLabel(ordinal: ordinal)
             let (newExt, ovf) = extendedYear.addingReportingOverflow(yearsToAdd)
             guard !ovf, newExt > Self.extendedYearLowerBound, newExt < Self.extendedYearUpperBound else { return nil }
             // ICU's add-year pin: resolve the month by single-bump, pin the day via a second resolution that keeps the source leap flag, then spill leniently (Calendar::add + getActualMaximum semantics).
@@ -1074,7 +1087,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
                 fatalError("year(containingRataDie:) returned a year not containing rataDie \(start0)")
             }
             let ord1 = od1.ordinal
-            let display1 = y1.label(ordinal: ord1).month
+            let display1 = y1.monthLabel(ordinal: ord1).month
             let start2 = Self.resolvedMonthStart(extendedYear: newExt, display: display1, leap: label.isLeap)
             let y2 = _ChineseCalendarEngine.year(containingRataDie: start2)
             guard let od2 = y2.ordinalAndDay(rataDie: start2) else {
