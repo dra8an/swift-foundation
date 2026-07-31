@@ -132,9 +132,13 @@ Allocation/resolution samples are the trustworthy kind.
         `String` input.
       - `quickCJKPrimary` (static) / `quickPrimary` (instance) duplication
         (RootCollator.swift:279+639): CONFIRMED, intentional. The static
-        variant exists for codegen reasons (instance methods called from
-        pinned-buffer closures regress every corpus +17-22%). Documented
-        as kept-in-sync via differential suites.
+        variant exists for codegen reasons on Intel/6.3.1 (instance
+        methods called from pinned-buffer closures regress every corpus
+        +17-22% on that platform — measured twice by the other machine).
+        **VERIFIED on Apple Silicon 6.4: NO regression** (instance
+        method inside the closure measures identical — ASCII 17/17,
+        CJK 28/25, paths 42/42). The duplication is an Intel workaround.
+        Kept for cross-platform safety until Intel/6.3.1 is dropped.
       - `followerIsStarter` 6-line pattern duplicated in `next()` and
         `refill()` (NFDIterator.swift:92+123): CONFIRMED but extracting
         into a helper risks inlining changes on the NFD hot path.
