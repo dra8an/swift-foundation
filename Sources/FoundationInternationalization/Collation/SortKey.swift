@@ -594,6 +594,25 @@ enum CollationKeys {
         } while p < variableTop && p > CollationConstants.mergeSeparatorPrimary
     }
 
+    /// Flushes a run of common weights into the batch using the standard compression pattern: emit full maxCount runs as middle bytes, then emit the directional boundary byte (low + remainder for weights below common, high - remainder for weights above).
+    @inline(__always)
+    private static func flushCommon(
+        _ count: inout Int, weight: UInt32, threshold: UInt32,
+        low: UInt32, middle: UInt32, high: UInt32, maxCount: Int,
+        batch: inout ByteBatch, key: inout [UInt8]
+    ) {
+        count -= 1
+        while count >= maxCount {
+            batch.put(UInt8(truncatingIfNeeded: middle), &key)
+            count -= maxCount
+        }
+        let b: UInt32 = weight < threshold
+            ? low + UInt32(count)
+            : high - UInt32(count)
+        batch.put(UInt8(truncatingIfNeeded: b), &key)
+        count = 0
+    }
+
     /// Primary level, written directly (same emission as the buffered writer's primary block — that one was already direct since the primary-byte batching round).
     private static func writePrimaryDirect(
         _ ces: borrowing [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
@@ -668,16 +687,9 @@ enum CollationKeys {
                 commonSecondaries += 1
             } else {
                 if commonSecondaries != 0 {
-                    commonSecondaries -= 1
-                    while commonSecondaries >= secCommonMaxCount {
-                        batch.put(UInt8(truncatingIfNeeded: secCommonMiddle), &key)
-                        commonSecondaries -= secCommonMaxCount
-                    }
-                    let b: UInt32 = s < 0x0500
-                        ? secCommonLow + UInt32(commonSecondaries)
-                        : secCommonHigh - UInt32(commonSecondaries)
-                    batch.put(UInt8(truncatingIfNeeded: b), &key)
-                    commonSecondaries = 0
+                    flushCommon(&commonSecondaries, weight: s, threshold: 0x0500,
+                               low: secCommonLow, middle: secCommonMiddle, high: secCommonHigh,
+                               maxCount: secCommonMaxCount, batch: &batch, key: &key)
                 }
                 if isNoCE { break }
                 batch.putWeight16(s, &key)
@@ -857,32 +869,18 @@ enum CollationKeys {
                 commonTertiaries += 1
             } else if (tertiaryMask & 0x8000) == 0 {
                 if commonTertiaries != 0 {
-                    commonTertiaries -= 1
-                    while commonTertiaries >= terOnlyCommonMaxCount {
-                        batch.put(UInt8(truncatingIfNeeded: terOnlyCommonMiddle), &key)
-                        commonTertiaries -= terOnlyCommonMaxCount
-                    }
-                    let b: UInt32 = t < 0x0500
-                        ? terOnlyCommonLow + UInt32(commonTertiaries)
-                        : terOnlyCommonHigh - UInt32(commonTertiaries)
-                    batch.put(UInt8(truncatingIfNeeded: b), &key)
-                    commonTertiaries = 0
+                    flushCommon(&commonTertiaries, weight: t, threshold: 0x0500,
+                               low: terOnlyCommonLow, middle: terOnlyCommonMiddle, high: terOnlyCommonHigh,
+                               maxCount: terOnlyCommonMaxCount, batch: &batch, key: &key)
                 }
                 if isNoCE { break }
                 if t > 0x0500 { t += 0xc000 }
                 batch.putWeight16(t, &key)
             } else if !upperFirst {
                 if commonTertiaries != 0 {
-                    commonTertiaries -= 1
-                    while commonTertiaries >= terLowerFirstCommonMaxCount {
-                        batch.put(UInt8(truncatingIfNeeded: terLowerFirstCommonMiddle), &key)
-                        commonTertiaries -= terLowerFirstCommonMaxCount
-                    }
-                    let b: UInt32 = t < 0x0500
-                        ? terLowerFirstCommonLow + UInt32(commonTertiaries)
-                        : terLowerFirstCommonHigh - UInt32(commonTertiaries)
-                    batch.put(UInt8(truncatingIfNeeded: b), &key)
-                    commonTertiaries = 0
+                    flushCommon(&commonTertiaries, weight: t, threshold: 0x0500,
+                               low: terLowerFirstCommonLow, middle: terLowerFirstCommonMiddle, high: terLowerFirstCommonHigh,
+                               maxCount: terLowerFirstCommonMaxCount, batch: &batch, key: &key)
                 }
                 if isNoCE { break }
                 if t > 0x0500 { t += 0x4000 }
@@ -900,16 +898,9 @@ enum CollationKeys {
                     t += 0x4000
                 }
                 if commonTertiaries != 0 {
-                    commonTertiaries -= 1
-                    while commonTertiaries >= terUpperFirstCommonMaxCount {
-                        batch.put(UInt8(truncatingIfNeeded: terUpperFirstCommonMiddle), &key)
-                        commonTertiaries -= terUpperFirstCommonMaxCount
-                    }
-                    let b: UInt32 = t < (terUpperFirstCommonLow << 8)
-                        ? terUpperFirstCommonLow + UInt32(commonTertiaries)
-                        : terUpperFirstCommonHigh - UInt32(commonTertiaries)
-                    batch.put(UInt8(truncatingIfNeeded: b), &key)
-                    commonTertiaries = 0
+                    flushCommon(&commonTertiaries, weight: t, threshold: terUpperFirstCommonLow << 8,
+                               low: terUpperFirstCommonLow, middle: terUpperFirstCommonMiddle, high: terUpperFirstCommonHigh,
+                               maxCount: terUpperFirstCommonMaxCount, batch: &batch, key: &key)
                 }
                 if isNoCE { break }
                 batch.putWeight16(t, &key)
@@ -973,16 +964,9 @@ enum CollationKeys {
                     q = 0xfc + ((q >> 6) & 3)
                 }
                 if commonQuaternaries != 0 {
-                    commonQuaternaries -= 1
-                    while commonQuaternaries >= quatCommonMaxCount {
-                        batch.put(UInt8(truncatingIfNeeded: quatCommonMiddle), &key)
-                        commonQuaternaries -= quatCommonMaxCount
-                    }
-                    let b: UInt32 = q < quatCommonLow
-                        ? quatCommonLow + UInt32(commonQuaternaries)
-                        : quatCommonHigh - UInt32(commonQuaternaries)
-                    batch.put(UInt8(truncatingIfNeeded: b), &key)
-                    commonQuaternaries = 0
+                    flushCommon(&commonQuaternaries, weight: q, threshold: quatCommonLow,
+                               low: quatCommonLow, middle: quatCommonMiddle, high: quatCommonHigh,
+                               maxCount: quatCommonMaxCount, batch: &batch, key: &key)
                 }
                 if !isNoCE {
                     batch.put(UInt8(truncatingIfNeeded: q), &key)
