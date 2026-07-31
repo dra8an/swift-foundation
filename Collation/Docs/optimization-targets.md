@@ -164,11 +164,15 @@ Allocation/resolution samples are the trustworthy kind.
         `pendingMark` before calling `clearBuffers()`.
       - 18 copy-pasted common-weight flush blocks in SortKey.swift:
         9 in the buffered writer (to be extracted, see above), 9 in
-        the direct writer. The direct writer's 9 could be unified
+        the direct writer. The direct writer's 9 COULD be unified
         with an `@inline(__always)` helper parameterized on
-        `(low, middle, high, maxCount)`, but the risk of inlining
-        changes on the sort-key hot path outweighs the maintenance
-        cost of 9 small blocks with different constant tuples.
+        `(low, middle, high, maxCount)`. NOT TESTED — the concern
+        about inlining regressions is based on earlier experiences
+        (§19, §34 showed codegen sensitivity in this file) but has
+        not been measured for this specific refactor. Should be A/B
+        tested before deciding. Each block is ~6 lines; 9 × 6 = ~54
+        lines of repetition; a wrong constant is a silent sort-key
+        corruption caught only by the byte-identity verification.
 - [ ] UPSTREAM-PREP conformance pass (CONTRIBUTION_GUIDELINE.md, read
       2026-07-20; comment unwrap DONE at `05677e6`): remaining items —
       force unwraps (`base!` in the engine paths; the guideline wants
