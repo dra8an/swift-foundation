@@ -745,24 +745,50 @@ A reserved key eliminates one pointer dereference on every `takeScratch()`
 
 ### 22. UTF8Span / non-escapable Ref type for string access
 
-**Status:** future (macOS 26+ gating)
+**Status:** RETIRED (2026-07-31). Three investigations, same conclusion.
 
-Meeting notes: "Use UTF8Span for writing parsers and non-mutating string
-algorithms" and "Employ the Ref type (a non-escapable wrapper) to avoid
-reference counting for strings."
+**Round 1 (2026-06-17, Doc 16 §9):** `String.utf8Span.span` gives
+`Span<UInt8>` — closure-free byte access. BUT: `~Escapable` prevents
+storing in struct fields; non-inlined functions taking Span are 3.3×
+slower (lifetime-check overhead). Parked pending toolchain improvements.
 
-We already explored Span in round 14 (Doc 16 §9): `String.utf8Span.span`
-gives closure-free byte access identical to `withContiguousStorageIfAvailable`
-but `~Escapable` prevents storing in struct fields. The "Ref type" pattern
-could solve this: wrap the buffer in a non-escapable Ref that we pass down
-the call chain with `@inline(__always)`.
+**Round 2 (2026-07-15, this machine):** Tested Span-obtained-once vs
+per-iteration vs `withContiguousStorageIfAvailable`. Result: Span
+obtained once = 2 ns (same as closure). But the per-call `utf8Span.span`
+property chain adds ~3 ns. Net: no benefit over the closure we already
+use. Also confirmed the §36 finding from the other machine:
+`String.UnicodeScalarView.Iterator` at 4.4 ns/scalar beats hand-rolled
+byte decoding — the Span pipeline refactor's premise was a phantom.
 
-Potential: −30–40% on CJK/Thai compare (eliminates the
-`withContiguousStorageIfAvailable` closure + `makeIterator` ARC). Requires
-the entire 5-call-deep CE chain to use `@inline(__always)` (already done)
-and accept `~Escapable` propagation.
+**Round 3 (2026-07-31, this machine, `-enable-experimental-feature
+Lifetimes`):** The `~Escapable` struct storage limitation IS now
+liftable with `@_lifetime(borrow x)` annotations + the Lifetimes
+feature flag. A `SpanIterator` struct holding `Span<UInt8>` compiles
+and runs at parity with `withContiguousStorageIfAvailable` on long
+strings. BUT:
+- **Passing Span to functions causes runtime traps** (Exit code 133 —
+  lifetime checker rejects the escape even for `@inline(__always)`
+  callees). Cannot build a multi-function compare path.
+- **Two-span compare (our actual shape) is 3.4× SLOWER**: getting
+  `utf8Span.span` on two strings inline costs ~10 ns overhead vs 4 ns
+  for nested `withContiguousStorageIfAvailable` closures. The property
+  chain dominates on short strings (our bench corpora are 5–60 bytes).
+- **The closure approach IS the fast path.** It pins both buffers in
+  one composite operation; Span pays the property chain independently
+  per string.
 
-**Action:** revisit when macOS 26+ gating is acceptable for the hot path.
+**Verdict:** Span offers no performance advantage over
+`withContiguousStorageIfAvailable` for our use case (two short strings,
+byte-level compare). The closure structure we have is optimal. The only
+remaining Span opportunity is code simplification (eliminating the
+static-function dance for Intel/6.3.1 compatibility) — and that's
+moot once Intel/6.3.1 is dropped, since Apple Silicon handles instance
+methods in closures without penalty.
+
+**Do not revisit** unless: (a) the `utf8Span.span` property access
+overhead drops below 1 ns, (b) the runtime lifetime checker stops
+trapping on Span-to-function passing, or (c) the compare path moves
+to long strings where the property overhead is amortized.
 
 ---
 
