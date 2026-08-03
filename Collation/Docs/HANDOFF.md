@@ -286,7 +286,92 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   1.53× faster than system, contains 2.8–2.9×; only the two cjk range
   cells (0.84–0.86×) remain sub-parity. The thai frontier is now the NFD
   per-scalar floor — the parked Span refactor.**
-  Technique log: `optimization-targets.md` §20 (steps 6–8), §27, §29–§45;
+  2026-07-24 (machine 2): **automated 4-angle code review of the whole
+  engine directory** — 16 findings, 4 fixed (`e5e9f51`): `reorderEx`'s
+  unbounded `while q >= ranges[i]` walk and `lastPrimaryForGroup`'s
+  `scriptStarts[index + 1]` both gained bounds guards (both were
+  ICU-data-invariant-protected, both crash on a corrupt/truncated
+  tailoring binary), `PoolLock.deallocate` gained the missing
+  `deinitialize(count:)`, and the dead `ScratchPool` class (21 lines,
+  never instantiated — `ThreadLocalScratch` replaced it) was removed.
+  The other 12 are recorded with per-item rationale in the
+  optimization-targets audit list (`62f0b14`) — read that before
+  re-reviewing, it explains why each was accepted rather than fixed
+  (pthread_key_delete race: mitigated by CollatorCache's long-lived
+  Storage; `scalarAt` unchecked continuation bytes: relies on String's
+  UTF-8 well-formedness, standard practice, and a guard would cost
+  ~2 ns/scalar on the hot path; the rest latent/unreachable).
+  Same round, two claims in the technique log were CHALLENGED AND
+  MEASURED rather than taken on faith:
+  (a) the "18 copy-pasted common-weight flush blocks" item said
+  unifying them risks hot-path inlining regressions — that was an
+  untested guess by analogy to §19/§34. Measured: **5 of the direct
+  writer's 9 blocks unified into one `@inline(__always) flushCommon`
+  (`dcd82a5`) is exactly performance-neutral** (ascii 173→171, latin
+  184→184, cjk 190→190, paths 429→431 — all noise; keys byte-identical,
+  suite green). The remaining 4 have genuinely different shapes
+  (nibble-packed case level via `packCaseByte`, unidirectional
+  quaternary-shifted, backwards-secondary writing straight to `key`)
+  and stay inline.
+  (b) §31's rule that the pinned-buffer closures must call STATIC
+  functions — the +17-22% instance-call penalty was **verified to be
+  Intel/6.3.1-specific** (`20edc9e`): on Apple Silicon 6.4 an instance
+  `quickCJKDispatch` calling the instance `quickPrimary` from inside
+  the closure measures identical (ascii 17/17, cjk 28/25, paths 42/42).
+  The static twin + `QuickCJKSetup` box (45 lines of duplication) is an
+  Intel workaround; it can be deleted when 6.3.1 is dropped, which
+  upstream `main` (Swift 6.4+) would allow. Documented, not implemented.
+  2026-07-31: **§22 Span RETIRED after a third investigation**
+  (`16f9907`). `-enable-experimental-feature Lifetimes` DOES now lift
+  the `~Escapable` struct-storage limitation (a `SpanIterator` holding
+  `Span<UInt8>` compiles with `@_lifetime(borrow x)` and runs at parity
+  with the closure on long strings), but: passing a Span to a helper
+  function traps at runtime (exit 133, the lifetime checker rejects the
+  escape even for `@inline(__always)` callees), and **the two-span
+  compare shape we actually need is 3.4× SLOWER** — `utf8Span.span`
+  costs ~5 ns per string and we need two, versus ~4 ns total for the
+  nested `withContiguousStorageIfAvailable` that pins both. Do not
+  revisit unless the property access drops below 1 ns or the compare
+  path moves to long strings.
+  **UPSTREAM-PREP, new box (serious, blocked):** the buffered sort-key
+  writer — `writeSortKeyUpToQuaternary` + `SortKeyLevel` +
+  `SortKeyLevelBuffers` (~520 lines of SortKey.swift) plus
+  `ScratchBuffers.levels` — is called ONLY by the sk-ladder tool. It
+  must not ship in the production module. Blocked because the ~30
+  compression constants it shares with the direct writer are
+  `private static` inside the `CollationKeys` enum; widening them to
+  internal was rejected as API creep. Options recorded: duplicate the
+  constants into the tool, restructure `CollationKeys` to separate
+  constants from methods, or move the writer to a test target with
+  `@testable import` (cleanest, needs the upstream package structure).
+  **Current Apple Silicon baseline (2026-07-31/08-03, full-WMO
+  EngineBench vs ICU 79; supersedes the tables below for AS):**
+  compare ascii 17/9 (1.9×), latin 17/10 (1.7×), **cjk 28/42 = 0.7×
+  (we are FASTER)**, paths 42/29 (1.4×), thai 275/173 (1.6×);
+  sortKey ascii 175/105 (1.7×), latin 190/122 (1.6×), cjk 189/120
+  (1.6×), paths 425/369 (1.2×), thai 229/153 (1.5×). Foundation APIs
+  (Table 2) 1.9–6.9× FASTER than system ICU with zero cells at or
+  behind parity. Suite gate 1517/123.
+  **IN FLIGHT at the time of writing:** a workflow-orchestrated
+  optimization hunt over the engine compare/sortKey paths (8 ideation
+  lenses → adversarial verification → ranked plan), targeting the
+  remaining 8 ns ascii-compare and 70 ns ascii-sortKey gaps. Its
+  ranked output was not yet folded into this doc — check
+  optimization-targets.md for a §46 or later, and if absent, the hunt
+  did not land and the standing frontier is unchanged. Note for
+  whoever picks it up: the sortKey writer design space has a THIRD
+  point nobody has tried — (a) single-pass + heap level buffers was
+  the old writer, (b) multi-pass + no buffers is shipped today, and
+  **(c) single-pass + STACK level buffers is what ICU actually does
+  and has never been measured here.** At default tertiary strength (b)
+  traverses the CE array three times and re-runs the variable-CE skip
+  per pass; (c) traverses once. This is NOT §15 (which fused CE
+  *production* with the writer and regressed +11..44%) — it concerns
+  only the writer's internal pass structure, CE array still
+  materialized first.
+  Technique log: `optimization-targets.md` — read THE ALLOCATION/
+  RESOLUTION HUNT note at the top before any perf work, then §20
+  (steps 6–8), §27, §29–§45 and the audit list;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
