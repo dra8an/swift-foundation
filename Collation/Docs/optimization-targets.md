@@ -60,6 +60,54 @@ hasBuffered nulls both "showed" ~265 samples and delivered nothing).
 Allocation/resolution samples are the trustworthy kind.
 
 **Standing audit list (paths not yet through the hunt):**
+- [x] **THE STANDING HOLE — CLOSED for the internal invariant (§47).**
+      `PositionInvariantTests` asserts CE-iterator scalar count == NFD scalar
+      count over both conformance corpora × 3 modes (catches the §46(b) class:
+      252 mismatches per file on the unfixed source), plus five oracle-free
+      API-level position invariants. Still open as a SECOND layer: an ICU
+      `usearch_*` position differential for the boundary rules, and the
+      `gen_fuzz_corpus.py` gap (the fuzz corpus reaches no discontiguous
+      contraction at all).
+- [x] **Discontiguous-contraction span — FIXED (§47).** A match ENDING at a
+      discontiguous contraction under-reported its end (the CE consumes a
+      NON-CONTIGUOUS scalar set; a running count cannot express where it
+      ends), landed mid-combining-sequence and was rejected → wrong nil.
+      Fixed with per-call NFD spans in CEIterator (positions packed into the
+      lookahead entries) plus min-start/max-end over a match's CEs in
+      confirmedRange. Cost: sortKey +1%, search +2.4%, accepted on the §44
+      precedent; the cheaper flag-gated variant was rejected for making
+      correctness opt-in. Zero known issues in the suite.
+- [ ] **Position gate, second layer.** §47 closed the internal invariant; two
+      pieces remain. (1) An ICU `usearch_*` position differential, which is
+      the only thing that can check our BOUNDARY RULES (the internal invariant
+      cannot — it only proves the scalar accounting is consistent). (2)
+      `Tools/gen_fuzz_corpus.py` emits no discontiguous contractions at all,
+      so `Golden/fuzz-corpus.txt` passes §47's invariant even on the unfixed
+      source; it should emit [starter + low-ccc mark + high-ccc mark] triples
+      over the contraction-bearing starters (Cyrillic и/И, Arabic alef forms,
+      Greek). Historical note on why this matters: four bugs of one class
+      (§39 rebaseRange substring index space, §44/§45 tailoring default
+      settings, §46(b) scalar count, §47's non-contiguous span) were all found by
+      audit and missed by every suite, because until §47 every gate compared
+      CE bytes or KEY bytes and nothing compared reported OFFSETS.
+- [ ] **Dynamic exclusivity on the scratch iterators — highest-value perf
+      item left.** Disassembly (two independent lenses, confirmed in the
+      shipping WMO object): `sortKey` executes 2 `swift_beginAccess`/
+      `endAccess` pairs on `ScratchBuffers.left`, the compare pipeline path 4,
+      because the iterators are stored properties of a class. Also proves
+      `CEIterator.reset` is an out-of-line call. Fix (a) fuse reset+collectAll
+      into one ScratchBuffers method so one scope covers both; (b) hold the
+      iterators as `UnsafeMutablePointer<CEIterator>` (pointer accesses are
+      not exclusivity-checked). Est. 2–6 ns sortKey, 8–12 ns thai compare.
+      See §46's refuted/open list for the rest of that hunt's untried
+      candidates.
+- [x] sortKey writer design space — CLOSED (§46(a)): the third point
+      (single-pass + region level buffers, ICU's own shape) had never been
+      measured and beats both prior writers. sortKey −2.1..−4.7% on all five
+      corpora; paths to 1.03× vs ICU. Per-CE byte bounds proven and asserted.
+- [x] Digit handling in the simple-CE tables — CLOSED (§46(d)): §27 named the
+      defect in passing and it was never tried. Split the table per numeric
+      mode, selected at reset. paths sortKey −6.1%, +2 KB.
 - [x] §26 wrapper string conversions — AUDITED (§39): found and fixed a
       Substring index-space BUG in rebaseRange; duplicate conversions
       deduped. The one remaining Substring materialization is the
@@ -233,7 +281,12 @@ already).
 
 ### 2. Pre-resolve options dispatch at init
 
-**Status:** try later
+**Status:** SUPERSEDED — the estimate below is WRONG; see §46(c), which
+measured the emitted code and shipped a fix. `icuOptions` compiled to an
+out-of-line 28-instruction getter with a global switch-table load (not "~5
+inlined bitwise ops"), called once per compare and once per sortKey.
+`@inline(__always)` removed it: −1 ns on every compare row, verified 4/4
+rounds, symbol count 2 → 0.
 
 `compare()` checks the options word per call to decide which path to take
 (strength, alternate handling, case-first, etc.). In practice the options
@@ -243,10 +296,12 @@ Pre-resolve at init: store an enum case or function pointer for "which compare
 implementation to use" so the per-call branch is a direct call, not a
 multi-field check.
 
-**Expected gain:** 1–3 ns (branch prediction probably handles this well
-already, so may be negligible). Analysis suggests the `icuOptions` computed
-property is ~5 bitwise ops and the conditionals are perfectly predicted —
-likely sub-nanosecond total. Low priority.
+**Expected gain (the wrong estimate, kept as the lesson):** 1–3 ns (branch
+prediction probably handles this well already, so may be negligible).
+Analysis suggests the `icuOptions` computed property is ~5 bitwise ops and the
+conditionals are perfectly predicted — likely sub-nanosecond total. Low
+priority. **The lesson: this was read off Swift source, never off the emitted
+object. Disassemble before pricing.**
 
 ---
 
@@ -1891,3 +1946,380 @@ fingerprint; useful ID trick when a helper inlines away).
 restores root order, root collator unchanged; wrapper — the same pair
 flips through localizedCompare when the current locale flips to fr_CA
 (the §44 machinery).
+
+---
+
+### 46. The writer's third design point, a search-position bug, and two per-call resolutions
+
+**Status:** four changes shipped 2026-08-03 (machine 2). Gates: **1519 tests /
+123 suites** green (two regression tests added; superseded the same day by
+§47's position suite → **1527/124**), sort-key
+byte identity re-verified over 240k corpus lines × 8 option sets via the
+sk-ladder identity check, plus the standing byte-identical-key suites (21
+option sets × 2 data variants) and 52k fuzz keys.
+
+Found by a workflow-orchestrated hunt (4 ideation lenses over the engine ×
+2 adversarial skeptics per candidate). The hunt was stopped after the
+ideation phase and 5 of 38 verifiers: measurement on a quiet machine is
+worth more than further LLM review, and 8 live agents make benchmarking
+impossible. 19 candidates were produced; the four below shipped, the rest
+are recorded at the end of this section.
+
+**Interleaved A/B, EngineBench full WMO, min over 3–4 rounds, vs `58e5731`
+(each run itself min-over-9). ICU 79 re-measured in the same session — the
+machine was NOT fully quiet (load ~8), which inflates both sides, so these
+ratios are same-session and want a quiet re-baseline:**
+
+| corpus | sortKey before | after | Δ | ICU | ratio (was) |
+|---|---:|---:|---:|---:|---|
+| ascii | 172 | **164** | −4.7% | 119 | 1.38× (1.7×) |
+| latin | 190 | **186** | −2.1% | 127 | 1.46× (1.6×) |
+| cjk | 189 | **181** | −4.2% | 126 | 1.44× (1.6×) |
+| paths | 423 | **384** | −9.2% | 372 | **1.03×** (1.2×) |
+| thai | 225 | **217** | −3.6% | 156 | 1.39× (1.5×) |
+
+skRet −2.4..−9.8%. compare: ascii 16 (1.78×), latin 15, **cjk 26 vs 41 =
+0.63× (faster)**, paths 41, thai 270. Compare rows carry ±1 ns integer
+quantization in EngineBench (1 ns on the 16 ns ascii row prints as ±6%) —
+read compare deltas per-round, never from a single min.
+
+#### (a) The single-pass writer: the design point nobody had measured
+
+The writer design space has three points, and only two had ever been built
+here: **(a) single-pass + heap level buffers** was the original buffered
+writer, **(b) multi-pass + no level buffers** was §43's shipped direct
+writer, and **(c) single-pass + STACK/region level buffers is what ICU
+actually does** (`SortKeyLevel` is a `MaybeStackArray<uint8_t, 40>`, four of
+them, one traversal). (c) had never been tried. It wins.
+
+`writeSortKeyUpToQuaternarySingle`: one traversal of the CE array; the
+primary level AND every beyond-primary level accumulate into disjoint slices
+of a single `withUnsafeTemporaryAllocation` region (stack at the sizes real
+strings produce, heap above — the MaybeStackArray semantics, from the
+stdlib); the key is assembled from the slices at the end. The loop never
+touches `key`, so it pays no capacity check, no uniqueness check and no
+exclusivity scope per byte. At default tertiary strength (b) traversed the CE
+array three times and re-ran the variable-CE skip on each pass; this
+traverses once.
+
+Region capacities come from a proven per-CE byte bound, asserted on every
+store so a wrong bound trips the debug suite instead of corrupting memory.
+**The bounds and their amortization proof** (an agent derived them
+independently and tried to break them; these are the tight ones, the shipped
+constants are (weight bytes + 1) with headroom):
+- N = `ces.count`, INCLUDING the trailing NO_CE sentinel, and the writer's
+  loop consumes exactly N CEs (every iteration reads ≥ 1; the variable
+  block's inner loops read the rest).
+- primary ≤ 5N − 5 (one separator byte 03/ff, plus p1..p4; the NO_CE
+  iteration emits nothing; no trailing 01 on this level).
+- secondary forward ≤ 2N − 1 including the trailing 01 that `appendTo` drops.
+- **Flush amortization (the general theorem):** a CE that increments a
+  common-run counter emits ZERO bytes, every flush zeroes its counter, and a
+  flush of k counted CEs emits 1 + (k−1)/maxCount bytes with maxCount ≥ 7
+  everywhere. Runs are disjoint, so no flush is unbounded relative to N and
+  one byte per counted CE covers every flush in the level.
+- Corollary worth keeping: the pre-existing `primBuf` guard
+  `primCount >= primCapacity - 6` is sound with exactly ONE byte of slack,
+  and only because primary emits at most 5 bytes per CE.
+
+Writer-only effect is visible on every corpus (sortKey −2.1..−4.2%), and
+**paths improved too (−3.3% for this change alone)** — §43 had to accept a
++5% paths residual to get the multi-pass writer's wins, and (c) takes that
+row back. `__TEXT` shrank 4.6 KB; the `Array.replaceSubrange` and
+`_ArrayBufferProtocol.copying` specializations disappear from the object.
+
+**Note for whoever revisits this:** the buffered writer stays as the
+reference implementation and the sk-ladder now checks all THREE writers for
+byte identity (`skWriterBuffered` / `skWriterDirect` / `skWriterSingle`) and
+times all three (S4 / S4b / S4c). Writer-only, same binary, AS:
+
+| writer | ascii | paths |
+|---|---:|---:|
+| (a) buffered — single-pass + heap level buffers | 120 | 248 |
+| (b) direct — multi-pass, no level buffers | 102 | 225 |
+| **(c) single — single-pass + region level buffers** | **94** | **213** |
+
+(c) beats (b) by 8% / 5% and (a) by 22% / 14% — the design-space ordering,
+measured in one binary. §43's rule still holds (the ladder is not the
+shipping binary, EngineBench is the truth), but here both agree in sign and
+rough magnitude. The ladder's `ladderScratch` was updated to pass the §46(d)
+digit tables, or it would silently diverge from production.
+This does NOT reopen §15 (fusing CE *production* into the writer, +11..44%)
+— the CE array is still materialized first.
+
+#### (b) CORRECTNESS BUG: discontiguous contractions did not count the scalar they consume
+
+`CollationElements.swift`, the UTS #10 S2.1.3 "remove C" site. When
+discontiguous matching extends S by a non-adjacent mark C, `removeAhead(at:)`
+drops C from the lookahead but never touched `scalarsConsumed`; every other
+consumption path (`popScalar`, `consumeAhead`) does, and the trailing
+`consumeAhead(bestLength)` covers only the CONTIGUOUS part of the match. So
+the counter under-counted by one per discontiguously matched scalar,
+**cumulatively for the rest of the string**.
+
+`scalarsConsumed` has exactly two readers, both in `CollationSearch`: it is
+the `nfdStart`/`nfdEnd` annotation on every `AnnotatedCE`, which is what
+`confirmMatch`/`confirmedRange` convert into the returned `String.Index`
+range. So every match reported after a discontiguous contraction was wrong.
+
+**Measured, not argued** (probe: instrument the `remove C` site in a copied
+tree, `/tmp/build_disc_probe.sh`, not committed):
+- 84 of 206 268 lines of the UCA conformance corpus fire the branch
+  (108 hits). thai and latin corpora: zero — which is why no benchmark and
+  no gate ever noticed.
+- Place a sentinel after each firing sequence and ask `search` for it:
+  **40 of 40 wrong, 27 of them `nil`** — the match is MISSED, not merely
+  shifted, because the off-by-one range fails boundary validation.
+- Add `scalarsConsumed += 1` to the probe copy: **40 of 40 correct.**
+
+Shipped fix is that one increment and nothing else. The candidate that
+surfaced this also wanted C appended to `consumedExtras`; that was dropped —
+it would change prefix-matching history for out-of-order consumption, which
+the position bug does not require. The scoped fix cannot alter CE values or
+sort keys at all, given the two readers. Perf-neutral by A/B (cold branch;
+sortKey rows flat, compare rows inside quantization).
+
+Regression tests (`SearchTests.swift`): root contracts Cyrillic и + U+0306
+(breve, ccc 230); with U+0334 (ccc 1) between them the breve is not blocked,
+so S2.1.3 fires. Four cases across both canonical mark orderings, the
+precomposed й, and uppercase И. Verified to FAIL on the unfixed source (all
+four returned `nil`) before the fix went in. The expectation is computed with
+scalar-index arithmetic, not `String.range(of:)`, so the test does not depend
+on the API under test.
+
+**This is the fourth bug of exactly this class** (§39 rebaseRange, §44/§45
+tailoring defaults, now this). Every one was found by an audit item, none by
+a benchmark or a test suite, and the reason is structural: **every gate we
+have compares CE bytes or key bytes, and none of them compares POSITIONS.**
+That is the standing hole. A position-level differential (our
+`search`/`range` offsets vs ICU's `usearch_*` over a corpus) is the gate that
+would have caught all four.
+
+#### (c) `icuOptions` was an out-of-line 28-instruction getter
+
+§2 of this document dismissed pre-resolving the options word as "~5 bitwise
+ops … perfectly predicted … likely sub-nanosecond, low priority". **That
+estimate was made from SOURCE and is wrong.** In the shipped Release/WMO
+object, `compareFastPath` does `bl` into
+`CollationOptions.icuOptions.getter`, which is 27 instructions + ret and
+contains an `adrp/add/ldr w8,[x9,x8,lsl#2]` global switch-table load —
+`Strength` has non-contiguous raw values (0,1,2,3,15), so the compiler builds
+a jump table. It runs once per compare and once per sortKey, purely to test
+the word against the pre-baked `defaultFLWord`.
+
+Fix: `@inline(__always)`. Symbol verification: the getter symbol goes 2 → 0
+occurrences in `CollEngine.o`. **Measured −1 ns on every compare row, and it
+is not wobble** — ascii read 17 in all four base rounds and 16 in all four
+new rounds; latin 16→15 (3/4), paths 42→40/41, cjk −1. sortKey flat to −0.6%.
+
+Lesson, and it generalizes: **an "it's obviously a few cheap ops" estimate
+read off Swift source is not evidence. Disassemble the shipping object.** A
+computed property over stored fields is not automatically inlined, and an
+enum with non-contiguous raw values costs a table load.
+
+#### (d) Digit-resolved simple-CE tables: the paths row to parity
+
+§8 built the 128-entry ASCII simple-CE table and left digits as 0 sentinels;
+§27 (numeric dense-value path) *names* the reason in passing — "digits can't
+use the pre-computed ASCII CE table because the table is shared across option
+sets (numeric on/off), so every digit goes through the full pipeline" — and
+nobody ever tried splitting the table. In non-numeric mode (the default) a
+DIGIT-tag CE32 resolves by ONE indirection into `ce32s`, which lands on a
+plain CE32 for every root digit: fully resolvable at init.
+
+Shipped: `buildSimpleCEs(resolvingDigits:)` follows that indirection, so
+`Storage` now holds four tables (ASCII and Thai × with/without digits,
++2 KB). `CEIterator` stores both variants and `reset` selects — **once per
+reset, never per scalar**; adding a per-scalar `numeric && isDigit` test to
+the hot path instead would have been the §19 mistake. The `…WithDigits`
+parameters default to empty and fall back to the plain tables, so the search
+entries (which build iterators without tables) are unaffected.
+
+**Measured: paths sortKey 409 → 384 (−6.1%), skRet 488 → 457 (−6.4%)**,
+every other corpus neutral within quantization. Per-round paths sk: base
+413/413/410/417 → new 382/382/387/389; paths compare 41 on both sides in all
+four rounds (the single 40 reading in an earlier round was wobble). Memory
+cost +2 KB — worth it here at −6%, where §12's +6 KB for −2% was not.
+
+#### Refuted or superseded by this round (do not re-propose)
+
+- **Skip the normalization-trie probe across the CJK range** — REFUTED by
+  both skeptics. §36 already measured this exact probe at 0.9 ns/scalar (the
+  candidate assumed 1.9); one skeptic parsed `nfd.bin` and found the whole
+  0x3400..0x9FFF span maps to ONE deduplicated all-zero data block, so the
+  "two-load dependent chain" is L1-hot and the OoO core hides it behind the
+  offset-tag divisions. Ceiling ≤ 1.2 ns/line, inside noise, and it costs
+  thai 2 extra instructions per scalar for nothing.
+- **All-common level elision** (accumulate a 4-instruction summary in the
+  primary pass; skip the secondary/tertiary pass when every weight is
+  common). Strong evidence behind it — an agent dumped real ICU keys and
+  split them at the 01 separators: the secondary level is exactly ONE
+  compressed byte on 100% of bench-ascii and 100% of bench-cjk, the tertiary
+  level one byte on 100% of ascii/latin/cjk/thai and 97% of paths. But it is
+  **superseded by (a)**: with a single-pass writer there is no per-level pass
+  left to skip. Keep the level-length data — it is the only measurement of
+  level-byte distributions this project has.
+- Not yet evaluated, still open (candidates the hunt produced but whose
+  verifiers were stopped): `RestartSafety` is a 176-byte struct passed by
+  value to three static helpers; the compare entry's second frame + 7-value
+  register shuffle; inliner-budget leaks (`min<Int>`, `scalarAt`, `Tag(...)`)
+  in the pinned-buffer path; collapsing the 4× String-shape specialization of
+  the pinned-buffer body; `takeScratch`'s 1104-byte stack frame + 12 register
+  saves; level-separator appends re-checking Array uniqueness; resolving the
+  `.digit` tag for the Thai block's own digits; threading the loaded
+  normalization-trie value through `isInert`; trap-free arithmetic in the
+  OFFSET/IMPLICIT primary formulas.
+- **Dynamic exclusivity on the scratch ivars** — two independent lenses found
+  it and the disassembly is confirmed: `sortKey` executes 2
+  `swift_beginAccess`/`endAccess` pairs on `ScratchBuffers.left` (compare's
+  pipeline path, 4), because `scratch.left` is a stored property of a class.
+  Proposed fixes: fuse `reset` + `collectAll` into one method on
+  ScratchBuffers so one access scope covers both (also lets `CEIterator.reset`
+  inline — the object proves it is currently an out-of-line call), or hold the
+  iterators as `UnsafeMutablePointer<CEIterator>` so the accesses are not
+  exclusivity-checked. Estimated 2–6 ns sortKey, 8–12 ns thai compare. NOT
+  attempted this round; the highest-value item left on the list.
+
+#### Harness notes
+
+- **EngineBench compare rows are quantized to 1 ns** (integer division in the
+  print). On the 16 ns ascii row that is ±6%. Always read compare deltas
+  per-round across ≥ 3 rounds; a single min is not evidence.
+- Symbol-verifying an A/B: the EngineBench executable is STRIPPED (146
+  undefined imports only), so `nm` on the binary proves nothing. Verify on
+  `.build/engine-bench/.build/out/Products/Release/CollEngine.o` — and note
+  that WMO inlines the writers, so their symbols vanish; diff the two
+  objects' symbol lists and compare `__TEXT` sizes instead of grepping for
+  one name.
+- Copying an EngineBench binary alone breaks it (`unable to find bundle named
+  enginebench_CollEngine`) — copy the whole `Products/Release` directory per
+  A/B side.
+- SwiftPM cannot build inside a nested sandbox (`sandbox-exec: sandbox_apply:
+  Operation not permitted`); `swift build --disable-sandbox` is the
+  workaround. Environment-specific, no repo change.
+
+---
+
+### 47. The position gate: what conformance could never catch, and a second bug
+
+**Status:** shipped 2026-08-03. New suite `PositionInvariantTests` (8 tests,
+2.7 s). Gate is now **1527 tests / 124 suites, ZERO known issues** — the
+second, pre-existing bug this suite found (below) is FIXED, not deferred.
+
+**Why four bugs got through 1500 tests.** Every gate this project has
+compares one of two things: an ORDERING (the UCA/CLDR conformance files
+assert `compare(prev, cur) != .descending` and that keys order the same way)
+or KEY BYTES (the differential matrices, 21 option sets × 2 data variants,
+and the 52k fuzz keys, against ICU reference answers). The search APIs have a
+THIRD output channel — the offsets they report — and it had ~15 hand-written
+examples and no systematic coverage. §46(b) is the proof: the discontiguous
+branch fires on 84 conformance lines EVERY RUN, produced perfect CEs and
+perfect keys every time, and reported wrong positions for all of them.
+Conformance passing was correct; it verified exactly what it verifies.
+
+**The gate that closes it, and it needs no reference implementation.** The CE
+iterator must consume exactly as many scalars as the NFD front end produces
+for the same input — `scalarsConsumed` IS the `nfdStart`/`nfdEnd` annotation
+that becomes a `String.Index` range, so any drift silently corrupts every
+reported position while leaving CEs and keys perfect. Run over both official
+conformance corpora × {plain pipeline, simple-CE table fast paths, numeric
+mode}. Validation against the unfixed source: **252 mismatches per
+conformance file** (84 firing lines × 3 modes), plus 4 of 5 API-level tests
+failing, 76 issues total.
+
+Prefer this shape to an ICU `usearch_*` differential: no oracle to build, no
+semantic-divergence false positives, and it localizes the defect to the
+component that caused it. An ICU position differential is still worth having
+for the boundary rules, but it is the second thing to build, not the first.
+
+The API-level invariants alongside it, all oracle-free:
+- a match placed AFTER a discontiguous contraction is reported at its true
+  offset (forward and backward);
+- the same with a decomposing character in front, so the NFD→source map is
+  exercised on top of the drifted count;
+- **content round-trip** — whatever range a search reports, `text[range]` must
+  collate equal to the pattern. A range off by one scalar cannot satisfy this,
+  whatever the cause;
+- self-search covers the whole string;
+- a Substring receiver reports self-relative indices (the §39 class).
+
+**Coverage gap found in passing:** `Golden/fuzz-corpus.txt` and
+`Golden/corpus.txt` pass the invariant EVEN ON THE UNFIXED SOURCE — they
+contain no discontiguous contractions at all. `Tools/gen_fuzz_corpus.py`
+should emit [starter + low-ccc mark + high-ccc mark] triples over the
+contraction-bearing starters (Cyrillic и/И, Arabic alef forms, Greek) so the
+fuzz corpus reaches S2.1.
+
+#### The second bug this suite found — and its fix
+
+A match that ENDS AT a discontiguous contraction reported an end that excluded
+the scalar the contraction reached across. Pre-existing: it failed identically
+before and after §46(b) (verified by probe, both ways).
+
+Trace for `и U+0591 U+0306` (self-search returned nil):
+
+```
+CEs:     [624e000005000500,  0000000000000000,  NO_CE]
+                CE(й)          U+0591 = completely ignorable
+masked:  pattern = [624e000005000000]        (the ignorable CE is filtered out
+buffer  = [624e000005000000 @ [0,2)]          of BOTH pattern and text)
+```
+
+The CE comparison matched; `confirmedRange` computed end = 2, which lands on
+U+0306 (ccc 230), and boundary validation correctly refused a match that would
+split a combining sequence. So the API returned nil — a MISSED match.
+
+**Root cause.** That CE consumed scalars **{0, 2}** — a NON-CONTIGUOUS set,
+because S2.1.3 reaches across the skipped mark. `scalarsConsumed` is a running
+COUNT, and after an out-of-order consumption a count is no longer a position:
+the next scalar popped is the skipped mark at position 1 while the count reads
+2. §46(b) made the count exact (fixing every match placed AFTER a
+contraction) but a count can never express where a non-contiguous CE ends.
+
+**Fix, in two halves.**
+
+1. `CEIterator` now tracks POSITIONS as well as the count. Each lookahead entry
+   carries its NFD position packed as `(position << 32) | scalar` — ONE array,
+   because a parallel `[Int]` would double the read-ahead buffer's allocation
+   and bookkeeping on the contraction path. `popScalar` starts a fresh span at
+   the popped scalar's position; `consumeAhead` and `removeAhead` widen it.
+   Each `appendMore()` call therefore exposes `[spanStart, spanEnd)` — the
+   convex hull of the scalars it consumed — and every CE from that call is
+   annotated with it. `scalarsConsumed` survives as a pure count, because it is
+   what the §47 invariant gates.
+2. `confirmedRange` takes the **MIN start and MAX end over the match's CEs**,
+   not the first CE's start and the last CE's end. Spans are monotonic for
+   every other input, so this is a no-op elsewhere; with a discontiguous
+   contraction the skipped marks produce their own CEs afterwards whose spans
+   sit INSIDE the contraction's, so first/last picks the wrong end. The
+   nfdMap clamp follows the span that produced the max end rather than the
+   positionally-last CE.
+
+Spans after the fix (`и U+0591 U+0306`): `[0,3)` for the contraction CE and
+`[1,2)` for the skipped mark; self-search returns the whole string. Same for
+`и U+0334 U+0306`, `й U+0334`, `И U+0334 U+0306` and the Arabic forms.
+
+**Cost, measured (interleaved, 3 rounds).** The position bookkeeping is
+unconditional, so CE production pays for it everywhere: sortKey **+1%**
+(ascii 164→166, paths 382→387, thai −0.9%), compare flat, and on the
+accented-search probe end-match **+2.4%** with the absent-match control
+**+2.5%** — the control moving with the match path is the evidence that the
+cost is in CE production, not in confirmation (start-match is flat, and
+`confirmedRange`'s min/max loop runs once per confirmed candidate).
+
+Accepted deliberately, on the §44 precedent (that round took +15..18 ns for a
+correctness contract). A `tracksSpans` flag checked in `popScalar` would buy
+most of the 1% back and was REJECTED: it puts a branch in the hottest
+per-scalar function (§19's codegen-butterfly risk) and, worse, makes position
+correctness depend on a caller remembering to set it — which is the exact bug
+class this section exists to close.
+
+**Do NOT "fix" a future variant of this by extending the reported end over
+trailing combining marks.** That boundary rule is what stops `"e"` matching
+inside a decomposed `"é"` at tertiary strength; weakening it trades a rare
+wrong-nil for common false matches.
+
+**Note on the file header claim.** `CollationElements.swift` opens by saying
+UCharsTrie's value semantics let a struct copy replace ICU's `SkippedState`.
+That is true of the TRIE state and false of the POSITION state — which is
+precisely what this bug was. The header now says so.

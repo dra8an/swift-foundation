@@ -352,6 +352,15 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (1.6×), paths 425/369 (1.2×), thai 229/153 (1.5×). Foundation APIs
   (Table 2) 1.9–6.9× FASTER than system ICU with zero cells at or
   behind parity. Suite gate 1517/123.
+  **POST-§46 (2026-08-03, same harness, ICU re-measured in the same
+  session on a machine that was NOT fully quiet — load ~8, which
+  inflates BOTH sides; re-baseline with run_benchmarks.sh when idle):**
+  sortKey ascii 164/119 (1.38×), latin 186/127 (1.46×), cjk 181/126
+  (1.44×), **paths 384/372 (1.03× — effectively parity with hand-tuned
+  C)**, thai 217/156 (1.39×); compare ascii 16/9 (1.78×), latin 15/10,
+  **cjk 26/41 (0.63×, faster)**, paths 41/30, thai 270/174. Suite gate
+  **1519/123 at §46, 1527/124 after §47's position suite.** Table 2
+  (Foundation APIs) not re-run this round.
   **IN FLIGHT at the time of writing:** a workflow-orchestrated
   optimization hunt over the engine compare/sortKey paths (8 ideation
   lenses → adversarial verification → ranked plan), targeting the
@@ -369,6 +378,63 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   *production* with the writer and regressed +11..44%) — it concerns
   only the writer's internal pass structure, CE array still
   materialized first.
+  2026-08-03: **§46 — the in-flight hunt LANDED, four changes shipped**
+  (machine 2). The writer's third design point was the right call:
+  **(c) single-pass + region level buffers WINS** over both prior
+  writers. `writeSortKeyUpToQuaternarySingle` traverses the CE array
+  once, accumulating every level (primary included) into disjoint
+  slices of ONE `withUnsafeTemporaryAllocation` region — ICU's
+  MaybeStackArray semantics from the stdlib, stack at real string
+  sizes, heap above — and assembles the key at the end, so the loop
+  never touches `key` and pays no capacity/uniqueness/exclusivity cost
+  per byte. Region sized from a PROVEN per-CE byte bound (primary
+  ≤ 5N−5, secondary ≤ 2N−1, plus a flush-amortization theorem; N
+  includes the NO_CE sentinel), asserted on every store so a wrong
+  bound trips the debug suite instead of corrupting memory. **paths
+  sortKey took back §43's accepted +5% residual.** Also shipped:
+  **a CORRECTNESS BUG** — discontiguous contractions (UTS #10 S2.1.3)
+  never counted the scalar `removeAhead` consumes, so `scalarsConsumed`
+  under-counted cumulatively and EVERY search match reported after one
+  was wrong (measured: 84 of 206k UCA lines fire it; 40 of 40 sentinel
+  probes wrong, 27 of them nil = match MISSED; one increment fixes
+  40/40). **`icuOptions` @inline(__always)** — it was an out-of-line
+  28-instruction getter with a global switch-table load, called once
+  per compare and once per sortKey; §2's "sub-nanosecond" estimate was
+  read off source and was wrong (−1 ns on every compare row, symbol
+  count 2→0). **Digit-resolved simple-CE tables** — §27 named the
+  defect in passing and nobody tried it; two table variants selected
+  at reset (never per scalar), paths sortKey −6.1%, +2 KB.
+  **Gate is now 1527/124, zero known issues** (§46's two regression
+  tests plus §47's position suite). New AS numbers in
+  the baseline block below. **§47 — the position gate**: until now
+  EVERY suite compared CE bytes or key bytes and NOTHING compared the
+  offsets the search APIs report, which is why four bugs of one class
+  (§39, §44/§45, §46(b), and §47's own find) all slipped through 1500
+  tests. `PositionInvariantTests` closes it with an invariant that
+  needs no reference implementation: the CE iterator must consume
+  exactly as many scalars as the NFD front end produces, checked over
+  both conformance corpora × {plain, table fast paths, numeric} —
+  **252 mismatches per file on the unfixed source** — plus five
+  oracle-free API-level position invariants (content round-trip,
+  forward/backward agreement, self-search, Substring receiver).
+  That suite immediately found a SECOND, pre-existing bug — and it is
+  FIXED, not deferred: a match ENDING at a discontiguous contraction
+  under-reported its end (the CE consumes a NON-CONTIGUOUS scalar set,
+  so a running COUNT cannot say where it ends), landed
+  mid-combining-sequence and was rejected → wrong nil / missed match.
+  Fixed by tracking NFD POSITIONS alongside the count (packed into the
+  lookahead entries, one array) and taking min-start/max-end over a
+  match's CEs in confirmedRange. Cost, measured: sortKey +1%, search
+  end-match +2.4% with the absent control moving equally (so the cost
+  is CE production, not confirmation) — accepted on the §44 precedent.
+  The cheaper flag-gated variant was REJECTED for making position
+  correctness opt-in. §47 has the trace, and warns against the tempting
+  wrong fix (extending the end over trailing marks would break "e" not
+  matching inside a decomposed "é"). **Suite gate 1527/124, ZERO known
+  issues.**
+  Highest-value perf item left, with disassembly already done: the
+  `swift_beginAccess` pairs on the scratch iterators (2 per sortKey,
+  4 per pipeline compare).
   Technique log: `optimization-targets.md` — read THE ALLOCATION/
   RESOLUTION HUNT note at the top before any perf work, then §20
   (steps 6–8), §27, §29–§45 and the audit list;

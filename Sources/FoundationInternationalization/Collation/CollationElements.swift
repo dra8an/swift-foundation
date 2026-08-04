@@ -1,6 +1,6 @@
 // Produces the full 64-bit collation elements of a string, reading scalars through the incremental-NFD front end. CE32 tag dispatch mirrors CollationIterator::appendCEsFromCE32; contraction matching (including discontiguous contractions per UTS #10 S2.1) mirrors nextCE32FromContraction/nextCE32FromDiscontiguousContraction; prefix matching mirrors getCE32FromPrefix; numeric collation (CODAN) mirrors appendNumericCEs/appendNumericSegmentCEs.
 //
-// Because the scalar stream is already fully NFD-normalized and canonically ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and discontiguous matching operates on discrete combining marks exactly as UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state snapshots a struct copy (replacing ICU's SkippedState machinery).
+// Because the scalar stream is already fully NFD-normalized and canonically ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and discontiguous matching operates on discrete combining marks exactly as UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state snapshots a struct copy, which replaces the TRIE half of ICU's SkippedState machinery; the POSITION half is still needed, because a discontiguous match consumes a non-contiguous set of scalars (see `spanStart`).
 
 struct CEIterator {
     /// The tailoring data (or root when there is no tailoring).
@@ -13,20 +13,36 @@ struct CEIterator {
     /// ARC-free views used by the per-scalar dispatch (see CollationDataView).
     private let dataView: CollationDataView
     private let baseView: CollationDataView?
-    /// Pre-computed CEs for ASCII (0–127). Entry is 0 for characters that need full pipeline processing (digits in numeric mode, U+0000, etc.).
-    let simpleCEs: UnsafeBufferPointer<Int64>
-    /// Pre-computed CEs for the Thai block (U+0E00–0E7F), same contract: specials (prefix-vowel contractions, digits) are 0 sentinels.
-    let thaiCEs: UnsafeBufferPointer<Int64>
+    /// Pre-computed CEs for ASCII (0–127) for the CURRENT mode. Entry is 0 for characters that need full pipeline processing (U+0000, and digits when numeric collation is on).
+    private(set) var simpleCEs: UnsafeBufferPointer<Int64>
+    /// Pre-computed CEs for the Thai block (U+0E00–0E7F), same contract.
+    private(set) var thaiCEs: UnsafeBufferPointer<Int64>
+    /// The two table variants: `…Numeric` leaves DIGIT-tag characters as 0 sentinels, `…WithDigits` resolves them. `reset` selects between them, so a scratch buffer shared across numeric and non-numeric calls always reads the right one.
+    private let simpleCEsNumeric: UnsafeBufferPointer<Int64>
+    private let thaiCEsNumeric: UnsafeBufferPointer<Int64>
+    private let simpleCEsWithDigits: UnsafeBufferPointer<Int64>
+    private let thaiCEsWithDigits: UnsafeBufferPointer<Int64>
     var ces: [Int64] = []
 
-    /// Number of NFD scalars consumed so far (via popScalar + consumeAhead). Used by CollationSearch for position tracking.
+    /// Number of NFD scalars consumed so far. Every scalar is counted exactly once, including the ones a discontiguous contraction consumes out of order, so this always equals the number of scalars the NFD front end has yielded (PositionInvariantTests gates that).
     private(set) var scalarsConsumed = 0
+
+    /// NFD position of the next scalar to be pulled from the front end.
+    ///
+    /// Positions are NOT the same thing as `scalarsConsumed`: a discontiguous contraction (UTS #10 S2.1.3) consumes a scalar from AHEAD of the marks it skipped, so after it the count has advanced past marks that have not been consumed yet. Search reports positions, so they are tracked separately.
+    private var streamPos = 0
+
+    /// The NFD position span of the scalars consumed by the current `appendMore()` call: `[spanStart, spanEnd)`. Every CE that call produced covers this span.
+    ///
+    /// For ordinary consumption the span is the scalar itself plus any contraction suffix or digit run, i.e. exactly the contiguous region. A discontiguous contraction widens `spanEnd` past the marks it skipped, because the CE really was built from a scalar on the far side of them: the consumed set is non-contiguous and the span is its convex hull. That is why the search range takes the MIN start and MAX end over a match's CEs rather than the first CE's start and the last CE's end — the skipped marks produce their own CEs afterwards, whose spans sit inside the contraction's.
+    private(set) var spanStart = 0
+    private(set) var spanEnd = 0
 
     /// True once the NFD front end has decomposed any input scalar. While false, NFD scalar offsets equal source scalar offsets, so CollationSearch can report positions without an NFD→source map.
     var sawDecomposition: Bool { scalars.sawDecomposition }
 
-    /// Normalized scalars read ahead of the current position.
-    private var lookahead: [UInt32] = []
+    /// Normalized scalars read ahead of the current position, each packed with its NFD position as `(position << 32) | scalar`. Packing keeps the read-ahead path to ONE array: a parallel `[Int]` of positions would double its allocation and bookkeeping, and the read-ahead buffer is on the contraction hot path.
+    private var lookahead: [UInt64] = []
     private var lookaheadStart = 0
     /// The two most recently processed scalars (most recent first), used for prefix (precontext) matching. Sufficient for all CLDR prefixes: a single starter, or a starter followed by a kana voicing mark.
     private var prev1: UInt32?
@@ -37,7 +53,9 @@ struct CEIterator {
     init(data: CollationData, base: CollationData? = nil, norm: NormalizationData,
          numeric: Bool, scalars: String.UnicodeScalarView,
          simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
-         thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
+         thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         simpleCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         thaiCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         self.data = data
         self.base = base
         self.norm = norm
@@ -45,13 +63,19 @@ struct CEIterator {
         self.scalars = NFDIterator(norm: norm, scalars: scalars)
         self.dataView = CollationDataView(data)
         self.baseView = base.map(CollationDataView.init)
-        self.simpleCEs = simpleCEs
-        self.thaiCEs = thaiCEs
+        self.simpleCEsNumeric = simpleCEs
+        self.thaiCEsNumeric = thaiCEs
+        // An absent with-digits table (the search entries build iterators without tables) must not silently disable the plain tables.
+        self.simpleCEsWithDigits = simpleCEsWithDigits.isEmpty ? simpleCEs : simpleCEsWithDigits
+        self.thaiCEsWithDigits = thaiCEsWithDigits.isEmpty ? thaiCEs : thaiCEsWithDigits
+        self.simpleCEs = numeric ? simpleCEs : self.simpleCEsWithDigits
+        self.thaiCEs = numeric ? thaiCEs : self.thaiCEsWithDigits
     }
 
     /// Rewinds onto a new input, keeping all buffer storage so that reuse across compares runs allocation-free. Equivalent to a fresh iterator over the same collation data, positioned after `skippingFirst` scalars.
     mutating func reset(numeric: Bool, scalars view: String.UnicodeScalarView, skippingFirst: Int = 0) {
         self.numeric = numeric
+        selectTables(numeric: numeric)
         scalars.reset(scalars: view, skippingFirst: skippingFirst)
         clearState()
     }
@@ -59,8 +83,16 @@ struct CEIterator {
     /// Resets onto an already-positioned scalar iterator plus one scalar the caller has already pulled from it — see NFDIterator.reset(source:first:). Avoids rebuilding a String iterator and re-walking the skipped prefix.
     mutating func reset(numeric: Bool, source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
         self.numeric = numeric
+        selectTables(numeric: numeric)
         scalars.reset(source: iter, first: first)
         clearState()
+    }
+
+    /// Points the active simple-CE tables at the variant this mode may use. Once per reset, never per scalar.
+    @inline(__always)
+    private mutating func selectTables(numeric: Bool) {
+        simpleCEs = numeric ? simpleCEsNumeric : simpleCEsWithDigits
+        thaiCEs = numeric ? thaiCEsNumeric : thaiCEsWithDigits
     }
 
     @inline(__always)
@@ -74,6 +106,9 @@ struct CEIterator {
         if !consumedExtras.isEmpty { consumedExtras.removeAll(keepingCapacity: true) }
         terminated = false
         scalarsConsumed = 0
+        streamPos = 0
+        spanStart = 0
+        spanEnd = 0
     }
 
     /// Looks up the CE32 for a code point, falling back from the tailoring to the base data. Returns the data view that owns the resulting CE32.
@@ -88,19 +123,44 @@ struct CEIterator {
 
     // MARK: Lookahead buffer
 
+    @inline(__always)
+    private static func packAhead(_ pos: Int, _ c: UInt32) -> UInt64 {
+        (UInt64(UInt32(truncatingIfNeeded: pos)) << 32) | UInt64(c)
+    }
+
+    @inline(__always)
+    private static func aheadScalar(_ entry: UInt64) -> UInt32 {
+        UInt32(truncatingIfNeeded: entry)
+    }
+
+    @inline(__always)
+    private static func aheadPos(_ entry: UInt64) -> Int {
+        Int(entry >> 32)
+    }
+
+    /// Widens the current call's span to cover the scalar at `pos`.
+    @inline(__always)
+    private mutating func widenSpan(to pos: Int) {
+        if pos < spanStart { spanStart = pos }
+        if pos >= spanEnd { spanEnd = pos + 1 }
+    }
+
     /// The normalized scalar `i` positions ahead (0 = next), or nil at the end.
     private mutating func scalarAhead(_ i: Int) -> UInt32? {
         while lookahead.count - lookaheadStart <= i {
             guard let c = scalars.next() else { return nil }
-            lookahead.append(c)
+            lookahead.append(Self.packAhead(streamPos, c))
+            streamPos += 1
         }
-        return lookahead[lookaheadStart + i]
+        return Self.aheadScalar(lookahead[lookaheadStart + i])
     }
 
     /// Consumes `n` scalars, recording them for prefix history.
     private mutating func consumeAhead(_ n: Int) {
         for k in 0..<n {
-            consumedExtras.append(lookahead[lookaheadStart + k])
+            let entry = lookahead[lookaheadStart + k]
+            consumedExtras.append(Self.aheadScalar(entry))
+            widenSpan(to: Self.aheadPos(entry))
         }
         scalarsConsumed += n
         discardAhead(n)
@@ -115,8 +175,11 @@ struct CEIterator {
         }
     }
 
-    /// Removes the scalar `i` positions ahead (UTS #10 S2.1.3 "remove C").
+    /// Removes the scalar `i` positions ahead (UTS #10 S2.1.3 "remove C") and accounts for it: it is consumed by the CE under construction even though it is not contiguous with the matched prefix, so it counts once and widens this call's span past the marks that were skipped over.
     private mutating func removeAhead(at i: Int) {
+        let entry = lookahead[lookaheadStart + i]
+        widenSpan(to: Self.aheadPos(entry))
+        scalarsConsumed += 1
         lookahead.remove(at: lookaheadStart + i)
     }
 
@@ -137,16 +200,23 @@ struct CEIterator {
         return ces
     }
 
-    /// Pops the next scalar, bypassing the lookahead buffer when it is empty (the common case — the buffer fills only during context matching).
+    /// Pops the next scalar, bypassing the lookahead buffer when it is empty (the common case — the buffer fills only during context matching). Starts a fresh span at the popped scalar's position.
     @inline(__always)
     private mutating func popScalar() -> UInt32? {
         if lookaheadStart < lookahead.count {
-            let c = lookahead[lookaheadStart]
+            let entry = lookahead[lookaheadStart]
             discardAhead(1)
             scalarsConsumed += 1
-            return c
+            let pos = Self.aheadPos(entry)
+            spanStart = pos
+            spanEnd = pos + 1
+            return Self.aheadScalar(entry)
         }
         if let c = scalars.next() {
+            // The lookahead is empty, so every scalar pulled so far has been consumed or removed: streamPos is this scalar's position.
+            spanStart = streamPos
+            spanEnd = streamPos + 1
+            streamPos += 1
             scalarsConsumed += 1
             return c
         }
@@ -324,6 +394,7 @@ struct CEIterator {
                     if m.hasValue {
                         // "If there is a match, replace S by S+C, and remove C." (S2.1.3)
                         bestCE32 = UInt32(bitPattern: attempt.getValue())
+                        // Consumes C and widens this call's span past the marks skipped over — see removeAhead. The trailing consumeAhead(bestLength) covers only the contiguous part of the match.
                         removeAhead(at: j)
                         matchedState = attempt
                         if !m.hasNext { break }

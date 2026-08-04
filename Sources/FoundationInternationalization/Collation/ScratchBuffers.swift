@@ -47,10 +47,12 @@ final class ScratchBuffers {
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData,
          simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
-         thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
+         thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         simpleCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         thaiCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         let empty = "".unicodeScalars
-        self.left = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs)
-        self.right = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs)
+        self.left = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
+        self.right = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
     }
 }
 

@@ -1026,6 +1026,461 @@ enum CollationKeys {
         }
     }
 
+    // MARK: Single-pass writer with in-region level buffers
+
+    /// One level's bytes, carved out of the single-pass writer's temporary region: a base pointer plus a count, so an append is a plain store with no uniqueness check, no growth check and no ARC. ICU's SortKeyLevel is a `MaybeStackArray<uint8_t, 40>` per level — the same idea with one allocation instead of four.
+    private struct RegionLevel {
+        let base: UnsafeMutablePointer<UInt8>
+        let capacity: Int
+        var count = 0
+
+        @inline(__always)
+        init(_ base: UnsafeMutablePointer<UInt8>, _ capacity: Int) {
+            self.base = base
+            self.capacity = capacity
+        }
+
+        var isEmpty: Bool { count == 0 }
+
+        @inline(__always)
+        mutating func appendByte(_ b: UInt32) {
+            assert(count < capacity, "level buffer overflow — the per-CE byte bound is wrong")
+            base[count] = UInt8(truncatingIfNeeded: b)
+            count += 1
+        }
+
+        /// Appends the non-zero bytes of a 16-bit weight.
+        @inline(__always)
+        mutating func appendWeight16(_ w: UInt32) {
+            assert((w & 0xffff) != 0)
+            appendByte(w >> 8)
+            let b1 = UInt8(truncatingIfNeeded: w)
+            if b1 != 0 { appendByte(UInt32(b1)) }
+        }
+
+        /// Appends the non-zero prefix of a 32-bit weight.
+        @inline(__always)
+        mutating func appendWeight32(_ w: UInt32) {
+            assert(w != 0)
+            appendByte(w >> 24)
+            let b1 = UInt8(truncatingIfNeeded: w >> 16)
+            if b1 != 0 {
+                appendByte(UInt32(b1))
+                let b2 = UInt8(truncatingIfNeeded: w >> 8)
+                if b2 != 0 {
+                    appendByte(UInt32(b2))
+                    let b3 = UInt8(truncatingIfNeeded: w)
+                    if b3 != 0 { appendByte(UInt32(b3)) }
+                }
+            }
+        }
+
+        /// Appends a 16-bit weight byte-reversed (for the backwards-secondary level, which is re-reversed segment-wise later).
+        @inline(__always)
+        mutating func appendReverseWeight16(_ w: UInt32) {
+            assert((w & 0xffff) != 0)
+            let b0 = UInt8(truncatingIfNeeded: w >> 8)
+            let b1 = UInt8(truncatingIfNeeded: w)
+            if b1 == 0 {
+                appendByte(UInt32(b0))
+            } else {
+                appendByte(UInt32(b1))
+                appendByte(UInt32(b0))
+            }
+        }
+
+        /// Reverses the bytes from `from` to the end (one merge-separated backwards-secondary segment).
+        func reverse(from: Int) {
+            var i = from
+            var j = count - 1
+            while i < j {
+                let t = base[i]
+                base[i] = base[j]
+                base[j] = t
+                i += 1
+                j -= 1
+            }
+        }
+
+        /// Appends all but the last byte (the trailing 01 from NO_CE) to the key.
+        func appendTo(_ key: inout [UInt8]) {
+            assert(count > 0 && base[count - 1] == 1)
+            let n = count - 1
+            if n <= 0 { return }  // level compressed to nothing — skip the copy entirely
+            key.append(contentsOf: UnsafeBufferPointer(start: base, count: n))
+        }
+    }
+
+    // Worst-case bytes one consumed CE can contribute to each level, used to size the single-pass region. Per level: the primary block emits at most one separator byte (03 or ff) plus p1..p4; the secondary and tertiary levels at most a two-byte weight; the case level at most one nibble byte; the quaternary level at most a limit byte plus a four-byte shifted primary. The common-weight flushes need no extra room: a CE that only increments a run counter emits nothing, every flush zeroes its counter, and a flush of k counted CEs emits 1 + (k-1)/maxCount bytes with maxCount >= 7 — so one byte per counted CE covers every flush in the level. Each constant is therefore (weight bytes + 1); the loop asserts against it in debug builds.
+    private static let primaryBytesPerCE = 6
+    private static let secondaryBytesPerCE = 3
+    private static let caseBytesPerCE = 3
+    private static let tertiaryBytesPerCE = 3
+    private static let quaternaryBytesPerCE = 6
+
+    /// Writes the sort key for levels up to the strength in `options` — byte-identical output to `writeSortKeyUpToQuaternary` and to `writeSortKeyUpToQuaternaryDirect`, produced in ONE traversal of the CE array with the beyond-primary levels accumulated in slices of a single temporary region (stack-allocated at the sizes real strings produce, heap above that — ICU's MaybeStackArray shape).
+    ///
+    /// This is the third point in the writer design space: the buffered writer is single-pass with heap level buffers, the direct writer is multi-pass with none, and this one is single-pass with region level buffers. At the default tertiary strength the direct writer traverses the CE array three times and re-runs the variable-CE skip on each pass; this traverses once. Nothing is fused with CE production — the CE array is still materialized first (that fusion is rejected, technique log §15).
+    static func writeSortKeyUpToQuaternarySingle(
+        ces: borrowing [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
+        into key: inout [UInt8]
+    ) {
+        var levels = levelFlags(strength: CollationOptions.strength(of: options))
+        if (options & CollationOptions.Bits.caseLevel) != 0 {
+            levels |= caseFlag
+        }
+
+        let variableTop: UInt32
+        if (options & CollationOptions.Bits.alternateMask) == 0 {
+            variableTop = 0
+        } else {
+            // +1 so that we can use "<" and primary ignorables test out early.
+            variableTop = variableTopValue + 1
+        }
+
+        let tertiaryMask = CollationOptions.tertiaryMask(of: options)
+        let strengthIsPrimary =
+            CollationOptions.strength(of: options) == CollationOptions.Strength.primary.rawValue
+        let backwardSecondary = (options & CollationOptions.Bits.backwardSecondary) != 0
+        let upperFirst = (options & CollationOptions.Bits.upperFirst) != 0
+
+        let n = ces.count
+        let capPrimaries = primaryBytesPerCE * n
+        let capSecondaries = (levels & secondaryFlag) != 0 ? secondaryBytesPerCE * n : 0
+        let capCases = (levels & caseFlag) != 0 ? caseBytesPerCE * n : 0
+        let capTertiaries = (levels & tertiaryFlag) != 0 ? tertiaryBytesPerCE * n : 0
+        let capQuaternaries = (levels & quaternaryFlag) != 0 ? quaternaryBytesPerCE * n : 0
+
+        withUnsafeTemporaryAllocation(
+            of: UInt8.self,
+            capacity: capPrimaries + capSecondaries + capCases + capTertiaries + capQuaternaries
+        ) { region in
+            let start = region.baseAddress.unsafelyUnwrapped
+            var primaries = RegionLevel(start, capPrimaries)
+            var secondaries = RegionLevel(start + capPrimaries, capSecondaries)
+            var cases = RegionLevel(start + capPrimaries + capSecondaries, capCases)
+            var tertiaries = RegionLevel(
+                start + capPrimaries + capSecondaries + capCases, capTertiaries)
+            var quaternaries = RegionLevel(
+                start + capPrimaries + capSecondaries + capCases + capTertiaries, capQuaternaries)
+
+            var prevReorderedPrimary: UInt32 = 0  // 0==no compression
+            var commonCases = 0
+            var commonSecondaries = 0
+            var commonTertiaries = 0
+            var commonQuaternaries = 0
+
+            var prevSecondary: UInt32 = 0
+            var secSegmentStart = 0
+
+            var cesIndex = 0
+            while true {
+                var ce = ces[cesIndex]
+                cesIndex += 1
+                var p = UInt32(truncatingIfNeeded: ce >> 32)
+                if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                    // Variable CE, shift it to quaternary level. Ignore all following primary ignorables, and shift further variable CEs.
+                    if commonQuaternaries != 0 {
+                        commonQuaternaries -= 1
+                        while commonQuaternaries >= quatCommonMaxCount {
+                            quaternaries.appendByte(quatCommonMiddle)
+                            commonQuaternaries -= quatCommonMaxCount
+                        }
+                        // Shifted primary weights are lower than the common weight.
+                        quaternaries.appendByte(quatCommonLow + UInt32(commonQuaternaries))
+                        commonQuaternaries = 0
+                    }
+                    repeat {
+                        if (levels & quaternaryFlag) != 0 {
+                            if let reordering { p = reordering.reorder(p) }
+                            if (p >> 24) >= quatShiftedLimitByte {
+                                // Prevent shifted primary lead bytes from overlapping with the common compression range.
+                                quaternaries.appendByte(quatShiftedLimitByte)
+                            }
+                            quaternaries.appendWeight32(p)
+                        }
+                        repeat {
+                            ce = ces[cesIndex]
+                            cesIndex += 1
+                            p = UInt32(truncatingIfNeeded: ce >> 32)
+                        } while p == 0
+                    } while p < variableTop && p > CollationConstants.mergeSeparatorPrimary
+                }
+                // ce could be primary ignorable, or NO_CE, or the merge separator, or a regular primary CE, but it is not variable. If ce==NO_CE, then write nothing for the primary level but terminate compression on all levels and then exit the loop.
+                if p > CollationConstants.noCEPrimary && (levels & primaryFlag) != 0 {
+                    // Test the un-reordered primary for compressibility.
+                    let isCompressible = compressibleBytes[Int(p >> 24)]
+                    if let reordering { p = reordering.reorder(p) }
+                    let p1 = p >> 24
+                    if !isCompressible || p1 != (prevReorderedPrimary >> 24) {
+                        if prevReorderedPrimary != 0 {
+                            if p < prevReorderedPrimary {
+                                if p1 > UInt32(CollationConstants.mergeSeparatorPrimary >> 24) {
+                                    primaries.appendByte(3)
+                                }
+                            } else {
+                                primaries.appendByte(0xff)
+                            }
+                        }
+                        primaries.appendByte(p1)
+                        prevReorderedPrimary = isCompressible ? p : 0
+                    }
+                    let p2 = UInt8(truncatingIfNeeded: p >> 16)
+                    if p2 != 0 {
+                        primaries.appendByte(UInt32(p2))
+                        let p3 = UInt8(truncatingIfNeeded: p >> 8)
+                        if p3 != 0 {
+                            primaries.appendByte(UInt32(p3))
+                            let p4 = UInt8(truncatingIfNeeded: p)
+                            if p4 != 0 { primaries.appendByte(UInt32(p4)) }
+                        }
+                    }
+                }
+
+                let lower32 = UInt32(truncatingIfNeeded: ce)
+                if lower32 == 0 { continue }  // completely ignorable
+
+                if (levels & secondaryFlag) != 0 {
+                    let s = lower32 >> 16
+                    if s == 0 {
+                        // secondary ignorable
+                    } else if s == 0x0500  // COMMON_WEIGHT16
+                        && (!backwardSecondary || p != CollationConstants.mergeSeparatorPrimary) {
+                        commonSecondaries += 1
+                    } else if !backwardSecondary {
+                        if commonSecondaries != 0 {
+                            commonSecondaries -= 1
+                            while commonSecondaries >= secCommonMaxCount {
+                                secondaries.appendByte(secCommonMiddle)
+                                commonSecondaries -= secCommonMaxCount
+                            }
+                            let b: UInt32 = s < 0x0500
+                                ? secCommonLow + UInt32(commonSecondaries)
+                                : secCommonHigh - UInt32(commonSecondaries)
+                            secondaries.appendByte(b)
+                            commonSecondaries = 0
+                        }
+                        secondaries.appendWeight16(s)
+                    } else {
+                        // Backwards secondary: weights are appended byte-reversed; each merge-separated segment is reversed at its end.
+                        if commonSecondaries != 0 {
+                            commonSecondaries -= 1
+                            // Append reverse weights. The level will be re-reversed later.
+                            let remainder = commonSecondaries % secCommonMaxCount
+                            let b: UInt32 = prevSecondary < 0x0500
+                                ? secCommonLow + UInt32(remainder)
+                                : secCommonHigh - UInt32(remainder)
+                            secondaries.appendByte(b)
+                            commonSecondaries -= remainder
+                            while commonSecondaries > 0 {
+                                secondaries.appendByte(secCommonMiddle)
+                                commonSecondaries -= secCommonMaxCount
+                            }
+                        }
+                        if p > 0 && p <= CollationConstants.mergeSeparatorPrimary {
+                            // The merge separator or NO_CE: reverse the segment.
+                            if secSegmentStart < secondaries.count - 1 {
+                                secondaries.reverse(from: secSegmentStart)
+                            }
+                            secondaries.appendByte(
+                                p == CollationConstants.noCEPrimary
+                                    ? UInt32(levelSeparator) : UInt32(CollationConstants.mergeSeparatorPrimary >> 24))
+                            prevSecondary = 0
+                            secSegmentStart = secondaries.count
+                        } else {
+                            secondaries.appendReverseWeight16(s)
+                            prevSecondary = s
+                        }
+                    }
+                }
+
+                if (levels & caseFlag) != 0 {
+                    let ignore: Bool = strengthIsPrimary ? p == 0 : lower32 <= 0xffff
+                    if !ignore {
+                        var c = (lower32 >> 8) & 0xff  // case bits & tertiary lead byte
+                        assert((c & 0xc0) != 0xc0)
+                        if (c & 0xc0) == 0 && c > UInt32(levelSeparator) {
+                            commonCases += 1
+                        } else {
+                            if !upperFirst {
+                                // lowerFirst: Compress common weights to nibbles 1..7..13, mixed=14, upper=15. If there are only common (=lowest) weights in the whole level, then we need not write anything.
+                                if commonCases != 0 && (c > UInt32(levelSeparator) || !cases.isEmpty) {
+                                    commonCases -= 1
+                                    while commonCases >= caseLowerFirstCommonMaxCount {
+                                        cases.appendByte(caseLowerFirstCommonMiddle << 4)
+                                        commonCases -= caseLowerFirstCommonMaxCount
+                                    }
+                                    let b: UInt32 = c <= UInt32(levelSeparator)
+                                        ? caseLowerFirstCommonLow + UInt32(commonCases)
+                                        : caseLowerFirstCommonHigh - UInt32(commonCases)
+                                    cases.appendByte(b << 4)
+                                    commonCases = 0
+                                }
+                                if c > UInt32(levelSeparator) {
+                                    c = (caseLowerFirstCommonHigh + (c >> 6)) << 4  // 14 or 15
+                                }
+                            } else {
+                                // upperFirst: Compress common weights to nibbles 3..15, mixed=2, upper=1.
+                                if commonCases != 0 {
+                                    commonCases -= 1
+                                    while commonCases >= caseUpperFirstCommonMaxCount {
+                                        cases.appendByte(caseUpperFirstCommonLow << 4)
+                                        commonCases -= caseUpperFirstCommonMaxCount
+                                    }
+                                    cases.appendByte((caseUpperFirstCommonLow + UInt32(commonCases)) << 4)
+                                    commonCases = 0
+                                }
+                                if c > UInt32(levelSeparator) {
+                                    c = (caseUpperFirstCommonLow - (c >> 6)) << 4  // 2 or 1
+                                }
+                            }
+                            // c is a separator byte 01, or a left-shifted nibble 0x10..0xf0.
+                            cases.appendByte(c)
+                        }
+                    }
+                }
+
+                if (levels & tertiaryFlag) != 0 {
+                    var t = lower32 & tertiaryMask
+                    assert((lower32 & 0xc000) != 0xc000)
+                    if t == 0x0500 {  // COMMON_WEIGHT16
+                        commonTertiaries += 1
+                    } else if (tertiaryMask & 0x8000) == 0 {
+                        // Tertiary weights without case bits. Move lead bytes 06..3F to C6..FF for a large common-weight range.
+                        if commonTertiaries != 0 {
+                            commonTertiaries -= 1
+                            while commonTertiaries >= terOnlyCommonMaxCount {
+                                tertiaries.appendByte(terOnlyCommonMiddle)
+                                commonTertiaries -= terOnlyCommonMaxCount
+                            }
+                            let b: UInt32 = t < 0x0500
+                                ? terOnlyCommonLow + UInt32(commonTertiaries)
+                                : terOnlyCommonHigh - UInt32(commonTertiaries)
+                            tertiaries.appendByte(b)
+                            commonTertiaries = 0
+                        }
+                        if t > 0x0500 { t += 0xc000 }
+                        tertiaries.appendWeight16(t)
+                    } else if !upperFirst {
+                        // Tertiary weights with caseFirst=lowerFirst. Move lead bytes 06..BF to 46..FF for the common-weight range.
+                        if commonTertiaries != 0 {
+                            commonTertiaries -= 1
+                            while commonTertiaries >= terLowerFirstCommonMaxCount {
+                                tertiaries.appendByte(terLowerFirstCommonMiddle)
+                                commonTertiaries -= terLowerFirstCommonMaxCount
+                            }
+                            let b: UInt32 = t < 0x0500
+                                ? terLowerFirstCommonLow + UInt32(commonTertiaries)
+                                : terLowerFirstCommonHigh - UInt32(commonTertiaries)
+                            tertiaries.appendByte(b)
+                            commonTertiaries = 0
+                        }
+                        if t > 0x0500 { t += 0x4000 }
+                        tertiaries.appendWeight16(t)
+                    } else {
+                        // Tertiary weights with caseFirst=upperFirst. (Byte mapping table in the buffered writer.)
+                        if t <= CollationConstants.noCEWeight16 {
+                            // Keep separators unchanged.
+                        } else if lower32 > 0xffff {
+                            // Invert case bits of primary & secondary CEs.
+                            t ^= 0xc000
+                            if t < (terUpperFirstCommonHigh << 8) {
+                                t &-= 0x4000
+                            }
+                        } else {
+                            // Keep uppercase bits of tertiary CEs.
+                            assert(0x8600 <= t && t <= 0xbfff)
+                            t += 0x4000
+                        }
+                        if commonTertiaries != 0 {
+                            commonTertiaries -= 1
+                            while commonTertiaries >= terUpperFirstCommonMaxCount {
+                                tertiaries.appendByte(terUpperFirstCommonMiddle)
+                                commonTertiaries -= terUpperFirstCommonMaxCount
+                            }
+                            let b: UInt32 = t < (terUpperFirstCommonLow << 8)
+                                ? terUpperFirstCommonLow + UInt32(commonTertiaries)
+                                : terUpperFirstCommonHigh - UInt32(commonTertiaries)
+                            tertiaries.appendByte(b)
+                            commonTertiaries = 0
+                        }
+                        tertiaries.appendWeight16(t)
+                    }
+                }
+
+                if (levels & quaternaryFlag) != 0 {
+                    var q = lower32 & 0xffff
+                    if (q & 0xc0) == 0 && q > CollationConstants.noCEWeight16 {
+                        commonQuaternaries += 1
+                    } else if q == CollationConstants.noCEWeight16
+                        && (options & CollationOptions.Bits.alternateMask) == 0
+                        && quaternaries.isEmpty {
+                        // If alternate=non-ignorable and there are only common quaternary weights, then we need not write anything.
+                        quaternaries.appendByte(UInt32(levelSeparator))
+                    } else {
+                        if q == CollationConstants.noCEWeight16 {
+                            q = UInt32(levelSeparator)
+                        } else {
+                            q = 0xfc + ((q >> 6) & 3)
+                        }
+                        if commonQuaternaries != 0 {
+                            commonQuaternaries -= 1
+                            while commonQuaternaries >= quatCommonMaxCount {
+                                quaternaries.appendByte(quatCommonMiddle)
+                                commonQuaternaries -= quatCommonMaxCount
+                            }
+                            let b: UInt32 = q < quatCommonLow
+                                ? quatCommonLow + UInt32(commonQuaternaries)
+                                : quatCommonHigh - UInt32(commonQuaternaries)
+                            quaternaries.appendByte(b)
+                            commonQuaternaries = 0
+                        }
+                        quaternaries.appendByte(q)
+                    }
+                }
+
+                if (lower32 >> 24) == UInt32(levelSeparator) { break }  // ce == NO_CE
+            }
+
+            // Assemble: the primary level has no trailing separator to drop, the others do (the NO_CE iteration wrote one into each).
+            if primaries.count > 0 {
+                key.append(contentsOf: UnsafeBufferPointer(start: start, count: primaries.count))
+            }
+            if (levels & secondaryFlag) != 0 {
+                key.append(levelSeparator)
+                secondaries.appendTo(&key)
+            }
+            if (levels & caseFlag) != 0 {
+                key.append(levelSeparator)
+                // Write pairs of nibbles as bytes, except separator bytes as themselves.
+                var b: UInt8 = 0
+                var i = 0
+                let last = cases.count - 1  // ignore the trailing NO_CE
+                while i < last {
+                    let c = cases.base[i]
+                    assert((c & 0xf) == 0 && c != 0)
+                    if b == 0 {
+                        b = c
+                    } else {
+                        key.append(b | (c >> 4))
+                        b = 0
+                    }
+                    i += 1
+                }
+                if b != 0 { key.append(b) }
+            }
+            if (levels & tertiaryFlag) != 0 {
+                key.append(levelSeparator)
+                tertiaries.appendTo(&key)
+            }
+            if (levels & quaternaryFlag) != 0 {
+                key.append(levelSeparator)
+                quaternaries.appendTo(&key)
+            }
+        }
+    }
+
     // MARK: Identical level (BOCSU; i18n/bocsu.{h,cpp})
 
     private static let slopeMin: Int32 = 3

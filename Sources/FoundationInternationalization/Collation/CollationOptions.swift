@@ -75,6 +75,9 @@ public struct CollationOptions: Sendable, Equatable {
     }
 
     /// The equivalent CollationSettings::options word (complete: numeric and maxVariable included, so the word fully determines compare behavior — the fast Latin path uses it as a cache key).
+    ///
+    /// Force-inlined: the compare and sortKey entries call this once per call to test the word against the pre-baked fast-Latin setup, and without the attribute the optimizer leaves it out of line — a call plus 27 instructions, including a global switch-table load for Strength's non-contiguous raw values.
+    @inline(__always)
     var icuOptions: Int32 {
         var options: Int32 = strength.rawValue << Bits.strengthShift
         options |= maxVariable.rawValue << Bits.maxVariableShift

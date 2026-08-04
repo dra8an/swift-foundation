@@ -490,4 +490,38 @@ struct CollationSearchTests {
             #expect(text[r] == "leche")
         }
     }
+
+    /// A discontiguous contraction (UTS #10 S2.1.3) must advance the scalar
+    /// count by the scalar it removes, or every position reported after it is
+    /// short by one. Root contracts Cyrillic и + U+0306 (combining breve, ccc
+    /// 230); with U+0334 (ccc 1) between them the breve is not blocked, so S
+    /// is replaced by S+C and the breve is removed from the lookahead. The
+    /// text is already canonically ordered, so nothing decomposes and the NFD
+    /// offsets are used as source offsets directly.
+    @Test func discontiguousContractionKeepsPositionsAligned() {
+        let text = "и\u{0334}\u{0306}abc"
+        let expected = trailingRange(of: 3, in: text)
+        let result = collator.search(for: "abc", in: text)
+        #expect(result != nil, "match after a discontiguous contraction must be found")
+        #expect(result == expected, "match after a discontiguous contraction must report its true range")
+    }
+
+    /// The same shape with the marks in the other canonical order, with the
+    /// precomposed й spelled out, and uppercase — all reach the S2.1.3 branch.
+    @Test func discontiguousContractionPositionsAcrossOrderings() {
+        for text in ["и\u{0306}\u{0334}abc", "\u{0439}\u{0334}abc", "И\u{0334}\u{0306}abc"] {
+            let expected = trailingRange(of: 3, in: text)
+            let result = collator.search(for: "abc", in: text)
+            #expect(result != nil, "no match in \(text.debugDescription)")
+            #expect(result == expected, "wrong range in \(text.debugDescription)")
+        }
+    }
+
+    /// The range of the last `scalars` scalars of `text` (no Foundation
+    /// string search, so the expectation is independent of the API under test).
+    private func trailingRange(of scalars: Int, in text: String) -> Range<String.Index> {
+        let start = text.unicodeScalars.index(
+            text.unicodeScalars.startIndex, offsetBy: text.unicodeScalars.count - scalars)
+        return start..<text.endIndex
+    }
 }

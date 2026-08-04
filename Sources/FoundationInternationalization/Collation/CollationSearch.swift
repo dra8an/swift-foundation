@@ -313,22 +313,23 @@ struct CollationSearch {
         if !buffer.isEmpty { buffer.removeAll(keepingCapacity: true) }
         buffer.reserveCapacity(reserve)
         var prevCECount = 0
-        var prevScalarsConsumed = 0
         var nextMatchStart = 0
         var nfdMapBuilt = false
         var afterVariable = false
 
         do {
             while try iter.appendMore() {
-                let curScalarsConsumed = iter.scalarsConsumed
+                // The span of the scalars THIS call consumed — not a running count. A discontiguous contraction consumes out of order, so spans can overlap and are not monotonic; confirmedRange takes the min start / max end over a match's CEs for exactly that reason.
+                let spanStart = iter.spanStart
+                let spanEnd = iter.spanEnd
                 for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
                     if let masked = maskedCE(ce, mask: mask, afterVariable: &afterVariable) {
                         buffer.append(AnnotatedCE(
                             ce: masked,
-                            nfdStart: prevScalarsConsumed,
-                            nfdEnd: curScalarsConsumed
+                            nfdStart: spanStart,
+                            nfdEnd: spanEnd
                         ))
 
                         // Try matching at each position as soon as we have enough CEs
@@ -347,7 +348,6 @@ struct CollationSearch {
                 }
 
                 prevCECount = iter.ces.count
-                prevScalarsConsumed = curScalarsConsumed
             }
         } catch {
             return nil
@@ -394,8 +394,20 @@ struct CollationSearch {
         text: String, sawDecomposition: Bool,
         nfdMap: inout [Int], nfdMapBuilt: inout Bool
     ) -> Range<String.Index>? {
-        let nfdStart = buffer[start].nfdStart
-        let nfdEnd = buffer[start + patternCEs.count - 1].nfdEnd
+        // MIN start and MAX end over the match's CEs, not the first CE's start and the last CE's end: a discontiguous contraction's span is the convex hull of a NON-CONTIGUOUS consumed set, and the marks it skipped produce their own CEs afterwards whose spans sit inside it. Taking first/last would report an end that excludes the far-side scalar and land mid-combining-sequence, which boundary validation then rejects — a missed match. Spans are monotonic for every other input, so this changes nothing elsewhere.
+        var nfdStart = buffer[start].nfdStart
+        var nfdEnd = buffer[start].nfdEnd
+        var endCEStart = buffer[start].nfdStart
+        if patternCEs.count > 1 {
+            for k in 1..<patternCEs.count {
+                let annotated = buffer[start + k]
+                if annotated.nfdStart < nfdStart { nfdStart = annotated.nfdStart }
+                if annotated.nfdEnd > nfdEnd {
+                    nfdEnd = annotated.nfdEnd
+                    endCEStart = annotated.nfdStart
+                }
+            }
+        }
 
         let startScalar: Int
         let endScalar: Int
@@ -415,9 +427,8 @@ struct CollationSearch {
                 startScalar = max(scalarCount - 1, 0)
             }
             // Clamp so the match always covers the last CE's own source scalar even when its whole NFD window maps into one scalar.
-            let lastNfdStart = buffer[start + patternCEs.count - 1].nfdStart
-            let lastSrcStart = lastNfdStart < nfdMap.count
-                ? nfdMap[lastNfdStart]
+            let lastSrcStart = endCEStart < nfdMap.count
+                ? nfdMap[endCEStart]
                 : max(scalarCount - 1, 0)
             let srcEnd = nfdEnd < nfdMap.count ? nfdMap[nfdEnd] : scalarCount
             endScalar = max(srcEnd, lastSrcStart + 1)
@@ -501,26 +512,25 @@ struct CollationSearch {
         if !result.isEmpty { result.removeAll(keepingCapacity: true) }
         result.reserveCapacity(reserve)
         var prevCECount = 0
-        var prevScalarsConsumed = 0
         var afterVariable = false
 
         do {
             while try iter.appendMore() {
-                let curScalarsConsumed = iter.scalarsConsumed
+                let spanStart = iter.spanStart
+                let spanEnd = iter.spanEnd
                 for i in prevCECount..<iter.ces.count {
                     let ce = iter.ces[i]
                     if ce == CollationConstants.noCE { break }
                     if let masked = maskedCE(ce, mask: mask, afterVariable: &afterVariable) {
                         result.append(AnnotatedCE(
                             ce: masked,
-                            nfdStart: prevScalarsConsumed,
-                            nfdEnd: curScalarsConsumed
+                            nfdStart: spanStart,
+                            nfdEnd: spanEnd
                         ))
                     }
                 }
 
                 prevCECount = iter.ces.count
-                prevScalarsConsumed = curScalarsConsumed
             }
         } catch {
             result.removeAll(keepingCapacity: true)

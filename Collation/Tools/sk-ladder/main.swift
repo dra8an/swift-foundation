@@ -118,12 +118,30 @@ extension RootCollator {
         key.append(0)
     }
 
+    // S4c: the single-pass writer with in-region level buffers (the third
+    // point in the writer design space — ICU's shape), same pre-collected CEs.
+    func skWriterSingle(
+        ces: [Int64], into key: inout [UInt8],
+        options: CollationOptions = CollationOptions()
+    ) {
+        let compressibleBytes = data.compressibleBytes.isEmpty
+            ? base!.compressibleBytes : data.compressibleBytes
+        key.removeAll(keepingCapacity: true)
+        CollationKeys.writeSortKeyUpToQuaternarySingle(
+            ces: ces, compressibleBytes: compressibleBytes,
+            options: options.icuOptions, variableTopValue: variableTopValue(options),
+            reordering: reordering, into: &key)
+        key.append(0)
+    }
+
     // A DEDICATED probe scratch — the thread-local slot must stay free so
     // S0's internal takeScratch behaves exactly as in production (holding
     // the TLS scratch would force S0 to allocate fresh buffers per call).
     func ladderScratch() -> ScratchBuffers {
         ScratchBuffers(data: data, base: base, norm: norm,
-                       simpleCEs: simpleCEs, thaiCEs: thaiCEs)
+                       simpleCEs: simpleCEs, thaiCEs: thaiCEs,
+                       simpleCEsWithDigits: simpleCEsWithDigits,
+                       thaiCEsWithDigits: thaiCEsWithDigits)
     }
 }
 
@@ -169,20 +187,30 @@ do {
     o = CollationOptions(); o.backwardSecondary = true; optionMatrix.append(("french", o))
 }
 var directMismatches: [String: Int] = [:]
-var bufKey: [UInt8] = [], dirKey: [UInt8] = []
+var singleMismatches: [String: Int] = [:]
+var bufKey: [UInt8] = [], dirKey: [UInt8] = [], sglKey: [UInt8] = []
 for (name, opts) in optionMatrix {
     var bad = 0
+    var badSingle = 0
     for ces in lineCEs {
         collator.skWriterBuffered(ces: ces, into: &bufKey, scratch: scratch, options: opts)
         collator.skWriterDirect(ces: ces, into: &dirKey, options: opts)
+        collator.skWriterSingle(ces: ces, into: &sglKey, options: opts)
         if bufKey != dirKey { bad += 1 }
+        if bufKey != sglKey { badSingle += 1 }
     }
     directMismatches[name] = bad
+    singleMismatches[name] = badSingle
 }
 let identitySummary = optionMatrix.map { "\($0.0)=\(directMismatches[$0.0]!)" }.joined(separator: " ")
 print("direct-writer identity (mismatched lines): \(identitySummary)")
+let singleSummary = optionMatrix.map { "\($0.0)=\(singleMismatches[$0.0]!)" }.joined(separator: " ")
+print("single-pass-writer identity (mismatched lines): \(singleSummary)")
 guard directMismatches.values.allSatisfy({ $0 == 0 }) else {
     fatalError("direct writer diverges from buffered writer")
+}
+guard singleMismatches.values.allSatisfy({ $0 == 0 }) else {
+    fatalError("single-pass writer diverges from buffered writer")
 }
 
 var sink = 0
@@ -221,6 +249,10 @@ measure("S4 writer-only  ") {
 measure("S4b writer-direct") {
     let c = collator
     for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterDirect(ces: lineCEs[i], into: &key); sink += key.count } }
+}
+measure("S4c writer-single") {
+    let c = collator
+    for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterSingle(ces: lineCEs[i], into: &key); sink += key.count } }
 }
 measure("S5 reset-only   ") {
     let c = collator

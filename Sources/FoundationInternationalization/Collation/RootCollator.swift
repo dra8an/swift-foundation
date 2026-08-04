@@ -52,6 +52,9 @@ public struct RootCollator: @unchecked Sendable {
         /// Pre-computed full 64-bit CEs for ASCII (0–127). Entry is 0 for characters needing full pipeline (digits, U+0000). Eliminates trie lookup + tag dispatch for common characters in the sort key path.
         let simpleCEs: UnsafeBufferPointer<Int64>
         let thaiCEs: UnsafeBufferPointer<Int64>
+        /// The same two tables with DIGIT-tag characters resolved to the CE they produce when numeric collation is off. Only valid for numeric=off, so the CE iterator selects between the variants per reset; digit-bearing text (paths, filenames, version strings) then takes the table instead of the full pipeline.
+        let simpleCEsWithDigits: UnsafeBufferPointer<Int64>
+        let thaiCEsWithDigits: UnsafeBufferPointer<Int64>
         let simpleCEsStorage: DataStorage
         /// The fast Latin table: the tailoring's own, or the base's when the tailoring has none (CollationDataReader aliases the same way). Stored: rebuilding it per compare would retain `base` each time.
         let fastLatinTable: UnsafeBufferPointer<UInt16>
@@ -97,6 +100,10 @@ public struct RootCollator: @unchecked Sendable {
             let ceStorage = DataStorage()
             self.simpleCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage)
             self.thaiCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage, from: 0x0E00)
+            self.simpleCEsWithDigits = RootCollator.buildSimpleCEs(
+                data: data, base: base, storage: ceStorage, resolvingDigits: true)
+            self.thaiCEsWithDigits = RootCollator.buildSimpleCEs(
+                data: data, base: base, storage: ceStorage, from: 0x0E00, resolvingDigits: true)
             self.simpleCEsStorage = ceStorage
             // Quick-CJK dispatch setup: bare primary comparison is unsound under script reordering or a shifted default, so gate it off for those collators (compareBody handles them).
             let setup = QuickCJKSetup(
@@ -131,6 +138,8 @@ public struct RootCollator: @unchecked Sendable {
     private var defaultFLWord: Int32 { storage.defaultFLWord }
     var simpleCEs: UnsafeBufferPointer<Int64> { storage.simpleCEs }
     var thaiCEs: UnsafeBufferPointer<Int64> { storage.thaiCEs }
+    var simpleCEsWithDigits: UnsafeBufferPointer<Int64> { storage.simpleCEsWithDigits }
+    var thaiCEsWithDigits: UnsafeBufferPointer<Int64> { storage.thaiCEsWithDigits }
     var fastLatinTable: UnsafeBufferPointer<UInt16> { storage.fastLatinTable }
     var restartSafety: RestartSafety { storage.restartSafety }
 
@@ -544,8 +553,8 @@ public struct RootCollator: @unchecked Sendable {
         _ = try scratch.left.collectAll()
         let compressibleBytes = storage.compressibleBytes
         key.removeAll(keepingCapacity: true)
-        // Direct multi-pass writer: one pass per level straight into the key, no level buffers. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity between the two).
-        CollationKeys.writeSortKeyUpToQuaternaryDirect(
+        // Single-pass writer: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity across the option matrix).
+        CollationKeys.writeSortKeyUpToQuaternarySingle(
             ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
             reordering: reordering, into: &key)
@@ -560,7 +569,7 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     private func takeScratch() -> ScratchBuffers {
-        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm, simpleCEs: simpleCEs, thaiCEs: thaiCEs)
+        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
     }
 
     private func giveScratch(_ buffers: ScratchBuffers) {
@@ -577,16 +586,24 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     /// Builds a 128-entry table of pre-computed CEs for ASCII. Characters that map to a single simple CE (no expansion, no contraction, no prefix) get their full 64-bit CE stored; others get 0 (sentinel for "use full pipeline").
+    ///
+    /// With `resolvingDigits`, a DIGIT-tag character is followed through the one indirection that `appendCEs` takes when numeric collation is off, so digits get table entries too. Such a table is only valid for numeric=off — the CE iterator picks between the two variants per reset.
     private static func buildSimpleCEs(
         data: CollationData, base: CollationData?, storage: DataStorage,
-        from start: UInt32 = 0
+        from start: UInt32 = 0, resolvingDigits: Bool = false
     ) -> UnsafeBufferPointer<Int64> {
         var table: [Int64] = Array(repeating: 0, count: 128)
         for i: UInt32 in 0..<128 {
             let c = start + i
+            var owner = data
             var ce32 = data.trie.get(c)
             if ce32 == CollationConstants.fallbackCE32, let base {
+                owner = base
                 ce32 = base.trie.get(c)
+            }
+            if resolvingDigits, CollationConstants.isSpecialCE32(ce32),
+               CollationConstants.tagFromCE32(ce32) == .digit {
+                ce32 = owner.ce32s[CollationConstants.indexFromCE32(ce32)]
             }
             // Only handle the simple cases: non-special CE32s and long-primary/ long-secondary tags that produce exactly one CE.
             if !CollationConstants.isSpecialCE32(ce32) {
