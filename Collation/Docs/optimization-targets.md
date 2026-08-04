@@ -2062,8 +2062,9 @@ the `nfdStart`/`nfdEnd` annotation on every `AnnotatedCE`, which is what
 `confirmMatch`/`confirmedRange` convert into the returned `String.Index`
 range. So every match reported after a discontiguous contraction was wrong.
 
-**Measured, not argued** (probe: instrument the `remove C` site in a copied
-tree, `/tmp/build_disc_probe.sh`, not committed):
+**Measured, not argued** (probe committed: `build_disc_probe.sh`, which
+splices a hit counter into `removeAhead` in a copied tree — the branch is
+otherwise invisible, since its CE and key output is perfect):
 - 84 of 206 268 lines of the UCA conformance corpus fire the branch
   (108 hits). thai and latin corpora: zero — which is why no benchmark and
   no gate ever noticed.
@@ -2231,6 +2232,18 @@ Prefer this shape to an ICU `usearch_*` differential: no oracle to build, no
 semantic-divergence false positives, and it localizes the defect to the
 component that caused it. An ICU position differential is still worth having
 for the boundary rules, but it is the second thing to build, not the first.
+
+**`build_disc_probe.sh` (committed) is the corpus-scale twin of this suite.**
+The suite checks seven curated sequences; the probe finds whatever a corpus
+actually contains — it splices a hit counter into `removeAhead`, reports which
+lines reach S2.1.3 and their per-CE spans, then runs four position checks on
+each (scalar count, match-after, self-search, content round-trip) and exits
+non-zero on any failure. On the conformance corpus it now reports 84 firing
+lines / 108 hits, all four checks clean, with the diagnostic spans showing a
+contraction's `[0,3)` overlapping its skipped mark's `[1,2)`. Run it after any
+change to the contraction, NFD or search-annotation paths. It also documents
+the fuzz gap by simply reporting zero firing lines on
+`Golden/fuzz-corpus.txt`.
 
 The API-level invariants alongside it, all oracle-free:
 - a match placed AFTER a discontiguous contraction is reported at its true

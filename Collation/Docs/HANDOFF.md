@@ -422,7 +422,10 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   under-reported its end (the CE consumes a NON-CONTIGUOUS scalar set,
   so a running COUNT cannot say where it ends), landed
   mid-combining-sequence and was rejected → wrong nil / missed match.
-  Fixed by tracking NFD POSITIONS alongside the count (packed into the
+  Probe committed: `build_disc_probe.sh` (finds the firing lines a
+  corpus contains, prints per-CE spans, runs four position checks,
+  exits non-zero on failure — 84 lines / 108 hits clean on the
+  conformance corpus). Fixed by tracking NFD POSITIONS alongside the count (packed into the
   lookahead entries, one array) and taking min-start/max-end over a
   match's CEs in confirmedRange. Cost, measured: sortKey +1%, search
   end-match +2.4% with the absent control moving equally (so the cost
