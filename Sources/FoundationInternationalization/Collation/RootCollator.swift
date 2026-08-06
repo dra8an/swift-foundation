@@ -549,8 +549,8 @@ public struct RootCollator: @unchecked Sendable {
     ) throws {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
-        scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
-        _ = try scratch.left.collectAll()
+        // One access scope for reset + CE production; see resetAndCollectLeft.
+        try scratch.resetAndCollectLeft(numeric: options.numeric, scalars: s.unicodeScalars)
         let compressibleBytes = storage.compressibleBytes
         key.removeAll(keepingCapacity: true)
         // Single-pass writer: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity across the option matrix).

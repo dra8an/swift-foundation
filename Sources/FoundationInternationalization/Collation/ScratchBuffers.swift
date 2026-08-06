@@ -54,6 +54,26 @@ final class ScratchBuffers {
         self.left = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
         self.right = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
     }
+
+    /// Resets `left` onto `scalars` and produces all its CEs under ONE dynamic access scope.
+    ///
+    /// `left` is a stored property of a class, so each mutating access to it opens a dynamically-enforced access scope — a real `swift_beginAccess`/`swift_endAccess` pair. Written as two statements (`left.reset(…)` then `left.collectAll()`) that is two pairs, because the optimizer's access merging gives up across a throwing call: `collectAll` throws, so the pairs stay split (visible in the shipping object as two scopes on `+0x10`, one around the out-of-line `reset` and one around the whole inlined `collectAll` loop).
+    ///
+    /// Routing both through a single `inout` argument opens the scope once at that argument and closes it on return. Merely moving the two statements into a method here does NOT help — the throwing call still splits them, measured.
+    ///
+    /// This is not the §37 anti-pattern: that rule is about `inout` parameters on an entry whose common case bails before touching them, so the caller pays the scope ahead of the bail. `sortKey` has no fast path — it always produces CEs — so the scope is opened exactly where the work happens.
+    @inline(__always)
+    func resetAndCollectLeft(numeric: Bool, scalars: String.UnicodeScalarView) throws {
+        try ScratchBuffers.resetAndCollect(&left, numeric: numeric, scalars: scalars)
+    }
+
+    @inline(__always)
+    private static func resetAndCollect(
+        _ iter: inout CEIterator, numeric: Bool, scalars: String.UnicodeScalarView
+    ) throws {
+        iter.reset(numeric: numeric, scalars: scalars)
+        _ = try iter.collectAll()
+    }
 }
 
 /// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers instance, avoiding all locking, exclusivity checks, and ARC traffic on the take/give path. If a thread re-enters (e.g. compare inside compare, which doesn't happen in practice but is sound), `take()` returns nil and the caller allocates a fresh set.
