@@ -236,6 +236,122 @@ import Testing
         }
     }
 
+    // MARK: Systematic discontiguous coverage, derived from the data
+
+    /// Every root contraction whose suffix is a non-starter, discovered from the
+    /// collation data rather than hardcoded, crossed with every intervening mark
+    /// that cannot block it — then checked with the same oracle-free invariants.
+    ///
+    /// The seven curated sequences above came from instrumenting the branch;
+    /// this covers the whole shape space. Derivation, all from data so it adapts
+    /// when CLDR does:
+    ///  1. starters whose CE32 is a contraction carrying `contractTrailingCCC`
+    ///     (the precondition for S2.1.3) — 12 of them in current root data;
+    ///  2. their REAL suffixes, found by comparing the CEs of `starter + mark`
+    ///     against `CEs(starter) + CEs(mark)` — 14 pairs, across Cyrillic,
+    ///     Arabic, Telugu, Sinhala, Tibetan and Vithkuqi;
+    ///  3. triples `[starter, intervening, suffix]` for every mark whose ccc is
+    ///     BELOW the suffix's, since the branch needs `prevCC < cc` for the
+    ///     suffix to be unblocked. Lower ccc first is also canonical order, so
+    ///     NFD does not reorder the triple out from under the test.
+    ///
+    /// Measured with `Tools/build_disc_probe.sh`: 2486 of 2490 generated triples
+    /// actually reach the branch (99.8%), against 100 of 14700 for a naive
+    /// one-mark-per-ccc-class sweep — which is why the suffixes are discovered
+    /// rather than guessed.
+    @Test func discontiguousContractionSweep() throws {
+        let collator = try Self.collator
+        let norm = collator.norm
+
+        func ce32(_ c: UInt32) -> UInt32 {
+            var v = collator.data.trie.get(c)
+            if v == CollationConstants.fallbackCE32, let base = collator.base {
+                v = base.trie.get(c)
+            }
+            return v
+        }
+
+        // 1. Starters that can begin a discontiguous contraction.
+        var starters: [UInt32] = []
+        for c: UInt32 in 0..<0x11000 {
+            guard Unicode.Scalar(c) != nil else { continue }
+            let v = ce32(c)
+            guard CollationConstants.isSpecialCE32(v),
+                  CollationConstants.tagFromCE32(v) == .contraction,
+                  (v & CollationConstants.contractTrailingCCC) != 0,
+                  norm.ccc(c) == 0 else { continue }
+            starters.append(c)
+        }
+
+        // Non-starter marks, with their ccc.
+        var marks: [(scalar: UInt32, ccc: UInt8)] = []
+        for c: UInt32 in 0x0300..<0x2000 {
+            guard Unicode.Scalar(c) != nil else { continue }
+            let cc = norm.ccc(c)
+            if cc != 0 { marks.append((c, cc)) }
+        }
+
+        // 2. Which [starter, mark] pairs are actually contractions?
+        func ces(_ s: String) -> [Int64] {
+            ((try? collator.collationElements(of: s)) ?? []).dropLast()  // drop NO_CE
+        }
+        var pairs: [(starter: UInt32, suffix: UInt32, suffixCCC: UInt8)] = []
+        for s in starters {
+            let starterCEs = ces(String(Unicode.Scalar(s)!))
+            for (m, cc) in marks {
+                var joint = String(Unicode.Scalar(s)!)
+                joint.unicodeScalars.append(Unicode.Scalar(m)!)
+                if ces(joint) != starterCEs + ces(String(Unicode.Scalar(m)!)) {
+                    pairs.append((s, m, cc))
+                }
+            }
+        }
+
+        // Guard against silently covering nothing — the trap Golden/fuzz-corpus.txt
+        // fell into, where the invariant passed because no input reached the branch.
+        try #require(starters.count >= 10, "found only \(starters.count) contraction starters — derivation broke")
+        try #require(pairs.count >= 10, "found only \(pairs.count) contraction pairs — derivation broke")
+
+        // 3. Triples, and the invariants over them.
+        var triples = 0
+        var failCount = 0, failAfter = 0, failSelf = 0, failRoundTrip = 0
+        for (starter, suffix, suffixCCC) in pairs {
+            for (intervening, ivCCC) in marks where ivCCC < suffixCCC {
+                var text = String(Unicode.Scalar(starter)!)
+                text.unicodeScalars.append(Unicode.Scalar(intervening)!)
+                text.unicodeScalars.append(Unicode.Scalar(suffix)!)
+                triples += 1
+
+                // Scalar count == NFD scalar count.
+                let expected = Self.nfdScalarCount(text, norm: norm)
+                let consumed = try Self.consumedScalars(
+                    text, collator: collator, numeric: false, withTables: true)
+                if consumed != expected { failCount += 1 }
+
+                // A match placed after the contraction reports its true offset.
+                let after = text + "abc"
+                if collator.search(for: "abc", in: after) != Self.trailingRange(of: 3, in: after) {
+                    failAfter += 1
+                }
+
+                // A match ENDING at the contraction covers the whole string.
+                let selfRange = collator.search(for: text, in: text)
+                if selfRange != text.startIndex..<text.endIndex { failSelf += 1 }
+
+                // Content round-trip.
+                if let r = selfRange, try collator.compare(String(text[r]), text) != .same {
+                    failRoundTrip += 1
+                }
+            }
+        }
+
+        try #require(triples >= 1000, "generated only \(triples) triples — derivation broke")
+        #expect(failCount == 0, "\(failCount)/\(triples) scalar-count mismatches")
+        #expect(failAfter == 0, "\(failAfter)/\(triples) wrong ranges for a match after the contraction")
+        #expect(failSelf == 0, "\(failSelf)/\(triples) wrong ranges for a match ending at the contraction")
+        #expect(failRoundTrip == 0, "\(failRoundTrip)/\(triples) reported ranges do not collate equal to the pattern")
+    }
+
     private static func trailingRange(of scalars: Int, in text: String) -> Range<String.Index> {
         let start = text.unicodeScalars.index(
             text.unicodeScalars.startIndex, offsetBy: text.unicodeScalars.count - scalars)
