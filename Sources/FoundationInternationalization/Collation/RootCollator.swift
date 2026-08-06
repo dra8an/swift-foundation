@@ -426,18 +426,23 @@ public struct RootCollator: @unchecked Sendable {
             // CEs are generated lazily: the primary level usually decides the comparison after a few characters.
             let s = takeScratch()
             scratch = s
+            // Resets + comparison under two access scopes instead of four; see resetBothAndCompare.
             if fellBack {
                 // The skip was abandoned (unsafe boundary): iterate from start.
-                s.left.reset(numeric: options.numeric, scalars: left.unicodeScalars)
-                s.right.reset(numeric: options.numeric, scalars: right.unicodeScalars)
+                result = try s.resetBothAndCompare(
+                    numeric: options.numeric,
+                    leftScalars: left.unicodeScalars, rightScalars: right.unicodeScalars,
+                    options: options.icuOptions,
+                    variableTopValue: variableTopValue(options), reordering: reordering)
             } else {
                 // Reuse the skip-walk iterators, already positioned past the shared prefix, with the first unequal scalar (lNext/rNext) pending. Saves two String-iterator builds and re-walking the prefix that reset(skippingFirst:) would do.
-                s.left.reset(numeric: options.numeric, source: lIter, first: lNext?.value)
-                s.right.reset(numeric: options.numeric, source: rIter, first: rNext?.value)
+                result = try s.resetBothAndCompare(
+                    numeric: options.numeric,
+                    leftSource: lIter, leftFirst: lNext?.value,
+                    rightSource: rIter, rightFirst: rNext?.value,
+                    options: options.icuOptions,
+                    variableTopValue: variableTopValue(options), reordering: reordering)
             }
-            result = try CollationCompare.compareUpToQuaternary(
-                &s.left, &s.right, options: options.icuOptions,
-                variableTopValue: variableTopValue(options), reordering: reordering)
         }
         if result != 0 {
             return result < 0 ? .ascending : .descending

@@ -74,6 +74,55 @@ final class ScratchBuffers {
         iter.reset(numeric: numeric, scalars: scalars)
         _ = try iter.collectAll()
     }
+
+    /// Resets both iterators and runs the comparison under TWO access scopes instead of four.
+    ///
+    /// The pipeline path used to touch `left`/`right` three times each in source order — reset, reset, then the two `inout` arguments of `compareUpToQuaternary` — which is four dynamic scopes per compare (confirmed in the object: two around the out-of-line resets, then two NESTED around the single call). Routing everything through one static helper opens one scope per iterator, at the arguments, covering the resets AND the comparison.
+    ///
+    /// Two overloads rather than one with a mode flag or closure: the skip-walk path hands over already-positioned iterators, and a closure at this call site is the §33 shape that costs paths sortKey +8%. Both are called only from inside the pipeline branch, i.e. after the fast-Latin bail, so §37's rule about paying scopes ahead of a bail does not apply.
+    @inline(__always)
+    func resetBothAndCompare(
+        numeric: Bool,
+        leftScalars: String.UnicodeScalarView, rightScalars: String.UnicodeScalarView,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering?
+    ) throws -> Int {
+        try ScratchBuffers.resetBothAndCompare(
+            &left, &right, options: options, variableTopValue: variableTopValue,
+            reordering: reordering
+        ) { l, r in
+            l.reset(numeric: numeric, scalars: leftScalars)
+            r.reset(numeric: numeric, scalars: rightScalars)
+        }
+    }
+
+    @inline(__always)
+    func resetBothAndCompare(
+        numeric: Bool,
+        leftSource: String.UnicodeScalarView.Iterator, leftFirst: UInt32?,
+        rightSource: String.UnicodeScalarView.Iterator, rightFirst: UInt32?,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering?
+    ) throws -> Int {
+        try ScratchBuffers.resetBothAndCompare(
+            &left, &right, options: options, variableTopValue: variableTopValue,
+            reordering: reordering
+        ) { l, r in
+            l.reset(numeric: numeric, source: leftSource, first: leftFirst)
+            r.reset(numeric: numeric, source: rightSource, first: rightFirst)
+        }
+    }
+
+    /// The scopes are opened at `l`/`r` here and cover both the reset and the comparison. `reset` is a non-escaping closure that is always inlined into the caller, so no closure survives at the call site.
+    @inline(__always)
+    private static func resetBothAndCompare(
+        _ l: inout CEIterator, _ r: inout CEIterator,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering?,
+        reset: (inout CEIterator, inout CEIterator) -> Void
+    ) throws -> Int {
+        reset(&l, &r)
+        return try CollationCompare.compareUpToQuaternary(
+            &l, &r, options: options, variableTopValue: variableTopValue,
+            reordering: reordering)
+    }
 }
 
 /// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers instance, avoiding all locking, exclusivity checks, and ARC traffic on the take/give path. If a thread re-enters (e.g. compare inside compare, which doesn't happen in practice but is sound), `take()` returns nil and the caller allocates a fresh set.
