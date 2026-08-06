@@ -435,9 +435,30 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   wrong fix (extending the end over trailing marks would break "e" not
   matching inside a decomposed "é"). **Suite gate 1527/124, ZERO known
   issues.**
-  Highest-value perf item left, with disassembly already done: the
-  `swift_beginAccess` pairs on the scratch iterators (2 per sortKey,
-  4 per pipeline compare).
+  2026-08-06: **§48 — exclusivity scopes, 1 of 4 sites shipped**
+  (`c272d6f`). `ScratchBuffers` is a class, so every mutating access to
+  `left`/`right` opens a dynamically-enforced scope. sortKey's two pairs
+  (one around the out-of-line `reset`, one around the whole inlined
+  `collectAll` loop) are now one, via a fused method over a static
+  helper taking the iterator `inout` — the ONLY shape that works:
+  fusing into a plain method on the class is a measured no-op, because
+  the throwing `collectAll` blocks the optimizer's access merging.
+  **sortKey ascii 167→159 (−5.4%), latin −3.7%, cjk −3.3%, thai −3.2%,
+  paths no signal, compare flat**; symbol-verified 8/9 → 7/8 access
+  relocations. **THE RECALIBRATION: one begin/end pair costs ~8–9 ns,
+  not the ~2–3 ns §46 assumed**, which re-prices the three untouched
+  sites — compare pipeline 4 pairs (thai-only), search family 5/5/4,
+  and `.identical` drain loops 2 pairs PER SCALAR. All three take the
+  same plain-Swift shape; reaching ZERO would need
+  `@exclusivity(unchecked)` or unsafeAddress accessors, which have zero
+  precedent in swift-foundation and are recorded-not-recommended.
+  Same day (`15f5376`): the position suite gained a **data-derived sweep
+  over every root discontiguous contraction** — 12 starters found by
+  trie scan, their 14 real suffixes discovered by CE comparison, crossed
+  with every lower-ccc mark; 2486 of 2490 triples reach the branch
+  (99.8%, vs 100 of 14700 for a naive sweep), four oracle-free checks
+  each, 0.113 s, with `#require` guards so a broken derivation fails
+  loudly instead of silently covering nothing. **Gate 1528/124.**
   Technique log: `optimization-targets.md` — read THE ALLOCATION/
   RESOLUTION HUNT note at the top before any perf work, then §20
   (steps 6–8), §27, §29–§45 and the audit list;

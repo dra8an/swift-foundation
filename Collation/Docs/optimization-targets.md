@@ -90,17 +90,18 @@ Allocation/resolution samples are the trustworthy kind.
       settings, §46(b) scalar count, §47's non-contiguous span) were all found by
       audit and missed by every suite, because until §47 every gate compared
       CE bytes or KEY bytes and nothing compared reported OFFSETS.
-- [ ] **Dynamic exclusivity on the scratch iterators — highest-value perf
-      item left.** Disassembly (two independent lenses, confirmed in the
-      shipping WMO object): `sortKey` executes 2 `swift_beginAccess`/
-      `endAccess` pairs on `ScratchBuffers.left`, the compare pipeline path 4,
-      because the iterators are stored properties of a class. Also proves
-      `CEIterator.reset` is an out-of-line call. Fix (a) fuse reset+collectAll
-      into one ScratchBuffers method so one scope covers both; (b) hold the
-      iterators as `UnsafeMutablePointer<CEIterator>` (pointer accesses are
-      not exclusivity-checked). Est. 2–6 ns sortKey, 8–12 ns thai compare.
-      See §46's refuted/open list for the rest of that hunt's untried
-      candidates.
+- [~] **Dynamic exclusivity on the scratch iterators — 1 of 4 sites DONE
+      (§48).** sortKey's reset+collectAll fused into one scope (`c272d6f`):
+      sortKey −3.2..−5.4%, symbol-verified 8/9 → 7/8 access calls. **One pair
+      costs ~8–9 ns, not the ~2–3 ns §46 assumed** — which re-prices the rest.
+      Remaining, all doable with the same plain-Swift shape (a fused method
+      over a static `inout` helper): compare pipeline 4 pairs → 2 ≈ 16 ns
+      (thai-only — ascii/latin exit at fast-Latin, cjk at quickPrimary);
+      search/searchBackwards/contains 5/5/4 pairs; `.identical` drain loops
+      2 pairs PER SCALAR (largest absolute win, non-default strength). Going
+      to ZERO needs `@exclusivity(unchecked)` or unsafeAddress accessors —
+      both with zero precedent in swift-foundation, so recorded and not
+      recommended. Full ground truth, offsets and the naive-fusion trap in §48.
 - [x] sortKey writer design space — CLOSED (§46(a)): the third point
       (single-pass + region level buffers, ICU's own shape) had never been
       measured and beats both prior writers. sortKey −2.1..−4.7% on all five
@@ -2170,16 +2171,14 @@ cost +2 KB — worth it here at −6%, where §12's +6 KB for −2% was not.
   `.digit` tag for the Thai block's own digits; threading the loaded
   normalization-trie value through `isInert`; trap-free arithmetic in the
   OFFSET/IMPLICIT primary formulas.
-- **Dynamic exclusivity on the scratch ivars** — two independent lenses found
-  it and the disassembly is confirmed: `sortKey` executes 2
-  `swift_beginAccess`/`endAccess` pairs on `ScratchBuffers.left` (compare's
-  pipeline path, 4), because `scratch.left` is a stored property of a class.
-  Proposed fixes: fuse `reset` + `collectAll` into one method on
-  ScratchBuffers so one access scope covers both (also lets `CEIterator.reset`
-  inline — the object proves it is currently an out-of-line call), or hold the
-  iterators as `UnsafeMutablePointer<CEIterator>` so the accesses are not
-  exclusivity-checked. Estimated 2–6 ns sortKey, 8–12 ns thai compare. NOT
-  attempted this round; the highest-value item left on the list.
+- **Dynamic exclusivity on the scratch ivars** — SUPERSEDED BY §48, which
+  disassembled it properly, shipped the sortKey site and re-priced the rest.
+  The estimate recorded here (2–6 ns sortKey, 8–12 ns thai compare) was 3–4×
+  TOO LOW: one begin/end pair is worth ~8–9 ns, and removing exactly one moved
+  ascii sortKey 5.4%. Also wrong here: the fix shape. Fusing `reset` +
+  `collectAll` into a method on ScratchBuffers is a measured NO-OP — the
+  throwing `collectAll` blocks access merging, so it must route through a
+  static helper taking the iterator `inout`. See §48.
 
 #### Harness notes
 
@@ -2336,3 +2335,168 @@ wrong-nil for common false matches.
 UCharsTrie's value semantics let a struct copy replace ICU's `SkippedState`.
 That is true of the TRIE state and false of the POSITION state — which is
 precisely what this bug was. The header now says so.
+
+---
+
+### 48. Exclusivity scopes on the scratch iterators: one pair costs ~8–9 ns, not ~2–3
+
+**Status:** first of four sites SHIPPED 2026-08-06 (`c272d6f`), plus the
+systematic discontiguous test sweep (`15f5376`). Gate **1528 tests / 124
+suites**, zero known issues. The other three sites are open and now priced
+properly — see the end of this section.
+
+`ScratchBuffers` is a CLASS and `left`/`right` are `CEIterator` stored
+properties, so every mutating access opens a dynamically-enforced access scope:
+a real `swift_beginAccess`/`swift_endAccess` pair. §43 filed this as lever (b)
+("ARC/exclusivity shave") and never started it; §46's hunt rediscovered it from
+two independent lenses and priced it at 2–6 ns sortKey / 8–12 ns thai compare.
+**That price was 3–4× too low.**
+
+#### Ground truth (shipping WMO object, before the fix)
+
+40 `swift_beginAccess` / 39 `swift_endAccess` relocations, attributed by
+enclosing symbol: **compareBody 10, sortKey 8, search 5, searchBackwards 5,
+contains 4**, remainder in init/deinit. Field offsets read off the access
+operands: `left` +0x10, `right` +0x428 (so `CEIterator` = 1048 B), `key` +0x840,
+`nfdScalars` +0x868, `patternCEs` +0x870, `annotatedCEs` +0x878,
+`maskedTextCEs` +0x880, `nfdSourceMap` +0x888; instance ≈ 2192 B.
+
+**Pairs that actually EXECUTE per call** (static sites ≠ executions — the
+identical-strength tail and throw cleanups inflate the site count):
+
+| path | pairs/call | where |
+|---|---:|---|
+| sortKey, strength < .identical | **2** | both on `left`: 0x2031c..0x20340 around the out-of-line `reset`, 0x20354..0x20370 around the ENTIRE inlined `collectAll` loop |
+| compare pipeline | **4** | `reset(left)`, `reset(right)`, then two NESTED scopes around the single `bl compareUpToQuaternary` at 0x1e23c |
+| search / searchBackwards / contains | **5 / 5 / 4** | the `inout` iterator + buffer arguments, all correctly placed AFTER the byte-scan bail (§37-compliant) |
+| any of the above at `.identical` | **+2 per NFD SCALAR** | the drain loops: `NFDIterator.next()` per side, plus `nfdScalars.append` |
+
+Two facts worth keeping:
+- **Read accesses are free.** `scratch.left.ces` is a plain load with no marker;
+  `nfdScalars.isEmpty` compiles to flags `0x0` (Read, Tracking unset) — an
+  instantaneous check, no scope, no `endAccess`. Only mutating/inout accesses
+  emit the pair, flags `0x21` (Modify|Tracking).
+- **The `.identical` per-scalar pairs are the largest exclusivity concentration
+  in the object** and were completely unrecorded before this round.
+
+#### The shape that works — and the one that looks right and does nothing
+
+Writing the two sortKey statements as a method on `ScratchBuffers` **buys
+nothing**. Measured in a throwaway probe:
+
+```
+today's shape  (box.right.reset(v); try box.right.collectAll())        begin = 2
+naive fusion   (same two statements moved into a method on the class)  begin = 2   ← no gain
+fused helper   (method forwards to a static helper taking `inout S`)   begin = 1
+```
+
+`AccessEnforcementOpts` merges adjacent accesses **only when nothing throws**,
+and `collectAll` throws — which is exactly why the shipping object shows them
+split. The fix must route through a helper taking the iterator `inout`, so the
+scope is opened once at that argument and closed on return. Shipped as
+`ScratchBuffers.resetAndCollectLeft` over a private static
+`resetAndCollect(_:numeric:scalars:)`.
+
+**This is not the §37 anti-pattern.** §37 forbids `inout` parameters on the
+signature of an entry whose common case bails before touching them, because the
+caller pays the scope ahead of the bail (that cost the byte-scan corpora
++30..40 ns once). `sortKey` has no fast path — it always produces CEs — so the
+scope opens exactly where the work happens. The rule still binds anything
+hoisted above the fast-Latin bail in `compare`/`compareFastPath`.
+
+#### Measured (interleaved A/B vs `cb1c191`, full-WMO EngineBench, min over 4 rounds)
+
+Symbol-verified: sortKey's `beginAccess`/`endAccess` relocations 8/9 → 7/8, and
+the function shrank 4972 → 4848 bytes. (Name-grep cannot verify this fix — the
+helper is `@inline(__always)` and leaves no symbol; count the access
+relocations in the entry's address range instead.)
+
+| corpus | sortKey | Δ | skRet |
+|---|---:|---:|---:|
+| ascii | 167 → **159** | −5.4% | −3.1% |
+| latin | 188 → **181** | −3.7% | −2.1% |
+| cjk | 181 → **175** | −3.3% | −3.8% |
+| thai | 220 → **213** | −3.2% | −2.4% |
+| paths | 392 → 390 | no signal | — |
+
+compare flat on every corpus (correct — this touches only sortKey). Per-round
+4/4 consistent in sign on ascii (167/168/166/167 → 159/158/159/158) and thai
+(220/219/219/220 → 213/213/213/216). paths shows MIXED SIGNS across rounds with
+a ~5 ns within-side spread, inside §34's ±7% band: neither win nor regression.
+Unexplained — an 8 ns fixed saving should have shown on a 392 ns row. Diff the
+writer's instruction stream before claiming either way.
+
+#### THE RECALIBRATION — the reusable result of this round
+
+**One begin/end pair costs ~8–9 ns on this path**, not the ~2–3 ns §46 assumed.
+~32 cycles at 4 GHz for two runtime calls that each fetch the thread's access
+set and walk a conflict list. Removing exactly ONE pair moved ascii sortKey
+5.4%.
+
+Re-pricing the three untouched sites at ~8 ns/pair:
+- **compare pipeline, 4 pairs.** A `resetBothAndCompare(_ l: inout CEIterator,
+  _ r: inout CEIterator, …)` collapses 4 → 2 (two inout arguments = two scopes,
+  covering both resets AND `compareUpToQuaternary`). ≈16 ns. **Thai-only in
+  practice** — ascii/latin exit at fast-Latin and cjk at quickPrimary, so they
+  never reach the pipeline. thai compare 277 → ~261 (−6%).
+- **search / searchBackwards / contains, 14 pairs.** Same treatment, on rows
+  where 8 ns/pair is 4–8%. Must stay below the byte-scan bail (§37).
+- **`.identical`, 2 pairs per scalar.** Hoist the two drain loops into
+  `ScratchBuffers` methods. Largest absolute win available, on a non-default
+  strength.
+
+All three use the shape shipped here: **a fused method over a static `inout`
+helper — plain public Swift, no unsafe pointers, no undocumented attributes.**
+
+#### Why not go to ZERO pairs
+
+Reaching zero needs one of:
+- `@exclusivity(unchecked)` on the stored properties — verified on this
+  toolchain to emit a bare `ref_element_addr` with no `begin_access` at all,
+  zero call-site churn, and it extends to `patternCEs`/`annotatedCEs`/
+  `maskedTextCEs`/`nfdSourceMap` (the only way to take search to 0);
+- `unsafeAddress`/`unsafeMutableAddress` accessors over one
+  `UnsafeMutablePointer<CEIterator>` allocation — also zero call-site churn,
+  also verified at 0 markers;
+- explicit `.pointee` everywhere — public API, but 15 engine sites plus 26 in
+  the tools, and it adds a malloc, a `deinit`, and one dependent load per
+  access group.
+
+**Both zero-churn shapes have ZERO precedent in swift-foundation** (0 uses
+tree-wide of either, checked), and the Collation sources deliberately carry no
+underscored attributes while the tree elsewhere uses 501 `@_alwaysEmitIntoClient`
+/ 66 `@_spi`. With an UPSTREAM-PREP conformance box still open, halving the
+pairs with plain Swift is the shippable move; the unsafe shapes are recorded
+here so the option is not lost, not recommended. If `.pointee` is ever taken,
+note the `deinitialize(count:)` that the July review caught missing in
+`PoolLock` — same trap.
+
+#### The test sweep shipped alongside (`15f5376`)
+
+§47's suite checked seven curated sequences; this derives the whole shape space
+from the data, so it adapts when CLDR does. Scan the trie for starters whose
+CE32 is a contraction carrying `contractTrailingCCC` (12 in root), discover
+their REAL suffixes by comparing `CEs(starter + mark)` against
+`CEs(starter) + CEs(mark)` (14 pairs: Cyrillic, Arabic, Telugu, Sinhala,
+Tibetan, Vithkuqi), then cross each with every mark of LOWER ccc — lower first
+is canonical order, so NFD cannot reorder the triple out from under the test.
+Four oracle-free checks per triple; 0.113 s.
+
+Discovering the suffixes is what makes it work: **2486 of 2490 triples actually
+reach the branch (99.8%), against 100 of 14700 for a naive
+one-mark-per-ccc-class sweep.** Three `#require` guards (≥10 starters, ≥10
+pairs, ≥1000 triples) fail loudly if the derivation breaks — the trap
+`Golden/fuzz-corpus.txt` fell into, where an invariant "passed" because nothing
+reached the branch.
+
+#### Round note on the harness
+
+The §46-style hunt was re-run for this item (4 analysts → 2 adversarial
+verifiers → synthesis). The four analysts delivered — the disassembly ground
+truth, the shape probe that killed the naive fusion, the constraint sweep that
+corrected the filed estimate, and the test-data derivation. **All three
+downstream agents died on API 503s**, so nothing was adversarially verified and
+no synthesis was produced. The two findings that mattered most (the naive
+fusion is a no-op; one pair is worth ~8–9 ns) came from a probe and from the
+A/B respectively — not from review. Weight accordingly when sizing the next
+hunt: the measurement is what settled this, twice.
