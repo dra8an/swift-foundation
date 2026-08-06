@@ -239,7 +239,7 @@ private struct ChineseEngineParityProbe {
         for day in from...to {
             let date = Date(timeIntervalSince1970: Double(day - 719_163) * 86400.0 + 43_200.0)
             let c = icu.dateComponents(fields, from: date, in: .gmt)
-            let y = _ChineseCalendarEngine.year(containingRataDie: day)
+            let y = _CalendarChinese.year(containingRataDie: day)
             guard let (ord, dom) = y.ordinalAndDay(rataDie: day) else {
                 inTableDiffs.append("day \(day): engine gap!")
                 continue

@@ -147,7 +147,7 @@ private struct ChineseLiuReferenceProbe {
         var failures: [String] = []
         var uncertainDiffs: [String] = []
         for (iso, cnyRD, leap, bits) in Self.liu {
-            let y = _ChineseCalendarEngine.year(relatedISOYear: iso)
+            let y = _CalendarChinese.year(relatedISOYear: iso)
             var diffs: [String] = []
             if y.newYearRataDie != cnyRD { diffs.append("CNY rd \(y.newYearRataDie) vs Liu \(cnyRD)") }
             if Int(y.leapMonthNumber) != leap { diffs.append("leap \(y.leapMonthNumber) vs Liu \(leap)") }

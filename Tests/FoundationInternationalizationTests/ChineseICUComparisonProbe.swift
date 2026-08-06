@@ -204,7 +204,7 @@ private struct ChineseICUComparisonProbe {
         var divergences: [String] = []
         var count = 0
         for iso in stride(from: 1901, through: 2100, by: 7) {
-            let ny = _ChineseCalendarEngine.year(relatedISOYear: iso).newYearRataDie
+            let ny = _CalendarChinese.year(relatedISOYear: iso).newYearRataDie
             for delta in [-1, 0, 1] {
                 let rd = ny + delta
                 let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)
@@ -222,7 +222,7 @@ private struct ChineseICUComparisonProbe {
         var divergences: [String] = []
         var count = 0
         for iso in stride(from: 1903, through: 2099, by: 3) {
-            let y = _ChineseCalendarEngine.year(relatedISOYear: iso)
+            let y = _CalendarChinese.year(relatedISOYear: iso)
             guard let lo = y.leapOrdinal else { continue }
             let start = y.monthStartRataDie(ordinal: lo)
             let len = y.monthLength(ordinal: lo)
@@ -261,8 +261,8 @@ private struct ChineseICUComparisonProbe {
         var divergences: [String] = []
         var count = 0
         // Daily bands across both seams: CNY 1901 ± 40d, CNY 2101 ± 40d.
-        for (iso, seam) in [(1901, _ChineseCalendarEngine.year(relatedISOYear: 1901).newYearRataDie),
-                            (2101, _ChineseCalendarEngine.year(relatedISOYear: 2101).newYearRataDie)] {
+        for (iso, seam) in [(1901, _CalendarChinese.year(relatedISOYear: 1901).newYearRataDie),
+                            (2101, _CalendarChinese.year(relatedISOYear: 2101).newYearRataDie)] {
             for delta in -40...40 {
                 let rd = seam + delta
                 let date = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)

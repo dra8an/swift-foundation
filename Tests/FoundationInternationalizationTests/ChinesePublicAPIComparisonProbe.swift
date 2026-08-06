@@ -371,7 +371,7 @@ private struct ChinesePublicAPIComparisonProbe {
         let div = Divergences()
         var count = 0
         for iso in [1913, 1953, 1998, 2024, 2081] {
-            let ny = _ChineseCalendarEngine.year(relatedISOYear: iso).newYearRataDie
+            let ny = _CalendarChinese.year(relatedISOYear: iso).newYearRataDie
             for delta in [-1, 0] {
                 let rd = ny + delta
                 let d = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)
@@ -388,7 +388,7 @@ private struct ChinesePublicAPIComparisonProbe {
         let (icu, ours) = Self.makePair()
         let div = Divergences()
         var count = 0
-        let y = _ChineseCalendarEngine.year(relatedISOYear: 2020)
+        let y = _CalendarChinese.year(relatedISOYear: 2020)
         for ordinal in 1...Int(y.monthCount) {
             let start = y.monthStartRataDie(ordinal: ordinal)
             let last = start + y.monthLength(ordinal: ordinal) - 1
@@ -445,7 +445,7 @@ private struct ChinesePublicAPIComparisonProbe {
         let div = Divergences()
         var count = 0
         for iso in stride(from: 1990, through: 2030, by: 5) {
-            let ny = _ChineseCalendarEngine.year(relatedISOYear: iso).newYearRataDie
+            let ny = _CalendarChinese.year(relatedISOYear: iso).newYearRataDie
             for delta in [-3, -1, 0, 1, 3] {
                 let rd = ny + delta
                 let d = Date(timeIntervalSinceReferenceDate: Double(rd - 730_486) * 86400.0 + 43_200.0)

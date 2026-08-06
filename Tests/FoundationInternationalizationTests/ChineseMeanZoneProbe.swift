@@ -41,9 +41,9 @@ private struct ChineseMeanZoneProbe {
     @Test func seamsTileExactly() {
         var bad: [String] = []
         for range in [15_990...16_012, (-12_012)...(-11_988)] {
-            var prev = _ChineseCalendarEngine.year(relatedISOYear: range.lowerBound - 1)
+            var prev = _CalendarChinese.year(relatedISOYear: range.lowerBound - 1)
             for y in range {
-                let yr = _ChineseCalendarEngine.year(relatedISOYear: y)
+                let yr = _CalendarChinese.year(relatedISOYear: y)
                 if prev.endRataDie != yr.newYearRataDie {
                     bad.append("\(y): gap \(yr.newYearRataDie - prev.endRataDie)")
                 }
@@ -64,9 +64,9 @@ private struct ChineseMeanZoneProbe {
         years += [-4_999_999, 4_999_999]
         for y in years {
             var localBad: [String] = []
-            Self.checkStructure(_ChineseCalendarEngine.year(relatedISOYear: y), &localBad)
-            let next = _ChineseCalendarEngine.year(relatedISOYear: y + 1)
-            if _ChineseCalendarEngine.year(relatedISOYear: y).endRataDie != next.newYearRataDie {
+            Self.checkStructure(_CalendarChinese.year(relatedISOYear: y), &localBad)
+            let next = _CalendarChinese.year(relatedISOYear: y + 1)
+            if _CalendarChinese.year(relatedISOYear: y).endRataDie != next.newYearRataDie {
                 localBad.append("\(y): no tiling with successor")
             }
             bad += localBad
@@ -101,7 +101,7 @@ private struct ChineseMeanZoneProbe {
         var leapCount = 0
         var displays = Set<UInt8>()
         for y in 200_000...200_189 {
-            let yr = _ChineseCalendarEngine.year(relatedISOYear: y)
+            let yr = _CalendarChinese.year(relatedISOYear: y)
             if yr.leapMonthNumber != 0 {
                 leapCount += 1
                 displays.insert(yr.leapMonthNumber)

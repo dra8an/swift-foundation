@@ -26,13 +26,15 @@ import CRT
 
 // Chinese lunisolar calendar engine. Years 1901-2100 come from a baked table generated from ICU (parity by construction); outside that range but within the validated astronomical range, month structure is computed with ICU's chnsecal rules over _CalendarAstronomy at UTC+8; beyond that, the same rules run over mean elements (the historical píngqì method) anchored at the range edges.
 
-// MARK: - Month-structure rules over the astronomy engine. Days are reckoned at a fixed UTC+8 offset (no daylight saving, no historical time-zone changes), matching ICU's Chinese calendar (chnsecal).
+// MARK: - Month-structure rules over the astronomy engine
+//
+// The astronomy returns moments in universal time. These rules convert a moment to the day containing it using a fixed UTC+8 offset, with no daylight saving and no historical time-zone changes. That offset places the day boundary that decides which day a new moon or solstice falls on, and so where each month begins. It is unrelated to the calendar's own `timeZone`, which is applied separately when mapping a `Date` to a day, so the month structure is the same for every caller.
 //
 // These functions compute directly, without caching, which keeps the code minimal. They only run for out-of-range years (before 1901 or after 2100); the in-range path reads the baked table and never calls them, so normal usage is unaffected.
 //
 // Optimization opportunity: within one out-of-range year, each of its 12 or 13 month labels recomputes the same two or three winter solstices, which are the expensive astronomy. Adding a small local memo of the winter solstice and New Year lookups (a plain dictionary, no lock, inside `year(relatedISOYear:)`) would compute each solstice once per year instead of once per month, making out-of-range computation roughly 1.6 to 1.8 times faster. Add it if out-of-range performance ever becomes a real bottleneck.
 //
-// Every rule takes `anchors`, which selects the astronomy it runs over: nil means the fitted series; set means mean elements, the historical píngqì rule, where the sun advances uniformly from the solstice anchor and new moons repeat uniformly from the new-moon anchor. Used beyond the validated range, see _ChineseCalendarEngine.astronomicalYears.
+// Every rule takes `anchors`, which selects the astronomy it runs over: nil means the fitted series; set means mean elements, the historical píngqì rule, where the sun advances uniformly from the solstice anchor and new moons repeat uniformly from the new-moon anchor. Used beyond the validated range, see _CalendarChinese.astronomicalYears.
 
 fileprivate let chineseSynodicGap = 25
 
@@ -215,200 +217,6 @@ internal struct _ChineseYear: Sendable {
     }
 }
 
-// MARK: - Engine: baked table + computed fallback
-
-internal enum _ChineseCalendarEngine {
-    // One entry per Chinese year, indexed by the Gregorian year in which that Chinese year begins.
-    // Each entry packs one Chinese year into a UInt32:
-    //   bits 0-12: month lengths, one bit per month starting at month 1, where 1 means a 30-day month and 0 means a 29-day month.
-    //   bits 13-16: the leap month number, 0 for no leap month; otherwise the leap month shares this number (N means the leap month follows month N).
-    //   bits 17-22: the New Year offset, the number of days from January 19 of this Gregorian year to Chinese New Year.
-    // Worked example: 0x003E0752. Bits 0-12 = 0b0_0111_0101_0010, so months 2, 5, 7, 9, 10, and 11 have 30 days and the rest have 29. Bits 13-16 = 0, so there is no leap month. Bits 17-22 = 31, so New Year is January 19 plus 31 days.
-    static let firstTableYear = 1901
-    // Local research divergence, not for upstream: the PR stores this as InlineArray<200, UInt32>, which needs the macOS 26 runtime; a plain array is semantically identical.
-    static let table: [UInt32] = [
-    0x003E0752, 0x00280EA5, 0x0014B64A, 0x0038064B, // 1901-1904
-    0x00200A9B, 0x000C9556, 0x0032056A, 0x001C0B59, // 1905-1908
-    0x00065752, 0x002C0752, 0x0016DB25, 0x003C0B25, // 1909-1912
-    0x00240A4B, 0x000EB2AB, 0x00340AAD, 0x0020056A, // 1913-1916
-    0x00084B69, 0x002E0DA9, 0x001AFD92, 0x00400D92, // 1917-1920
-    0x00280D25, 0x0012BA4D, 0x00380A56, 0x002202B6, // 1921-1924
-    0x000A95B5, 0x003206D4, 0x001C0EA9, 0x00085E92, // 1925-1928
-    0x002C0E92, 0x0016CD26, 0x003A052B, 0x00240A57, // 1929-1932
-    0x000EB2B6, 0x00340B5A, 0x002006D4, 0x000A6EC9, // 1933-1936
-    0x002E0749, 0x0018F693, 0x003E0A93, 0x0028052B, // 1937-1940
-    0x0010CA5B, 0x00360AAD, 0x0022056A, 0x000C9B55, // 1941-1944
-    0x00320BA4, 0x001C0B49, 0x00065A93, 0x002C0A95, // 1945-1948
-    0x0014F52D, 0x003A0536, 0x00240AAD, 0x0010B5AA, // 1949-1952
-    0x003405B2, 0x001E0DA5, 0x000A7D4A, 0x00300D4A, // 1953-1956
-    0x00190A95, 0x003C0A97, 0x00280556, 0x0012CAB5, // 1957-1960
-    0x00360AD5, 0x002206D2, 0x000C8EA5, 0x00320EA5, // 1961-1964
-    0x001C064A, 0x00046C97, 0x002A0A9B, 0x0016F55A, // 1965-1968
-    0x003A056A, 0x00240B69, 0x0010B752, 0x00360B52, // 1969-1972
-    0x001E0B25, 0x0008964B, 0x002E0A4B, 0x001914AB, // 1973-1976
-    0x003C02AD, 0x0026056D, 0x0012CB69, 0x00380DA9, // 1977-1980
-    0x00220D92, 0x000C9D25, 0x00320D25, 0x001D5A4D, // 1981-1984
-    0x00400A56, 0x002A02B6, 0x0014C5B5, 0x003A06D5, // 1985-1988
-    0x00240EA9, 0x0010BE92, 0x00360E92, 0x00200D26, // 1989-1992
-    0x00086A56, 0x002C0A57, 0x001914D6, 0x003E035A, // 1993-1996
-    0x002606D5, 0x0012B6C9, 0x00380749, 0x00220693, // 1997-2000
-    0x000A952B, 0x0030052B, 0x001A0A5B, 0x0006555A, // 2001-2004
-    0x002A056A, 0x0014FB55, 0x003C0BA4, 0x00260B49, // 2005-2008
-    0x000EBA93, 0x00340A95, 0x001E052D, 0x00088AAD, // 2009-2012
-    0x002C0AB5, 0x001935AA, 0x003E05D2, 0x00280DA5, // 2013-2016
-    0x0012DD4A, 0x00380D4A, 0x00220C95, 0x000C952E, // 2017-2020
-    0x00300556, 0x001A0AB5, 0x000655B2, 0x002C06D2, // 2021-2024
-    0x0014CEA5, 0x003A0725, 0x0024064B, 0x000EAC97, // 2025-2028
-    0x00320CAB, 0x001E055A, 0x00086AD6, 0x002E0B69, // 2029-2032
-    0x00197752, 0x003E0B52, 0x00280B25, 0x0012DA4B, // 2033-2036
-    0x00360A4B, 0x002004AB, 0x000AA55B, 0x003005AD, // 2037-2040
-    0x001A0B6A, 0x00065B52, 0x002C0D92, 0x0016FD25, // 2041-2044
-    0x003A0D25, 0x00240A55, 0x000EB4AD, 0x003404B6, // 2045-2048
-    0x001C05B5, 0x00086DAA, 0x002E0EC9, 0x001B1E92, // 2049-2052
-    0x003E0E92, 0x00280D26, 0x0012CA56, 0x00360A57, // 2053-2056
-    0x00200556, 0x000A86D5, 0x00300755, 0x001C0749, // 2057-2060
-    0x00046E93, 0x002A0693, 0x0014F52B, 0x003A052B, // 2061-2064
-    0x00220A5B, 0x000EB55A, 0x0034056A, 0x001E0B65, // 2065-2068
-    0x0008974A, 0x002E0B4A, 0x00191A95, 0x003E0A95, // 2069-2072
-    0x0026052D, 0x0010CAAD, 0x00360AB5, 0x002205AA, // 2073-2076
-    0x000A8BA5, 0x00300DA5, 0x001C0D4A, 0x00067C95, // 2077-2080
-    0x002A0C96, 0x0014F94E, 0x003A0556, 0x00240AB5, // 2081-2084
-    0x000EB5B2, 0x003406D2, 0x001E0EA5, 0x000A8E4A, // 2085-2088
-    0x002C068B, 0x00170C97, 0x003C04AB, 0x0026055B, // 2089-2092
-    0x0010CAD6, 0x00360B6A, 0x00220752, 0x000C9725, // 2093-2096
-    0x00300B45, 0x001A0A8B, 0x0004549B, 0x002A04AB, // 2097-2100
-    ]
-
-    // The fitted astronomy runs only where it was validated against the JPL ephemeris, with margin inside the ephemeris limits. Beyond this range the fitted series cannot be checked, degrade physically, and eventually produce impossible month lengths; month structure there comes from mean elements anchored at these edges so the two zones tile.
-    static let astronomicalYears = -12_000...16_000
-
-    // True instant (fractional rata die, universal time) of the winter solstice of `gregorianYear`, by bisection on the fitted solar longitude.
-    private static func solsticeInstant(of gregorianYear: Int) -> Double {
-        var low = Double(_CalendarAstronomy.gregorianRataDie(gregorianYear, 12, 1))
-        var high = Double(_CalendarAstronomy.gregorianRataDie(gregorianYear + 1, 1, 10))
-        for _ in 0..<50 {
-            let mid = (low + high) / 2
-            var d = _CalendarAstronomy.solarLongitude(at: mid) - 270.0
-            if d < -180 { d += 360 } else if d > 180 { d -= 360 }
-            if d < 0 { low = mid } else { high = mid }
-        }
-        return (low + high) / 2
-    }
-
-    // True new-moon instant whose China local day is `rataDie`, which is a known month-start day at the range edge.
-    private static func newMoonInstant(onDay rataDie: Int) -> Double {
-        let base = _CalendarAstronomy.numberOfNewMoonAtOrAfter(Double(rataDie) - 3.0)
-        for n in base...(base + 2) {
-            let instant = _CalendarAstronomy.nthNewMoon(n)
-            if Int((instant + 8.0 / 24.0).rounded(.down)) == rataDie { return instant }
-        }
-        fatalError("no new moon on rata die \(rataDie)")
-    }
-
-    // Mean-zone anchors: the true solstice instant of the edge year, and the true new-moon instant bounding the edge year's month chain, so the mean chain continues it without a gap.
-    static let futureMeanAnchors: (solsticeInstant: Double, newMoonInstant: Double) = {
-        let edge = year(relatedISOYear: astronomicalYears.upperBound)
-        return (solsticeInstant(of: astronomicalYears.upperBound), newMoonInstant(onDay: edge.endRataDie))
-    }()
-
-    static let pastMeanAnchors: (solsticeInstant: Double, newMoonInstant: Double) = {
-        let edge = year(relatedISOYear: astronomicalYears.lowerBound)
-        return (solsticeInstant(of: astronomicalYears.lowerBound), newMoonInstant(onDay: edge.newYearRataDie))
-    }()
-
-
-    private static func decodeTableYear(relatedISOYear: Int) -> _ChineseYear {
-        let v = table[relatedISOYear - firstTableYear]
-        let leap = UInt8((v >> 13) & 0xF)
-        return _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: _CalendarAstronomy.gregorianRataDie(relatedISOYear, 1, 19) + Int((v >> 17) & 0x3F), monthLengthBits: UInt16(v & 0x1FFF), monthCount: leap == 0 ? 12 : 13, leapMonthNumber: leap)
-    }
-
-    /// Month structure for the Chinese year whose New Year falls in Gregorian `relatedISOYear`.
-    ///
-    /// In the baked range (1901...2100) this is a direct table decode. Outside it the structure is computed and memoized: locate this year's New Year and the next year's, walk the new moons between them to get each month's first day, record 29- vs 30-day lengths as bits, and mark the leap month (the month carrying no major solar term). Within `astronomicalYears` the events come from the fitted astronomy; beyond, from mean elements anchored at the range edges. Seam years reuse the neighboring zone's boundary value so all three spans tile exactly.
-    static func year(relatedISOYear: Int) -> _ChineseYear {
-        let idx = relatedISOYear - firstTableYear
-        if idx >= 0 && idx < table.count {
-            return decodeTableYear(relatedISOYear: relatedISOYear)
-        }
-        // Out-of-range: compute the month structure from astronomy. No caching; see the note on the rule functions above.
-        // Beyond the validated astronomical range the rules run over mean elements anchored at the range edges.
-        let anchors: (solsticeInstant: Double, newMoonInstant: Double)?
-        if relatedISOYear > Self.astronomicalYears.upperBound {
-            anchors = Self.futureMeanAnchors
-        } else if relatedISOYear < Self.astronomicalYears.lowerBound {
-            anchors = Self.pastMeanAnchors
-        } else {
-            anchors = nil
-        }
-        // Tile exactly with the baked table and with the astronomical range at their seams.
-        let ny: Int
-        if relatedISOYear == firstTableYear + table.count {
-            ny = decodeTableYear(relatedISOYear: relatedISOYear - 1).endRataDie
-        } else if relatedISOYear == Self.astronomicalYears.upperBound + 1 {
-            ny = year(relatedISOYear: relatedISOYear - 1).endRataDie
-        } else {
-            ny = chineseNewYear(relatedISOYear, anchors: anchors)
-        }
-        let nyNext: Int
-        if relatedISOYear + 1 == firstTableYear {
-            nyNext = decodeTableYear(relatedISOYear: firstTableYear).newYearRataDie
-        } else if relatedISOYear == Self.astronomicalYears.lowerBound - 1 {
-            nyNext = year(relatedISOYear: relatedISOYear + 1).newYearRataDie
-        } else {
-            nyNext = chineseNewYear(relatedISOYear + 1, anchors: anchors)
-        }
-        // Collect each month's first day: successive new moons from this New Year up to (but not including) the next year's New Year.
-        var starts = [ny]
-        var cur = ny
-        while true {
-            let nxt = chineseNewMoonNear(cur + chineseSynodicGap, true, anchors: anchors)
-            if nxt >= nyNext { break }
-            starts.append(nxt)
-            cur = nxt
-        }
-        // Pack month lengths (30-day months set a bit) and record the leap month, if any.
-        var monthLengthBits: UInt16 = 0
-        var leapMonthNumber: UInt8 = 0
-        for (i, s) in starts.enumerated() {
-            let next = (i + 1 < starts.count) ? starts[i + 1] : nyNext
-            assert(next - s == 29 || next - s == 30, "non-lunation month length \(next - s) in fallback year \(relatedISOYear)")
-            if next - s == 30 { monthLengthBits |= UInt16(1) << i }
-            let label = chineseMonthLabel(startingAt: s, gregorianYear: _CalendarAstronomy.gregorianYear(ofRataDie: s), anchors: anchors)
-            if label.isLeap { leapMonthNumber = UInt8(label.month) }
-        }
-        if starts.count == 13 && leapMonthNumber == 0 {
-            // Day-quantized term positions can leave a 13-month year without a term-based leap label when the sui's termless month falls across the year boundary. Complete deterministically: the first month that repeats the preceding month's term index, or the final month if every term advances.
-            leapMonthNumber = 12
-            var previousTerm = chineseMajorSolarTerm(starts[0], anchors: anchors)
-            for i in 1..<13 {
-                let term = chineseMajorSolarTerm(starts[i], anchors: anchors)
-                if term == previousTerm {
-                    leapMonthNumber = UInt8(i)
-                    break
-                }
-                previousTerm = term
-            }
-        }
-        return _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: ny, monthLengthBits: monthLengthBits, monthCount: UInt8(starts.count), leapMonthNumber: leapMonthNumber)
-    }
-
-    static func year(containingRataDie rataDie: Int) -> _ChineseYear {
-        // CNY falls Jan 19 + [2, 61]; estimate by Gregorian year and adjust.
-        var iso = _CalendarAstronomy.gregorianYear(ofRataDie: rataDie)
-        var y = year(relatedISOYear: iso)
-        while rataDie < y.newYearRataDie {
-            iso -= 1
-            y = year(relatedISOYear: iso)
-        }
-        while rataDie >= y.endRataDie {
-            iso += 1
-            y = year(relatedISOYear: iso)
-        }
-        return y
-    }
-}
-
 
 // MARK: - _CalendarChinese
 
@@ -480,7 +288,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
     private static let extendedYearUpperBound = 5_000_000
 
     private static func yearData(extendedYear: Int) -> _ChineseYear {
-        _ChineseCalendarEngine.year(relatedISOYear: extendedYear - extendedYearOffset)
+        Self.year(relatedISOYear: extendedYear - extendedYearOffset)
     }
 
     private static func rataDie(extendedYear: Int, ordinal: Int, day: Int) -> Int {
@@ -688,7 +496,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         let totalOffset = timeZone.secondsFromGMT(for: date)
         let localSeconds = date.timeIntervalSinceReferenceDate + Double(totalOffset)
         let (rataDie, secondsInDay): (Int, Double) = _CalendarUtility.rataDieAndSecondsInDay(localSeconds: localSeconds)
-        let y = _ChineseCalendarEngine.year(containingRataDie: rataDie)
+        let y = Self.year(containingRataDie: rataDie)
         guard let (ordinal, day) = y.ordinalAndDay(rataDie: rataDie) else {
             fatalError("year(containingRataDie:) returned a year not containing rataDie \(rataDie)")
         }
@@ -881,7 +689,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         let localSeconds = date.timeIntervalSinceReferenceDate + Double(totalOffset)
         let (rataDie, secondsInDay): (Int, Double) = _CalendarUtility.rataDieAndSecondsInDay(localSeconds: localSeconds)
 
-        let y = _ChineseCalendarEngine.year(containingRataDie: rataDie)
+        let y = Self.year(containingRataDie: rataDie)
         guard let (ordinal, day) = y.ordinalAndDay(rataDie: rataDie) else {
             fatalError("year(containingRataDie:) returned a year not containing rataDie \(rataDie)")
         }
@@ -984,7 +792,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
     private static func resolvedMonthStart(extendedYear: Int, display: Int, leap: Bool) -> Int {
         let ny = yearData(extendedYear: extendedYear).newYearRataDie
         let target = ny + (display - 1) * 29
-        var y = _ChineseCalendarEngine.year(containingRataDie: target)
+        var y = Self.year(containingRataDie: target)
         guard let od = y.ordinalAndDay(rataDie: target) else {
             fatalError("year(containingRataDie:) returned a year not containing rataDie \(target)")
         }
@@ -1005,7 +813,7 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         if ordinal < Int(y.monthCount) {
             return (y.monthStartRataDie(ordinal: ordinal + 1), y, ordinal + 1)
         }
-        let ny = _ChineseCalendarEngine.year(relatedISOYear: y.relatedISOYear + 1)
+        let ny = Self.year(relatedISOYear: y.relatedISOYear + 1)
         return (ny.newYearRataDie, ny, 1)
     }
 
@@ -1052,14 +860,14 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
             guard !ovf, newExt > Self.extendedYearLowerBound, newExt < Self.extendedYearUpperBound else { return nil }
             // ICU's add-year pin: resolve the month by single-bump, pin the day via a second resolution that keeps the source leap flag, then spill leniently (Calendar::add + getActualMaximum semantics).
             let start0 = Self.resolvedMonthStart(extendedYear: newExt, display: label.month, leap: label.isLeap)
-            let y1 = _ChineseCalendarEngine.year(containingRataDie: start0)
+            let y1 = Self.year(containingRataDie: start0)
             guard let od1 = y1.ordinalAndDay(rataDie: start0) else {
                 fatalError("year(containingRataDie:) returned a year not containing rataDie \(start0)")
             }
             let ord1 = od1.ordinal
             let display1 = y1.monthLabel(ordinal: ord1).month
             let start2 = Self.resolvedMonthStart(extendedYear: newExt, display: display1, leap: label.isLeap)
-            let y2 = _ChineseCalendarEngine.year(containingRataDie: start2)
+            let y2 = Self.year(containingRataDie: start2)
             guard let od2 = y2.ordinalAndDay(rataDie: start2) else {
                 fatalError("year(containingRataDie:) returned a year not containing rataDie \(start2)")
             }
@@ -1218,4 +1026,198 @@ internal final class _CalendarChinese: _CalendarProtocol, @unchecked Sendable {
         _NSSwiftCalendar(calendar: Calendar(inner: self))
     }
 #endif
+}
+
+// MARK: - Baked table
+
+// The baked month-structure table and the year lookups that read it. Years 1901 through 2100 come straight from the table; outside that range the structure is computed from the astronomy rules above.
+extension _CalendarChinese {
+    // One entry per Chinese year, indexed by the Gregorian year in which that Chinese year begins.
+    // Each entry packs one Chinese year into a UInt32:
+    //   bits 0-12: month lengths, one bit per month starting at month 1, where 1 means a 30-day month and 0 means a 29-day month.
+    //   bits 13-16: the leap month number, 0 for no leap month; otherwise the leap month shares this number (N means the leap month follows month N).
+    //   bits 17-22: the New Year offset, the number of days from January 19 of this Gregorian year to Chinese New Year.
+    // Worked example: 0x003E0752. Bits 0-12 = 0b0_0111_0101_0010, so months 2, 5, 7, 9, 10, and 11 have 30 days and the rest have 29. Bits 13-16 = 0, so there is no leap month. Bits 17-22 = 31, so New Year is January 19 plus 31 days.
+    static let firstTableYear = 1901
+    // Local research divergence, not for upstream: the PR stores this as InlineArray<200, UInt32>, which needs the macOS 26 runtime; a plain array is semantically identical.
+    static let table: [UInt32] = [
+    0x003E0752, 0x00280EA5, 0x0014B64A, 0x0038064B, // 1901-1904
+    0x00200A9B, 0x000C9556, 0x0032056A, 0x001C0B59, // 1905-1908
+    0x00065752, 0x002C0752, 0x0016DB25, 0x003C0B25, // 1909-1912
+    0x00240A4B, 0x000EB2AB, 0x00340AAD, 0x0020056A, // 1913-1916
+    0x00084B69, 0x002E0DA9, 0x001AFD92, 0x00400D92, // 1917-1920
+    0x00280D25, 0x0012BA4D, 0x00380A56, 0x002202B6, // 1921-1924
+    0x000A95B5, 0x003206D4, 0x001C0EA9, 0x00085E92, // 1925-1928
+    0x002C0E92, 0x0016CD26, 0x003A052B, 0x00240A57, // 1929-1932
+    0x000EB2B6, 0x00340B5A, 0x002006D4, 0x000A6EC9, // 1933-1936
+    0x002E0749, 0x0018F693, 0x003E0A93, 0x0028052B, // 1937-1940
+    0x0010CA5B, 0x00360AAD, 0x0022056A, 0x000C9B55, // 1941-1944
+    0x00320BA4, 0x001C0B49, 0x00065A93, 0x002C0A95, // 1945-1948
+    0x0014F52D, 0x003A0536, 0x00240AAD, 0x0010B5AA, // 1949-1952
+    0x003405B2, 0x001E0DA5, 0x000A7D4A, 0x00300D4A, // 1953-1956
+    0x00190A95, 0x003C0A97, 0x00280556, 0x0012CAB5, // 1957-1960
+    0x00360AD5, 0x002206D2, 0x000C8EA5, 0x00320EA5, // 1961-1964
+    0x001C064A, 0x00046C97, 0x002A0A9B, 0x0016F55A, // 1965-1968
+    0x003A056A, 0x00240B69, 0x0010B752, 0x00360B52, // 1969-1972
+    0x001E0B25, 0x0008964B, 0x002E0A4B, 0x001914AB, // 1973-1976
+    0x003C02AD, 0x0026056D, 0x0012CB69, 0x00380DA9, // 1977-1980
+    0x00220D92, 0x000C9D25, 0x00320D25, 0x001D5A4D, // 1981-1984
+    0x00400A56, 0x002A02B6, 0x0014C5B5, 0x003A06D5, // 1985-1988
+    0x00240EA9, 0x0010BE92, 0x00360E92, 0x00200D26, // 1989-1992
+    0x00086A56, 0x002C0A57, 0x001914D6, 0x003E035A, // 1993-1996
+    0x002606D5, 0x0012B6C9, 0x00380749, 0x00220693, // 1997-2000
+    0x000A952B, 0x0030052B, 0x001A0A5B, 0x0006555A, // 2001-2004
+    0x002A056A, 0x0014FB55, 0x003C0BA4, 0x00260B49, // 2005-2008
+    0x000EBA93, 0x00340A95, 0x001E052D, 0x00088AAD, // 2009-2012
+    0x002C0AB5, 0x001935AA, 0x003E05D2, 0x00280DA5, // 2013-2016
+    0x0012DD4A, 0x00380D4A, 0x00220C95, 0x000C952E, // 2017-2020
+    0x00300556, 0x001A0AB5, 0x000655B2, 0x002C06D2, // 2021-2024
+    0x0014CEA5, 0x003A0725, 0x0024064B, 0x000EAC97, // 2025-2028
+    0x00320CAB, 0x001E055A, 0x00086AD6, 0x002E0B69, // 2029-2032
+    0x00197752, 0x003E0B52, 0x00280B25, 0x0012DA4B, // 2033-2036
+    0x00360A4B, 0x002004AB, 0x000AA55B, 0x003005AD, // 2037-2040
+    0x001A0B6A, 0x00065B52, 0x002C0D92, 0x0016FD25, // 2041-2044
+    0x003A0D25, 0x00240A55, 0x000EB4AD, 0x003404B6, // 2045-2048
+    0x001C05B5, 0x00086DAA, 0x002E0EC9, 0x001B1E92, // 2049-2052
+    0x003E0E92, 0x00280D26, 0x0012CA56, 0x00360A57, // 2053-2056
+    0x00200556, 0x000A86D5, 0x00300755, 0x001C0749, // 2057-2060
+    0x00046E93, 0x002A0693, 0x0014F52B, 0x003A052B, // 2061-2064
+    0x00220A5B, 0x000EB55A, 0x0034056A, 0x001E0B65, // 2065-2068
+    0x0008974A, 0x002E0B4A, 0x00191A95, 0x003E0A95, // 2069-2072
+    0x0026052D, 0x0010CAAD, 0x00360AB5, 0x002205AA, // 2073-2076
+    0x000A8BA5, 0x00300DA5, 0x001C0D4A, 0x00067C95, // 2077-2080
+    0x002A0C96, 0x0014F94E, 0x003A0556, 0x00240AB5, // 2081-2084
+    0x000EB5B2, 0x003406D2, 0x001E0EA5, 0x000A8E4A, // 2085-2088
+    0x002C068B, 0x00170C97, 0x003C04AB, 0x0026055B, // 2089-2092
+    0x0010CAD6, 0x00360B6A, 0x00220752, 0x000C9725, // 2093-2096
+    0x00300B45, 0x001A0A8B, 0x0004549B, 0x002A04AB, // 2097-2100
+    ]
+
+    // The fitted astronomy runs only where it was validated against the JPL ephemeris, with margin inside the ephemeris limits. Beyond this range the fitted series cannot be checked, degrade physically, and eventually produce impossible month lengths; month structure there comes from mean elements anchored at these edges so the two zones tile.
+    static let astronomicalYears = -12_000...16_000
+
+    // True instant (fractional rata die, universal time) of the winter solstice of `gregorianYear`, by bisection on the fitted solar longitude.
+    private static func solsticeInstant(of gregorianYear: Int) -> Double {
+        var low = Double(_CalendarAstronomy.gregorianRataDie(gregorianYear, 12, 1))
+        var high = Double(_CalendarAstronomy.gregorianRataDie(gregorianYear + 1, 1, 10))
+        for _ in 0..<50 {
+            let mid = (low + high) / 2
+            var d = _CalendarAstronomy.solarLongitude(at: mid) - 270.0
+            if d < -180 { d += 360 } else if d > 180 { d -= 360 }
+            if d < 0 { low = mid } else { high = mid }
+        }
+        return (low + high) / 2
+    }
+
+    // True new-moon instant whose China local day is `rataDie`, which is a known month-start day at the range edge.
+    private static func newMoonInstant(onDay rataDie: Int) -> Double {
+        let base = _CalendarAstronomy.numberOfNewMoonAtOrAfter(Double(rataDie) - 3.0)
+        for n in base...(base + 2) {
+            let instant = _CalendarAstronomy.nthNewMoon(n)
+            if Int((instant + 8.0 / 24.0).rounded(.down)) == rataDie { return instant }
+        }
+        fatalError("no new moon on rata die \(rataDie)")
+    }
+
+    // Mean-zone anchors: the true solstice instant of the edge year, and the true new-moon instant bounding the edge year's month chain, so the mean chain continues it without a gap.
+    static let futureMeanAnchors: (solsticeInstant: Double, newMoonInstant: Double) = {
+        let edge = year(relatedISOYear: astronomicalYears.upperBound)
+        return (solsticeInstant(of: astronomicalYears.upperBound), newMoonInstant(onDay: edge.endRataDie))
+    }()
+
+    static let pastMeanAnchors: (solsticeInstant: Double, newMoonInstant: Double) = {
+        let edge = year(relatedISOYear: astronomicalYears.lowerBound)
+        return (solsticeInstant(of: astronomicalYears.lowerBound), newMoonInstant(onDay: edge.newYearRataDie))
+    }()
+
+    private static func decodeTableYear(relatedISOYear: Int) -> _ChineseYear {
+        let v = table[relatedISOYear - firstTableYear]
+        let leap = UInt8((v >> 13) & 0xF)
+        return _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: _CalendarAstronomy.gregorianRataDie(relatedISOYear, 1, 19) + Int((v >> 17) & 0x3F), monthLengthBits: UInt16(v & 0x1FFF), monthCount: leap == 0 ? 12 : 13, leapMonthNumber: leap)
+    }
+
+    /// Month structure for the Chinese year whose New Year falls in Gregorian `relatedISOYear`.
+    ///
+    /// In the baked range (1901...2100) this is a direct table decode. Outside it the structure is computed: locate this year's New Year and the next year's, walk the new moons between them to get each month's first day, record 29- vs 30-day lengths as bits, and mark the leap month (the month carrying no major solar term). Within `astronomicalYears` the events come from the fitted astronomy; beyond, from mean elements anchored at the range edges. Seam years reuse the neighboring zone's boundary value so all three spans tile exactly.
+    static func year(relatedISOYear: Int) -> _ChineseYear {
+        let idx = relatedISOYear - firstTableYear
+        if idx >= 0 && idx < table.count {
+            return decodeTableYear(relatedISOYear: relatedISOYear)
+        }
+        // Out-of-range: compute the month structure from astronomy. No caching; see the note on the rule functions above.
+        // Beyond the validated astronomical range the rules run over mean elements anchored at the range edges.
+        let anchors: (solsticeInstant: Double, newMoonInstant: Double)?
+        if relatedISOYear > Self.astronomicalYears.upperBound {
+            anchors = Self.futureMeanAnchors
+        } else if relatedISOYear < Self.astronomicalYears.lowerBound {
+            anchors = Self.pastMeanAnchors
+        } else {
+            anchors = nil
+        }
+        // Tile exactly with the baked table and with the astronomical range at their seams.
+        let ny: Int
+        if relatedISOYear == firstTableYear + table.count {
+            ny = decodeTableYear(relatedISOYear: relatedISOYear - 1).endRataDie
+        } else if relatedISOYear == Self.astronomicalYears.upperBound + 1 {
+            ny = year(relatedISOYear: relatedISOYear - 1).endRataDie
+        } else {
+            ny = chineseNewYear(relatedISOYear, anchors: anchors)
+        }
+        let nyNext: Int
+        if relatedISOYear + 1 == firstTableYear {
+            nyNext = decodeTableYear(relatedISOYear: firstTableYear).newYearRataDie
+        } else if relatedISOYear == Self.astronomicalYears.lowerBound - 1 {
+            nyNext = year(relatedISOYear: relatedISOYear + 1).newYearRataDie
+        } else {
+            nyNext = chineseNewYear(relatedISOYear + 1, anchors: anchors)
+        }
+        // Collect each month's first day: successive new moons from this New Year up to (but not including) the next year's New Year.
+        var starts = [ny]
+        var cur = ny
+        while true {
+            let nxt = chineseNewMoonNear(cur + chineseSynodicGap, true, anchors: anchors)
+            if nxt >= nyNext { break }
+            starts.append(nxt)
+            cur = nxt
+        }
+        // Pack month lengths (30-day months set a bit) and record the leap month, if any.
+        var monthLengthBits: UInt16 = 0
+        var leapMonthNumber: UInt8 = 0
+        for (i, s) in starts.enumerated() {
+            let next = (i + 1 < starts.count) ? starts[i + 1] : nyNext
+            assert(next - s == 29 || next - s == 30, "non-lunation month length \(next - s) in fallback year \(relatedISOYear)")
+            if next - s == 30 { monthLengthBits |= UInt16(1) << i }
+            let label = chineseMonthLabel(startingAt: s, gregorianYear: _CalendarAstronomy.gregorianYear(ofRataDie: s), anchors: anchors)
+            if label.isLeap { leapMonthNumber = UInt8(label.month) }
+        }
+        if starts.count == 13 && leapMonthNumber == 0 {
+            // Day-quantized term positions can leave a 13-month year without a term-based leap label when the sui's termless month falls across the year boundary. Complete deterministically: the first month that repeats the preceding month's term index, or the final month if every term advances.
+            leapMonthNumber = 12
+            var previousTerm = chineseMajorSolarTerm(starts[0], anchors: anchors)
+            for i in 1..<13 {
+                let term = chineseMajorSolarTerm(starts[i], anchors: anchors)
+                if term == previousTerm {
+                    leapMonthNumber = UInt8(i)
+                    break
+                }
+                previousTerm = term
+            }
+        }
+        return _ChineseYear(relatedISOYear: relatedISOYear, newYearRataDie: ny, monthLengthBits: monthLengthBits, monthCount: UInt8(starts.count), leapMonthNumber: leapMonthNumber)
+    }
+
+    static func year(containingRataDie rataDie: Int) -> _ChineseYear {
+        // CNY falls Jan 19 + [2, 61]; estimate by Gregorian year and adjust.
+        var iso = _CalendarAstronomy.gregorianYear(ofRataDie: rataDie)
+        var y = year(relatedISOYear: iso)
+        while rataDie < y.newYearRataDie {
+            iso -= 1
+            y = year(relatedISOYear: iso)
+        }
+        while rataDie >= y.endRataDie {
+            iso += 1
+            y = year(relatedISOYear: iso)
+        }
+        return y
+    }
 }

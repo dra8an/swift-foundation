@@ -38,9 +38,9 @@ private struct ChineseInvariantProbe {
     /// bit and corrupt every date in the year.
     @Test func chineseInvariant_tilingAndStructure() {
         var failures: [String] = []
-        var prev = _ChineseCalendarEngine.year(relatedISOYear: -2000)
+        var prev = _CalendarChinese.year(relatedISOYear: -2000)
         for iso in -1999...5000 {
-            let y = _ChineseCalendarEngine.year(relatedISOYear: iso)
+            let y = _CalendarChinese.year(relatedISOYear: iso)
             if prev.endRataDie != y.newYearRataDie {
                 failures.append("\(iso - 1)→\(iso): end \(prev.endRataDie) != next NY \(y.newYearRataDie)")
             }
@@ -92,7 +92,7 @@ private struct ChineseInvariantProbe {
             (2148, 2148, 2, 20),
         ]
         for (iso, gy, gm, gd) in cnyPins {
-            let got = _ChineseCalendarEngine.year(relatedISOYear: iso).newYearRataDie
+            let got = _CalendarChinese.year(relatedISOYear: iso).newYearRataDie
             let want = _CalendarAstronomy.gregorianRataDie(gy, gm, gd)
             if got != want {
                 failures.append("CNY \(iso): got rd \(got), want \(want) (\(gy)-\(gm)-\(gd))")
@@ -107,7 +107,7 @@ private struct ChineseInvariantProbe {
             (2148, 0),
         ]
         for (iso, want) in leapPins {
-            let got = _ChineseCalendarEngine.year(relatedISOYear: iso).leapMonthNumber
+            let got = _CalendarChinese.year(relatedISOYear: iso).leapMonthNumber
             if got != want {
                 failures.append("leap \(iso): got \(got), want \(want)")
             }
