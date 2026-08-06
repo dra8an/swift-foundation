@@ -64,15 +64,10 @@ struct CollationSearch {
             }
         }
 
-        let mask = strengthMask(for: options.strength)
-        produceMaskedCEs(
-            for: pattern, mask: mask, iter: &scratch.left, into: &scratch.patternCEs)
-        if scratch.patternCEs.isEmpty { return nil }
-
-        return searchForward(
-            patternCEs: scratch.patternCEs, in: text, mask: mask,
-            iter: &scratch.left, window: &scratch.annotatedCEs,
-            nfdMap: &scratch.nfdSourceMap)
+        // Two access scopes for the whole body — one for the iterator, one for the buffer bundle — instead of one per buffer touched. See ScratchBuffers.SearchBuffers.
+        return searchFused(
+            for: pattern, in: text, mask: strengthMask(for: options.strength),
+            iter: &scratch.left, buffers: &scratch.search)
     }
 
     /// The byte-scan fast paths are sound only when every clean-ASCII byte is guaranteed a nonzero collation element: strength at least tertiary (case differences stay significant), numeric off (digit runs would collapse into single elements), and alternate=nonIgnorable (shifted drops spaces/punctuation below the mask).
@@ -102,20 +97,9 @@ struct CollationSearch {
             }
         }
 
-        let mask = strengthMask(for: options.strength)
-        produceMaskedCEs(
-            for: pattern, mask: mask, iter: &scratch.left, into: &scratch.patternCEs)
-        if scratch.patternCEs.isEmpty { return nil }
-
-        produceAnnotatedCEs(
-            for: text, mask: mask, iter: &scratch.left, into: &scratch.annotatedCEs)
-        if scratch.annotatedCEs.isEmpty { return nil }
-
-        return searchBackwardMatch(
-            patternCEs: scratch.patternCEs, annotated: scratch.annotatedCEs,
-            text: text, sawDecomposition: scratch.left.sawDecomposition,
-            nfdMap: &scratch.nfdSourceMap
-        )
+        return searchBackwardsFused(
+            for: pattern, in: text, mask: strengthMask(for: options.strength),
+            iter: &scratch.left, buffers: &scratch.search)
     }
 
     /// Returns true if `pattern` appears anywhere in `text`. Fast path: no position tracking, no array allocations for index/NFD maps.
@@ -134,16 +118,9 @@ struct CollationSearch {
         if pattern.isEmpty { return true }
         if text.isEmpty { return false }
 
-        let mask = strengthMask(for: options.strength)
-        // Pattern CEs first, reusing scratch.left; then it is reset onto the text. The rest of the body borrows them as locals once.
-        produceMaskedCEs(
-            for: pattern, mask: mask, iter: &scratch.left, into: &scratch.patternCEs)
-        if scratch.patternCEs.isEmpty { return false }
-
-        return containsScan(
-            pattern: pattern, in: text, mask: mask,
-            patternCEs: scratch.patternCEs,
-            iter: &scratch.left, textCEs: &scratch.maskedTextCEs)
+        return containsFused(
+            pattern: pattern, in: text, mask: strengthMask(for: options.strength),
+            iter: &scratch.left, buffers: &scratch.search)
     }
 
     private func containsScan(
@@ -476,6 +453,52 @@ struct CollationSearch {
     }
 
     // MARK: - CE production (pattern)
+
+    // MARK: Fused bodies (one access scope per iterator + one per buffer bundle)
+
+    /// The forward search body. Reaching `buffers.patternCEs` / `.annotatedCEs` / `.nfdSourceMap` from here is free: `buffers` is already an `inout` parameter, so field accesses are statically enforced and emit no runtime check. Only the two arguments at the entry open scopes.
+    private func searchFused(
+        for pattern: String, in text: String, mask: Int64,
+        iter: inout CEIterator, buffers: inout ScratchBuffers.SearchBuffers
+    ) -> Range<String.Index>? {
+        produceMaskedCEs(for: pattern, mask: mask, iter: &iter, into: &buffers.patternCEs)
+        if buffers.patternCEs.isEmpty { return nil }
+
+        return searchForward(
+            patternCEs: buffers.patternCEs, in: text, mask: mask,
+            iter: &iter, window: &buffers.annotatedCEs, nfdMap: &buffers.nfdSourceMap)
+    }
+
+    /// The backward search body; same scope accounting as searchFused.
+    private func searchBackwardsFused(
+        for pattern: String, in text: String, mask: Int64,
+        iter: inout CEIterator, buffers: inout ScratchBuffers.SearchBuffers
+    ) -> Range<String.Index>? {
+        produceMaskedCEs(for: pattern, mask: mask, iter: &iter, into: &buffers.patternCEs)
+        if buffers.patternCEs.isEmpty { return nil }
+
+        produceAnnotatedCEs(for: text, mask: mask, iter: &iter, into: &buffers.annotatedCEs)
+        if buffers.annotatedCEs.isEmpty { return nil }
+
+        return searchBackwardMatch(
+            patternCEs: buffers.patternCEs, annotated: buffers.annotatedCEs,
+            text: text, sawDecomposition: iter.sawDecomposition,
+            nfdMap: &buffers.nfdSourceMap)
+    }
+
+    /// The contains body; same scope accounting. Pattern CEs first, reusing the iterator, which is then reset onto the text inside containsScan.
+    private func containsFused(
+        pattern: String, in text: String, mask: Int64,
+        iter: inout CEIterator, buffers: inout ScratchBuffers.SearchBuffers
+    ) -> Bool {
+        produceMaskedCEs(for: pattern, mask: mask, iter: &iter, into: &buffers.patternCEs)
+        if buffers.patternCEs.isEmpty { return false }
+
+        return containsScan(
+            pattern: pattern, in: text, mask: mask,
+            patternCEs: buffers.patternCEs,
+            iter: &iter, textCEs: &buffers.maskedTextCEs)
+    }
 
     /// Produces the masked CEs of `string` into the caller-owned `result` (cleared first, capacity retained) — no per-call allocation. Empties `result` on pipeline errors; callers treat empty as no-match.
     private func produceMaskedCEs(

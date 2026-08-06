@@ -36,14 +36,24 @@ final class ScratchBuffers {
     var levels = SortKeyLevelBuffers()
     /// sortKey: NFD scalars for the identical level.
     var nfdScalars: [UInt32] = []
-    /// search: masked pattern CEs (rebuilt per call, allocation-free).
-    var patternCEs: [Int64] = []
-    /// search: the annotated text-CE window (forward) / full text CEs (backward). The per-call allocation of this array was once the largest single cost of CJK searches.
-    var annotatedCEs: [AnnotatedCE] = []
-    /// contains: masked text CEs.
-    var maskedTextCEs: [Int64] = []
-    /// search: NFD-position → source-scalar-index map, built lazily by confirmMatch only for a full CE match on decomposing text. Its per-call allocation (plus per-scalar temporaries) was ~half the cost of every matching search on accented text.
-    var nfdSourceMap: [Int] = []
+
+    /// The search family's buffers, bundled into ONE stored property.
+    ///
+    /// Each of these was a separate stored property, and each mutating access to a stored property of a class opens a dynamically-enforced access scope — so an entry that touched three of them paid three `swift_beginAccess`/`endAccess` pairs on top of the one for `left` (search 5, searchBackwards 5, contains 4, measured in the object). Fusing the calls cannot merge those, because they are DIFFERENT properties; bundling can. One `inout` of this struct costs one scope, and reaching its fields from inside is statically enforced, hence free.
+    ///
+    /// This is more §37-aligned, not less: that rule's cost was three separate `inout` parameters at an entry whose byte-scan fast path never touched them. The bundle is one parameter, still passed only after the byte scan bails.
+    struct SearchBuffers {
+        /// Masked pattern CEs (rebuilt per call, allocation-free).
+        var patternCEs: [Int64] = []
+        /// The annotated text-CE window (forward) / full text CEs (backward). The per-call allocation of this array was once the largest single cost of CJK searches.
+        var annotatedCEs: [AnnotatedCE] = []
+        /// contains: masked text CEs.
+        var maskedTextCEs: [Int64] = []
+        /// NFD-position → source-scalar-index map, built lazily by confirmMatch only for a full CE match on decomposing text. Its per-call allocation (plus per-scalar temporaries) was ~half the cost of every matching search on accented text.
+        var nfdSourceMap: [Int] = []
+    }
+
+    var search = SearchBuffers()
 
     init(data: CollationData, base: CollationData?, norm: NormalizationData,
          simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
