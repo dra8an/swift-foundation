@@ -90,18 +90,17 @@ Allocation/resolution samples are the trustworthy kind.
       settings, §46(b) scalar count, §47's non-contiguous span) were all found by
       audit and missed by every suite, because until §47 every gate compared
       CE bytes or KEY bytes and nothing compared reported OFFSETS.
-- [~] **Dynamic exclusivity on the scratch iterators — 1 of 4 sites DONE
-      (§48).** sortKey's reset+collectAll fused into one scope (`c272d6f`):
-      sortKey −3.2..−5.4%, symbol-verified 8/9 → 7/8 access calls. **One pair
-      costs ~8–9 ns, not the ~2–3 ns §46 assumed** — which re-prices the rest.
-      Remaining, all doable with the same plain-Swift shape (a fused method
-      over a static `inout` helper): compare pipeline 4 pairs → 2 ≈ 16 ns
-      (thai-only — ascii/latin exit at fast-Latin, cjk at quickPrimary);
-      search/searchBackwards/contains 5/5/4 pairs; `.identical` drain loops
-      2 pairs PER SCALAR (largest absolute win, non-default strength). Going
-      to ZERO needs `@exclusivity(unchecked)` or unsafeAddress accessors —
-      both with zero precedent in swift-foundation, so recorded and not
-      recommended. Full ground truth, offsets and the naive-fusion trap in §48.
+- [x] **Dynamic exclusivity on the scratch iterators — ALL FOUR SITES DONE
+      (§48).** sortKey `c272d6f` (−3.2..−5.4%), compare `8134285` (thai
+      compare −6.2%, 1.58× → 1.48× vs ICU), search family `864edf3`
+      (−3.2..−3.6% on all three entries), identical-level drains `ea2080f`
+      (`.identical` sortKey −22..−28%, ~100 ns/call). **One pair costs ~8–11 ns,
+      not the ~2–3 ns §46 assumed.** Two mechanisms were needed: call fusion
+      merges repeated access to the SAME property (compare), bundling is
+      required when the pairs come from DISTINCT properties (search) — see
+      §48. Going to ZERO would need `@exclusivity(unchecked)` or unsafeAddress
+      accessors, both with zero precedent in swift-foundation: recorded, not
+      recommended.
 - [x] sortKey writer design space — CLOSED (§46(a)): the third point
       (single-pass + region level buffers, ICU's own shape) had never been
       measured and beats both prior writers. sortKey −2.1..−4.7% on all five
@@ -2340,10 +2339,20 @@ precisely what this bug was. The header now says so.
 
 ### 48. Exclusivity scopes on the scratch iterators: one pair costs ~8–9 ns, not ~2–3
 
-**Status:** first of four sites SHIPPED 2026-08-06 (`c272d6f`), plus the
-systematic discontiguous test sweep (`15f5376`). Gate **1528 tests / 124
-suites**, zero known issues. The other three sites are open and now priced
-properly — see the end of this section.
+**Status:** ALL FOUR SITES SHIPPED 2026-08-06 — `c272d6f` (sortKey),
+`8134285` (compare), `864edf3` (search family), `ea2080f` (identical level) —
+plus the systematic discontiguous test sweep (`15f5376`). Gate **1528 tests /
+124 suites**, zero known issues throughout.
+
+| site | pairs | measured |
+|---|---|---|
+| sortKey `reset`+`collectAll` | 2 → 1 | sortKey −3.2..−5.4% (ascii 167→159) |
+| compare pipeline | 4 → 2 | **thai compare −6.2%** (275→258; 1.58× → 1.48× vs ICU) |
+| search / searchBackwards / contains | 5/5/4 → 2/2/2 | **−3.2..−3.6%** on all three variants |
+| `.identical` drain loops | 2 per SCALAR → 2 per call | **`.identical` sortKey −22..−28%** (~100 ns/call) |
+
+Two distinct mechanisms were needed, and telling them apart is the reusable
+lesson — see "Two mechanisms" below.
 
 `ScratchBuffers` is a CLASS and `left`/`right` are `CEIterator` stored
 properties, so every mutating access opens a dynamically-enforced access scope:
@@ -2447,6 +2456,41 @@ Re-pricing the three untouched sites at ~8 ns/pair:
 
 All three use the shape shipped here: **a fused method over a static `inout`
 helper — plain public Swift, no unsafe pointers, no undocumented attributes.**
+
+#### Two mechanisms — repeated access vs distinct properties
+
+Fusing calls only merges REPEATED accesses to the SAME property. That is what
+compare needed: `left`/`right` were each touched three times (reset, reset,
+then the two `inout` arguments of `compareUpToQuaternary`), so routing all of
+it through one static helper collapsed 4 pairs to 2 and moved thai compare
+−16 ns, exactly the ~8 ns/pair prediction.
+
+The search family looks identical from the outside and is not. Its pairs come
+from DISTINCT properties — `patternCEs`, `annotatedCEs`, `maskedTextCEs`,
+`nfdSourceMap` — one scope each, which no amount of call fusion can merge
+(fusing there would have bought only the repeated `left` accesses: 1 pair,
+~1%). Those had to be BUNDLED into a single `ScratchBuffers.SearchBuffers`
+stored property, passed as one `inout`; reaching its fields from inside is
+statically enforced and free. 5/5/4 → 2/2/2.
+
+Diagnostic: count how many DISTINCT stored properties an entry touches. That
+is the floor on its scope count, and only bundling lowers the floor.
+
+The `.identical` drains were a third shape again — the same property touched
+once PER SCALAR inside a loop. Hoisting the whole loop behind one `inout`
+turns 2 pairs/scalar into 2 pairs/call, which is why it paid ~100 ns/call
+against the others' ~8-33 ns: the saving scales with input length rather than
+being fixed per call. `compareBody` 8 → 4 pairs, `sortKey` 7 → 2, and sortKey
+shrank 4848 → 4072 bytes.
+
+Measuring it needed a harness extension: EngineBench only runs default
+strength, which never enters that path, so two `.identical` rows were added
+locally (not committed). `.identical` compare measured flat, which is correct
+rather than disappointing — the identical level only runs when the CE
+comparison returned equal, and the bench compares adjacent DISTINCT lines, so
+that drain almost never fires. sortKey at that strength always runs its drain.
+Anyone re-measuring this must use a corpus of EQUAL-through-quaternary pairs to
+see the compare side move.
 
 #### Why not go to ZERO pairs
 

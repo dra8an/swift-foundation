@@ -435,9 +435,21 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   wrong fix (extending the end over trailing marks would break "e" not
   matching inside a decomposed "é"). **Suite gate 1527/124, ZERO known
   issues.**
-  2026-08-06: **§48 — exclusivity scopes, 1 of 4 sites shipped**
-  (`c272d6f`). `ScratchBuffers` is a class, so every mutating access to
-  `left`/`right` opens a dynamically-enforced scope. sortKey's two pairs
+  2026-08-06: **§48 — exclusivity scopes, ALL FOUR sites shipped**
+  (`c272d6f` sortKey, `8134285` compare, `864edf3` search family,
+  `ea2080f` identical-level drains). Headline: **thai compare 275→258
+  (1.58× → 1.48× vs ICU, the worst engine row), search family
+  −3.2..−3.6% on all three entries, `.identical` sortKey −22..−28%
+  (~100 ns/call), sortKey −3.2..−5.4%.** Two mechanisms, and telling
+  them apart is the lesson: call fusion merges repeated access to the
+  SAME property (compare), but where the pairs come from DISTINCT
+  properties (search) only BUNDLING them into one stored property
+  helps — count the distinct properties an entry touches, that is the
+  floor on its scope count. The `.identical` drains were a third shape:
+  the same property touched once PER SCALAR in a loop, so hoisting the
+  loop pays proportionally to input length (~100 ns) rather than a
+  fixed per-call amount. Details in §48. `ScratchBuffers` is a class, so every mutating access to a stored
+  property opens a dynamically-enforced scope. sortKey's two pairs
   (one around the out-of-line `reset`, one around the whole inlined
   `collectAll` loop) are now one, via a fused method over a static
   helper taking the iterator `inout` — the ONLY shape that works:
