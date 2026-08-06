@@ -133,6 +133,58 @@ final class ScratchBuffers {
             &l, &r, options: options, variableTopValue: variableTopValue,
             reordering: reordering)
     }
+
+    /// Runs the whole identical level under two access scopes instead of two PER SCALAR.
+    ///
+    /// The drain loop calls `next()` on each side's NFD iterator, and each of those was a mutating access to a stored property of this class — so the loop paid a `swift_beginAccess`/`endAccess` pair per side per scalar, the densest exclusivity concentration in the engine. Hoisting the loop behind one `inout` per iterator opens the scopes once for the entire drain.
+    @inline(__always)
+    func compareIdenticalLevel(
+        left: String.UnicodeScalarView, right: String.UnicodeScalarView, skippingFirst shared: Int
+    ) -> RootCollator.Order {
+        ScratchBuffers.compareIdenticalLevel(
+            &self.left, &self.right, left: left, right: right, skippingFirst: shared)
+    }
+
+    @inline(__always)
+    private static func compareIdenticalLevel(
+        _ l: inout CEIterator, _ r: inout CEIterator,
+        left: String.UnicodeScalarView, right: String.UnicodeScalarView, skippingFirst shared: Int
+    ) -> RootCollator.Order {
+        // ICU also runs the identical level from the skip position.
+        l.scalars.reset(scalars: left, skippingFirst: shared)
+        r.scalars.reset(scalars: right, skippingFirst: shared)
+        while true {
+            let lc = l.scalars.next()
+            let rc = r.scalars.next()
+            if lc != rc {
+                return identicalRank(lc) < identicalRank(rc) ? .ascending : .descending
+            }
+            if lc == nil { return .same }
+        }
+    }
+
+    /// End-of-string sorts below U+FFFE (the merge separator), which sorts below all code points. (compareNFDIter: end = -2, U+FFFE = -1.)
+    @inline(__always)
+    private static func identicalRank(_ c: UInt32?) -> Int64 {
+        guard let c else { return -2 }
+        return c == 0xfffe ? -1 : Int64(c)
+    }
+
+    /// Drains the NFD scalars for the sort key's identical level into `nfdScalars` under two access scopes instead of two per scalar (`left` for `next()`, `nfdScalars` for `append`).
+    @inline(__always)
+    func collectNFDScalars(scalars view: String.UnicodeScalarView) {
+        ScratchBuffers.collectNFDScalars(&left, into: &nfdScalars, scalars: view)
+    }
+
+    @inline(__always)
+    private static func collectNFDScalars(
+        _ iter: inout CEIterator, into out: inout [UInt32], scalars view: String.UnicodeScalarView
+    ) {
+        iter.scalars.reset(scalars: view)
+        // isEmpty guard: removeAll on a never-used array hits the shared empty-singleton storage and takes the copy-on-write slow path.
+        if !out.isEmpty { out.removeAll(keepingCapacity: true) }
+        while let c = iter.scalars.next() { out.append(c) }
+    }
 }
 
 /// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers instance, avoiding all locking, exclusivity checks, and ARC traffic on the take/give path. If a thread re-enters (e.g. compare inside compare, which doesn't happen in practice but is sound), `take()` returns nil and the caller allocates a fresh set.

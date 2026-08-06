@@ -448,24 +448,11 @@ public struct RootCollator: @unchecked Sendable {
             return result < 0 ? .ascending : .descending
         }
         if options.strength == .identical {
-            // Identical level: compare NFD forms in code point order, with end-of-string below U+FFFE (merge separator) below all code points. (compareNFDIter: end = -2, U+FFFE = -1.)
-            func rank(_ c: UInt32?) -> Int64 {
-                guard let c else { return -2 }
-                return c == 0xfffe ? -1 : Int64(c)
-            }
-            // ICU also runs the identical level from the skip position.
+            // Identical level: compare NFD forms in code point order. The whole drain runs under two access scopes rather than two per scalar; see compareIdenticalLevel.
             let s = scratch ?? takeScratch()
             scratch = s
-            s.left.scalars.reset(scalars: left.unicodeScalars, skippingFirst: shared)
-            s.right.scalars.reset(scalars: right.unicodeScalars, skippingFirst: shared)
-            while true {
-                let lc = s.left.scalars.next()
-                let rc = s.right.scalars.next()
-                if lc != rc {
-                    return rank(lc) < rank(rc) ? .ascending : .descending
-                }
-                if lc == nil { return .same }
-            }
+            return s.compareIdenticalLevel(
+                left: left.unicodeScalars, right: right.unicodeScalars, skippingFirst: shared)
         }
         return .same
     }
@@ -565,9 +552,8 @@ public struct RootCollator: @unchecked Sendable {
             reordering: reordering, into: &key)
         if options.strength == .identical {
             key.append(1)  // level separator
-            scratch.left.scalars.reset(scalars: s.unicodeScalars)
-            if !scratch.nfdScalars.isEmpty { scratch.nfdScalars.removeAll(keepingCapacity: true) }
-            while let c = scratch.left.scalars.next() { scratch.nfdScalars.append(c) }
+            // Two access scopes for the whole drain, not two per scalar; see collectNFDScalars.
+            scratch.collectNFDScalars(scalars: s.unicodeScalars)
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
         }
         key.append(0)  // terminator
