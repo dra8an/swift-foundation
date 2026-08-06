@@ -2,24 +2,41 @@
 
 **Cold-resume: read this file first.** Last update: 2026-07-23.
 
-## ✅ CURRENT STATE (2026-07-24) — read this section, then the active plan
+## ✅ CURRENT STATE (2026-08-06) — read this section, then the active plan
 
-**Chinese: extreme-date fix IMPLEMENTED (2026-07-23, commit 9fa022a,
-pushed). Mean-element (píngqì) zone outside astronomicalYears =
--12,000...16,000, two independent edge anchors, seam forcing, leap-label
-completion; 111 tests / 27 suites green. Cold-resume: CHINESE_PLAN
-§ 11.27-11.30 (root cause, measurements, decisions, implementation),
-then memory. NEXT: user pushes the local commits (backup docs through
-ad7779f + the 2026-07-24 Japanese back-sync pair 6e1b9f2/c5d3e91);
-6.4 machine runs ChineseMeanZoneProbe in RELEASE (ladder step 7) and
-lands the patch on PR #2123 (PR text outline in § 11.28e); answer
-richgillam's HKO question with § 11.29 ammo; watch upstream PRs
-unicode-org/icu#4070 and icu#4019.**
-**Japanese: pre-Meiji era trim LANDED on PR #2105 (`9e65da05`,
-2026-07-24) and back-synced same day (`6e1b9f2`); see workstream row.**
+**Chinese MERGED upstream 2026-08-05** (PR #2123, merge commit
+`f0442fb3`, final head `e644f67f`). Behind
+`foundation_swift_chinese_calendar_feature_enabled()`, hard-false.
+The tip is fully back-synced to the merged state; all remaining deltas
+vs `upstream/main` are the two documented divergences plus the
+extreme-date fix below.
+
+**⚠ THE EXTREME-DATE FIX DID NOT SHIP — it is local-only and owes a
+follow-up PR.** Upstream's merged `Calendar_Chinese.swift` contains no
+`astronomicalYears`, no mean anchors, no píngqì zone, so the shipped
+calendar still emits garbage and runs pathologically slowly outside
+roughly ±72,000 years (the defect the 6.4 machine originally reported).
+`9fa022a` is NOT the deliverable any more: it has been reworked through
+three upstream restructurings (free functions `037c2370`, cache removal
+`748229e3`, engine fold `799398fa`), so the original patch applies to
+nothing. **The port living on `port/chinese` is the only copy.** What a
+follow-up PR needs: the mean-element zone + anchors + seam forcing +
+leap-label completion as they now stand in
+`extension _CalendarChinese`, `ChineseMeanZoneProbe` as the curated
+test with prints stripped, the RELEASE run (ladder step 7, § 11.30) that
+was never done, and the PR text outline in CHINESE_PLAN § 11.28e.
+
+**Japanese/Buddhist: PR #2105 still OPEN**, re-approved 2026-07-29 after
+the era trim. Needs a rebase — it is the second to land, and
+`upstream/main` now carries hebrew + chinese flag lines in
+`Calendar_Cache.swift` where #2105 adds buddhist + japanese. One hunk,
+keep all four. **6.4 machine's job, nothing for this machine.** Note
+#2105 has still never had CI run on it.
+
 Open user decisions: Hebrew isLeapMonth fix vehicle (confirmed benign
 deviation, see CHINESE_PLAN § 11.8); Chinese nextDate fast-path follow-up
-PR (post-merge). Everything below is history.
+PR. Also unresolved at merge time: richgillam's HKO question (§ 11.29
+ammo) was never answered on the PR. Everything below is history.
 
 ### Workstream status
 
@@ -27,7 +44,7 @@ PR (post-merge). Everything below is history.
 |---|---|
 | Hebrew | **MERGED** (#1953 reapplied `7808423`; perf/dedup #2028 merged `91d1fb6d` 2026-07-09). Live behind feature flag, off by default. |
 | Buddhist + Japanese | **PR #2105 APPROVED** (richgillam, 2026-07-22). 2026-07-24: pre-Meiji era trim LANDED as head `9e65da05` — 5 eras (Meiji 232..Reiwa 236, sparse), pre-Meiji inherits Gregorian eras per unicode-org/icu#4019 / ICU-23341 (matches unreleased ICU; bundled ICU differs until Apple rebases). Back-synced same day: code + golden tests taken, 5 pre-Meiji-vs-ICU probes disabled with re-enable notes, 1868 sweep starts at Meiji's start (see GREGORIAN_VARIANTS_PLAN § 5). Awaiting merge. |
-| Chinese | **PR #2123 APPROVED** (richgillam, 2026-07-22, parkera + itingliu engaged). Back-synced through c4f4a401 (InlineArray tail excluded, see divergence registry in memory). Extreme-date fix implemented locally (9fa022a), 6.4 machine lands it per CHINESE_6.4_HANDOFF.md. Open: richgillam HKO question (§ 11.29 ammo). |
+| Chinese | **MERGED 2026-08-05** — PR #2123, merge commit `f0442fb3`, final head `e644f67f`. Flag-gated, off by default. Tip back-synced to the merged state (through `e644f67f`). Divergences vs upstream: InlineArray tail excluded (table + astronomy coefficients stay plain arrays — needs macOS 26 runtime), and the extreme-date fix, which did NOT ship and owes a follow-up PR (see current-state block). Never answered on the PR: richgillam's HKO question (§ 11.29 ammo). |
 
 ### Branch landscape (fork = dra8an/swift-foundation)
 
