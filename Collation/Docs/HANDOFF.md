@@ -352,15 +352,30 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (1.6×), paths 425/369 (1.2×), thai 229/153 (1.5×). Foundation APIs
   (Table 2) 1.9–6.9× FASTER than system ICU with zero cells at or
   behind parity. Suite gate 1517/123.
-  **POST-§46 (2026-08-03, same harness, ICU re-measured in the same
-  session on a machine that was NOT fully quiet — load ~8, which
-  inflates BOTH sides; re-baseline with run_benchmarks.sh when idle):**
-  sortKey ascii 164/119 (1.38×), latin 186/127 (1.46×), cjk 181/126
-  (1.44×), **paths 384/372 (1.03× — effectively parity with hand-tuned
-  C)**, thai 217/156 (1.39×); compare ascii 16/9 (1.78×), latin 15/10,
-  **cjk 26/41 (0.63×, faster)**, paths 41/30, thai 270/174. Suite gate
-  **1519/123 at §46, 1527/124 after §47's position suite.** Table 2
-  (Foundation APIs) not re-run this round.
+  **CURRENT BASELINE (2026-08-12, run_benchmarks.sh K=3, full-WMO
+  EngineBench for Table 1; supersedes every AS table in this file).
+  Full matrix in `Docs/21`.**
+  Table 1, engine vs raw ICU C (ours/ICU): compare ascii 16/9 (1.78×),
+  latin 15/10 (1.50×), **cjk 26/40 = 0.65× (we are FASTER)**, paths
+  40/29 (1.38×), thai 259/170 (1.52×); sortKey ascii 159/104 (1.53×),
+  latin 182/120 (1.52×), cjk 173/117 (1.48×), **paths 385/364 = 1.05×
+  (parity with hand-tuned C)**, thai 211/153 (1.38×).
+  Table 2, Foundation APIs vs system ICU: **every cell ahead, floor
+  1.25×** — localizedCompare 2.77–5.21×, contains 3.48–4.75×, stdRange
+  2.46–3.73×, range(of:locale:) 1.42–2.72×, range(backwards)
+  1.42–2.72×, compare(locale:) 1.55–5.04×. Thai is the weakest family
+  throughout (1.25× floor), same root cause as the engine's thai rows —
+  the NFD per-scalar floor (§36).
+  **Every engine row improved over the pre-§46 baseline** (compare was
+  1.9/1.7/0.7/1.4/1.6, sortKey 1.7/1.6/1.6/1.2/1.5).
+  Machine state when recorded: NOT idle — load 7.8–16, ~60 MB free with
+  11.6 GB compressed. Recorded anyway because (a) two full matrix runs
+  20 min apart agreed (compare cells identical, sortKey ≤1.5%, worst
+  Table-2 ratio drift 2.8%) and (b) **ICU's own column matched the
+  recorded idle-machine figures within 1–2%** — ICU is the control, and
+  had load been inflating things it would have drifted too. Sanity gate
+  before recording any future run: ICU should read ~9/10/40/29/170
+  compare and ~105/120/117/365/153 sortKey. Suite gate 1528/124.
   **IN FLIGHT at the time of writing:** a workflow-orchestrated
   optimization hunt over the engine compare/sortKey paths (8 ideation
   lenses → adversarial verification → ranked plan), targeting the
@@ -529,7 +544,11 @@ subsection** so cross-machine runs don't overwrite each other. Absolute ratios
 differ by hardware (ICU is faster on Apple Silicon too); the *improvements* hold
 on both. State the corpus, reps, and how the time was taken in each section.
 
-#### Apple Silicon (macOS 26, quiet machine, 10000 reps, lower cluster)
+#### Apple Silicon (macOS 26, quiet machine, 10000 reps, lower cluster) — HISTORICAL
+
+> **SUPERSEDED by the 2026-08-12 baseline above (and `Docs/21`).** These
+> predate §46–§48 entirely; kept only as the record of the June–July arc.
+> Do not compare against them.
 
 **Compare (ns/op, EngineBench full WMO):**
 

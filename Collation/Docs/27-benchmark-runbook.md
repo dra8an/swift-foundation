@@ -75,3 +75,44 @@ swift build -c release -Xswiftc -no-whole-module-optimization --product BenchFou
   Collation/Tools/bench/bench-ascii.txt 200
 ```
 (Always the `-no-WMO` flag on machine 1, or it SIGILLs.)
+
+## Before you record anything: check the machine
+
+Load average alone is misleading on this hardware. A box can read load 9 with
+**52% of CPU idle**, because Darwin's load average counts threads blocked in
+uninterruptible states — memory pressure inflates it while the cores sit free.
+Check both:
+
+```sh
+sysctl -n vm.loadavg          # 1m / 5m / 15m
+vm_stat | head -4             # Pages free; and see the compressor below
+top -l 1 -n 0 | grep -E "CPU usage|PhysMem"
+```
+
+What actually degrades measurements, in order:
+
+1. **Memory pressure** — the dangerous one. Free memory in the tens of MB with
+   GBs "in compressor" means decompression stalls that land unpredictably on
+   any measurement pass. Min-over-K mitigates but cannot remove it.
+2. **CPU oversubscription** — steady and largely ridden out by min-over-K on a
+   10-core box, up to ~load 10.
+3. Disk activity — mostly irrelevant to these benchmarks after warm-up.
+
+**The sanity gate — use the ICU column as a control.** ICU 79 is a fixed
+binary, so its numbers should not move between sessions. On Apple Silicon
+(macOS 26) expect roughly:
+
+| corpus | ICU compare | ICU sortKey |
+|---|---:|---:|
+| ascii | 9 | 105 |
+| latin | 10 | 120 |
+| cjk | 40 | 117 |
+| paths | 29 | 365 |
+| thai | 170 | 153 |
+
+If the ICU column matches those within ~2%, the run is trustworthy even at
+nonzero load — that is the justification the 2026-08-12 baseline in `Docs/21`
+rests on. If ICU has drifted, so has everything else: do not record the run.
+
+And regardless of load: **run the matrix twice.** Two runs agreeing cell-for-cell
+is worth more than one run on a quiet machine.

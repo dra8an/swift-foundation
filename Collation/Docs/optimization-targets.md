@@ -1965,10 +1965,18 @@ worth more than further LLM review, and 8 live agents make benchmarking
 impossible. 19 candidates were produced; the four below shipped, the rest
 are recorded at the end of this section.
 
+**RE-BASELINED 2026-08-12.** The absolute figures in this section were taken
+under load; a `run_benchmarks.sh` re-run (twice, agreeing) put the current
+numbers at compare ascii 16/9 (1.78×), latin 15/10, cjk 26/40 (0.65×), paths
+40/29, thai 259/170; sortKey ascii 159/104 (1.53×), latin 182/120, cjk 173/117,
+**paths 385/364 = 1.05×**, thai 211/153. Table 2 floor 1.25×. Full matrix in
+`Docs/21`; the DELTAS recorded in this section are unaffected — they were
+interleaved A/Bs against a fixed base.
+
 **Interleaved A/B, EngineBench full WMO, min over 3–4 rounds, vs `58e5731`
 (each run itself min-over-9). ICU 79 re-measured in the same session — the
-machine was NOT fully quiet (load ~8), which inflates both sides, so these
-ratios are same-session and want a quiet re-baseline:**
+machine was NOT fully quiet (load ~8), so the ratios below are same-session
+and were superseded by the 2026-08-12 re-baseline noted above:**
 
 | corpus | sortKey before | after | Δ | ICU | ratio (was) |
 |---|---:|---:|---:|---:|---|
@@ -2414,6 +2422,14 @@ scope opens exactly where the work happens. The rule still binds anything
 hoisted above the fast-Latin bail in `compare`/`compareFastPath`.
 
 #### Measured (interleaved A/B vs `cb1c191`, full-WMO EngineBench, min over 4 rounds)
+
+**RE-BASELINED 2026-08-12.** The absolute figures in this section were taken
+under load; a `run_benchmarks.sh` re-run (twice, agreeing) put the current
+numbers at compare ascii 16/9 (1.78×), latin 15/10, cjk 26/40 (0.65×), paths
+40/29, thai 259/170; sortKey ascii 159/104 (1.53×), latin 182/120, cjk 173/117,
+**paths 385/364 = 1.05×**, thai 211/153. Table 2 floor 1.25×. Full matrix in
+`Docs/21`; the DELTAS recorded in this section are unaffected — they were
+interleaved A/Bs against a fixed base.
 
 Symbol-verified: sortKey's `beginAccess`/`endAccess` relocations 8/9 → 7/8, and
 the function shrank 4972 → 4848 bytes. (Name-grep cannot verify this fix — the
