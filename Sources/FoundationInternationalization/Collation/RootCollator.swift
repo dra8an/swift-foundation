@@ -700,7 +700,7 @@ public struct RootCollator: @unchecked Sendable {
         numeric: Bool, safety: RestartSafety,
         mismatch: inout Int
     ) -> Int32 {
-        // Identical-prefix scan on bytes: 8 at a time through unaligned UInt64 loads (XOR + trailing zeros finds the first differing byte on little-endian), byte-wise tail. Long shared prefixes (paths, thai) scan at word speed; a first-byte difference costs the same one comparison as the byte loop did.
+        // Identical-prefix scan on bytes: 8 at a time through unaligned UInt64 loads (XOR, then a zero count from the low or high end depending on byte order, finds the first differing byte), byte-wise tail. Long shared prefixes (paths, thai) scan at word speed; a first-byte difference costs the same one comparison as the byte loop did.
         let lLength = lBytes.count
         let rLength = rBytes.count
         let minLength = min(lLength, rLength)
@@ -713,7 +713,12 @@ public struct RootCollator: @unchecked Sendable {
                 let lw = lRaw.loadUnaligned(fromByteOffset: i, as: UInt64.self)
                 let rw = rRaw.loadUnaligned(fromByteOffset: i, as: UInt64.self)
                 if lw != rw {
+                    // First differing BYTE within the word. The lowest-addressed byte is the least significant on little-endian and the most significant on big-endian, so the zero count runs from the opposite end. Without the gate this silently yields a WRONG shared-prefix length on big-endian (a mis-skip, not a crash) — and swift-foundation does support big-endian targets, which is why this is gated rather than assumed away.
+                    #if _endian(big)
+                    i += (lw ^ rw).leadingZeroBitCount >> 3
+                    #else
                     i += (lw ^ rw).trailingZeroBitCount >> 3
+                    #endif
                     break
                 }
                 i += 8

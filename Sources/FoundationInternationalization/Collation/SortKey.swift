@@ -1111,6 +1111,22 @@ enum CollationKeys {
         }
     }
 
+    /// The common-run compression flush, for a level accumulating into the single-pass writer's region: emit full maxCount runs as middle bytes, then the directional boundary byte (low + remainder below the common weight, high - remainder above). Same helper the multi-pass writer uses through `ByteBatch`; unifying these blocks was A/B-verified performance-neutral there (technique log §46 / dcd82a5).
+    @inline(__always)
+    private static func flushCommon(
+        _ count: inout Int, weight: UInt32, threshold: UInt32,
+        low: UInt32, middle: UInt32, high: UInt32, maxCount: Int,
+        level: inout RegionLevel
+    ) {
+        count -= 1
+        while count >= maxCount {
+            level.appendByte(middle)
+            count -= maxCount
+        }
+        level.appendByte(weight < threshold ? low + UInt32(count) : high - UInt32(count))
+        count = 0
+    }
+
     // Worst-case bytes one consumed CE can contribute to each level, used to size the single-pass region. Per level: the primary block emits at most one separator byte (03 or ff) plus p1..p4; the secondary and tertiary levels at most a two-byte weight; the case level at most one nibble byte; the quaternary level at most a limit byte plus a four-byte shifted primary. The common-weight flushes need no extra room: a CE that only increments a run counter emits nothing, every flush zeroes its counter, and a flush of k counted CEs emits 1 + (k-1)/maxCount bytes with maxCount >= 7 — so one byte per counted CE covers every flush in the level. Each constant is therefore (weight bytes + 1); the loop asserts against it in debug builds.
     private static let primaryBytesPerCE = 6
     private static let secondaryBytesPerCE = 3
@@ -1250,16 +1266,9 @@ enum CollationKeys {
                         commonSecondaries += 1
                     } else if !backwardSecondary {
                         if commonSecondaries != 0 {
-                            commonSecondaries -= 1
-                            while commonSecondaries >= secCommonMaxCount {
-                                secondaries.appendByte(secCommonMiddle)
-                                commonSecondaries -= secCommonMaxCount
-                            }
-                            let b: UInt32 = s < 0x0500
-                                ? secCommonLow + UInt32(commonSecondaries)
-                                : secCommonHigh - UInt32(commonSecondaries)
-                            secondaries.appendByte(b)
-                            commonSecondaries = 0
+                            flushCommon(&commonSecondaries, weight: s, threshold: 0x0500,
+                                        low: secCommonLow, middle: secCommonMiddle, high: secCommonHigh,
+                                        maxCount: secCommonMaxCount, level: &secondaries)
                         }
                         secondaries.appendWeight16(s)
                     } else {
@@ -1349,32 +1358,19 @@ enum CollationKeys {
                     } else if (tertiaryMask & 0x8000) == 0 {
                         // Tertiary weights without case bits. Move lead bytes 06..3F to C6..FF for a large common-weight range.
                         if commonTertiaries != 0 {
-                            commonTertiaries -= 1
-                            while commonTertiaries >= terOnlyCommonMaxCount {
-                                tertiaries.appendByte(terOnlyCommonMiddle)
-                                commonTertiaries -= terOnlyCommonMaxCount
-                            }
-                            let b: UInt32 = t < 0x0500
-                                ? terOnlyCommonLow + UInt32(commonTertiaries)
-                                : terOnlyCommonHigh - UInt32(commonTertiaries)
-                            tertiaries.appendByte(b)
-                            commonTertiaries = 0
+                            flushCommon(&commonTertiaries, weight: t, threshold: 0x0500,
+                                        low: terOnlyCommonLow, middle: terOnlyCommonMiddle, high: terOnlyCommonHigh,
+                                        maxCount: terOnlyCommonMaxCount, level: &tertiaries)
                         }
                         if t > 0x0500 { t += 0xc000 }
                         tertiaries.appendWeight16(t)
                     } else if !upperFirst {
                         // Tertiary weights with caseFirst=lowerFirst. Move lead bytes 06..BF to 46..FF for the common-weight range.
                         if commonTertiaries != 0 {
-                            commonTertiaries -= 1
-                            while commonTertiaries >= terLowerFirstCommonMaxCount {
-                                tertiaries.appendByte(terLowerFirstCommonMiddle)
-                                commonTertiaries -= terLowerFirstCommonMaxCount
-                            }
-                            let b: UInt32 = t < 0x0500
-                                ? terLowerFirstCommonLow + UInt32(commonTertiaries)
-                                : terLowerFirstCommonHigh - UInt32(commonTertiaries)
-                            tertiaries.appendByte(b)
-                            commonTertiaries = 0
+                            flushCommon(&commonTertiaries, weight: t, threshold: 0x0500,
+                                        low: terLowerFirstCommonLow, middle: terLowerFirstCommonMiddle,
+                                        high: terLowerFirstCommonHigh,
+                                        maxCount: terLowerFirstCommonMaxCount, level: &tertiaries)
                         }
                         if t > 0x0500 { t += 0x4000 }
                         tertiaries.appendWeight16(t)
@@ -1394,16 +1390,10 @@ enum CollationKeys {
                             t += 0x4000
                         }
                         if commonTertiaries != 0 {
-                            commonTertiaries -= 1
-                            while commonTertiaries >= terUpperFirstCommonMaxCount {
-                                tertiaries.appendByte(terUpperFirstCommonMiddle)
-                                commonTertiaries -= terUpperFirstCommonMaxCount
-                            }
-                            let b: UInt32 = t < (terUpperFirstCommonLow << 8)
-                                ? terUpperFirstCommonLow + UInt32(commonTertiaries)
-                                : terUpperFirstCommonHigh - UInt32(commonTertiaries)
-                            tertiaries.appendByte(b)
-                            commonTertiaries = 0
+                            flushCommon(&commonTertiaries, weight: t, threshold: terUpperFirstCommonLow << 8,
+                                        low: terUpperFirstCommonLow, middle: terUpperFirstCommonMiddle,
+                                        high: terUpperFirstCommonHigh,
+                                        maxCount: terUpperFirstCommonMaxCount, level: &tertiaries)
                         }
                         tertiaries.appendWeight16(t)
                     }
@@ -1425,16 +1415,9 @@ enum CollationKeys {
                             q = 0xfc + ((q >> 6) & 3)
                         }
                         if commonQuaternaries != 0 {
-                            commonQuaternaries -= 1
-                            while commonQuaternaries >= quatCommonMaxCount {
-                                quaternaries.appendByte(quatCommonMiddle)
-                                commonQuaternaries -= quatCommonMaxCount
-                            }
-                            let b: UInt32 = q < quatCommonLow
-                                ? quatCommonLow + UInt32(commonQuaternaries)
-                                : quatCommonHigh - UInt32(commonQuaternaries)
-                            quaternaries.appendByte(b)
-                            commonQuaternaries = 0
+                            flushCommon(&commonQuaternaries, weight: q, threshold: quatCommonLow,
+                                        low: quatCommonLow, middle: quatCommonMiddle, high: quatCommonHigh,
+                                        maxCount: quatCommonMaxCount, level: &quaternaries)
                         }
                         quaternaries.appendByte(q)
                     }
