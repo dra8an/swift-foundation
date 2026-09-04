@@ -7,6 +7,17 @@
 //   S4  writer only, on pre-collected CEs    — the write share
 //   S5  reset only                           — the per-call reset cost
 // Verification: S1/S2 keys must be byte-identical to S0 over the corpus.
+//
+// REFRESHED 2026-08-19: S1/S2 had gone stale. They still called the BUFFERED
+// writer and the pre-§48 two-scope `reset` + `collectAll` pair, so from §46
+// onward they measured a body the module no longer ships — S1 read ~40 ns
+// high on ascii and the "TLS" and "throws" attributions drawn from it were
+// both wrong. The byte-identity check could never catch this: all three
+// writers emit identical keys by construction, which is the point of them.
+// S1/S2 now mirror the shipping body exactly (resetAndCollectLeft, the
+// storage-resolved compressibleBytes, writeSortKeyUpToQuaternarySingle);
+// the buffered and direct writers stay reachable as S4/S4b for the
+// writer-vs-writer comparison only.
 import Dispatch
 import Foundation
 
@@ -16,20 +27,17 @@ extension RootCollator {
         _ s: String, into key: inout [UInt8], scratch: ScratchBuffers,
         options: CollationOptions = CollationOptions()
     ) throws {
-        scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
-        _ = try scratch.left.collectAll()
+        try scratch.resetAndCollectLeft(numeric: options.numeric, scalars: s.unicodeScalars)
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
         key.removeAll(keepingCapacity: true)
-        CollationKeys.writeSortKeyUpToQuaternary(
+        CollationKeys.writeSortKeyUpToQuaternarySingle(
             ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key, reusing: &scratch.levels)
+            reordering: reordering, into: &key)
         if options.strength == .identical {
             key.append(1)
-            scratch.left.scalars.reset(scalars: s.unicodeScalars)
-            if !scratch.nfdScalars.isEmpty { scratch.nfdScalars.removeAll(keepingCapacity: true) }
-            while let c = scratch.left.scalars.next() { scratch.nfdScalars.append(c) }
+            scratch.collectNFDScalars(scalars: s.unicodeScalars)
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
         }
         key.append(0)
@@ -40,30 +48,27 @@ extension RootCollator {
         _ s: String, into key: inout [UInt8], scratch: ScratchBuffers,
         options: CollationOptions = CollationOptions()
     ) {
-        scratch.left.reset(numeric: options.numeric, scalars: s.unicodeScalars)
-        _ = try! scratch.left.collectAll()
+        try! scratch.resetAndCollectLeft(numeric: options.numeric, scalars: s.unicodeScalars)
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
         key.removeAll(keepingCapacity: true)
-        CollationKeys.writeSortKeyUpToQuaternary(
+        CollationKeys.writeSortKeyUpToQuaternarySingle(
             ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key, reusing: &scratch.levels)
+            reordering: reordering, into: &key)
         if options.strength == .identical {
             key.append(1)
-            scratch.left.scalars.reset(scalars: s.unicodeScalars)
-            if !scratch.nfdScalars.isEmpty { scratch.nfdScalars.removeAll(keepingCapacity: true) }
-            while let c = scratch.left.scalars.next() { scratch.nfdScalars.append(c) }
+            scratch.collectNFDScalars(scalars: s.unicodeScalars)
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
         }
         key.append(0)
     }
 
-    // S3: pipeline only — reset + collectAll, no writer.
+    // S3: pipeline only — reset + collectAll, no writer. Uses the same fused
+    // single-scope helper the shipping body calls.
     func skPipelineOnly(_ s: String, scratch: ScratchBuffers) -> Int {
-        scratch.left.reset(numeric: false, scalars: s.unicodeScalars)
-        let ces = try! scratch.left.collectAll()
-        return ces.count
+        try! scratch.resetAndCollectLeft(numeric: false, scalars: s.unicodeScalars)
+        return scratch.left.ces.count
     }
 
     // S4: writer only, on CEs collected once outside the timing loop.
@@ -118,8 +123,10 @@ extension RootCollator {
         key.append(0)
     }
 
-    // S4c: the single-pass writer with in-region level buffers (the third
-    // point in the writer design space — ICU's shape), same pre-collected CEs.
+    // S4c: the single-pass writer with in-region level buffers — THE SHIPPING
+    // WRITER (the third point in the writer design space, ICU's shape).
+    // S4/S4b keep the buffered and direct writers reachable for the
+    // writer-vs-writer comparison; only this one reflects the module.
     func skWriterSingle(
         ces: [Int64], into key: inout [UInt8],
         options: CollationOptions = CollationOptions()
@@ -153,27 +160,14 @@ let reps = args.count > 2 ? (Int(args[2]) ?? 300) : 300
 let collator = try! RootCollator()
 let scratch = collator.ladderScratch()
 
-// Pre-collect CEs per line for S4, and verify S1/S2 keys == S0 keys.
-var lineCEs: [[Int64]] = []
-var s0key: [UInt8] = [], s1key: [UInt8] = [], s2key: [UInt8] = []
-var mismatches = 0
-for line in lines {
-    scratch.left.reset(numeric: false, scalars: line.unicodeScalars)
-    _ = try! scratch.left.collectAll()
-    // Verbatim buffer state (sentinel included) — S4 must see exactly what
-    // the real body hands the writer.
-    lineCEs.append(Array(scratch.left.ces))
-    try! collator.sortKey(for: line, into: &s0key)
-    try! collator.skNoTLS(line, into: &s1key, scratch: scratch)
-    collator.skNoThrow(line, into: &s2key, scratch: scratch)
-    if s1key != s0key || s2key != s0key { mismatches += 1 }
-}
-print("corpus: \(lines.count) lines | S1/S2 key mismatches vs S0: \(mismatches)")
-guard mismatches == 0 else { fatalError("stage clones diverge from the public entry") }
-
-// §43 direct-writer identity check: buffered vs direct writer over an
-// option matrix (CE production is options-independent at numeric=off, so
-// one CE array serves all sets). Hook verified by the printed row.
+// The option matrix. CE production is options-independent at numeric=off, so
+// one CE array per line serves every set here.
+//
+// `.identical` matters and was missing until 2026-08-19: it is the ONLY set
+// that reaches the identical-level drain (collectNFDScalars +
+// writeIdenticalLevelRun), so without it the stage clones' drain code was
+// timed but never checked. §48 rewrote that drain and the refresh rewrote the
+// clones' copy of it; both went unverified here.
 var optionMatrix: [(String, CollationOptions)] = []
 do {
     var o = CollationOptions(); optionMatrix.append(("default", o))
@@ -185,6 +179,38 @@ do {
     o = CollationOptions(); o.caseLevel = true; optionMatrix.append(("caseLevel", o))
     o = CollationOptions(); o.caseFirst = .upperFirst; optionMatrix.append(("upperFirst", o))
     o = CollationOptions(); o.backwardSecondary = true; optionMatrix.append(("french", o))
+    o = CollationOptions(); o.strength = .identical; optionMatrix.append(("identical", o))
+    o = CollationOptions(); o.strength = .identical; o.alternate = .shifted
+    optionMatrix.append(("identical+shifted", o))
+}
+
+// Pre-collect CEs per line for S4, and verify S1/S2 keys == S0 keys ACROSS THE
+// WHOLE MATRIX — the stage clones must track the public entry at every option
+// set, not just the default one.
+var lineCEs: [[Int64]] = []
+var s0key: [UInt8] = [], s1key: [UInt8] = [], s2key: [UInt8] = []
+var stageMismatches: [String: Int] = [:]
+for line in lines {
+    scratch.left.reset(numeric: false, scalars: line.unicodeScalars)
+    _ = try! scratch.left.collectAll()
+    // Verbatim buffer state (sentinel included) — S4 must see exactly what
+    // the real body hands the writer.
+    lineCEs.append(Array(scratch.left.ces))
+}
+for (name, opts) in optionMatrix {
+    var bad = 0
+    for line in lines {
+        try! collator.sortKey(for: line, into: &s0key, options: opts)
+        try! collator.skNoTLS(line, into: &s1key, scratch: scratch, options: opts)
+        collator.skNoThrow(line, into: &s2key, scratch: scratch, options: opts)
+        if s1key != s0key || s2key != s0key { bad += 1 }
+    }
+    stageMismatches[name] = bad
+}
+let stageSummary = optionMatrix.map { "\($0.0)=\(stageMismatches[$0.0]!)" }.joined(separator: " ")
+print("corpus: \(lines.count) lines | S1/S2 vs S0 mismatched lines: \(stageSummary)")
+guard stageMismatches.values.allSatisfy({ $0 == 0 }) else {
+    fatalError("stage clones diverge from the public entry")
 }
 var directMismatches: [String: Int] = [:]
 var singleMismatches: [String: Int] = [:]
@@ -260,12 +286,38 @@ measure("S5 reset-only   ") {
 }
 if sink == Int.min { print("") }
 
+// Hold-loop hooks for `sample PID 10`. `holdS4` held the BUFFERED writer,
+// which stopped shipping at §46 — profiling it attributes work to code no
+// user reaches. It now holds S4c, the shipping single-pass writer; `holdS4buf`
+// keeps the old target for writer-vs-writer profile diffs.
 if args.contains("holdS4") {
-    print("holding S4 writer-only for sampling…")
+    print("holding S4c writer-single (THE SHIPPING WRITER) for sampling…")
+    let c = collator
+    for _ in 0..<200000 {
+        for (i, _) in lines.enumerated() {
+            c.skWriterSingle(ces: lineCEs[i], into: &key)
+            sink += key.count
+        }
+    }
+}
+
+if args.contains("holdS4buf") {
+    print("holding S4 writer-only (buffered, NOT shipping) for sampling…")
     let c = collator
     for _ in 0..<200000 {
         for (i, _) in lines.enumerated() {
             c.skWriterOnly(ces: lineCEs[i], into: &key, scratch: scratch)
+            sink += key.count
+        }
+    }
+}
+
+if args.contains("holdS0") {
+    print("holding S0 public entry for sampling…")
+    let c = collator
+    for _ in 0..<200000 {
+        for line in lines {
+            try! c.sortKey(for: line, into: &key)
             sink += key.count
         }
     }
