@@ -142,7 +142,21 @@ Allocation/resolution samples are the trustworthy kind.
       ascii/latin/cjk/thai (1.44–1.53× vs ICU, was 1.67–1.81×); paths
       +5% accepted residual (§43's paths saga). Ladder committed:
       `build_sk_ladder.sh`.
-- [ ] UPSTREAM-PREP: extract buffered sort key writer from production.
+- [ ] UPSTREAM-PREP: extract the TWO non-shipping sort key writers from production.
+      **Updated 2026-10-14 (§49):** this item recorded only the buffered
+      writer. The direct writer (§43) is ALSO dead code: it stopped
+      shipping at §46, and nobody updated this item. The product code
+      calls only `writeSortKeyUpToQuaternarySingle`. The two dead writers
+      are about 1000 of the ~1600 lines in SortKey.swift:
+      - the buffered writer: `writeSortKeyUpToQuaternary` + `SortKeyLevel`
+        + `SortKeyLevelBuffers` (lines 1–525) plus the `levels` field on
+        `ScratchBuffers`;
+      - the direct writer: `writeSortKeyUpToQuaternaryDirect` and its
+        pass helpers (lines 526–1028).
+      Only the sk-ladder tool and the temporary test
+      `ZZTempWriterBoundTests.swift` call them. **Do not make a permanent
+      test depend on either writer** — that makes the dead code necessary.
+      The original note follows.
       `writeSortKeyUpToQuaternary` + `SortKeyLevel` + `SortKeyLevelBuffers`
       (~520 lines in SortKey.swift) plus the `levels` field on
       `ScratchBuffers` exist only for the sk-ladder verification tool —
@@ -2560,3 +2574,204 @@ no synthesis was produced. The two findings that mattered most (the naive
 fusion is a no-op; one pair is worth ~8–9 ns) came from a probe and from the
 A/B respectively — not from review. Weight accordingly when sizing the next
 hunt: the measurement is what settled this, twice.
+
+---
+
+### 49. The sortKey ladder refresh, the writer assembly tail, and two dead writers
+
+**Status (2026-10-14): IN FLIGHT. Read the open items at the end first.**
+
+- Committed: `36254566`, the ladder refresh (part (a)).
+- Not committed: the writer change "variant C" (part (c)), in the
+  working tree of `SortKey.swift`. It passes the full suite: 1530 tests in
+  125 suites, which is the gate of 1528/124 plus the temporary test.
+- Not committed: `Tests/.../Collation/ZZTempWriterBoundTests.swift`
+  (untracked, temporary). It calls the two dead writers, so it must not
+  be committed. Item 1 below replaces it.
+- No stashes. The user dropped both experiments of part (b) on
+  2026-10-14 (`takeScratch` was neutral; the bounds were unsafe).
+- A baseline worktree: `../collation-baseline`, detached at `36254566`.
+
+#### (a) The ladder refresh (committed `36254566`)
+
+The §43 ladder was stale from §46 on. S1, S2, and S3 called the buffered
+writer and the pre-§48 split scopes, so they measured a body that the
+module does not ship. The byte-identity check cannot detect this: the
+three writers emit identical keys by design. A stage clone needs a check
+that it still mirrors the entry that it peels. Byte identity cannot
+supply that check.
+
+The refresh also added `.identical` and `identical+shifted` to the option
+matrix. Before, the matrix stopped at quaternary, so the ladder timed the
+identical-level drain but did not check it. `holdS4` now holds S4c (the
+shipping writer). `holdS4buf` holds the buffered writer, and `holdS0`
+holds the public entry.
+
+**Corrected table (full WMO, K=9 min, ns/op, Apple Silicon, 2026-08-19).
+It supersedes the §43 table. Do not use the §43 table again.**
+
+| corpus | S0 | S1 | S2 | S3 | S4c | S5 | ICU | S0/ICU |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| ascii | 177 | 163 | 161 | 61 | 99 | 11 | 104 | 1.70× |
+| latin | 223 | 190 | 185 | 76 | 111 | 11 | 120 | 1.86× |
+| cjk | 199 | 182 | 180 | 91 | 87 | 13 | 117 | 1.70× |
+| paths | 409 | 406 | 385 | 188 | 225 | 15 | 364 | 1.12× |
+| thai | 238 | 221 | 212 | 110 | 110 | 15 | 153 | 1.56× |
+
+- S3 + S4c gives S2 within 2 ns on ascii, latin, and cjk. paths misses by
+  −28 ns, so its stages interact, and its attribution is the weakest.
+- The writer is 48–62% of the body. On ascii the writer alone (99) is
+  about 95% of ICU's complete `ucol_getSortKey` (104).
+- latin is the worst sortKey row in the ladder (1.86×).
+- On the same pre-collected CEs, the single-pass writer beats the
+  buffered writer by 13–20% on every corpus. This confirms §46(a).
+
+#### (b) Two neutral experiments (stashed, not shipped)
+
+- **`takeScratch` hot/cold split (DROPPED).** The out-of-line
+  `takeScratch` reserved 1136 bytes of stack (`sub sp, sp, #0x470`) and
+  saved 12 registers on every call, because the inliner put the
+  `ScratchBuffers` constructor into it. An `@inline(never)`
+  `makeScratch` moved that frame out of the hot path (symbol-verified).
+  A/B: neutral, at most 1.5%, mixed signs on all rows. A stack-pointer
+  subtraction and paired register stores are not serial dependencies.
+  The calibration note at the top of this file predicts that result.
+- **Tighter per-CE byte bounds (DROPPED). UNSAFE — DO NOT REDO.**
+  6/3/3/3/6 → 4/2/1/2/5. The debug asserts held over the full option
+  matrix, the adversarial strings, and 434k conformance lines, and the
+  A/B was neutral (at most 1.1%). But the primary value is wrong: one CE
+  can emit a separator byte (03 or ff) plus p1..p4 = 5 bytes, and the
+  stash allows 4. The tests passed because their data has no primaries
+  with 4 non-zero bytes; the CE format allows them, and ICU can assign
+  them in tailorings. In a release build the asserts are off, so an
+  overflow writes past the region on the stack. The stash also kept the
+  comment "Each constant is therefore (weight bytes + 1)", which its own
+  values contradict. Lesson: debug asserts verify a bound only on the
+  data that the tests use; a bound needs a proof for all valid data.
+
+#### (c) The writer assembly tail (variant C, not committed)
+
+A profile of S4c (ascii, `holdS4`) put 45 of 359 writer samples in
+`swift_isUniquelyReferenced_nonNull_native` and 47 in memcpy/memmove.
+The old tail makes one `key.append` per level and one per separator.
+At the default strength that is 5 appends; the case level and the
+quaternary level add more. (An earlier statement in the session said
+"9 per key at the default strength". That was wrong.)
+
+The change: each level after the primary gets one byte of slack in the
+region. Then the beyond-primary levels compact downward into one
+contiguous run, with the separators. `RegionLevel.compactTo` asserts
+that every move goes down. The layout makes that true:
+level i starts at sum(cap_j + 1) and moves to sum(actual_j + 1).
+
+Three variants, each A/B'd against `36254566`, 5 interleaved rounds:
+
+| sortKey | variant A: one whole-key append | variant B: layout only (old tail) | variant C: primary alone + one append for the rest |
+|---|---|---|---|
+| ascii | **+2.5%** (5/5 worse) | 0.0% | −1.2% (mixed) |
+| latin | **−6.0%** | 0.0% | **−4.3%** (5/5) |
+| cjk | **+2.3%** (5/5 worse) | +0.6% (mixed) | −1.1% (mixed) |
+| paths | +0.3% | — | −1.0% (mixed) |
+| thai | **−2.9%** | — | **−3.2%** (4/5) |
+
+- Variant B shows that the slack layout costs nothing.
+- Variant A is a trade, so it is rejected.
+- Variant C keeps most of the latin gain and all of the thai gain, and
+  ascii, cjk, and paths are flat. `skRet` −1.2% to −2.7%. compare does
+  not change. The full suite passes.
+- The absolute numbers in the variant C run are about 4% above the
+  August baseline. The ICU control did not run. The deltas are valid,
+  because the runs are interleaved. Do not use the absolute numbers.
+
+**The cause of the variant A loss on ascii and cjk is NOT established.**
+An earlier explanation in the session said that `appendTo`'s `n <= 0`
+early exit skipped the secondary and tertiary levels on those corpora.
+That is wrong: §46's level-length data shows one byte in each of those
+levels, so `appendTo` copied one byte, not zero.
+
+**The profile overstated the cost again (§14).** The samples suggested
+about 12 ns. The result was −8 ns on latin and about 0 on ascii. Treat
+`isUniquelyReferenced` samples as weak evidence.
+
+**A three-way interleave found a regression that a two-way A/B missed.**
+The first variant A run called ascii +1.3% "noise". The three-way run
+(base, A, B) showed +2.5% in 5 of 5 rounds.
+
+#### (d) Two dead writers
+
+See the updated UPSTREAM-PREP item in the audit list. The buffered writer
+and the direct writer have no callers in `Sources/`. Only the sk-ladder
+tool and the temporary test call them.
+
+#### (e) Method rules from this round
+
+- **Build the A/B baseline in a git worktree. Do not stash.** A stash
+  changes the working tree in the middle of the experiment, and it
+  caused one stale-binary trap in this round. Command:
+  `git worktree add --detach ../collation-baseline <commit>`. Then run
+  `Collation/Tools/build_engine_bench.sh` in each tree. Each tree builds
+  into its own `.build`, so no copies are necessary. Binary:
+  `<tree>/.build/engine-bench/.build/out/Products/Release/EngineBench`.
+- **Do not create directories outside the project without approval.**
+- `/tmp` is cleaned between sessions. Do not keep A/B binaries there.
+- The `skRet` line has the form `RootCollator.skRet: 227 ns/op`. Parse the
+  number before ` ns/op`; field `$3` is wrong for this line.
+
+#### (f) Open items, in order
+
+1. **A permanent test for the single-pass writer.** It replaces
+   `ZZTempWriterBoundTests.swift`. It must not call the buffered writer or
+   the direct writer. Two parts (user decision, 2026-10-14):
+   - (1a) **An order test against `compare()`.** The adversarial
+     run-length strings from the temporary test, the full option matrix
+     (strength × alternate × caseLevel × caseFirst × backwards × numeric),
+     and pairs at each flush boundary (for example 33 and 34 repeats).
+     Check: the sign of the byte-wise key comparison equals `compare()`.
+     The debug asserts on the region bounds and on `compactTo` run too.
+     **DONE 2026-10-14, not committed:**
+     `SortKeyTests.singlePassWriterOrdersLikeCompare`, 5 test cases (one
+     per strength, 48 option combinations each), 14 s in debug. Swift
+     Testing counts test functions, not cases, so the gate becomes
+     1531/125 with the temporary test, 1529/124 without it.
+     **Mutation check:** a fault in `compactTo` (drop the last byte of each
+     level that has more than one byte) gave 80 / 0 / 768 / 624
+     violations at secondary / tertiary / quaternary / identical. **It is
+     BLIND at tertiary, the default strength:** the tertiary level decides
+     those pairs in the same direction as `compare()`. The existing ICU
+     byte-identity test catches the same fault at tertiary (110 of 328
+     keys differ), so the suite is not blind. But on the stress strings,
+     only (1b) can catch it. This is the evidence for (1b).
+   - (1b) **ICU reference answers for the same strings.** Build
+     `Tools/gen_golden.c` against the IN-SOURCE ICU build in
+     `icu-DraganBesevic-2/icu4c/source`. Never use `build/icuhost` (see
+     `~/CLAUDE.md`). First find which option sets `gen_golden` supports.
+     Report that coverage to the user before you generate files.
+     **BLOCKED 2026-10-14 — waiting for a user decision.** Coverage: 13
+     root option sets (each changes one attribute from the default; no
+     combinations) plus 8 locale sets = 21. Three blockers:
+     - **The ICU checkout is no longer 79.0.1.** It is on branch
+       `ICU-23250-CLDR-79-integration-beta4` (CLDR 49); its root collation
+       data moved to Unicode 18 ("ICU-23343 root collation: Unicode 18
+       20260826"); the libraries were rebuilt as 79.1 on 2026-10-12, and
+       only `libicudata.79.1` exists. Our bundled `ucadata.icu` is 79.0.1
+       data, so keys from this build differ for data reasons. Do not
+       generate ANY golden file from it. This also means that Table 1's ICU
+       column (`bench_icu`) now measures different libraries and data than
+       every recorded baseline.
+     - `gen_golden` reads lines with `fgets` into 1024 bytes. A longer line
+       silently becomes two corpus strings. Many stress strings are longer.
+     - `gen_golden` uses `strlen`, so a line cannot contain U+0000.
+     Options offered: build ICU 79.0.1 from its release tag in a separate
+     worktree of the ICU repository (long build; ask first); use another
+     79.0.1 build; or defer 1b. In every case, first regenerate the keys for
+     `Golden/corpus.txt` and diff them against the committed `keys-*.txt`.
+     If they differ, the ICU build is wrong: stop.
+2. **CANCELLED: the joint A/B of variant C plus the tighter bounds.** The
+   bounds were unsafe (part (b)). Stash dropped 2026-10-14.
+3. **DONE: the `takeScratch` stash.** Dropped 2026-10-14 (neutral).
+4. **Commit variant C and the new test** when the user says so. Item 1b
+   is deferred and does not block the commit. Give a one-line
+   `git commit -m` message. Do not commit `ZZTempWriterBoundTests.swift`;
+   delete it after the commit.
+5. **Remove the worktree** when the A/B work ends:
+   `git worktree remove ../collation-baseline`.

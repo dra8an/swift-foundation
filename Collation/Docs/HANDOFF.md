@@ -486,9 +486,20 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (99.8%, vs 100 of 14700 for a naive sweep), four oracle-free checks
   each, 0.113 s, with `#require` guards so a broken derivation fails
   loudly instead of silently covering nothing. **Gate 1528/124.**
+  **IN FLIGHT (2026-10-14) — READ §49 IN `optimization-targets.md` BEFORE
+  ANY OTHER WORK.** Summary: the sk-ladder was refreshed onto the shipping
+  writer (`36254566`; it supersedes the §43 table). A writer change
+  ("variant C", latin sortKey −4.3%, thai −3.2%, the other rows flat) is
+  in the working tree and NOT committed. The buffered writer AND the
+  direct writer are both dead code (the UPSTREAM-PREP item now says so).
+  The next item is a permanent test for the single-pass writer: an order
+  test against `compare()` plus ICU reference answers. A/B baselines now
+  build in a git worktree (`../collation-baseline`), never from a stash.
+  No stashes: the user dropped both experiments on 2026-10-14 (the
+  tighter byte bounds were UNSAFE; do not redo them — see §49).
   Technique log: `optimization-targets.md` — read THE ALLOCATION/
   RESOLUTION HUNT note at the top before any perf work, then §20
-  (steps 6–8), §27, §29–§45 and the audit list;
+  (steps 6–8), §27, §29–§49 and the audit list;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
@@ -826,5 +837,6 @@ detailed analysis) · 23 **Refactoring plan** (move Collation into
 FoundationInternationalization) · HANDOFF (this file)
 
 Convention: every milestone/round updates doc 04's table + outcome note and
-gets a detailed report; decision records for surprising cuts; commit
-messages carry the full summary (no attribution line!).
+gets a detailed report; decision records for surprising cuts. Commit
+messages are ONE LINE (user decision, 2026-10-14); the details go into the
+docs, not the commit message. No attribution line.
