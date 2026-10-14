@@ -2622,7 +2622,17 @@ It supersedes the §43 table. Do not use the §43 table again.**
   −28 ns, so its stages interact, and its attribution is the weakest.
 - The writer is 48–62% of the body. On ascii the writer alone (99) is
   about 95% of ICU's complete `ucol_getSortKey` (104).
-- latin is the worst sortKey row in the ladder (1.86×).
+- ~~latin is the worst sortKey row in the ladder (1.86×).~~ **CORRECTED
+  2026-10-14:** the latin row came from ONE run and was an outlier. The
+  commit message of `36254566` also claims a latin S0−S1 gap of 33 ns,
+  double every other corpus. Three rounds each at `36254566` and at
+  `d4c56e97` give latin S0−S1 = 7–12 ns, the same as every corpus. The
+  thread-local take/give costs about 10 ns everywhere.
+- **Do not read ICU ratios off this table.** The ladder's S0 reads 10–22%
+  above the EngineBench sortKey row for the same entry, so the S0/ICU
+  column mixes two harnesses. Use Table 1 for ratios against ICU.
+- **Run the ladder at least 3 times per corpus.** One run is not evidence;
+  the latin outlier above came from one run.
 - On the same pre-collected CEs, the single-pass writer beats the
   buffered writer by 13–20% on every corpus. This confirms §46(a).
 
