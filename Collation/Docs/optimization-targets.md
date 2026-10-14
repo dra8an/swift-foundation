@@ -2758,9 +2758,15 @@ tool and the temporary test call them.
        generate ANY golden file from it. This also means that Table 1's ICU
        column (`bench_icu`) now measures different libraries and data than
        every recorded baseline.
-     - `gen_golden` reads lines with `fgets` into 1024 bytes. A longer line
-       silently becomes two corpus strings. Many stress strings are longer.
-     - `gen_golden` uses `strlen`, so a line cannot contain U+0000.
+     - **FIXED 2026-10-14:** `gen_golden` read lines with `fgets` into 1024
+       bytes, so a longer line silently became two corpus strings; it also
+       stopped silently at line 4096. It now uses `getline` with no limits,
+       and per-line buffers for the UTF-16 form and the key. Verified: old
+       and new tools write 63 byte-identical files for both corpora.
+     - `gen_golden` still cannot represent U+0000 (the strings are
+       NUL-terminated), but it now stops with an error instead of cutting
+       the line. For 1b, leave out the U+0000 stress family, or add an
+       escape format to the tool.
      Options offered: build ICU 79.0.1 from its release tag in a separate
      worktree of the ICU repository (long build; ask first); use another
      79.0.1 build; or defer 1b. In every case, first regenerate the keys for

@@ -5,7 +5,11 @@
  * Usage: gen_golden <corpus.txt> <out-dir>
  *
  * Reads corpus strings (UTF-8, one per line, newline stripped, line order
- * significant). For each option set, opens the root collator with those
+ * significant). Lines may have any length, and there may be any number of
+ * them. Empty lines are skipped. A line that contains U+0000 stops the tool
+ * with an error, because the strings are NUL-terminated.
+ *
+ * For each option set, opens the root collator with those
  * settings and writes <out-dir>/matrix-<name>.txt: one line per corpus string
  * with one character per corpus string: '<', '=', or '>' for
  * ucol_strcollUTF8(s[i], s[j]).
@@ -23,9 +27,6 @@
 #include <string.h>
 #include "unicode/ucol.h"
 #include "unicode/ustring.h"
-
-#define MAX_LINES 4096
-#define MAX_LINE 1024
 
 typedef struct {
     const char *name;
@@ -71,15 +72,34 @@ int main(int argc, char **argv) {
     FILE *in = fopen(argv[1], "r");
     if (!in) { perror("corpus"); return 1; }
 
-    static char *lines[MAX_LINES];
-    static char buf[MAX_LINE];
-    int n = 0;
-    while (fgets(buf, sizeof(buf), in) && n < MAX_LINES) {
-        size_t len = strlen(buf);
+    char **lines = NULL;
+    int n = 0, capacity = 0;
+    /* getline: no limit on line length or line count. The old fgets loop into a
+     * fixed 1024-byte buffer silently split a longer line into two corpus
+     * strings, and it silently stopped at line 4096. */
+    char *buf = NULL;
+    size_t bufSize = 0;
+    ssize_t len;
+    int lineNumber = 0;
+    while ((len = getline(&buf, &bufSize, in)) >= 0) {
+        ++lineNumber;
         if (len > 0 && buf[len - 1] == '\n') buf[--len] = '\0';
         if (len == 0) continue;
+        /* The strings are NUL-terminated from here on, so U+0000 would cut the
+         * line short without notice. Stop instead. */
+        if (memchr(buf, '\0', (size_t)len) != NULL) {
+            fprintf(stderr, "corpus line %d contains U+0000, which this tool cannot represent\n",
+                    lineNumber);
+            return 1;
+        }
+        if (n == capacity) {
+            capacity = capacity ? 2 * capacity : 1024;
+            lines = realloc(lines, (size_t)capacity * sizeof(char *));
+            if (!lines) { perror("realloc"); return 1; }
+        }
         lines[n++] = strdup(buf);
     }
+    free(buf);
     fclose(in);
     fprintf(stderr, "corpus: %d strings\n", n);
 
@@ -140,17 +160,21 @@ int main(int argc, char **argv) {
         out = fopen(path, "w");
         if (!out) { perror(path); return 1; }
         for (int i = 0; i < n; i++) {
-            UChar us[MAX_LINE];
+            /* UTF-16 never needs more code units than the UTF-8 form has bytes. */
+            int32_t usCapacity = (int32_t)strlen(lines[i]) + 1;
+            UChar *us = malloc((size_t)usCapacity * sizeof(UChar));
+            if (!us) { perror("malloc"); return 1; }
             int32_t usLength;
             status = U_ZERO_ERROR;
-            u_strFromUTF8(us, MAX_LINE, &usLength, lines[i], -1, &status);
+            u_strFromUTF8(us, usCapacity, &usLength, lines[i], -1, &status);
             if (U_FAILURE(status)) {
                 fprintf(stderr, "u_strFromUTF8(%d): %s\n", i, u_errorName(status));
                 return 1;
             }
-            uint8_t skey[4096];
-            int32_t skeyLength = ucol_getSortKey(coll, us, usLength, skey, sizeof(skey));
-            if (skeyLength <= 0 || skeyLength > (int32_t)sizeof(skey)) {
+            /* Preflight for the key length, then write the key into a buffer of that size. */
+            int32_t skeyLength = ucol_getSortKey(coll, us, usLength, NULL, 0);
+            uint8_t *skey = skeyLength > 0 ? malloc((size_t)skeyLength) : NULL;
+            if (!skey || ucol_getSortKey(coll, us, usLength, skey, skeyLength) != skeyLength) {
                 fprintf(stderr, "ucol_getSortKey(%s,%d) length %d\n",
                         optionSets[k].name, i, skeyLength);
                 return 1;
@@ -159,6 +183,8 @@ int main(int argc, char **argv) {
                 fprintf(out, "%02x", skey[b]);
             }
             fputc('\n', out);
+            free(skey);
+            free(us);
         }
         fclose(out);
         ucol_close(coll);
