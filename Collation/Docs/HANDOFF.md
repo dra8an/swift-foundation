@@ -834,7 +834,9 @@ integration plan (implemented)** · 20 **Integration quick reference
 (5-min pitch)** · 21 **Foundation API benchmark** (localizedCompare vs
 system ICU) · 22 **Cross-module inlining** (the 10× improvement —
 detailed analysis) · 23 **Refactoring plan** (move Collation into
-FoundationInternationalization) · HANDOFF (this file)
+FoundationInternationalization) · 30 **Side note: ICU4J fast-Latin
+compare bug** (signed `pair` test; ICU4J only — ICU4C and our port are
+correct; do not make our `pair` type signed) · HANDOFF (this file)
 
 Convention: every milestone/round updates doc 04's table + outcome note and
 gets a detailed report; decision records for surprising cuts. Commit
