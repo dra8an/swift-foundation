@@ -1109,6 +1109,23 @@ enum CollationKeys {
             if n <= 0 { return }  // level compressed to nothing — skip the copy entirely
             key.append(contentsOf: UnsafeBufferPointer(start: base, count: n))
         }
+
+        /// Copies this level's bytes — all but the trailing 01 from NO_CE — down to `dst`, and answers how many it wrote. `dst` must be at or below `base`; the caller guarantees that from the region's layout, so the copy runs forward without ever overwriting a byte it has still to read.
+        @inline(__always)
+        func compactTo(_ dst: UnsafeMutablePointer<UInt8>) -> Int {
+            assert(count > 0 && base[count - 1] == 1)
+            let n = count - 1
+            if n <= 0 { return 0 }  // level compressed to nothing
+            assert(dst <= base, "region compaction must move bytes DOWN")
+            if dst != base {
+                var i = 0
+                while i < n {
+                    dst[i] = base[i]
+                    i += 1
+                }
+            }
+            return n
+        }
     }
 
     /// The common-run compression flush, for a level accumulating into the single-pass writer's region: emit full maxCount runs as middle bytes, then the directional boundary byte (low + remainder below the common weight, high - remainder above). Same helper the multi-pass writer uses through `ByteBatch`; unifying these blocks was A/B-verified performance-neutral there (technique log §46 / dcd82a5).
@@ -1168,18 +1185,20 @@ enum CollationKeys {
         let capTertiaries = (levels & tertiaryFlag) != 0 ? tertiaryBytesPerCE * n : 0
         let capQuaternaries = (levels & quaternaryFlag) != 0 ? quaternaryBytesPerCE * n : 0
 
+        // Each level after the primary gets ONE byte of slack ahead of its data, which is where its 01 separator lands during assembly. That slack is what makes the in-place compaction provably safe: level i's data starts at sum(cap_j + 1) for j < i, and it is compacted to sum(actual_j + 1) for j < i, so the destination is always at or below the source (actual_j <= cap_j) and a forward copy per level cannot overwrite bytes it has yet to read. See the assembly block at the end of this function.
+        let slack = 4
         withUnsafeTemporaryAllocation(
             of: UInt8.self,
-            capacity: capPrimaries + capSecondaries + capCases + capTertiaries + capQuaternaries
+            capacity: capPrimaries + capSecondaries + capCases + capTertiaries + capQuaternaries + slack
         ) { region in
             let start = region.baseAddress.unsafelyUnwrapped
             var primaries = RegionLevel(start, capPrimaries)
-            var secondaries = RegionLevel(start + capPrimaries, capSecondaries)
-            var cases = RegionLevel(start + capPrimaries + capSecondaries, capCases)
+            var secondaries = RegionLevel(start + capPrimaries + 1, capSecondaries)
+            var cases = RegionLevel(start + capPrimaries + capSecondaries + 2, capCases)
             var tertiaries = RegionLevel(
-                start + capPrimaries + capSecondaries + capCases, capTertiaries)
+                start + capPrimaries + capSecondaries + capCases + 3, capTertiaries)
             var quaternaries = RegionLevel(
-                start + capPrimaries + capSecondaries + capCases + capTertiaries, capQuaternaries)
+                start + capPrimaries + capSecondaries + capCases + capTertiaries + 4, capQuaternaries)
 
             var prevReorderedPrimary: UInt32 = 0  // 0==no compression
             var commonCases = 0
@@ -1426,17 +1445,27 @@ enum CollationKeys {
                 if (lower32 >> 24) == UInt32(levelSeparator) { break }  // ce == NO_CE
             }
 
-            // Assemble: the primary level has no trailing separator to drop, the others do (the NO_CE iteration wrote one into each).
+            // Assemble in two appends instead of five.
+            //
+            // The shape that this replaced made one append per level and one per separator. Each append pays a `swift_isUniquelyReferenced_nonNull_native` call and a capacity check, and the optimizer cannot hoist them, because a reallocation can occur between any two. At the default strength that is five appends; the case level and the quaternary level add more.
+            //
+            // The primary level goes out first, in its own append. It already starts at the head of the region and has no trailing separator to drop. One whole-key append measured worse on ascii (+2.5%) and cjk (+2.3%), 5 of 5 rounds each, while latin and thai improved. This split keeps the latin and thai gain and leaves ascii and cjk flat. The cause of the ascii and cjk loss is not established; technique log §49 has the measurements.
+            //
+            // The beyond-primary levels then compact into one contiguous run — gaps closed, each one's trailing 01 from NO_CE dropped, separators inserted — and go out in a single append. Every move is downward: level i's data begins at sum(cap_j + 1) for j < i and lands at sum(actual_j + 1), and actual_j <= cap_j, which the one byte of slack per level buys and `compactTo` asserts.
             if primaries.count > 0 {
                 key.append(contentsOf: UnsafeBufferPointer(start: start, count: primaries.count))
             }
+            let tailStart = primaries.count
+            var w = tailStart
             if (levels & secondaryFlag) != 0 {
-                key.append(levelSeparator)
-                secondaries.appendTo(&key)
+                start[w] = levelSeparator
+                w += 1
+                w += secondaries.compactTo(start + w)
             }
             if (levels & caseFlag) != 0 {
-                key.append(levelSeparator)
-                // Write pairs of nibbles as bytes, except separator bytes as themselves.
+                start[w] = levelSeparator
+                w += 1
+                // Pairs of nibbles pack into single bytes. Reads run ahead of writes (two inputs per output) and the destination is at or below the source, so this packs in place safely.
                 var b: UInt8 = 0
                 var i = 0
                 let last = cases.count - 1  // ignore the trailing NO_CE
@@ -1446,20 +1475,30 @@ enum CollationKeys {
                     if b == 0 {
                         b = c
                     } else {
-                        key.append(b | (c >> 4))
+                        assert(start + w <= cases.base + i)
+                        start[w] = b | (c >> 4)
+                        w += 1
                         b = 0
                     }
                     i += 1
                 }
-                if b != 0 { key.append(b) }
+                if b != 0 {
+                    start[w] = b
+                    w += 1
+                }
             }
             if (levels & tertiaryFlag) != 0 {
-                key.append(levelSeparator)
-                tertiaries.appendTo(&key)
+                start[w] = levelSeparator
+                w += 1
+                w += tertiaries.compactTo(start + w)
             }
             if (levels & quaternaryFlag) != 0 {
-                key.append(levelSeparator)
-                quaternaries.appendTo(&key)
+                start[w] = levelSeparator
+                w += 1
+                w += quaternaries.compactTo(start + w)
+            }
+            if w > tailStart {
+                key.append(contentsOf: UnsafeBufferPointer(start: start + tailStart, count: w - tailStart))
             }
         }
     }
