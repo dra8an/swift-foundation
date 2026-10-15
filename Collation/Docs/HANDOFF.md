@@ -352,30 +352,30 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (1.6×), paths 425/369 (1.2×), thai 229/153 (1.5×). Foundation APIs
   (Table 2) 1.9–6.9× FASTER than system ICU with zero cells at or
   behind parity. Suite gate 1517/123.
-  **CURRENT BASELINE (2026-08-12, run_benchmarks.sh K=3, full-WMO
-  EngineBench for Table 1; supersedes every AS table in this file).
-  Full matrix in `Docs/21`.**
+  **CURRENT BASELINE (2026-10-15, run_benchmarks.sh K=3, full-WMO
+  EngineBench for Table 1, at `ba9a6491` + the build-script path fix;
+  supersedes every AS table in this file). Full matrix in `Docs/21`.**
   Table 1, engine vs raw ICU C (ours/ICU): compare ascii 16/9 (1.78×),
-  latin 15/10 (1.50×), **cjk 26/40 = 0.65× (we are FASTER)**, paths
-  40/29 (1.38×), thai 259/170 (1.52×); sortKey ascii 159/104 (1.53×),
-  latin 182/120 (1.52×), cjk 173/117 (1.48×), **paths 385/364 = 1.05×
-  (parity with hand-tuned C)**, thai 211/153 (1.38×).
-  Table 2, Foundation APIs vs system ICU: **every cell ahead, floor
-  1.25×** — localizedCompare 2.77–5.21×, contains 3.48–4.75×, stdRange
-  2.46–3.73×, range(of:locale:) 1.42–2.72×, range(backwards)
-  1.42–2.72×, compare(locale:) 1.55–5.04×. Thai is the weakest family
-  throughout (1.25× floor), same root cause as the engine's thai rows —
-  the NFD per-scalar floor (§36).
-  **Every engine row improved over the pre-§46 baseline** (compare was
-  1.9/1.7/0.7/1.4/1.6, sortKey 1.7/1.6/1.6/1.2/1.5).
-  Machine state when recorded: NOT idle — load 7.8–16, ~60 MB free with
-  11.6 GB compressed. Recorded anyway because (a) two full matrix runs
-  20 min apart agreed (compare cells identical, sortKey ≤1.5%, worst
-  Table-2 ratio drift 2.8%) and (b) **ICU's own column matched the
-  recorded idle-machine figures within 1–2%** — ICU is the control, and
-  had load been inflating things it would have drifted too. Sanity gate
-  before recording any future run: ICU should read ~9/10/40/29/170
-  compare and ~105/120/117/365/153 sortKey. Suite gate 1528/124.
+  latin 15/10 (1.50×), **cjk 27/40 = 0.68× (we are FASTER)**, paths
+  40/29 (1.38×), thai 258/171 (1.51×); sortKey ascii 158/103 (1.53×),
+  **latin 175/120 (1.46×)**, cjk 174/117 (1.49×), paths 389/364 (1.07×),
+  thai 209/152 (1.38×). Against 2026-08-12: compare unchanged; sortKey
+  latin −3.8% and thai −1.9% (§49 variant C), the other rows flat.
+  Table 2 (Foundation APIs vs system ICU) did not change; its lead comes
+  mainly from the removed NSString → CoreFoundation → C++ bridge, so it is
+  not evidence about the engine.
+  **The ICU column is now ICU 79.1 with Unicode 18 data** (the local
+  checkout moved to the CLDR 49 integration branch); its speed equals
+  79.0.1, so the ratios stay comparable.
+  Machine state when recorded: load 10–15, 31–35% memory free, ONE run.
+  Accepted because **system ICU (Table 2) matched 2026-08-12 within 1.3%**
+  — system ICU did not change, so it is now the load control. Sanity gates
+  before recording a future run: system-ICU `localizedCompare` ~194/365/
+  369/300/494; ICU C ~9/10/40/29/171 compare and ~103/120/117/364/152
+  sortKey (check which ICU the checkout holds first). K=3 takes about 4
+  minutes. Suite gate 1529/124.
+  Previous baseline (2026-08-12, post-§48): compare 16/15/26/40/260,
+  sortKey 159/182/173/386/213; details in the git history of `Docs/21`.
   **IN FLIGHT at the time of writing:** a workflow-orchestrated
   optimization hunt over the engine compare/sortKey paths (8 ideation
   lenses → adversarial verification → ranked plan), targeting the

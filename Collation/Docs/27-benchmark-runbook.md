@@ -98,21 +98,30 @@ What actually degrades measurements, in order:
    10-core box, up to ~load 10.
 3. Disk activity — mostly irrelevant to these benchmarks after warm-up.
 
-**The sanity gate — use the ICU column as a control.** ICU 79 is a fixed
-binary, so its numbers should not move between sessions. On Apple Silicon
-(macOS 26) expect roughly:
+**The sanity gate — use a column that did not change as the control.**
+
+**Primary control (since 2026-10-15): the system ICU in Table 2.** It is part
+of macOS, so it does not change unless the OS updates. On Apple Silicon
+(macOS 26) `localizedCompare` should read about 194/365/369/300/494 for
+ascii/latin/cjk/paths/thai. If it matches within ~2–3%, the load did not
+distort the run.
+
+**Second check: ICU C in Table 1.** This column links against the LOCAL ICU
+checkout, so it is NOT a fixed binary: it changes when that checkout changes
+branch or rebuilds. On 2026-10-15 the checkout held ICU 79.1 with Unicode 18
+data (the CLDR 49 integration branch), and its speed matched the old 79.0.1
+build. Check the branch first (`git -C $ICU_SRC branch --show-current`).
+Then expect roughly:
 
 | corpus | ICU compare | ICU sortKey |
 |---|---:|---:|
-| ascii | 9 | 105 |
+| ascii | 9 | 103 |
 | latin | 10 | 120 |
 | cjk | 40 | 117 |
-| paths | 29 | 365 |
-| thai | 170 | 153 |
+| paths | 29 | 364 |
+| thai | 171 | 152 |
 
-If the ICU column matches those within ~2%, the run is trustworthy even at
-nonzero load — that is the justification the 2026-08-12 baseline in `Docs/21`
-rests on. If ICU has drifted, so has everything else: do not record the run.
+If a control has drifted, so has everything else: do not record the run.
 
 And regardless of load: **run the matrix twice.** Two runs agreeing cell-for-cell
 is worth more than one run on a quiet machine.

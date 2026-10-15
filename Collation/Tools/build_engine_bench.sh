@@ -39,4 +39,6 @@ let package = Package(
 MANIFEST
 
 cd "$OUT" && swift build -c release >&2
-echo "$OUT/.build/release/EngineBench"
+# Ask SwiftPM for the binary folder. A fixed ".build/release" is wrong for the
+# newer build system, which writes to ".build/out/Products/Release".
+echo "$(swift build -c release --show-bin-path)/EngineBench"
