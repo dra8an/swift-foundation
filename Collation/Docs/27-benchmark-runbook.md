@@ -50,12 +50,54 @@ env for machine 2):
 
 ## Reading the output
 
-- **Table 1 (pure engine)**: `ratio = ours / ICU`. Pure Swift vs hand-tuned C —
-  expect ~2.5–4× compare, ~1.7–2.5× sortKey. This is the floor, not a regression.
-- **Table 2 (Foundation APIs)**: `ratio = ours / system-ICU`, so **<1 means ours
-  is faster**. The compare family is ~0.3–0.8× (we beat system ICU by skipping
-  the NSString→CF→ICU bridge it pays per call); `localizedStandardContains` is
-  also <1 on most corpora after the scratch-iterator reuse.
+- **Table 1 (pure engine)**: `ratio = ours / ICU`, so **below 1 means ours is
+  faster**. The Swift implementation against hand-tuned C. Values as of
+  2026-10-15: compare 0.65–1.80×, sortKey 1.07–1.53× (current numbers:
+  `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
+  old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
+- **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1
+  means ours is faster**. Most of that lead comes from skipping the system
+  path's NSString → CoreFoundation → C++ bridge, not from the engine. Do not
+  use Table 2 as evidence about engine quality; Table 1 is that evidence.
+
+## What the harness itself costs (measured 2026-10-15)
+
+EngineBench (Swift) and `bench_icu` (C) are different programs, so the loop
+around each call is not the same. Probes with empty stubs instead of the
+collator measured the difference (Apple Silicon, min of 3 runs × 9 passes):
+
+| empty loop, ns per call | ascii | paths | thai |
+|---|---:|---:|---:|
+| C compare loop (`char *` arguments) | 1.0 | 0.9 | 0.9 |
+| Swift compare loop (our API shape) | 2.0 | 2.0 | 2.0 |
+| C sortKey loop (stack buffer) | 1.0 | 0.9 | 0.9 |
+| Swift sortKey loop + the `[UInt8]` work | 9.7 | 12.7 | 14.0 |
+
+**The extra ~1 ns per Swift call is the API's call shape, not the loop:**
+about 0.5 ns for `throws` (the error check after each call), 0.4 ns for two
+`String` arguments (two words each, against one for `char *`), and 0.2 ns
+for the `options` argument. Every Swift caller pays it. Three loop shapes
+(the current one, a local copy of the array, `withUnsafeBufferPointer`) all
+cost 2.02 ns, and paths — 100% heap strings — costs the same as ascii, so
+the loop does no reference counting. **Do not "optimize" the harness to
+remove this cost: it would measure a call that no user makes.**
+
+The sortKey array work (clear, fill, terminate) is also real: our
+`sortKey(for:into:)` does it inside the call.
+
+**Asymmetry that stays, by decision:** `bench_icu` converts each line to
+UTF-16 BEFORE its timer, because `ucol_getSortKey` takes UTF-16 only (ICU's
+compare takes UTF-8, so compare is symmetric). That conversion costs ICU
++14..+89 ns per key. It is NOT added to ICU's timed part: Table 1 compares
+each engine on its own native input, and making the reference slower would
+hide our gap rather than measure it.
+
+Net effect on the gap: the harness explains about 1 ns of the 7 ns ascii
+compare gap (16.7 against 9.3 in the 2026-10-15 baseline). The rest is
+engine time.
+
+Probe sources (not committed) lived in `.build/harness-probe/`; rebuild them
+from this description if the question comes back.
 
 ## Prerequisites (one-time)
 
@@ -87,7 +129,27 @@ Check both:
 sysctl -n vm.loadavg          # 1m / 5m / 15m
 vm_stat | head -4             # Pages free; and see the compressor below
 top -l 1 -n 0 | grep -E "CPU usage|PhysMem"
+pmset -g log | grep -E " (Sleep|Wake|DarkWake) " | tail -5   # the last wake
+pmset -g therm                # thermal or performance limits, if any
 ```
+
+**After a wake from sleep, wait at least 10 minutes, and until the 5-minute
+load is also low** (measured 2026-10-15). After a wake, `dasd` runs the
+background tasks that waited during sleep, and a new network adds more:
+the load reached 724 one morning and 290 after a move between offices,
+with no thermal limit in `pmset -g therm`. A run that started 2 minutes
+after a wake, and one 6 minutes after, both read 1–3% slow on the
+system-ICU control, while the 1-minute load already read 13–27. The
+5-minute and 15-minute values show such bursts; the 1-minute value does
+not. Also: a closed lid sleeps the machine and freezes a running benchmark;
+keep it awake (`caffeinate -i <command>`) if you leave it.
+
+Note on the controls: `bench_system` and BenchFoundation (Table 2) still
+print whole nanoseconds by integer division, so they truncate. That is
+harmless for the system-ICU control, because it truncates the same way in
+every run. Do not compare the decimal Table-1 values of a new run with the
+truncated Table-1 values recorded before 2026-10-15: they read up to 1 ns
+lower for that reason alone.
 
 What actually degrades measurements, in order:
 
@@ -111,15 +173,15 @@ checkout, so it is NOT a fixed binary: it changes when that checkout changes
 branch or rebuilds. On 2026-10-15 the checkout held ICU 79.1 with Unicode 18
 data (the CLDR 49 integration branch), and its speed matched the old 79.0.1
 build. Check the branch first (`git -C $ICU_SRC branch --show-current`).
-Then expect roughly:
+Then expect roughly (one decimal, 2026-10-15 13:21):
 
 | corpus | ICU compare | ICU sortKey |
 |---|---:|---:|
-| ascii | 9 | 103 |
-| latin | 10 | 120 |
-| cjk | 40 | 117 |
-| paths | 29 | 364 |
-| thai | 171 | 152 |
+| ascii | 9.3 | 103.8 |
+| latin | 10.1 | 121.6 |
+| cjk | 41.1 | 120.4 |
+| paths | 29.7 | 367.7 |
+| thai | 173.8 | 156.3 |
 
 If a control has drifted, so has everything else: do not record the run.
 

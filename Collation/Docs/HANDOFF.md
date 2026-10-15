@@ -352,32 +352,38 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (1.6×), paths 425/369 (1.2×), thai 229/153 (1.5×). Foundation APIs
   (Table 2) 1.9–6.9× FASTER than system ICU with zero cells at or
   behind parity. Suite gate 1517/123.
-  **CURRENT BASELINE (2026-10-15, run_benchmarks.sh K=3, full-WMO
-  EngineBench for Table 1, at `ba9a6491` + the build-script path fix;
-  supersedes every AS table in this file). Full matrix in `Docs/21`.**
-  Table 1, engine vs raw ICU C (ours/ICU): compare ascii 16/9 (1.78×),
-  latin 15/10 (1.50×), **cjk 27/40 = 0.68× (we are FASTER)**, paths
-  40/29 (1.38×), thai 258/171 (1.51×); sortKey ascii 158/103 (1.53×),
-  **latin 175/120 (1.46×)**, cjk 174/117 (1.49×), paths 389/364 (1.07×),
-  thai 209/152 (1.38×). Against 2026-08-12: compare unchanged; sortKey
-  latin −3.8% and thai −1.9% (§49 variant C), the other rows flat.
-  Table 2 (Foundation APIs vs system ICU) did not change; its lead comes
-  mainly from the removed NSString → CoreFoundation → C++ bridge, so it is
-  not evidence about the engine.
-  **The ICU column is now ICU 79.1 with Unicode 18 data** (the local
-  checkout moved to the CLDR 49 integration branch); its speed equals
-  79.0.1, so the ratios stay comparable.
-  Machine state when recorded: load 10–15, 31–35% memory free; two runs
-  12 minutes apart agree (sortKey ≤1.0%, ICU ≤1.7%, compare within one
-  1-ns step; Table 2 worst cell 4.2%, `localizedCompare` latin).
-  Accepted because **system ICU (Table 2) matched 2026-08-12 within 1.3%**
-  — system ICU did not change, so it is now the load control. Sanity gates
-  before recording a future run: system-ICU `localizedCompare` ~194/365/
-  369/300/494; ICU C ~9/10/40/29/171 compare and ~103/120/117/364/152
-  sortKey (check which ICU the checkout holds first). K=3 takes about 4
-  minutes. Suite gate 1529/124.
-  Previous baseline (2026-08-12, post-§48): compare 16/15/26/40/260,
-  sortKey 159/182/173/386/213; details in the git history of `Docs/21`.
+  **CURRENT BASELINE (2026-10-15 13:21, run_benchmarks.sh K=3, full-WMO
+  EngineBench for Table 1, at `56358e08`; supersedes every AS table in
+  this file). Full matrix in `Docs/21`.** The first baseline with
+  ONE-DECIMAL output: every earlier Table-1 value was truncated by integer
+  division and reads up to 1 ns low, so do not compare it with earlier
+  baselines at the 1-ns level.
+  Table 1, engine vs raw ICU C (ours/ICU): compare ascii 16.7/9.3
+  (1.80×), latin 15.6/10.1 (1.54×), **cjk 26.7/41.1 = 0.65× (we are
+  FASTER)**, paths 41.1/29.7 (1.38×), thai 261.7/173.8 (1.51×); sortKey
+  ascii 158.6/103.8 (1.53×), latin 175.4/121.6 (1.44×), cjk 175.1/120.4
+  (1.45×), paths 392.2/367.7 (1.07×), thai 211.4/156.3 (1.35×).
+  The harness explains about 1 ns of the ascii compare gap (the API's call
+  shape, Docs/27); the rest is engine time.
+  Table 2 (Foundation APIs vs system ICU): its lead comes mainly from the
+  removed NSString → CoreFoundation → C++ bridge, so it is not evidence
+  about the engine.
+  **The ICU column is ICU 79.1 with Unicode 18 data** (the local checkout
+  is on the CLDR 49 integration branch); its speed equals 79.0.1, so the
+  ratios stay comparable.
+  Machine state when recorded: load 12–14 (1 and 5 minutes), on AC, 31
+  minutes after a wake. Two runs 4 minutes apart agree (ours: compare
+  ≤1.2%, sortKey ≤1.5%). System-ICU control within 1.5% (run A). Two
+  earlier runs that day were DISCARDED: they started 2 and 6 minutes after
+  a wake and read 1–3% slow (Docs/27: wait ≥10 minutes after a wake).
+  Sanity gates before recording a future run: system-ICU
+  `localizedCompare` ~194/365/369/300/494; ICU C ~9.3/10.1/41.1/29.7/173.8
+  compare and ~103.8/121.6/120.4/367.7/156.3 sortKey (check which ICU the
+  checkout holds first). K=3 takes about 4 minutes. Suite gate 1529/124.
+  Previous baselines (truncated integers): 2026-10-15 10:36 (post-§49)
+  compare 16/15/27/40/258, sortKey 158/175/174/389/209; 2026-08-12
+  (post-§48) compare 16/15/26/40/260, sortKey 159/182/173/386/213. Details
+  in the git history of `Docs/21`.
   **IN FLIGHT at the time of writing:** a workflow-orchestrated
   optimization hunt over the engine compare/sortKey paths (8 ideation
   lenses → adversarial verification → ranked plan), targeting the
