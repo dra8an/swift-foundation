@@ -71,9 +71,11 @@ extension RootCollator {
         return scratch.left.ces.count
     }
 
-    // S4: writer only, on CEs collected once outside the timing loop.
+    // S4: writer only, on CEs collected once outside the timing loop. The
+    // buffered reference writer; its level buffers are owned by the ladder
+    // (ScratchBuffers no longer carries them — the writer does not ship).
     func skWriterOnly(
-        ces: [Int64], into key: inout [UInt8], scratch: ScratchBuffers,
+        ces: [Int64], into key: inout [UInt8], levels: inout SortKeyLevelBuffers,
         options: CollationOptions = CollationOptions()
     ) {
         let compressibleBytes = data.compressibleBytes.isEmpty
@@ -82,7 +84,7 @@ extension RootCollator {
         CollationKeys.writeSortKeyUpToQuaternary(
             ces: ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key, reusing: &scratch.levels)
+            reordering: reordering, into: &key, reusing: &levels)
         key.append(0)
     }
 
@@ -110,7 +112,7 @@ extension RootCollator {
     // Buffered-writer twin of skWriterDirect for the option-matrix identity
     // check (no terminator differences: both append 0).
     func skWriterBuffered(
-        ces: [Int64], into key: inout [UInt8], scratch: ScratchBuffers,
+        ces: [Int64], into key: inout [UInt8], levels: inout SortKeyLevelBuffers,
         options: CollationOptions
     ) {
         let compressibleBytes = data.compressibleBytes.isEmpty
@@ -119,7 +121,7 @@ extension RootCollator {
         CollationKeys.writeSortKeyUpToQuaternary(
             ces: ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key, reusing: &scratch.levels)
+            reordering: reordering, into: &key, reusing: &levels)
         key.append(0)
     }
 
@@ -159,6 +161,8 @@ let lines = try String(contentsOfFile: args[1], encoding: .utf8)
 let reps = args.count > 2 ? (Int(args[2]) ?? 300) : 300
 let collator = try! RootCollator()
 let scratch = collator.ladderScratch()
+// Level buffers for the buffered reference writer (S4 and the identity check).
+var ladderLevels = SortKeyLevelBuffers()
 
 // The option matrix. CE production is options-independent at numeric=off, so
 // one CE array per line serves every set here.
@@ -219,7 +223,7 @@ for (name, opts) in optionMatrix {
     var bad = 0
     var badSingle = 0
     for ces in lineCEs {
-        collator.skWriterBuffered(ces: ces, into: &bufKey, scratch: scratch, options: opts)
+        collator.skWriterBuffered(ces: ces, into: &bufKey, levels: &ladderLevels, options: opts)
         collator.skWriterDirect(ces: ces, into: &dirKey, options: opts)
         collator.skWriterSingle(ces: ces, into: &sglKey, options: opts)
         if bufKey != dirKey { bad += 1 }
@@ -270,7 +274,7 @@ measure("S3 pipeline-only") {
 }
 measure("S4 writer-only  ") {
     let c = collator
-    for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterOnly(ces: lineCEs[i], into: &key, scratch: scratch); sink += key.count } }
+    for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterOnly(ces: lineCEs[i], into: &key, levels: &ladderLevels); sink += key.count } }
 }
 measure("S4b writer-direct") {
     let c = collator
@@ -306,7 +310,7 @@ if args.contains("holdS4buf") {
     let c = collator
     for _ in 0..<200000 {
         for (i, _) in lines.enumerated() {
-            c.skWriterOnly(ces: lineCEs[i], into: &key, scratch: scratch)
+            c.skWriterOnly(ces: lineCEs[i], into: &key, levels: &ladderLevels)
             sink += key.count
         }
     }

@@ -545,7 +545,7 @@ public struct RootCollator: @unchecked Sendable {
         try scratch.resetAndCollectLeft(numeric: options.numeric, scalars: s.unicodeScalars)
         let compressibleBytes = storage.compressibleBytes
         key.removeAll(keepingCapacity: true)
-        // Single-pass writer: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. The buffered writer stays as the reference implementation (the sk-ladder probe checks byte identity across the option matrix).
+        // Single-pass writer: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. Two reference writers in Collation/Tools/sk-ladder/ReferenceWriters.swift do not ship; the sk-ladder probe checks byte identity against them across the option matrix.
         CollationKeys.writeSortKeyUpToQuaternarySingle(
             ces: scratch.left.ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),

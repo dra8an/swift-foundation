@@ -486,17 +486,20 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (99.8%, vs 100 of 14700 for a naive sweep), four oracle-free checks
   each, 0.113 s, with `#require` guards so a broken derivation fails
   loudly instead of silently covering nothing. **Gate 1528/124.**
-  **IN FLIGHT (2026-10-14) — READ §49 IN `optimization-targets.md` BEFORE
-  ANY OTHER WORK.** Summary: the sk-ladder was refreshed onto the shipping
-  writer (`36254566`; it supersedes the §43 table). A writer change
-  ("variant C", latin sortKey −4.3%, thai −3.2%, the other rows flat) is
-  in the working tree and NOT committed. The buffered writer AND the
-  direct writer are both dead code (the UPSTREAM-PREP item now says so).
-  The next item is a permanent test for the single-pass writer: an order
-  test against `compare()` plus ICU reference answers. A/B baselines now
-  build in a git worktree (`../collation-baseline`), never from a stash.
-  No stashes: the user dropped both experiments on 2026-10-14 (the
-  tighter byte bounds were UNSAFE; do not redo them — see §49).
+  **2026-10-14 ROUND (§49 in `optimization-targets.md` — read it first).**
+  The sk-ladder was refreshed onto the shipping writer (`36254566`; it
+  supersedes the §43 table). Writer change "variant C" SHIPPED
+  (`a6263dc7`): latin sortKey −4.3%, thai −3.2%, the other rows flat,
+  with a new stress test against `compare()`. `gen_golden` lost its silent
+  line-length and line-count limits (`d4c56e97`). The latin S0−S1 gap was
+  a one-run outlier (`975929ac`). The two non-shipping sort key writers
+  moved out of the product into
+  `Collation/Tools/sk-ladder/ReferenceWriters.swift` (UPSTREAM-PREP item,
+  done; SortKey.swift 1610 → 645 lines). **Gate 1529/124.** Open: ICU
+  reference answers for the stress strings (§49 item 1b) need an ICU
+  79.0.1 build — the local ICU checkout now has CLDR 49 / Unicode 18 data.
+  A/B baselines build in a git worktree (`../collation-baseline`), never
+  from a stash. The tighter byte bounds were UNSAFE; do not redo them.
   Technique log: `optimization-targets.md` — read THE ALLOCATION/
   RESOLUTION HUNT note at the top before any perf work, then §20
   (steps 6–8), §27, §29–§49 and the audit list;

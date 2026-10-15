@@ -142,7 +142,25 @@ Allocation/resolution samples are the trustworthy kind.
       ascii/latin/cjk/thai (1.44–1.53× vs ICU, was 1.67–1.81×); paths
       +5% accepted residual (§43's paths saga). Ladder committed:
       `build_sk_ladder.sh`.
-- [ ] UPSTREAM-PREP: extract the TWO non-shipping sort key writers from production.
+- [x] UPSTREAM-PREP: extract the TWO non-shipping sort key writers from production.
+      **DONE 2026-10-14 (§49, option (d)).** Both reference writers, with
+      `SortKeyLevel` and `SortKeyLevelBuffers`, moved to
+      `Collation/Tools/sk-ladder/ReferenceWriters.swift`. `build_sk_ladder.sh`
+      copies that file into its scratch package and widens ONLY the
+      `private static let` constants and `levelFlags` in ITS COPY of
+      SortKey.swift; the product keeps them private. `ScratchBuffers.levels`
+      is gone; the ladder owns its level buffers. SortKey.swift went from
+      1610 to 645 lines. Verified: suite 1529/124; the ladder's identity
+      checks (stage clones vs S0, single vs buffered vs direct) give 0
+      mismatches over 10 option sets × 5 corpora; EngineBench object: 525
+      of 527 functions have identical instructions — the two others are
+      the `ScratchBuffers` constructor path in `takeScratch` (4 stores of
+      empty arrays removed, the thread-local fetch identical) and the
+      `ScratchBuffers` deinit. **Finding:** whole-module optimization had
+      already removed the dead writers' CODE from the optimized object;
+      what remained was the type metadata for the `levels` field (9
+      symbols). The object shrank 5.9 KB. A debug build still compiled
+      the writers until this change. The history of the item follows.
       **Updated 2026-10-14 (§49):** this item recorded only the buffered
       writer. The direct writer (§43) is ALSO dead code: it stopped
       shipping at §46, and nobody updated this item. The product code
@@ -2711,7 +2729,9 @@ The first variant A run called ascii +1.3% "noise". The three-way run
 
 See the updated UPSTREAM-PREP item in the audit list. The buffered writer
 and the direct writer have no callers in `Sources/`. Only the sk-ladder
-tool and the temporary test call them.
+tool and the temporary test call them. **MOVED 2026-10-14** to
+`Collation/Tools/sk-ladder/ReferenceWriters.swift`; details in the
+UPSTREAM-PREP item.
 
 #### (e) Method rules from this round
 

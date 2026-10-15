@@ -32,8 +32,6 @@ final class ScratchBuffers {
     var right: CEIterator
     /// sortKey: the key bytes under construction.
     var key: [UInt8] = []
-    /// sortKey: the per-level byte buffers.
-    var levels = SortKeyLevelBuffers()
     /// sortKey: NFD scalars for the identical level.
     var nfdScalars: [UInt32] = []
 

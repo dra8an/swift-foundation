@@ -24,6 +24,8 @@ cp "$ENGINE_SRC/Resources/ucadata.icu" "$ENGINE_SRC/Resources/ucadata-icu4x.icu"
    "$ENGINE_SRC/Resources/nfd.bin" "$OUT/Sources/SKLadder/Resources/"
 rsync -a --delete "$ENGINE_SRC/Resources/tailorings/" "$OUT/Sources/SKLadder/Resources/tailorings/"
 cp "$SCRIPT_DIR/sk-ladder/main.swift" "$OUT/Sources/SKLadder/main.swift"
+# The two reference writers (buffered, direct) do not ship; they live with the tool.
+cp "$SCRIPT_DIR/sk-ladder/ReferenceWriters.swift" "$OUT/Sources/SKLadder/ReferenceWriters.swift"
 
 # Visibility loosening — COPY ONLY. Each sed is a no-op if the pattern moved;
 # if the probe then fails to compile, re-check the member's name/visibility.
@@ -34,6 +36,14 @@ sed -i '' \
   -e 's/private var simpleCEs/var simpleCEs/' \
   -e 's/private var thaiCEs/var thaiCEs/' \
   "$OUT/Sources/SKLadder/RootCollator.swift"
+# ReferenceWriters.swift shares the compression constants and levelFlags of
+# CollationKeys, which are private in the product. Widen ONLY those: a
+# blanket "private static" -> "static" would also widen helpers whose
+# parameter types are private (RegionLevel), which does not compile.
+sed -i '' \
+  -e 's/^    private static let /    static let /' \
+  -e 's/private static func levelFlags/static func levelFlags/' \
+  "$OUT/Sources/SKLadder/SortKey.swift"
 
 cat > "$OUT/Package.swift" <<'MANIFEST'
 // swift-tools-version: 6.0
