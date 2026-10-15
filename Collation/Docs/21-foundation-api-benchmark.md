@@ -8,8 +8,9 @@ was 2026-08-12 (post-§48); the changes against it are listed under Table 1.
 
 **Machine state:** not idle. The 1-minute load was 10–15 during the run
 (10.9 at the start, 10.0 at the end; 10 cores), and 31–35% of memory was
-free. The run took under 4 minutes. It was ONE run, not two. It is recorded
-as the baseline on these grounds:
+free. The run took under 4 minutes. A second run 12 minutes later (load
+9–14) agrees with it; the reproducibility table is under Table 1. The
+tables show the first run. It is recorded as the baseline on these grounds:
 
 1. **The system-ICU column (Table 2) matches 2026-08-12 within 1.3%**, for
    example `localizedCompare` 194/365/369/300/494 vs 194/365/370/299/497.
@@ -157,6 +158,22 @@ The latin and thai sortKey moves are §49's variant C, seen here in a second
 harness (its interleaved A/B gave −4.3% and −3.2%). The other cells are
 inside noise; compare rows are rounded to 1 ns. The thai and paths sortKey
 RATIOS also moved because ICU's own times moved (155 → 152, 367 → 364).
+
+Reproducibility, run 1 vs run 2 of the same matrix (2026-10-15, 12 minutes
+apart):
+
+| Corpus | compare r1/r2 | sortKey r1/r2 | ICU compare r1/r2 | ICU sortKey r1/r2 |
+|--------|---------------|---------------|-------------------|-------------------|
+| ASCII  | 16 / 16 | 158 / 157 | 9 / 9 | 103 / 104 |
+| Latin  | 15 / 15 | 175 / 175 | 10 / 10 | 120 / 122 |
+| CJK    | 27 / 26 | 174 / 174 | 40 / 40 | 117 / 117 |
+| Paths  | 40 / 41 | 389 / 391 | 29 / 29 | 364 / 365 |
+| Thai   | 258 / 260 | 209 / 211 | 171 / 172 | 152 / 153 |
+
+Our sortKey within 1.0%, ICU within 1.7%. The two compare cells that differ
+(cjk, paths) move by one 1-ns rounding step. In Table 2, system ICU is within
+1.7% over all 45 cells; ours is within 3% except one cell, `localizedCompare`
+latin 71 → 74 (4.2%, 3 ns, in the `-no-WMO` BenchFoundation build).
 
 ## Analysis
 

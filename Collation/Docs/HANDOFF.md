@@ -367,7 +367,9 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   **The ICU column is now ICU 79.1 with Unicode 18 data** (the local
   checkout moved to the CLDR 49 integration branch); its speed equals
   79.0.1, so the ratios stay comparable.
-  Machine state when recorded: load 10–15, 31–35% memory free, ONE run.
+  Machine state when recorded: load 10–15, 31–35% memory free; two runs
+  12 minutes apart agree (sortKey ≤1.0%, ICU ≤1.7%, compare within one
+  1-ns step; Table 2 worst cell 4.2%, `localizedCompare` latin).
   Accepted because **system ICU (Table 2) matched 2026-08-12 within 1.3%**
   — system ICU did not change, so it is now the load control. Sanity gates
   before recording a future run: system-ICU `localizedCompare` ~194/365/
