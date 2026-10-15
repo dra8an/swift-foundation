@@ -44,7 +44,10 @@ CORPORA = [
     # ~9% slower on this corpus and was never the same data table as ours).
     ("thai",  "Collation/Tools/bench/bench-thai.txt",  None,  10),
 ]
-pat = re.compile(r"\s*([A-Za-z().:_ ]+?)\s*:\s*(\d+)\s*ns/op")
+# Accepts whole and decimal ns/op: EngineBench and bench_icu print one decimal
+# (whole nanoseconds made one rounding step 6-11% of the shortest rows);
+# BenchFoundation and bench_system print whole numbers.
+pat = re.compile(r"\s*([A-Za-z().:_ ]+?)\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*ns/op")
 
 def best(cmd, env_extra=None, runs=K):
     env = {**os.environ, **(env_extra or {})}
@@ -54,12 +57,22 @@ def best(cmd, env_extra=None, runs=K):
         for line in out.splitlines():
             m = pat.match(line)
             if m:
-                k, v = m.group(1).strip(), int(m.group(2))
-                out_min[k] = min(out_min.get(k, 1 << 62), v)
+                k, v = m.group(1).strip(), float(m.group(2))
+                out_min[k] = min(out_min.get(k, float("inf")), v)
     return out_min
 
 def ratio(a, b):
     return f"{a/b:.2f}x" if (a and b) else "  -"
+
+def fmt(v):
+    """Table 2: BenchFoundation and bench_system print whole numbers; keep them whole."""
+    if v is None:
+        return "-"
+    return f"{v:.0f}" if float(v).is_integer() else f"{v:.1f}"
+
+def fmt1(v):
+    """Table 1: EngineBench and bench_icu print one decimal; always show it."""
+    return "-" if v is None else f"{v:.1f}"
 
 results = {}
 for label, corpus, loc, reps in CORPORA:
@@ -83,9 +96,9 @@ for label, _, _, _ in CORPORA:
     isk, osk = r["icu"].get("sortKey"), r["ours"].get("RootCollator.sk")
     # skRet = the allocating sortKey variant, vs the same ICU reference
     osr = r["ours"].get("RootCollator.skRet")
-    print(f"{label:6} | {ic or '-':>7} {oc or '-':>5} {ratio(oc,ic):>6} | "
-          f"{isk or '-':>7} {osk or '-':>6} {ratio(osk,isk):>6} | "
-          f"{osr or '-':>6} {ratio(osr,isk):>6}")
+    print(f"{label:6} | {fmt1(ic):>7} {fmt1(oc):>5} {ratio(oc,ic):>6} | "
+          f"{fmt1(isk):>7} {fmt1(osk):>6} {ratio(osk,isk):>6} | "
+          f"{fmt1(osr):>6} {ratio(osr,isk):>6}")
 
 print("\n===== TABLE 2: FOUNDATION APIs (speedup = sys/ours; >1 = ours faster) =====")
 APIS = ["compare(locale:)", "localizedCompare", "localizedStdCmp",
@@ -97,4 +110,4 @@ for api in APIS:
     for label, _, _, _ in CORPORA:
         s = results[label]["sys"].get(api)
         o = results[label]["ours"].get(api)
-        print(f"{label:6} | {s or '-':>7} {o or '-':>7} {ratio(s,o):>7}")
+        print(f"{label:6} | {fmt(s):>7} {fmt(o):>7} {ratio(s,o):>7}")

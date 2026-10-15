@@ -25,7 +25,8 @@ func measure(_ name: String, ops: Int, _ body: () -> Void) {
         body()
         best = min(best, DispatchTime.now().uptimeNanoseconds - s)
     }
-    print("\(name): \(best / UInt64(ops)) ns/op (\(ops) ops)")
+    // One decimal: whole nanoseconds made one rounding step 6% of the 16 ns ascii compare row.
+    print("\(name): \(String(format: "%.1f", Double(best) / Double(ops))) ns/op (\(ops) ops)")
 }
 
 var sink = 0

@@ -87,8 +87,10 @@ int main(int argc, char **argv) {
         uint64_t ns = now_ns() - start;
         if (r > 0 && ns < best_cmp) best_cmp = ns;
     }
-    printf("compare : %llu ns/op (%d ops)\n",
-           (unsigned long long)(best_cmp / ((uint64_t)(n - 1) * reps)), (n - 1) * reps);
+    /* One decimal, like EngineBench: whole nanoseconds made one rounding step
+     * 11% of the 9 ns ascii compare row. */
+    printf("compare : %.1f ns/op (%d ops)\n",
+           (double)best_cmp / ((double)(n - 1) * reps), (n - 1) * reps);
 
     /* warmup + min over 9 timed passes for sort keys */
     uint64_t best_sk = UINT64_MAX;
@@ -103,8 +105,8 @@ int main(int argc, char **argv) {
         uint64_t ns = now_ns() - start;
         if (r > 0 && ns < best_sk) best_sk = ns;
     }
-    printf("sortKey : %llu ns/op (%d ops)\n",
-           (unsigned long long)(best_sk / ((uint64_t)n * reps)), n * reps);
+    printf("sortKey : %.1f ns/op (%d ops)\n",
+           (double)best_sk / ((double)n * reps), n * reps);
 
     ucol_close(coll);
     return sink == -1 ? 1 : 0;
