@@ -2597,18 +2597,17 @@ hunt: the measurement is what settled this, twice.
 
 ### 49. The sortKey ladder refresh, the writer assembly tail, and two dead writers
 
-**Status (2026-10-14): IN FLIGHT. Read the open items at the end first.**
+**Status (2026-10-15): COMPLETE. Nothing is open.**
 
-- Committed: `36254566`, the ladder refresh (part (a)).
-- Not committed: the writer change "variant C" (part (c)), in the
-  working tree of `SortKey.swift`. It passes the full suite: 1530 tests in
-  125 suites, which is the gate of 1528/124 plus the temporary test.
-- Not committed: `Tests/.../Collation/ZZTempWriterBoundTests.swift`
-  (untracked, temporary). It calls the two dead writers, so it must not
-  be committed. Item 1 below replaces it.
-- No stashes. The user dropped both experiments of part (b) on
-  2026-10-14 (`takeScratch` was neutral; the bounds were unsafe).
-- A baseline worktree: `../collation-baseline`, detached at `36254566`.
+- Committed and pushed: the ladder refresh (`36254566`), variant C and its
+  stress test (`a6263dc7`), the `gen_golden` limits (`d4c56e97`), the
+  latin correction (`975929ac`), the two reference writers moved to the
+  sk-ladder tool (`ba9a6491`), and the 2026-10-15 baseline with the
+  build-script path fix (`a2119b2c`, `e799a9f3`).
+- Item 1b (ICU reference answers for the stress strings) was dropped; the
+  reason is at the end of item 1b.
+- No stashes, no worktree, no temporary tests. The experiments of part (b)
+  were dropped (`takeScratch` was neutral; the bounds were unsafe).
 
 #### (a) The ladder refresh (committed `36254566`)
 
@@ -2776,7 +2775,7 @@ UPSTREAM-PREP item.
      `icu-DraganBesevic-2/icu4c/source`. Never use `build/icuhost` (see
      `~/CLAUDE.md`). First find which option sets `gen_golden` supports.
      Report that coverage to the user before you generate files.
-     **BLOCKED 2026-10-14 — waiting for a user decision.** Coverage: 13
+     **DROPPED — see the end of this item.** (Was: BLOCKED 2026-10-14.) Coverage: 13
      root option sets (each changes one attribute from the default; no
      combinations) plus 8 locale sets = 21. Three blockers:
      - **The ICU checkout is no longer 79.0.1.** It is on branch
@@ -2802,6 +2801,30 @@ UPSTREAM-PREP item.
      79.0.1 build; or defer 1b. In every case, first regenerate the keys for
      `Golden/corpus.txt` and diff them against the committed `keys-*.txt`.
      If they differ, the ICU build is wrong: stop.
+     **DROPPED 2026-10-15 (user decision).** The safety check above was run
+     with the 79.1 build (CLDR 49, Unicode 18 data):
+
+     | files | 79.1 vs committed 79.0.1 golden files |
+     |---|---|
+     | 21 `matrix-*.txt` (comparison order) | **all identical** |
+     | 21 `keys-*.txt` (`corpus.txt`) | **all differ**: 35–281 of 328 lines each |
+     | 21 `fuzz-keys-*.txt` | **all differ**: 576–1898 of 2000 lines each |
+
+     So 79.1 sorts these strings in the same ORDER as 79.0.1, but with
+     different key BYTES: a new UCA version gives weights to new characters
+     and moves the weights of old ones to make room. Sort keys are not
+     stable across versions; only the order is. **Never generate golden
+     keys from an ICU whose data differs from the bundled `ucadata.icu`** —
+     the order matrices may still match, and that hides the problem.
+
+     Why 1b is not needed: the writer is already covered by (1) the ICU
+     byte-identity suites against 79.0.1 answers, 2328 lines × 21 option
+     sets, which catch the `compactTo` fault at tertiary (110 of 328 keys);
+     (2) the order test (1a) over the stress strings × 240 option
+     combinations; (3) the debug asserts on the region bounds and on
+     `compactTo`; (4) the sk-ladder identity check against the two
+     reference writers, whenever the writer changes. 1b would add exact
+     bytes for long run lengths only — a small gain for a long ICU build.
 2. **CANCELLED: the joint A/B of variant C plus the tighter bounds.** The
    bounds were unsafe (part (b)). Stash dropped 2026-10-14.
 3. **DONE: the `takeScratch` stash.** Dropped 2026-10-14 (neutral).

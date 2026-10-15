@@ -497,9 +497,11 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   a one-run outlier (`975929ac`). The two non-shipping sort key writers
   moved out of the product into
   `Collation/Tools/sk-ladder/ReferenceWriters.swift` (UPSTREAM-PREP item,
-  done; SortKey.swift 1610 → 645 lines). **Gate 1529/124.** Open: ICU
-  reference answers for the stress strings (§49 item 1b) need an ICU
-  79.0.1 build — the local ICU checkout now has CLDR 49 / Unicode 18 data.
+  done; SortKey.swift 1610 → 645 lines). **Gate 1529/124.** The round is
+  complete. ICU reference answers for the stress strings (§49 item 1b)
+  were dropped: 79.1 sorts the corpora in the same order as 79.0.1 but
+  with different key bytes, so it cannot produce our golden keys, and the
+  existing tests already cover the writer (§49).
   A/B baselines build in a git worktree (`../collation-baseline`), never
   from a stash. The tighter byte bounds were UNSAFE; do not redo them.
   Technique log: `optimization-targets.md` — read THE ALLOCATION/
