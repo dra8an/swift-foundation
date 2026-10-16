@@ -2834,3 +2834,113 @@ UPSTREAM-PREP item.
    delete it after the commit.
 5. **Remove the worktree** when the A/B work ends:
    `git worktree remove ../collation-baseline`.
+
+---
+
+### 50. The compare ladder: the core beats ICU; the gap is the entry
+
+**Status (2026-10-16): Fix A3 is ready to commit together with this section
+and the ladder tool.** Suite 1529/124. Open: the remaining entry cost
+(part (f)).
+
+#### (a) Why
+
+ascii compare is the worst Table-1 row: 16.7 against ICU's 9.3 ns (1.80×,
+`Docs/21`). The harness explains about 1 ns of it — the API's call shape,
+which every caller pays (`Docs/27`, "What the harness itself costs"). The
+ascii and latin lines are about 7 bytes long, so these rows measure mostly
+the FIXED cost per call. No ladder had ever split the compare entry.
+
+#### (b) The ladder (`build_cmp_ladder.sh`, `cmp-ladder/main.swift`)
+
+The sk-ladder pattern: the engine sources copied into a scratch package,
+five private members widened in the copy only, full WMO. Each stage is
+verified against the public entry on every adjacent pair of the corpus:
+0 bail-outs, 0 wrong results on ascii, latin and paths.
+
+ns per compare, min of 3 runs, 2026-10-15 17:08 (load ~14):
+
+| stage | what it measures | ascii | latin |
+|---|---|---:|---:|
+| L0 | public `compare(_:_:options:)` | 14.75 | 13.28 |
+| L0d | public `compare(_:_:)` | 14.62 | 13.17 |
+| L1 | `compareFastPath` (no `throws`) | 14.26 | 13.04 |
+| L1a | the real string access + the core; setup passed in | 8.77 | 8.70 |
+| L1g | the real guard + field loads + the core, pinned bytes | 11.68 | 11.00 |
+| L2c | the core (`fastLatinUTF8`) on pinned bytes, one call | 9.03 | 8.30 |
+| L2 | the same, inlined into the loop | 8.36 | 7.72 |
+| F | the ladder's own loop floor | 1.27 | 1.27 |
+| ICU | `ucol_strcollUTF8`, the whole call (Table 1) | 9.30 | 10.10 |
+
+**Use the differences only.** The ladder's L0 reads 14.8 ns where
+EngineBench reads 16.7 ns for the same call: the ladder is one module, and
+EngineBench calls across a module boundary, so the code placement differs.
+
+#### (c) Findings
+
+1. **The core is faster than ICU's entire call:** 8.4–9.0 ns against 9.3 on
+   ascii, 7.7–8.3 against 10.1 on latin. Our port of the prefix scan and the
+   fast-Latin comparison is not the problem.
+2. **The whole gap is the entry, ~5–6 ns:** `throws` and the slow-path
+   branch 0.6 ns (L0 − L1); **the string access ~0** (L1a − L2c: −0.3 ascii,
+   +0.4 latin — pinning two short strings is free in this shape); the guard,
+   the four setup-field loads and the result conversion 2.7 ns (L1g − L2c);
+   the rest, the interaction, 1.6–2.8 ns (setup fields read from `self`
+   inside the nested closures, four copies of the body for the string
+   forms, the CJK/Thai bail-out code that ascii never runs — a 720-byte
+   frame with 12 saved registers, 2888 instructions).
+
+#### (d) Fix A: the default setup in one box — three variants
+
+Each was A/B'd against `1d7ce4c5` (EngineBench, full WMO, baseline built in
+the `../collation-baseline` worktree, 5 interleaved rounds, order alternated).
+`compareFastPath` instruction count: base 2888.
+
+| variant | ascii | latin | paths | others | instructions |
+|---|---|---|---|---|---:|
+| A: table, primaries, packed options, word, flag AND `RestartSafety` in the box, read through `setup.pointee` | −2.4% | −3.2% | **+2.4% (5/5)** | flat | 2796 |
+| A2: as A, plus table/primaries/packed copied into locals before the closures | −3.0% | −5.2% | **+2.7% (5/5)** | flat | 2881 |
+| **A3 (SHIPPED): as A2, but `RestartSafety` from the storage object's `let`, not from the box** | **−1.8%** | **−2.6%** | **+0.2% (flat)** | flat | 2979 |
+
+Means of (variant − base) over the 5 rounds, which are steadier than the
+minimum: A2 ascii −0.46, latin −0.62, paths +1.28 ns; **A3 ascii −0.40,
+latin −0.62, paths −0.14 ns.** So A3 keeps A2's gain and removes the paths
+loss. sortKey did not move in any variant.
+
+Measurement conditions: A at 2026-10-15 17:25 (load 11); A2 and A3 on
+2026-10-16 after 10:22 (load 6.5–13 at the start; the system-ICU control
+read +1.3–1.5% before the A2 run). A ladder A/B of A at 09:36 was DISCARDED:
+load 54/98/136, 12 minutes after a wake from sleep.
+
+#### (e) Lessons
+
+1. **The ladder overstated the gain:** it priced the guard and the field
+   loads at 2.7 ns; the real gain is 0.4–0.6 ns. A stage difference in a
+   probe is a CEILING on what removing that work can deliver in the real
+   code (the §35 lesson again). Always confirm a ladder finding with an A/B
+   of the real entry.
+2. **A large struct behind a raw pointer is copied before each use.**
+   `RestartSafety` is 176 bytes. From a class's `let`, the compiler uses it
+   in place; through `UnsafeMutablePointer.pointee`, the memory could change,
+   so the value has to be copied. That cost paths +1.3 ns. Keep large
+   immutable structs in `let` fields of the storage class; put only small
+   values in a raw-pointer box.
+3. **The corpus statistics predicted which row pays.** The core consults
+   `RestartSafety` only when the two strings share a prefix. Adjacent pairs
+   with a shared first byte: ascii 4.0%, latin 1.0%, **paths 100%**, cjk
+   21.6% and thai 99.6% (but those two bail out of fast Latin before the
+   check). That matched the A/B exactly, before any disassembly.
+4. **A2 disproved a plausible hypothesis** (loop reloads of the table and
+   the primaries through the pointer). Changing one variable per variant is
+   what made that visible.
+
+#### (f) Next: the remaining ~5 ns of entry cost
+
+- **A hot/cold split inside `compareFastPath`:** move the bail-out code
+  (`quickCJKDispatch`, `mismatchRestartIsUnsafe`) out of the closures into a
+  separate function, so the fast-Latin path of the closures becomes small.
+  §29's pattern, applied one level deeper. Target: the "interaction" part.
+- **Fix B:** the no-options `compare(_:_:)` always passes the default
+  options, so a dedicated entry could skip the options check.
+- **A non-throwing `compare`:** about 0.5 ns per call (3% of the ascii
+  row), but it changes the public API — a user decision.

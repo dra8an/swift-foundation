@@ -510,9 +510,18 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   existing tests already cover the writer (§49).
   A/B baselines build in a git worktree (`../collation-baseline`), never
   from a stash. The tighter byte bounds were UNSAFE; do not redo them.
+  **2026-10-16 (§50): the compare ladder.** `build_cmp_ladder.sh` split the
+  ascii compare entry: the fast-Latin CORE is faster than ICU's whole
+  call (8.4–9.0 against 9.3 ns); the gap is the ENTRY, ~5–6 ns (throws
+  0.6, string access ~0, guard + field loads 2.7, interaction 1.6–2.8).
+  Fix A3 (the default fast-Latin setup in one boxed pointer, RestartSafety
+  kept in the storage object's `let`): ascii −0.4 ns, latin −0.6 ns, the
+  other rows flat. Lesson: a 176-byte struct read through a raw pointer is
+  copied before use — that variant cost paths +1.3 ns. Next: a hot/cold
+  split inside `compareFastPath` for the remaining ~5 ns (§50 (f)).
   Technique log: `optimization-targets.md` — read THE ALLOCATION/
   RESOLUTION HUNT note at the top before any perf work, then §20
-  (steps 6–8), §27, §29–§49 and the audit list;
+  (steps 6–8), §27, §29–§50 and the audit list;
   Apple Silicon numbers `21-foundation-api-benchmark.md`; Intel `Docs/25`.
   Previous sync (`f0dcec5`) added: inline collectAll (−12% Latin sortKey),
   bypass-refill for Latin precomposed chars (−11% Latin sortKey), ICU bench
