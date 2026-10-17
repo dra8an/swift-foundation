@@ -52,7 +52,7 @@ env for machine 2):
 
 - **Table 1 (pure engine)**: `ratio = ours / ICU`, so **below 1 means ours is
   faster**. The Swift implementation against hand-tuned C. Values as of
-  2026-10-15: compare 0.65–1.80×, sortKey 1.07–1.53× (current numbers:
+  2026-10-16: compare 0.63–1.62×, sortKey 1.03–1.50× (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1
@@ -93,8 +93,8 @@ each engine on its own native input, and making the reference slower would
 hide our gap rather than measure it.
 
 Net effect on the gap: the harness explains about 1 ns of the 7 ns ascii
-compare gap (16.7 against 9.3 in the 2026-10-15 baseline). The rest is
-engine time.
+compare gap (16.7 against 9.3 in the 2026-10-15 baseline, before §50).
+The rest is engine time.
 
 Probe sources (not committed) lived in `.build/harness-probe/`; rebuild them
 from this description if the question comes back.
@@ -173,15 +173,15 @@ checkout, so it is NOT a fixed binary: it changes when that checkout changes
 branch or rebuilds. On 2026-10-15 the checkout held ICU 79.1 with Unicode 18
 data (the CLDR 49 integration branch), and its speed matched the old 79.0.1
 build. Check the branch first (`git -C $ICU_SRC branch --show-current`).
-Then expect roughly (one decimal, 2026-10-15 13:21):
+Then expect roughly (one decimal, 2026-10-16 17:29):
 
 | corpus | ICU compare | ICU sortKey |
 |---|---:|---:|
-| ascii | 9.3 | 103.8 |
-| latin | 10.1 | 121.6 |
-| cjk | 41.1 | 120.4 |
-| paths | 29.7 | 367.7 |
-| thai | 173.8 | 156.3 |
+| ascii | 9.3 | 104.5 |
+| latin | 10.1 | 120.9 |
+| cjk | 40.5 | 119.0 |
+| paths | 29.7 | 370.3 |
+| thai | 173.8 | 155.5 |
 
 If a control has drifted, so has everything else: do not record the run.
 

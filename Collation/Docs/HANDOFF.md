@@ -352,38 +352,35 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   (1.6×), paths 425/369 (1.2×), thai 229/153 (1.5×). Foundation APIs
   (Table 2) 1.9–6.9× FASTER than system ICU with zero cells at or
   behind parity. Suite gate 1517/123.
-  **CURRENT BASELINE (2026-10-15 13:21, run_benchmarks.sh K=3, full-WMO
-  EngineBench for Table 1, at `56358e08`; supersedes every AS table in
-  this file). Full matrix in `Docs/21`.** The first baseline with
-  ONE-DECIMAL output: every earlier Table-1 value was truncated by integer
-  division and reads up to 1 ns low, so do not compare it with earlier
-  baselines at the 1-ns level.
-  Table 1, engine vs raw ICU C (ours/ICU): compare ascii 16.7/9.3
-  (1.80×), latin 15.6/10.1 (1.54×), **cjk 26.7/41.1 = 0.65× (we are
-  FASTER)**, paths 41.1/29.7 (1.38×), thai 261.7/173.8 (1.51×); sortKey
-  ascii 158.6/103.8 (1.53×), latin 175.4/121.6 (1.44×), cjk 175.1/120.4
-  (1.45×), paths 392.2/367.7 (1.07×), thai 211.4/156.3 (1.35×).
-  The harness explains about 1 ns of the ascii compare gap (the API's call
-  shape, Docs/27); the rest is engine time.
+  **CURRENT BASELINE (2026-10-16 17:29, run_benchmarks.sh K=3, full-WMO
+  EngineBench for Table 1, at `481cd3ce`; supersedes every AS table in
+  this file). Full matrix in `Docs/21`.** One-decimal output (baselines
+  before 2026-10-15 13:21 were truncated integers; do not compare them at
+  the 1-ns level).
+  Table 1, engine vs raw ICU C (ours/ICU): compare ascii 15.1/9.3
+  (1.62×), latin 14.6/10.1 (1.45×), **cjk 25.4/40.5 = 0.63× and paths
+  23.2/29.7 = 0.78× (we are FASTER)**, thai 257.9/173.8 (1.48×); sortKey
+  ascii 157.2/104.5 (1.50×), latin 175.7/120.9 (1.45×), cjk 174.5/119.0
+  (1.47×), paths 381.4/370.3 (1.03×), thai 209.5/155.5 (1.35×).
+  Against 2026-10-15 13:21: compare ascii −9.6%, latin −6.4%, cjk −4.9%,
+  paths −43.6% (all §50); sortKey flat.
   Table 2 (Foundation APIs vs system ICU): its lead comes mainly from the
   removed NSString → CoreFoundation → C++ bridge, so it is not evidence
   about the engine.
   **The ICU column is ICU 79.1 with Unicode 18 data** (the local checkout
   is on the CLDR 49 integration branch); its speed equals 79.0.1, so the
   ratios stay comparable.
-  Machine state when recorded: load 12–14 (1 and 5 minutes), on AC, 31
-  minutes after a wake. Two runs 4 minutes apart agree (ours: compare
-  ≤1.2%, sortKey ≤1.5%). System-ICU control within 1.5% (run A). Two
-  earlier runs that day were DISCARDED: they started 2 and 6 minutes after
-  a wake and read 1–3% slow (Docs/27: wait ≥10 minutes after a wake).
+  Machine state when recorded: load 10–17, on AC, 8 hours after a wake,
+  under `caffeinate -i`. Two runs 7 minutes apart agree (ours: compare
+  ≤1.4%, sortKey ≤2.1%). System-ICU control within 1.7% (run B, recorded).
   Sanity gates before recording a future run: system-ICU
-  `localizedCompare` ~194/365/369/300/494; ICU C ~9.3/10.1/41.1/29.7/173.8
-  compare and ~103.8/121.6/120.4/367.7/156.3 sortKey (check which ICU the
-  checkout holds first). K=3 takes about 4 minutes. Suite gate 1529/124.
-  Previous baselines (truncated integers): 2026-10-15 10:36 (post-§49)
-  compare 16/15/27/40/258, sortKey 158/175/174/389/209; 2026-08-12
-  (post-§48) compare 16/15/26/40/260, sortKey 159/182/173/386/213. Details
-  in the git history of `Docs/21`.
+  `localizedCompare` ~194/365/369/300/494; ICU C ~9.3/10.1/40.5/29.7/173.8
+  compare and ~104.5/120.9/119.0/370.3/155.5 sortKey (check which ICU the
+  checkout holds first). K=3 takes about 4–7 minutes. Suite gate 1529/124.
+  Previous baselines: 2026-10-15 13:21 (decimal, post-§49) compare
+  16.7/15.6/26.7/41.1/261.7, sortKey 158.6/175.4/175.1/392.2/211.4;
+  2026-10-15 10:36 and 2026-08-12 (truncated integers). Details in the git
+  history of `Docs/21`.
   **IN FLIGHT at the time of writing:** a workflow-orchestrated
   optimization hunt over the engine compare/sortKey paths (8 ideation
   lenses → adversarial verification → ranked plan), targeting the
