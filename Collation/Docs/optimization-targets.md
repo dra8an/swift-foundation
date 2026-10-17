@@ -3026,6 +3026,17 @@ sortKey did not move. The by-value table alone had given paths −19.6 ns but
 latin +1.0 ns; the pointer gives up 1.8 ns of the paths gain (one more load
 in the shared-prefix branch) and turns every other row into a gain.
 
+**Why paths gained the most (−43%), in one chain:** the fast-Latin core runs
+the restart-safety check only when the two strings share a prefix, for the
+two characters right after it. Adjacent paths pairs share a prefix in 100% of
+the cases (`/usr/lib/...`; ascii 4%, latin 1%), so EVERY paths compare ran the
+check twice. The old shortcut threshold was U+0034, so for letters each check
+was the slow path (~100 instructions: two binary searches over the boundary
+lists, a ccc lookup, a trie lookup) — about half of the whole paths compare.
+The table makes each check one load. The ascii and cjk gains (−8.5%, −7%)
+have a different cause: the struct copy of cause 2, which every call paid,
+whether the check ran or not.
+
 **Lessons:**
 1. **An instruction count beats timing below ~1 ns.** Placement moved
    identical code by up to 1.8 ns; the count is exact.

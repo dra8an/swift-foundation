@@ -137,6 +137,14 @@ prefix scan; the restart-safety check only after a shared prefix) →
 box (`restartSafetyPtr`) and is passed BY POINTER, with a 768-byte table for
 code points below U+0300.
 
+**How paths compare went from 1.38× to 0.78× of ICU (§50 (g)):** paths pairs
+always share a prefix, so every paths compare ran the restart-safety check on
+two characters; the shortcut threshold was U+0034, not U+0300, so each check
+on a letter took the slow path (~100 instructions). The table below U+0300
+made it one load. The ascii and cjk gains came from the second fix: the
+compiler had loaded all of `RestartSafety` on every call; the pointer stops
+that.
+
 **Open engine items, in the order I would take them:**
 1. The guard computes `options.icuOptions` on every call: 22 instructions.
 2. About 90 instructions per call in `compareFastPath` have no source line
