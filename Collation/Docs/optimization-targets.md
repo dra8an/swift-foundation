@@ -2944,3 +2944,98 @@ load 54/98/136, 12 minutes after a wake from sleep.
   options, so a dedicated entry could skip the options check.
 - **A non-throwing `compare`:** about 0.5 ns per call (3% of the ascii
   row), but it changes the public API — a user decision.
+
+#### (g) The instruction count, and the RestartSafety fix (2026-10-16)
+
+Timing reached its limit on the remaining entry cost: two copies of the same
+function (L1 and the clone R0) differed by up to 1.8 ns through code placement
+alone, so the removal clones could not separate sub-nanosecond parts. The
+replacement is an **instruction count** — exact and load-independent.
+
+**The method.** `lldb` (Xcode's; the swiftly toolchain's lldb lacks its Python
+framework) stops at a wrapper and single-steps every executed instruction,
+stepping into callees, until the wrapper returns; a Python script counts per
+function and per source line, or writes the full instruction sequence for a
+diff. The C side counts `ucol_strcollUTF8` the same way. Details:
+- The release executables are stripped; build with `-Xswiftc -g` and `lldb`
+  reads the names from the `.dSYM` next to the binary.
+- In the ladder (one module) the public `compare` inlines into the caller;
+  in EngineBench, SwiftPM's cross-module optimization inlines it too. Break on
+  `compareFastPath` (it has real instances), skipping the warm-up calls with
+  `breakpoint modify -i <n>`. Skip inlined frames to find the return address.
+- **Count in the binary that shows the timing effect.** The ladder and
+  EngineBench generate different code; a count in the ladder said "latin
+  unchanged" while EngineBench executed 3 more instructions per call.
+- Scripts: `Collation/Tools/insn-count/` (`count_insns.py` with
+  `count_insns` and `trace_insns`; `icu_count.c`; the ladder's count mode,
+  `CmpLadder <corpus> <reps> count <first pair> <pairs>`).
+
+**First result (ascii, 10 pairs, before this fix):** ICU 175 instructions per
+compare on 9 pairs, ours 243–248. The fast-Latin core: ICU 65, ours 74. So the
+core is close; the entry had +61. On the one pair with a shared prefix
+("dsjrvfdssug" / "drwcsbtg"): ICU 283, ours **564**.
+
+**Cause 1 — the restart-safety shortcut never fired for letters.**
+`RestartSafety.isUnsafe` short-circuited below a "safe below" threshold that
+root data puts at **U+0034** (the digit "4" is in the unsafe-backward list;
+"L", U+00A0 and U+00B7 follow). The project notes said "U+0300 for root"; the
+data never agreed. So every letter took two binary searches, a ccc lookup and
+a trie lookup (~100 instructions per checked character), where ICU uses a
+Latin-1 table (BMPSet). **Fix:** a 768-byte table with `isUnsafe` for every
+code point below U+0300 (bit 0 numeric off, bit 1 numeric on), computed at
+init with the unchanged slow check, so it is identical by construction.
+
+**Cause 2 — the struct was copied on every call.** With the table inlined,
+latin lost 1.0 ns (5/5) although latin pairs almost never share a prefix.
+Moving the check out of line did not help (latin still +1.0). EngineBench's
+instruction count then showed +3 per latin call, and a trace diff of one call
+showed why: **on every call, BOTH builds loaded all fields of `RestartSafety`
+(~18 loads) and spilled them to the stack**, before knowing whether the
+shared-prefix branch runs; the table only made that copy 16 bytes larger.
+**Fix:** `RestartSafety` gets its own heap box (`Storage.restartSafetyPtr`);
+`fastLatinUTF8`, `quickCJKDispatch` and `mismatchRestartIsUnsafe` take an
+`UnsafePointer<RestartSafety>` and call `isUnsafe` on `pointee` in place. (Not
+the same as Fix A's failed variant, which passed the struct BY VALUE out of a
+raw pointer and so forced a full copy.)
+
+**Instruction counts (EngineBench, mean of 10 pairs):**
+
+| corpus | base `b31aeea6` | table, by value | **table + pointer** | ICU |
+|---|---:|---:|---:|---:|
+| latin | 225.0 | 228.1 | **203.1** | — |
+| ascii | 247.7 | 228.3 | **206.5** | 185.8* |
+| paths | 561.8 | 329.2 | **337.2** | 447.0* |
+
+\* ICU counted from its wrapper, ours from `compareFastPath`; compare the
+two only roughly.
+
+**A/B against `b31aeea6`** (EngineBench, 5 interleaved rounds, 2026-10-16
+17:15, load 8–11, system-ICU control +1.0%):
+
+| corpus | base | new | change | rounds | ratio vs ICU |
+|---|---:|---:|---:|---|---|
+| ascii | 16.4 | **15.0** | **−8.5%** | 5/5 | 1.76× → **1.61×** |
+| latin | 14.9 | 14.6 | −2.0% | 5/5 | 1.48× → 1.45× |
+| cjk | 27.0 | **25.1** | **−7.0%** | 5/5 | 0.66× → **0.61×** |
+| paths | 41.0 | **23.2** | **−43.4%** | 5/5 | 1.38× → **0.78×** |
+| thai | 256.6 | 257.8 | flat | mixed | 1.48× |
+
+sortKey did not move. The by-value table alone had given paths −19.6 ns but
+latin +1.0 ns; the pointer gives up 1.8 ns of the paths gain (one more load
+in the shared-prefix branch) and turns every other row into a gain.
+
+**Lessons:**
+1. **An instruction count beats timing below ~1 ns.** Placement moved
+   identical code by up to 1.8 ns; the count is exact.
+2. **Check stated invariants against the data.** "U+0300 for root" was in the
+   notes since the threshold was written, and it was wrong.
+3. **"Placement" is a hypothesis, not a conclusion.** I called the latin loss
+   placement from a count in the WRONG binary; EngineBench's own count and a
+   trace diff disproved it within minutes.
+4. **The compiler may load a large struct eagerly.** A struct used only in a
+   rare branch can still be loaded on every call; pass large immutable
+   structs to hot code by pointer to a stable box.
+
+**Next:** record a new baseline (paths compare moved from 41 to ~23 ns);
+then the remaining items of (f): the 22 instructions of `icuOptions` in the
+guard, and the instructions without source lines in `compareFastPath`.

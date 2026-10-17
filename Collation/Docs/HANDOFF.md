@@ -517,8 +517,15 @@ target), `upstream` = swiftlang (never push). Branch tracks origin.
   Fix A3 (the default fast-Latin setup in one boxed pointer, RestartSafety
   kept in the storage object's `let`): ascii −0.4 ns, latin −0.6 ns, the
   other rows flat. Lesson: a 176-byte struct read through a raw pointer is
-  copied before use — that variant cost paths +1.3 ns. Next: a hot/cold
-  split inside `compareFastPath` for the remaining ~5 ns (§50 (f)).
+  copied before use — that variant cost paths +1.3 ns.
+  **§50 (g), same day: an instruction count under lldb** (`Tools/insn-count/`)
+  found two defects that timing could not separate: the restart-safety
+  shortcut threshold was U+0034, not U+0300, so every letter took two binary
+  searches (fix: a 768-byte table below U+0300); and the compiler loaded all
+  of `RestartSafety` on EVERY call (fix: pass it by pointer to its own box).
+  A/B vs `b31aeea6`: **paths compare −43% (1.38× → 0.78× of ICU), ascii −8.5%
+  (1.76× → 1.61×), cjk −7%, latin −2%**, thai and sortKey flat. Next: a new
+  baseline, then `icuOptions` (22 instructions) in the guard (§50 (g)).
   Technique log: `optimization-targets.md` — read THE ALLOCATION/
   RESOLUTION HUNT note at the top before any perf work, then §20
   (steps 6–8), §27, §29–§50 and the audit list;
