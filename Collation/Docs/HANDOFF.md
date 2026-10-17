@@ -145,6 +145,36 @@ made it one load. The ascii and cjk gains came from the second fix: the
 compiler had loaded all of `RestartSafety` on every call; the pointer stops
 that.
 
+**NEXT TASK (the user's request, 2026-10-16): apply the two §50 (g) patterns
+elsewhere, and look for similar defects.** The paths win came from two
+patterns, not from one place:
+- **Pattern 1 — a per-character check that searches where a small table
+  would do.** `isUnsafe` had a shortcut threshold far too low (U+0034), so
+  letters took two binary searches + a ccc lookup + a trie lookup. Look for
+  every check per character or per scalar whose fast case is rare in
+  practice, and every "safe below" / "minimum" constant: is its real value
+  what the comment says? Candidates found by a scan (verify each):
+  the NFD front end (`NFDIterator`: `leadCCC`, `isInert`, `quickDecomp` per
+  scalar; §36 put `isInert` at ~0.9 ns per scalar; it runs in every sortKey
+  and in every compare that leaves the fast path); the per-character trie
+  lookups of the CE iterator (`simpleCEs` covers only ASCII and the Thai
+  block — note that §12, a combining-mark CE table to U+036F, was TRIED and
+  REJECTED: −2–3% latin sortKey for +6 KB); the boundary checks of the search
+  entries (`CollationSearch.swift`) at every candidate position.
+- **Pattern 2 — a large struct loaded (or copied) on every call although only
+  a rare branch uses it.** Confirmed candidate: `quickCJKDispatch` calls
+  `quickCJKPrimary(lc, setup.pointee)` and `quickCJKPrimary(rc,
+  setup.pointee)` — `QuickCJKSetup` (two `UTrie2`s, two buffers) passed BY
+  VALUE out of a raw pointer, the shape that cost paths +2.7% in Fix A; it is
+  on the cjk compare path. Also check `compareBody` (the slow path calls
+  `restartSafety.isUnsafe` from the storage `let`) and the search entries
+  for the same eager copy.
+- **Method:** the instruction count in EngineBench finds both patterns — a
+  trace (`trace_insns`) shows a block of loads/stores to the stack at the top
+  of a function, and per-line counts show a search where a table would be
+  one load. Then an A/B of the real entry, as always. Report every candidate
+  with its count before you change code.
+
 **Open engine items, in the order I would take them:**
 1. The guard computes `options.icuOptions` on every call: 22 instructions.
 2. About 90 instructions per call in `compareFastPath` have no source line
