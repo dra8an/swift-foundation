@@ -92,9 +92,9 @@ compare takes UTF-8, so compare is symmetric). That conversion costs ICU
 each engine on its own native input, and making the reference slower would
 hide our gap rather than measure it.
 
-Net effect on the gap: the harness explains about 1 ns of the 7 ns ascii
-compare gap (16.7 against 9.3 in the 2026-10-15 baseline, before §50).
-The rest is engine time.
+Net effect on the gap: the harness explains about 1 ns of the ascii compare
+gap — about 1 of 5.8 ns in the 2026-10-16 baseline (15.1 against 9.3); it was
+1 of 7.4 ns before §50 (16.7 against 9.3). The rest is engine time.
 
 Probe sources (not committed) lived in `.build/harness-probe/`; rebuild them
 from this description if the question comes back.

@@ -2606,7 +2606,8 @@ hunt: the measurement is what settled this, twice.
   build-script path fix (`a2119b2c`, `e799a9f3`).
 - Item 1b (ICU reference answers for the stress strings) was dropped; the
   reason is at the end of item 1b.
-- No stashes, no worktree, no temporary tests. The experiments of part (b)
+- No stashes, no worktree, no temporary tests (at the end of §49; §50
+  created the A/B worktree `../collation-baseline` again). The experiments of part (b)
   were dropped (`takeScratch` was neutral; the bounds were unsafe).
 
 #### (a) The ladder refresh (committed `36254566`)
@@ -2839,9 +2840,10 @@ UPSTREAM-PREP item.
 
 ### 50. The compare ladder: the core beats ICU; the gap is the entry
 
-**Status (2026-10-16): Fix A3 is ready to commit together with this section
-and the ladder tool.** Suite 1529/124. Open: the remaining entry cost
-(part (f)).
+**Status (2026-10-16): committed and measured.** Fix A3 and the ladder tool
+are in `b31aeea6`; the restart-safety table and RestartSafety by pointer
+(part (g)) in `8485740c`; the baseline after them in `Docs/21` (2026-10-16
+17:29). Suite 1529/124. Open: the items at the end of part (g).
 
 #### (a) Why
 
