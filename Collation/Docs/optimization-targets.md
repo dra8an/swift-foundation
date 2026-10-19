@@ -3279,3 +3279,14 @@ under Thread Sanitizer (verified active: the test bundle links
 `libclang_rt.tsan_osx_dynamic.dylib`), with 0 reports, before AND after the
 caches. Before this, the collation tests had no concurrency test at all.
 Suite 1534/126.
+
+#### (f) The committed state (`6d6cc1f6`) and the new baseline
+
+A/B of HEAD against `8485740c` (5 rounds, 2026-10-19 14:20, load ~20):
+compare cjk −13.8%, paths −11.2%, thai −6.4% (all 5/5), ascii and latin
+within ±1.5%. sortKey paths +2.6% (5/5), latin +1.4%, cjk −2.0% — with
+IDENTICAL instruction counts. The same A/B with every function aligned to 64
+bytes in both builds: compare cjk −10.5%, paths −12.0%, thai −6.0%, and
+every sortKey row −0.2..−1.8% (5/5). So the sortKey moves are code
+placement. Full matrix recorded in Docs/21 (run B, 2026-10-19 14:14):
+compare 0.53× cjk, 0.69× paths, 1.41× thai of ICU.
