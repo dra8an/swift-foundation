@@ -42,11 +42,26 @@ enum CollationConstants {
 
     @inline(__always)
     static func tagFromCE32(_ ce32: UInt32) -> Tag {
-        // Tag covers all 16 raw values, so the masked init is total; the optimizer removes the check.
-        guard let tag = Tag(rawValue: ce32 & 0xf) else {
-            preconditionFailure("unreachable: 4-bit tag out of range")
+        // An explicit switch, not `Tag(rawValue:)`: the synthesized init stayed an out-of-line call at some call sites (quickCJKPrimary: ~12 instructions per CJK compare, technique log §51), and an attribute cannot force a synthesized init inline. The mask leaves 0...15, so the default is dead.
+        switch ce32 & 0xf {
+        case 0: return .fallback
+        case 1: return .longPrimary
+        case 2: return .longSecondary
+        case 3: return .reserved3
+        case 4: return .latinExpansion
+        case 5: return .expansion32
+        case 6: return .expansion
+        case 7: return .builderData
+        case 8: return .prefix
+        case 9: return .contraction
+        case 10: return .digit
+        case 11: return .u0000
+        case 12: return .hangul
+        case 13: return .leadSurrogate
+        case 14: return .offset
+        case 15: return .implicit
+        default: preconditionFailure("unreachable: 4-bit tag out of range")
         }
-        return tag
     }
 
     /// 19-bit index from a special CE32 with index and length fields (bits 31..13).

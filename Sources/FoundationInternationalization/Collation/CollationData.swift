@@ -281,18 +281,22 @@ public struct CollationData: @unchecked Sendable {
         (UInt32(contexts[index]) << 16) | UInt32(contexts[index + 1])
     }
 
-    /// The bundled CLDR root collation data (ucadata.icu, ICU 79 / "UCol" v5).
+    /// The bundled CLDR root collation data (ucadata.icu, ICU 79 / "UCol" v5), parsed once per process and shared — ICU's CollationRoot::getRoot (umtx_initOnce) does the same. The value is immutable, and a copy is one retain. Reading and parsing it took ~260 µs on every collator creation, tailorings included (technique log §51).
     public static func root() throws -> CollationData {
-        guard let url = Bundle.module.url(forResource: "ucadata", withExtension: "icu") else {
-            throw ParseError.missingPart("bundled ucadata.icu")
-        }
-        return try CollationData(contentsOf: url)
+        try bundledRoot.get()
     }
 
-    /// The bundled NFD-only root collation data (genuca -X variant: no canonical closure, no Hangul syllable mappings; requires the NFD front end).
+    /// The bundled NFD-only root collation data (genuca -X variant: no canonical closure, no Hangul syllable mappings; requires the NFD front end). Parsed once per process, like `root()`.
     public static func rootICU4X() throws -> CollationData {
-        guard let url = Bundle.module.url(forResource: "ucadata-icu4x", withExtension: "icu") else {
-            throw ParseError.missingPart("bundled ucadata-icu4x.icu")
+        try bundledRootICU4X.get()
+    }
+
+    private static let bundledRoot = Result { try bundled("ucadata") }
+    private static let bundledRootICU4X = Result { try bundled("ucadata-icu4x") }
+
+    private static func bundled(_ name: String) throws -> CollationData {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "icu") else {
+            throw ParseError.missingPart("bundled \(name).icu")
         }
         return try CollationData(contentsOf: url)
     }

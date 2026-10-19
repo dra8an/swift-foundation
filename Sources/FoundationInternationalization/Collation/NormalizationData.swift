@@ -65,8 +65,12 @@ public struct NormalizationData: @unchecked Sendable {
         buffer = storage.store(buf)
     }
 
-    /// The bundled normalization data (Unicode 17, from ICU's nfc.txt).
+    /// The bundled normalization data (Unicode 17, from ICU's nfc.txt), parsed once per process and shared: the value is immutable, and a copy is one retain. Parsing it took ~135 µs on every collator creation (technique log §51).
     public static func standard() throws -> NormalizationData {
+        try bundled.get()
+    }
+
+    private static let bundled = Result { () throws -> NormalizationData in
         guard let url = Bundle.module.url(forResource: "nfd", withExtension: "bin") else {
             throw ParseError.tooShort
         }

@@ -84,4 +84,10 @@ struct UTrie2 {
         }
         return data[Self.badUTF8DataOffset]  // error value; unreachable for valid scalars
     }
+
+    /// The data offset of the 32-value block that holds BMP code point `c` (0...0xFFFF), computed as `get` does: `get(c) == data[bmpBlockOffset(c) + Int(c & 0x1f)]`. Lets init code scan the BMP one block at a time.
+    func bmpBlockOffset(_ c: UInt32) -> Int {
+        let i2 = (0xd800...0xdbff).contains(c) ? Self.lscpAdjustedOffset + (c >> 5) : c >> 5
+        return Int(index[Int(i2)]) << 2
+    }
 }

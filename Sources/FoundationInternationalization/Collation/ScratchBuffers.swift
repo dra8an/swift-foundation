@@ -1,6 +1,7 @@
 // Reusable per-call buffers. Building the CE and NFD iterators afresh costs several heap allocations per compare()/sortKey() call; a RootCollator instead keeps a thread-local buffer set and resets it, so repeated calls run allocation-free once the buffers have grown to the working size. (ICU4C reaches the same goal with stack buffers, which Swift arrays cannot express.) The public API stays thread-safe: each thread owns its own buffer set, with no locking or reference counting on the checkout path.
 
 import Foundation
+internal import Synchronization
 #if canImport(Darwin)
 import Darwin
 #else
@@ -236,35 +237,48 @@ final class ThreadLocalScratch: @unchecked Sendable {
     }
 }
 
-/// One immutable fast-Latin setup: the precomputed primaries and packed options for one options word (packedOptions < 0 = unsupported).
-final class FastLatinSetup: Sendable {
+/// One fast-Latin setup as plain data: the options word, the packed options (< 0 = unsupported) and the precomputed primaries, which live in the cache's storage until the collator is freed. Plain data, so a reader copies it without reference counting.
+struct FastLatinSetup {
     let word: Int32
     let packedOptions: Int32
-    let primaries: [UInt16]
-
-    init(word: Int32, packedOptions: Int32, primaries: [UInt16]) {
-        self.word = word
-        self.packedOptions = packedOptions
-        self.primaries = primaries
-    }
+    let primaries: UnsafeBufferPointer<UInt16>
 }
 
-/// Holds the most recently used fast-Latin setup, so bail-free compares need no scratch buffers at all. Snapshots are immutable: a reader keeps using its snapshot even if another thread replaces the current one.
+/// The fast-Latin setups for non-default options words, so bail-free compares need no scratch buffers at all.
+///
+/// Readers take NO lock and touch only shared read-only memory: one acquiring load of the current snapshot pointer, then a scan of at most `capacity` entries. A collator is shared across threads (CollatorCache, and the engine's own storage cache), and the old lock on this path made 4 threads on one shared collator with non-default options ~7 times slower per compare than 4 collators (1037 against 144 ns); a lock-free read of a CLASS snapshot would not fix that, because each reader's retain contends on the shared reference count. An earlier version also had one slot, so threads with different options evicted each other (technique log §51).
+///
+/// Writers serialize on the lock, build a new snapshot (the old entries plus one) and publish it with a releasing store. Snapshots and primaries are never freed before the cache, so a reader's snapshot stays valid. After `capacity` distinct words, a new word gets no setup and its compares take the CE pipeline: the same results, more slowly.
 final class FastLatinCache: @unchecked Sendable {
     private let lock = PoolLock()
-    private var current: FastLatinSetup?
+    /// Owns every snapshot and every primaries array; written only under the lock.
+    private let storage = DataStorage()
+    /// The base address of the current snapshot (an `UnsafeBufferPointer<FastLatinSetup>` stored in `storage`), or nil before the first insert.
+    private let current = Atomic<UnsafeRawPointer?>(nil)
+    /// The entries of the current snapshot; read and written only under the lock.
+    private var entries: [FastLatinSetup] = []
+    static let capacity = 16
 
     func setup(for word: Int32) -> FastLatinSetup? {
-        lock.acquire()
-        defer { lock.release() }
-        guard let current, current.word == word else { return nil }
-        return current
+        guard let raw = current.load(ordering: .acquiring) else { return nil }
+        let snapshot = raw.assumingMemoryBound(to: UnsafeBufferPointer<FastLatinSetup>.self).pointee
+        for setup in snapshot where setup.word == word { return setup }
+        return nil
     }
 
-    func store(_ setup: FastLatinSetup) {
+    /// The setup for `word`, computing it with `make` (packed options and primaries) and publishing it if it is new; nil when the cache is full.
+    func insert(word: Int32, _ make: () -> (packedOptions: Int32, primaries: [UInt16])) -> FastLatinSetup? {
         lock.acquire()
         defer { lock.release() }
-        current = setup
+        // Another thread may have inserted it since this one missed.
+        for setup in entries where setup.word == word { return setup }
+        guard entries.count < Self.capacity else { return nil }
+        let made = make()
+        let setup = FastLatinSetup(word: word, packedOptions: made.packedOptions, primaries: storage.store(made.primaries))
+        entries.append(setup)
+        let snapshot = storage.store([storage.store(entries)])
+        current.store(UnsafeRawPointer(snapshot.baseAddress), ordering: .releasing)
+        return setup
     }
 
     deinit {

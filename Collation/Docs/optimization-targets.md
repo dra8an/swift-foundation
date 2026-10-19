@@ -3052,3 +3052,230 @@ whether the check ran or not.
 **Next:** record a new baseline (paths compare moved from 41 to ~23 ns);
 then the remaining items of (f): the 22 instructions of `icuOptions` in the
 guard, and the instructions without source lines in `compareFastPath`.
+
+---
+
+### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
+
+**Status (2026-10-19): C1, C2, C3 and C7 (collator creation, lock-free fast-Latin cache) done, not committed; C3b kept eager (its cost is now once per process). Open: a full-matrix run on a quiet machine, C4–C6. Suite 1534/126 with `RestartSafetyTests` and `CollationConcurrencyTests`.**
+
+#### (a) The audit
+
+The two §50 (g) patterns (a per-character search where a table would do; a
+large struct copied on every call for a rare branch) and similar defects,
+looked for in every compare and sortKey path, with the instruction count in
+EngineBench (`-g` build, HEAD = `8485740c` code). Mean per call over 10 calls;
+sortKey over the 8 steady-state calls (the bench makes a new `key` array per
+timed pass, so its first two calls grow it — harness, not engine).
+
+Base counts: cjk compare 358, thai compare 3262; sortKey ascii 2444, latin
+2235, cjk 2337, paths 5338, thai 2252.
+
+| # | pattern | where | instructions per call |
+|---|---|---|---|
+| C1 | struct copy | `quickCJKPrimary(lc, setup.pointee)`, twice: 144-byte `QuickCJKSetup` copied to the stack before each call | 20 of 358 (cjk compare) |
+| C2 | a check that should be free | `tagFromCE32`: the synthesized `Tag(rawValue:)` stays an out-of-line call in `quickCJKPrimary` (inlined in `appendCEs`); the comment "the optimizer removes the check" is wrong there | ~12 of 358 (cjk compare) |
+| C3 | search, not table | `RestartSafety.isUnsafe` above U+0300: two binary searches, a ccc lookup, a trie lookup | 182 of 3262 (thai compare): `mismatchRestartIsUnsafe` 133, `compareBody` re-checks the same scalars 49 |
+| C4 | resolution per call | `options.icuOptions` | 22 per fast compare, 59 per thai compare (3 times), 20 per sortKey |
+| C5 | general code for a trivial job | `ces.removeAll(keepingCapacity: true)` in `CEIterator.reset` = `replaceSubrange` + 2 × `isUniquelyReferenced` + a zero-length `memmove` | 95 per sortKey, 110 per thai compare |
+| C6 | the same | `ces.append` per CE: an out-of-line `isUniquelyReferenced` each time (13 per ascii key; NOT hoisted) | 106–147 per short sortKey, 318 paths |
+
+Checked and clean: no struct copy in `compareBody`, the slow path or sortKey
+(the thai compare trace has 2 vector moves, both in `CEIterator.reset`); the
+NFD "safe below" constants match `nfd.bin` (first non-inert U+00C0, first
+ccc ≠ 0 U+0300), and `isInert` is already a two-load table; the fast-Latin
+limits (U+017F, lead 0xC5) are correct. The search entries were not counted
+(no search in EngineBench, not in Table 1).
+
+Tool notes: the public `sortKey` and `compare(_:_:options:)` are real
+functions in EngineBench, but `breakpoint set -r` does not match them (lldb
+matches the demangled name WITH argument types) and `-a` misses (the load
+address differs from the file address). Use the mangled name with `-n`, or
+`-s EngineBench -n compare` and disable the extra locations.
+
+#### (b) C1: QuickCJKSetup by pointer
+
+`quickCJKPrimary` takes `UnsafePointer<QuickCJKSetup>` and reads the fields
+on `pointee` in place — the RestartSafety fix of §50 (g) again.
+
+Instruction count: cjk 358.3 → **338.3** (−20 on every call); ascii, latin,
+paths identical.
+
+A/B against `8485740c` (EngineBench, 5 interleaved rounds, alternating order,
+2026-10-19 10:38, load 11–12, 79 minutes after a wake):
+
+| row | change | rounds |
+|---|---|---|
+| cjk compare | **−1.44 ns (−5.6%)**, 25.2 → 23.7 min | 5/5 |
+| ascii, latin, paths, thai compare | within ±0.3% | mixed |
+| sortKey, all corpora | +1.0..+2.3% | mostly 5/5 |
+
+The sortKey rows executed the SAME instructions on both sides (identical
+steady-state counts on ascii and latin); `sortKey` only starts 80 bytes
+earlier, because `quickCJKPrimary` got shorter. A rerun with every function
+aligned to 64 bytes in both builds (`-Xllvm -align-all-functions=6`, a
+diagnostic, not shipped) gave cjk compare −1.16 ns (−4.6%, 4/5) and sortKey
+−0.9..+0.7% with mixed signs. So the sortKey move is code placement, and the
+placement in the Foundation framework differs again. Suite 1529/124.
+
+#### (c) C2: Tag from an explicit switch
+
+`tagFromCE32` maps the 4 bits with a 16-case `switch` (default dead after
+the mask) instead of the synthesized `Tag(rawValue:)`, which stayed an
+out-of-line call in `quickCJKPrimary`. No unsafe code.
+
+Instruction count (on top of C1): cjk compare 338.3 → **309.1** (−29, more
+than the ~12 of the call itself: the dispatch after it also got simpler);
+thai compare 3261.5 → 3253.3; ascii, latin, paths compare and the
+steady-state sortKey calls (ascii, latin, cjk, paths, thai) identical.
+
+A/B of C1 + C2 against `8485740c` (5 rounds, 2026-10-19, load 11–17):
+**cjk compare −2.90 ns (−11.5%, 5/5), 25.0 → 22.2 (0.62× → 0.55× of
+ICU)**. ascii and latin compare +0.7..+1.1% and latin sortKey +1.2% with
+identical instruction counts: placement again. Every other row within
+±0.2% or mixed (cjk sortKey −1.9% 5/5, also identical counts). Suite
+1529/124.
+
+#### (d) C3: the restart-safety check above U+0300 — and the copy §50 (g) left
+
+Two changes, measured apart (C3a alone was built by patching only the
+EngineBench scratch copy).
+
+**C3a — `RestartSafety.isUnsafe(pointer, c, numeric:)`.** A trace diff of one
+paths compare showed that BOTH the base and the C3 build copied all of
+`RestartSafety` to the stack before EACH of the two checks in the
+shared-prefix branch (base: ~20 scalar loads/stores; with the bigger struct:
+10 vector moves of 160 bytes). §50 (g)'s pointer only moved the copy out of
+the entry: a METHOD call on `pointee` still copies the struct, because the
+memory could change during the call. The static form reads only the fields
+it needs through the pointer (`s.pointee.latinTable` loads one field). The
+three pointer callers use it; `compareBody` keeps the instance method (the
+storage object's `let`, no copy).
+
+**C3b — a two-level BMP table.** One `UInt16` block number per 64 code
+points (block 0 = no unsafe code point; root: 119 of 1024 blocks have one),
+two `UInt64` words per block (numeric off / on), ~2.3 KB. The lookup above
+the latin table is out of line (`isUnsafeAboveLatin`): inlined, it grew
+`compareFastPath` until the inliner left `min` as a call with extra spills
+(paths +3.2%, 5/5, +4 instructions). Built from the structures, not per code
+point (calling `slowIsUnsafe` for the whole BMP costs ~1.7 ms): the boundary
+ranges, the lead ccc per norm block (cached, 113 distinct), the prefix/digit
+tags per 32-value trie block with the base fallback. `RestartSafetyTests`
+checks every BMP code point in both modes against `slowIsUnsafe` for root,
+root ICU4X and all 98 tailorings; three mutations (no lead ccc, no base
+fallback, no digit bits) each fail it.
+
+Instruction counts (on top of C1 + C2):
+
+| corpus | C1 + C2 | C3a only | C3a + C3b |
+|---|---:|---:|---:|
+| paths compare | 337.2 | **300.2** | 300.2 |
+| thai compare | 3253.3 | 3256.3 | **3122.1** |
+| ascii compare | 206.5 | — | 202.9 |
+
+A/B against `8485740c` (5 rounds each, 2026-10-19, load 8–15):
+
+| row | C1 + C2 + C3a | C1 + C2 + C3a + C3b |
+|---|---|---|
+| paths compare | **−11.5%** (23.2 → 20.6), 5/5 | **−11.1%** (23.3 → 20.7), 5/5 |
+| cjk compare | −11.7%, 5/5 | −10.7%, 5/5 |
+| thai compare | +1.1%, 5/5 | **−6.1%** (256.4 → 241.7), 5/5 |
+| ascii, latin compare; sortKey | within ±1.6%, mixed | within ±0.9%, mixed |
+
+**The cost of C3b is init time.** The tag scan is ~78 µs of the ~88 µs build
+and appears memory-bound (2024 trie blocks at scattered offsets in a 500 KB
+array): neither branch-free masks, nor masked shifts, nor an explicit SIMD
+version (3× SLOWER) helped. Full init including the data parse: root
+~400–530 → ~480–540 µs; tailorings ~420–480 → ~515–620 µs (+20–30%; the
+tailorings scan the base trie as well). Once per collator per process
+(collators are cached). **User decision pending.**
+
+Tool note: a copied EngineBench binary cannot find its resource bundle and
+stops under lldb with a fatal error, which the batch run waits on forever.
+Run variants from their build folder.
+
+#### (e) C7: collator creation — parse once, share, like ICU
+
+The C3b init question led here. Creation cost against ICU (`ucol_open`,
+ICU 79.1 in-source build, `.build/icu-open/open.c`, warm runs):
+
+| | ICU first open | ICU later opens | ours before, every creation |
+|---|---:|---:|---:|
+| root | 190–260 µs | 0.1 µs | ~400–530 µs |
+| th | 60–90 µs | 0.2–0.3 µs | ~450–620 µs |
+| ja, sv, fr_CA | 10–17 µs | 0.2–0.3 µs | ~420–620 µs |
+
+ICU loads root once (`CollationRoot::getRoot`, `umtx_initOnce`, mapped data)
+and caches tailorings (`UnifiedCache`). We parsed everything on every
+creation, and every tailoring parsed root again. The split for root (~493
+µs): root data 258 (file read 55, parse 189), normalization data 135,
+collator setup 116 (of it the C3b table ~87). Foundation's `CollatorCache`
+hid this (once per locale per process); direct `RootCollator` users paid
+it every time.
+
+**Change:** `CollationData.root()`, `rootICU4X()` and
+`NormalizationData.standard()` return a `static let` (`Result`, so a missing
+resource still throws); `RootCollator()` takes a `static let` `Storage`;
+`RootCollator(tailoringNamed:)` takes a `Storage` from a locked dictionary by
+name, built OUTSIDE the lock (a race builds twice; the first insert wins).
+`RootCollator(data:norm:)` stays uncached. Memory goes DOWN: one root copy
+per process, where each tailoring collator used to keep its own.
+
+**Result** (probe, load 22–30): later creations 0.00–0.04 µs (timer
+resolution); a first tailoring after root 160–520 µs (inflated by the load).
+The FIRST `RootCollator()` in a process takes 7–22 ms — one-time process
+cost (first `Bundle.module` lookup, page faults); the old code paid it too,
+and minimum-of-N timings hid it. Compare and sortKey instruction counts are
+identical to C3 on every corpus.
+
+**A defect the sharing exposed: the one-slot `FastLatinCache`.** The
+fast-Latin setup for NON-default options had one slot per collator. With
+one shared collator, threads with different options evicted each other: 4
+threads × 4 option sets recomputed the setup 8041–10571 times in 80,000
+compares (10–13%), against 4 times with a collator per thread. Foundation's
+shared collators (`CollatorCache`) already had this. A first fix gave the
+cache 8 slots by word (recount: 4); the lock-free version below replaced it.
+
+**And its lock.** Every non-default compare took the cache's lock. Probe,
+min of 9 interleaved runs (load 18–23, the effect is far above the noise):
+
+| non-default options, ns per compare | collator per thread | one shared collator |
+|---|---:|---:|
+| 1 thread | 71.3 | 73.9 |
+| 4 threads | 143.8 | **1037.2** (7×) |
+| 4 threads, default options (no lock) | 25.7 | 25.6 |
+
+So the lock contended, and the reference count of the shared `Storage`
+did not. Foundation pays this today in a parallel sort with
+`localizedStandardCompare` (numeric options) on a shared collator.
+
+**Fix: a lock-free read.** `FastLatinSetup` is now plain data (word, packed
+options, an `UnsafeBufferPointer` to primaries owned by the cache). Readers
+do one acquiring load of the current snapshot pointer (`Atomic` from
+`Synchronization`, already used in the package) and scan at most 16
+entries — no lock, no reference counting (a lock-free pointer to a CLASS
+snapshot would not do: each reader's retain contends on the shared count).
+Writers serialize on the lock, publish a new snapshot (old entries plus
+one) with a releasing store, and never free a snapshot before the cache.
+After 16 distinct words a new word gets no setup and takes the CE pipeline
+(same results, slower). `CollationFastLatin.compare` takes an
+`UnsafeBufferPointer` (an `Array` overload stays for the tests).
+
+| non-default options, ns per compare | collator per thread | one shared collator |
+|---|---:|---:|
+| 1 thread | 46.6 | 48.0 |
+| 4 threads, same options | 53.3 | 50.2 |
+| 4 threads, different options | 45.2 | 46.7 |
+
+Contention gone, and a single-thread non-default compare went from ~71 to
+~47 ns (no lock, no class retain, no `withUnsafeBufferPointer`). Table 1
+instruction counts unchanged (default options do not use this cache).
+
+**Threading evidence:** `CollationConcurrencyTests` (new): 64 iterations on
+shared collators (root, th, sv, ja, fr_CA) × 7 option sets, in different
+orders per thread, compare + sortKey + contains checked against
+single-thread answers; plus concurrent creation. It passes normally and
+under Thread Sanitizer (verified active: the test bundle links
+`libclang_rt.tsan_osx_dynamic.dylib`), with 0 reports, before AND after the
+caches. Before this, the collation tests had no concurrency test at all.
+Suite 1534/126.

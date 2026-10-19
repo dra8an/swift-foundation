@@ -164,6 +164,15 @@ enum CollationFastLatin {
         table fullTable: UnsafeBufferPointer<UInt16>, primaries: [UInt16], options optionsIn: Int32,
         left: Side, right: Side
     ) -> Int32 {
+        primaries.withUnsafeBufferPointer {
+            compare(table: fullTable, primaries: $0, options: optionsIn, left: left, right: right)
+        }
+    }
+
+    static func compare(
+        table fullTable: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>, options optionsIn: Int32,
+        left: Side, right: Side
+    ) -> Int32 {
         assert((fullTable[0] >> 8) == version)
         let table = UnsafeBufferPointer(rebasing: fullTable[Int(fullTable[0] & 0xff)...])
         let variableTop = UInt32(bitPattern: optionsIn) >> 16  // see getOptions()

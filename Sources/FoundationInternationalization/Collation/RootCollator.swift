@@ -181,19 +181,35 @@ public struct RootCollator: @unchecked Sendable {
     var restartSafety: RestartSafety { storage.restartSafety }
     private var restartSafetyPtr: UnsafePointer<RestartSafety> { UnsafePointer(storage.restartSafetyPtr) }
 
+    /// A collator over the given data. Not cached: every call builds its own storage (custom data, tests).
     public init(data: CollationData, norm: NormalizationData) {
-        self.storage = Storage(
+        self.storage = Self.makeRootStorage(data: data, norm: norm)
+    }
+
+    /// The root collator. Its storage is built once per process and shared (it is immutable; the per-thread scratch buffers stay per thread), as ICU builds its root collator once. Building it took ~490 µs on every call (technique log §51).
+    public init() throws {
+        self.storage = try Self.rootStorage.get()
+    }
+
+    /// A collator for a bundled locale tailoring (e.g. "sv", "de-phonebook", "fr_CA", "ja", "zh"), based on the regular root data. Its storage is built once per process and name and shared, as ICU's UnifiedCache does for tailorings.
+    public init(tailoringNamed name: String) throws {
+        self.storage = try Self.tailoringStorages.storage(named: name)
+    }
+
+    private static let rootStorage = Result {
+        makeRootStorage(data: try CollationData.root(), norm: try NormalizationData.standard())
+    }
+
+    private static let tailoringStorages = StorageCache()
+
+    private static func makeRootStorage(data: CollationData, norm: NormalizationData) -> Storage {
+        Storage(
             data: data, base: nil, norm: norm, reordering: nil,
             defaultOptions: CollationOptions(),
             fastLatinTable: data.fastLatinTable, scriptsData: data)
     }
 
-    public init() throws {
-        self.init(data: try CollationData.root(), norm: try NormalizationData.standard())
-    }
-
-    /// A collator for a bundled locale tailoring (e.g. "sv", "de-phonebook", "fr_CA", "ja", "zh"), based on the regular root data.
-    public init(tailoringNamed name: String) throws {
+    fileprivate static func makeTailoringStorage(named name: String) throws -> Storage {
         let tailoring = try CollationData.tailoring(bytes: CollationData.tailoring(named: name))
         let root = try CollationData.root()
         let data: CollationData
@@ -208,12 +224,31 @@ public struct RootCollator: @unchecked Sendable {
         }
         let fastLatinTable = data.fastLatinTable.isEmpty
             ? (base?.fastLatinTable ?? data.fastLatinTable) : data.fastLatinTable
-        self.storage = Storage(
+        return Storage(
             data: data, base: base, norm: try NormalizationData.standard(),
             reordering: tailoring.reordering,
             defaultOptions: CollationOptions(icuOptionsWord: tailoring.options),
             fastLatinTable: fastLatinTable,
             scriptsData: data.scriptStarts.isEmpty ? root : data)
+    }
+
+    /// The tailoring storages built so far, by name. At most one entry per bundled tailoring; a process usually uses one or two. The lock is NOT held during a build (~0.2 ms): two threads that miss at the same time may both build, and the first insert wins, so every caller gets the same storage. A name that fails to load throws and is not stored.
+    private final class StorageCache: @unchecked Sendable {
+        private let lock = PoolLock()
+        private var storages: [String: Storage] = [:]
+
+        func storage(named name: String) throws -> Storage {
+            lock.acquire()
+            let cached = storages[name]
+            lock.release()
+            if let cached { return cached }
+            let built = try RootCollator.makeTailoringStorage(named: name)
+            lock.acquire()
+            defer { lock.release() }
+            if let winner = storages[name] { return winner }
+            storages[name] = built
+            return built
+        }
     }
 
     // MARK: Comparison
@@ -296,7 +331,7 @@ public struct RootCollator: @unchecked Sendable {
         while start > 0, lBytes[start] & 0xc0 == 0x80 { start -= 1 }
         let lc = scalarAt(lBytes, start)
         let rc = scalarAt(rBytes, start)
-        return safety.pointee.isUnsafe(lc, numeric: numeric) || safety.pointee.isUnsafe(rc, numeric: numeric)
+        return RestartSafety.isUnsafe(safety, lc, numeric: numeric) || RestartSafety.isUnsafe(safety, rc, numeric: numeric)
     }
 
     /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called only after fastLatinUTF8 bails (CJK/Thai text) — Latin-resolved compares never evaluate it or its arguments. When both first-differing scalars are CJK ideographs with distinct single-CE primaries — the dominant case for CJK text — this decides the compare right here, skipping compareBody's fresh scalar iterators and re-decode (~21 ns against ~200 ns of machinery).
@@ -315,13 +350,13 @@ public struct RootCollator: @unchecked Sendable {
             let lc = scalarAt(lBytes, mismatch)
             let rc = scalarAt(rBytes, mismatch)
             if lc != rc, isCJKUnified(lc), isCJKUnified(rc) {
-                let lp = quickCJKPrimary(lc, setup.pointee)
+                let lp = quickCJKPrimary(lc, setup)
                 if lp != 0 {
-                    let rp = quickCJKPrimary(rc, setup.pointee)
+                    let rp = quickCJKPrimary(rc, setup)
                     if rp != 0, lp != rp,
                        mismatch == 0
-                        || (!safety.pointee.isUnsafe(lc, numeric: numeric)
-                            && !safety.pointee.isUnsafe(rc, numeric: numeric)) {
+                        || (!RestartSafety.isUnsafe(safety, lc, numeric: numeric)
+                            && !RestartSafety.isUnsafe(safety, rc, numeric: numeric)) {
                         return lp < rp ? -1 : 1
                     }
                 }
@@ -331,13 +366,15 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     /// quickPrimary against the trivial init-resolved views (the static twin of the instance method below; the differential suites keep them in agreement). Returns 0 when the full pipeline must decide.
-    private static func quickCJKPrimary(_ c: UInt32, _ q: QuickCJKSetup) -> UInt32 {
-        var ce32 = q.dataTrie.get(c)
-        var ces = q.dataCEs
+    ///
+    /// The setup comes BY POINTER and its fields are read in place. Passed by value out of the box (`setup.pointee`), the compiler copied all 144 bytes of QuickCJKSetup to the stack before each of the two calls — 20 instructions per CJK compare — because the memory behind the pointer could change (technique log §51).
+    private static func quickCJKPrimary(_ c: UInt32, _ q: UnsafePointer<QuickCJKSetup>) -> UInt32 {
+        var ce32 = q.pointee.dataTrie.get(c)
+        var ces = q.pointee.dataCEs
         if ce32 == CollationConstants.fallbackCE32 {
-            guard q.hasBase else { return 0 }
-            ce32 = q.baseTrie.get(c)
-            ces = q.baseCEs
+            guard q.pointee.hasBase else { return 0 }
+            ce32 = q.pointee.baseTrie.get(c)
+            ces = q.pointee.baseCEs
         }
         guard CollationConstants.isSpecialCE32(ce32) else { return 0 }
         switch CollationConstants.tagFromCE32(ce32) {
@@ -367,19 +404,16 @@ public struct RootCollator: @unchecked Sendable {
                 // The caller's fast path already ran for these options — but only if both strings had contiguous UTF-8 (bridged strings skip the byte path; compareBody's scalar fast-Latin should still get its chance on those).
                 triedFastLatin = left.isContiguousUTF8 && right.isContiguousUTF8
             } else {
-                let setup = resolveFastLatinSetup(word)
-                if setup.packedOptions >= 0 {
+                if let setup = resolveFastLatinSetup(word), setup.packedOptions >= 0 {
                     let safety = restartSafetyPtr
                     let numeric = options.numeric
                     let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
                         right.utf8.withContiguousStorageIfAvailable { rBytes in
-                            setup.primaries.withUnsafeBufferPointer { pBuf in
-                                var mismatch = -1
-                                return RootCollator.fastLatinUTF8(
-                                    lBytes, rBytes, table: table, primaries: pBuf,
-                                    options: setup.packedOptions, numeric: numeric, safety: safety,
-                                    mismatch: &mismatch)
-                            }
+                            var mismatch = -1
+                            return RootCollator.fastLatinUTF8(
+                                lBytes, rBytes, table: table, primaries: setup.primaries,
+                                options: setup.packedOptions, numeric: numeric, safety: safety,
+                                mismatch: &mismatch)
                         } ?? nil
                     } ?? nil
                     if let fast {
@@ -454,8 +488,7 @@ public struct RootCollator: @unchecked Sendable {
             }
             if lSide.next.map({ $0 <= CollationFastLatin.latinMax }) ?? true,
                rSide.next.map({ $0 <= CollationFastLatin.latinMax }) ?? true {
-                let setup = resolveFastLatinSetup(options.icuOptions)
-                if setup.packedOptions >= 0 {
+                if let setup = resolveFastLatinSetup(options.icuOptions), setup.packedOptions >= 0 {
                     fastResult = CollationFastLatin.compare(
                         table: table, primaries: setup.primaries,
                         options: setup.packedOptions, left: lSide, right: rSide)
@@ -724,18 +757,18 @@ public struct RootCollator: @unchecked Sendable {
 
 
 
-    /// The cached fast-Latin setup for an options word, computing and storing it on a cache miss.
-    private func resolveFastLatinSetup(_ word: Int32) -> FastLatinSetup {
+    /// The cached fast-Latin setup for an options word, computing and publishing it on a cache miss; nil when the cache is full (the caller then takes the CE pipeline).
+    private func resolveFastLatinSetup(_ word: Int32) -> FastLatinSetup? {
         if let cached = fastLatinCache.setup(for: word) {
             return cached
         }
-        var primaries: [UInt16] = []
-        let packed = CollationFastLatin.getOptions(
-            table: fastLatinTable, scriptsData: storage.scriptsData, reordering: reordering,
-            options: word, primaries: &primaries)
-        let setup = FastLatinSetup(word: word, packedOptions: packed, primaries: primaries)
-        fastLatinCache.store(setup)
-        return setup
+        return fastLatinCache.insert(word: word) {
+            var primaries: [UInt16] = []
+            let packed = CollationFastLatin.getOptions(
+                table: fastLatinTable, scriptsData: storage.scriptsData, reordering: reordering,
+                options: word, primaries: &primaries)
+            return (packed, primaries)
+        }
     }
 
     /// The byte fast path: identical-prefix scan on raw UTF-8, safety check, then CollationFastLatin.compareUTF8 from the restart offset. Returns -1/0/1, or bailOutResult when the regular path must run. Static with trivial parameters: it runs inside the contiguous-storage closures. (RuleBasedCollator::doCompare, UTF-8 variant.)
@@ -788,8 +821,8 @@ public struct RootCollator: @unchecked Sendable {
                 return CollationFastLatin.bailOutResult
             }
             // Restarting at an unsafe scalar is not equivalent to full iteration: compare from the start instead (ICU backs up partially; skipping less is always sound).
-            if (i != lLength && safety.pointee.isUnsafe(scalarAt(lBytes, i), numeric: numeric))
-                || (i != rLength && safety.pointee.isUnsafe(scalarAt(rBytes, i), numeric: numeric)) {
+            if (i != lLength && RestartSafety.isUnsafe(safety, scalarAt(lBytes, i), numeric: numeric))
+                || (i != rLength && RestartSafety.isUnsafe(safety, scalarAt(rBytes, i), numeric: numeric)) {
                 i = 0
                 mismatch = -1
             }
@@ -855,8 +888,11 @@ struct RestartSafety {
     /// The answer of `isUnsafe` for every code point below `latinTableLimit`, resolved at init: bit 0 with numeric off, bit 1 with numeric on. Replaces a "safe below" threshold, which root data set at U+0034 — the first unsafe code point ("4", in the unsafe-backward list; "L", U+00A0 and U+00B7 follow) — so every letter took the slow path: two binary searches over the boundary lists, a ccc lookup and a trie lookup. An instruction count put that at ~100 instructions per checked character, against ICU's Latin-1 table (BMPSet) (technique log §50).
     let latinTable: UnsafeBufferPointer<UInt8>
     static let latinTableLimit: UInt32 = 0x0300
+    /// The answer of `isUnsafe` for the rest of the BMP (from `latinTableLimit` to U+FFFF), resolved at init, in two levels: `bmpBlocks` has one entry per 64 code points, the number of that block's two words in `bmpWords` (numeric off, then numeric on; bit `c & 63`). Block 0 is all zero and stands for every block with no unsafe code point — 905 of the 1024 in root data. Without it, every check at or above U+0300 (Thai, CJK, Cyrillic, ... after a shared prefix) took the slow path: ~180 instructions per thai compare (technique log §51).
+    let bmpBlocks: UnsafeBufferPointer<UInt16>
+    let bmpWords: UnsafeBufferPointer<UInt64>
 
-    /// `storage` owns the latin table; the caller keeps it alive as long as this value.
+    /// `storage` owns the two tables; the caller keeps it alive as long as this value.
     init(data: CollationData, base: CollationData?, norm: NormalizationData, storage: DataStorage) {
         dataUnsafe = data.unsafeBackward
         baseUnsafe = base?.unsafeBackward ?? UnsafeBufferPointer(start: nil, count: 0)
@@ -876,10 +912,94 @@ struct RestartSafety {
             }
         }
         latinTable = storage.store(table)
+
+        let (blocks, words) = Self.buildBMPTable(
+            dataUnsafe: dataUnsafe, baseUnsafe: baseUnsafe,
+            dataTrie: dataTrie, baseTrie: baseTrie, norm: norm.view)
+        bmpBlocks = storage.store(blocks)
+        bmpWords = storage.store(words)
     }
 
-    /// The full check, for code points at or above `latinTableLimit` and to fill the latin table.
-    private static func slowIsUnsafe(
+    /// Builds the BMP table from the structures that `slowIsUnsafe` reads, not one code point at a time: calling `slowIsUnsafe` for all 2 × 64,768 code points costs ~1.7 ms, against ~0.02 ms for the whole root collator init. Each part below is the union term of `slowIsUnsafe`; `RestartSafetyTests` checks the result against it for every BMP code point.
+    private static func buildBMPTable(
+        dataUnsafe: UnsafeBufferPointer<UInt32>, baseUnsafe: UnsafeBufferPointer<UInt32>,
+        dataTrie: UTrie2, baseTrie: UTrie2?, norm: NormalizationDataView
+    ) -> (blocks: [UInt16], words: [UInt64]) {
+        let blockCount = 0x10000 >> 6
+        let firstBlock = Int(latinTableLimit >> 6)  // latinTableLimit is a multiple of 64
+        let firstCode = UInt32(firstBlock << 6)
+        // Bits for both numeric modes, and bits for numeric on only.
+        var both = [UInt64](repeating: 0, count: blockCount)
+        var numericOnly = [UInt64](repeating: 0, count: blockCount)
+
+        // 1. The unsafe-backward lists: boundaries [b0, b1), [b2, b3), ...; an odd count leaves the last range open.
+        for list in [dataUnsafe, baseUnsafe] {
+            var k = 0
+            while k < list.count {
+                let start = max(list[k], firstCode)
+                let limit = min(k + 1 < list.count ? list[k + 1] : 0x110000, 0x10000)
+                if start < limit {
+                    for c in start..<limit { both[Int(c >> 6)] |= 1 << UInt64(c & 63) }
+                }
+                k += 2
+            }
+        }
+
+        // 2. Lead ccc != 0, one normalization data block (64 code points, the same blocking) at a time, each block computed once.
+        // The cache is an array indexed by norm block (113 distinct in the BMP), not a dictionary: dictionary operations made the build cost several times the rest of the root collator init.
+        var leadMasks = [UInt64?](repeating: nil, count: norm.data.count >> 6)
+        for b in firstBlock..<blockCount {
+            let normBlock = Int(norm.index[b])
+            if leadMasks[normBlock] == nil {
+                var m: UInt64 = 0
+                let base = normBlock << 6
+                for i in 0..<64 where (norm.data[base + i] >> 8) & 0xff != 0 { m |= 1 << UInt64(i) }
+                leadMasks[normBlock] = m
+            }
+            both[b] |= leadMasks[normBlock] ?? 0
+        }
+
+        // 3. The CE32 tags: prefix (both modes) and digit (numeric on), with the base data's tags where the tailoring has FALLBACK_CE32 — one 32-value trie block at a time. No cache: 1317 of root's 2024 BMP trie blocks are distinct, and a cache array over the trie data (~125k values) cost more to allocate than the scan. Branch-free, so the loop vectorizes.
+        func tagMasks(_ trie: UTrie2, _ offset: Int) -> (prefix: UInt32, digit: UInt32, fallback: UInt32) {
+            var prefix: UInt32 = 0, digit: UInt32 = 0, fallback: UInt32 = 0
+            for i in 0..<32 {
+                let ce32 = trie.data[offset + i]
+                let special = (ce32 & 0xff) >= CollationConstants.specialCE32LowByte
+                let tag = ce32 & 0xf
+                prefix |= (special && tag == CollationConstants.Tag.prefix.rawValue ? 1 : 0) << UInt32(i)
+                digit |= (special && tag == CollationConstants.Tag.digit.rawValue ? 1 : 0) << UInt32(i)
+                fallback |= (ce32 == CollationConstants.fallbackCE32 ? 1 : 0) << UInt32(i)
+            }
+            return (prefix, digit, fallback)
+        }
+        for chunk in (firstBlock << 1)..<(blockCount << 1) {
+            let c = UInt32(chunk << 5)
+            let d = tagMasks(dataTrie, dataTrie.bmpBlockOffset(c))
+            var prefix = d.prefix
+            var digit = d.digit
+            if let baseTrie, d.fallback != 0 {
+                let b = tagMasks(baseTrie, baseTrie.bmpBlockOffset(c))
+                prefix |= d.fallback & b.prefix
+                digit |= d.fallback & b.digit
+            }
+            let shift = UInt64((chunk & 1) << 5)
+            both[chunk >> 1] |= UInt64(prefix) << shift
+            numericOnly[chunk >> 1] |= UInt64(digit) << shift
+        }
+
+        // Block 0 = no unsafe code point; every other block gets its own pair of words.
+        var blocks = [UInt16](repeating: 0, count: blockCount)
+        var words: [UInt64] = [0, 0]
+        for b in firstBlock..<blockCount where both[b] | numericOnly[b] != 0 {
+            blocks[b] = UInt16(words.count >> 1)
+            words.append(both[b])
+            words.append(both[b] | numericOnly[b])
+        }
+        return (blocks, words)
+    }
+
+    /// The full check: the reference for both tables, and the answer for supplementary code points. Internal for RestartSafetyTests.
+    static func slowIsUnsafe(
         _ c: UInt32, numeric: Bool,
         dataUnsafe: UnsafeBufferPointer<UInt32>, baseUnsafe: UnsafeBufferPointer<UInt32>,
         dataTrie: UTrie2, baseTrie: UTrie2?, norm: NormalizationDataView
@@ -900,6 +1020,36 @@ struct RestartSafety {
     func isUnsafe(_ c: UInt32, numeric: Bool) -> Bool {
         if c < Self.latinTableLimit {
             return latinTable[Int(c)] & (numeric ? 2 : 1) != 0
+        }
+        return isUnsafeAboveLatin(c, numeric: numeric)
+    }
+
+    /// `isUnsafe` for a caller that holds the value BY POINTER (the fast-Latin path). It reads only the fields it needs through the pointer. A method call on `pointee` copies the whole struct to the stack before each call instead — the memory behind the pointer could change during the call — and that copy ran twice in every shared-prefix compare (all of paths), before AND after this table (technique log §51).
+    @inline(__always)
+    static func isUnsafe(_ s: UnsafePointer<RestartSafety>, _ c: UInt32, numeric: Bool) -> Bool {
+        if c < latinTableLimit {
+            return s.pointee.latinTable[Int(c)] & (numeric ? 2 : 1) != 0
+        }
+        return isUnsafeAboveLatin(s, c, numeric: numeric)
+    }
+
+    /// The pointer twin of the instance method below.
+    @inline(never)
+    static func isUnsafeAboveLatin(_ s: UnsafePointer<RestartSafety>, _ c: UInt32, numeric: Bool) -> Bool {
+        if c < 0x10000 {
+            let block = Int(s.pointee.bmpBlocks[Int(c >> 6)])
+            return (s.pointee.bmpWords[block &* 2 &+ (numeric ? 1 : 0)] >> UInt64(c & 63)) & 1 != 0
+        }
+        return slowIsUnsafe(c, numeric: numeric, dataUnsafe: s.pointee.dataUnsafe, baseUnsafe: s.pointee.baseUnsafe,
+                            dataTrie: s.pointee.dataTrie, baseTrie: s.pointee.baseTrie, norm: s.pointee.norm)
+    }
+
+    /// `isUnsafe` from `latinTableLimit` up. Out of line on purpose: inlined, the BMP lookup grew compareFastPath enough that the inliner left `min` there as a call, with extra spills — paths compare +3.2% (technique log §51). Here, `self` is passed by address.
+    @inline(never)
+    func isUnsafeAboveLatin(_ c: UInt32, numeric: Bool) -> Bool {
+        if c < 0x10000 {
+            let block = Int(bmpBlocks[Int(c >> 6)])
+            return (bmpWords[block &* 2 &+ (numeric ? 1 : 0)] >> UInt64(c & 63)) & 1 != 0
         }
         return Self.slowIsUnsafe(c, numeric: numeric, dataUnsafe: dataUnsafe, baseUnsafe: baseUnsafe,
                                  dataTrie: dataTrie, baseTrie: baseTrie, norm: norm)
