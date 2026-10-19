@@ -244,11 +244,11 @@ struct FastLatinSetup {
     let primaries: UnsafeBufferPointer<UInt16>
 }
 
-/// The fast-Latin setups for non-default options words, so bail-free compares need no scratch buffers at all.
+/// The fast-Latin setups for non-default options, keyed by `CollationFastLatin.primariesKey` (at most 10 keys), so bail-free compares need no scratch buffers at all.
 ///
 /// Readers take NO lock and touch only shared read-only memory: one acquiring load of the current snapshot pointer, then a scan of at most `capacity` entries. A collator is shared across threads (CollatorCache, and the engine's own storage cache), and the old lock on this path made 4 threads on one shared collator with non-default options ~7 times slower per compare than 4 collators (1037 against 144 ns); a lock-free read of a CLASS snapshot would not fix that, because each reader's retain contends on the shared reference count. An earlier version also had one slot, so threads with different options evicted each other (technique log §51).
 ///
-/// Writers serialize on the lock, build a new snapshot (the old entries plus one) and publish it with a releasing store. Snapshots and primaries are never freed before the cache, so a reader's snapshot stays valid. After `capacity` distinct words, a new word gets no setup and its compares take the CE pipeline: the same results, more slowly.
+/// Writers serialize on the lock, build a new snapshot (the old entries plus one) and publish it with a releasing store. Snapshots and primaries are never freed before the cache, so a reader's snapshot stays valid. After `capacity` distinct keys, a new key would get no setup and its compares would take the CE pipeline (the same results, more slowly); with at most 10 keys, that cannot happen.
 final class FastLatinCache: @unchecked Sendable {
     private let lock = PoolLock()
     /// Owns every snapshot and every primaries array; written only under the lock.

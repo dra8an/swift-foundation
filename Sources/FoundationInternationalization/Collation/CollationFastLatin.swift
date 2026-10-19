@@ -77,6 +77,13 @@ enum CollationFastLatin {
         }
     }
 
+    /// The bits of an options word that `getOptions` reads: alternate (shifted or not), maxVariable (only when shifted) and numeric. Its primaries and its miniVarTop depend on nothing else, and its result is `(miniVarTop << 16) | options`, so one computation serves every word with the same key: the setup cache is keyed by this, at most 10 keys per collator, where a cache keyed by the whole word filled up when callers used many option sets (technique log §51).
+    static func primariesKey(_ options: Int32) -> Int32 {
+        let shifted = options & CollationOptions.Bits.alternateMask
+        let maxVariable = shifted != 0 ? options & (7 << CollationOptions.Bits.maxVariableShift) : 0
+        return (options & CollationOptions.Bits.numeric) | shifted | maxVariable
+    }
+
     /// Computes the options value for compare() and fills the precomputed primary weights (LATIN_LIMIT entries). Returns -1 if the fast path is not supported for this data and these options. (CollationFastLatin::getOptions.)
     static func getOptions(
         table: UnsafeBufferPointer<UInt16>, scriptsData: CollationData,

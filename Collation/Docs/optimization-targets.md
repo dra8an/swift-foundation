@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1, C2, C3 and C7 (collator creation, lock-free fast-Latin cache) done, not committed; C3b kept eager (its cost is now once per process). Open: a full-matrix run on a quiet machine, C4–C6. Suite 1534/126 with `RestartSafetyTests` and `CollationConcurrencyTests`.**
+**Status (2026-10-19): C1, C2, C3, C7 committed (`6d6cc1f6`); C4 done, not committed; C3b kept eager (its cost is now once per process). Open: C5, C6. Suite 1537/127.**
 
 #### (a) The audit
 
@@ -3290,3 +3290,52 @@ bytes in both builds: compare cjk −10.5%, paths −12.0%, thai −6.0%, and
 every sortKey row −0.2..−1.8% (5/5). So the sortKey moves are code
 placement. Full matrix recorded in Docs/21 (run B, 2026-10-19 14:14):
 compare 0.53× cjk, 0.69× paths, 1.41× thai of ICU.
+
+#### (g) C4: the options word, once — and a bit-pattern guard
+
+**C4a — the fast-path guard.** The guard computed `options.icuOptions` (22
+instructions) only to compare it with the default word. Three shapes,
+counted in EngineBench (ascii compare, base 202.9):
+
+| guard | instructions | |
+|---|---:|---|
+| `options.icuOptions == word` (base) | 202.9 | |
+| `options == defaultOptions` (synthesized `==`) | 215.9 | **+13**: the compiler rebuilt the stored value byte by byte with `csel` |
+| `bits(of: options) == defaultBits` | **181.9** | −21: mask the register, load, compare — 6 instructions |
+
+`bits(of:)` pads the 7-byte struct with a zero byte and loads it as one
+`UInt64`. All seven fields are one byte (enum tags, Bools that the compiler
+keeps canonical — its mask `0x0001_0101_FFFF_FFFF` keeps bit 0 of each Bool
+byte), so there is no padding inside, and equal options ⇔ equal patterns.
+Guards: `eligible` requires `MemoryLayout<(CollationOptions, UInt8)>.size ==
+8` (a constant; a future field turns the fast path OFF instead of matching
+wrong options), and `CollationOptionsBitsTests` checks the 7-byte size and
+that the 960 option combinations give 960 distinct patterns, equal for equal
+options. `strength != .identical` moved into `eligible`.
+
+**C4b — the slow path.** `compareSlowPath` computes the word once and passes
+it to `compareBody` (thai: 3 computations → 1).
+
+Instruction counts (HEAD `39f5b948` → C4): ascii 202.9 → 181.9, latin
+203.1 → 183.6, cjk 309.1 → 288.1, paths 300.2 → 276.2, thai 3120.6 →
+3076.8; sortKey identical.
+
+A/B against `39f5b948` (5 rounds, 2026-10-19 14:50, load 8–12, all 5/5):
+**ascii −7.7% (15.0 → 13.6 ns, 1.61× → ~1.46× of ICU)**, latin −3.4%, cjk
+−4.5%, paths −5.4%, thai −1.7%. sortKey −2.0..0% with identical counts
+(placement).
+
+**The fast-Latin cache key (a C7 defect the suite exposed).** With the root
+collator shared across the whole test process, the cache keyed by the WHOLE
+options word filled its 16 slots, and later words took the CE pipeline:
+`singlePassWriterOrdersLikeCompare` (240 option combinations) went from ~14 s
+to 51.9 s inside the full suite. But `getOptions` reads only alternate,
+maxVariable (when shifted) and numeric; its result is `(miniVarTop << 16) |
+options`. So the cache is now keyed by those bits
+(`CollationFastLatin.primariesKey`, at most 10 keys per collator — it cannot
+fill), and each call puts its own word into bits 15..0. A test checks, for
+all 960 combinations on root, zh, ja, ru, el and de-phonebook, that
+`getOptions` on the key gives the same primaries and, after the word
+replaces bits 15..0, the same packed options as on the word. The writer test
+alone: 14.5–15.4 s against 16.9–17.2 s with whole-word keys (interleaved
+runs). Table 1 counts unchanged; TSan clean. Suite 1537/127.
