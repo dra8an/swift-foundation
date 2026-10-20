@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 (CEBuffer) done, not committed. Next: START HERE item 2 (the `compareFastPath` frame). Suite 1537/127.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 (`compareFastPath` inlined) done, not committed. Suite 1537/127.**
 
 #### (a) The audit
 
@@ -3384,3 +3384,37 @@ build. Fixed: the clones mirror the new bit-pattern guard; the thai-ladder
 passes a hoisted word. The sk-ladder keeps one `CEBuffer` per line in a
 small class box for the shipping writer. Lesson: build every tool under
 `Collation/Tools/` before a commit that changes an internal signature.
+
+#### (i) START HERE item 2: `compareFastPath` inlined into `compare`
+
+A trace of one ascii compare (197 instructions, ICU ~175) showed three call
+levels — `compare` → `compareFastPath` → `compareUTF8` — each saving and
+restoring up to 12 registers, plus glue: `skipWalk` passed through the stack
+(`strb wzr, [sp, #0xf]`, then a pointer argument) and the `Order?` result
+tested again in `compare`. Counts from the FIRST instruction of `compare`
+(`breakpoint set -n compare -K false`, helper `.build/insn/runc.sh`; earlier
+counts started after the prologue):
+
+| compare | `af2bec52` | A: `@inline(__always)` on `compareFastPath` | B: A + `compareUTF8` inlined |
+|---|---:|---:|---:|
+| ascii | 219.9 | **205.0** | 207.6 |
+| latin | 221.6 | **205.1** | 208.1 |
+| cjk | 326.1 | **311.8** | 313.8 |
+| paths | 314.2 | **305.2** | 308.2 |
+| thai | 2772.0 | **2740.0** | — |
+
+B adds spills (register pressure) and loses to A; A ships.
+
+A/B against `af2bec52` (5 rounds, 2026-10-19 17:35, load 8–12, all 5/5):
+**ascii −22.5% (13.6 → 10.5 ns), latin −22.9% (14.1 → 11.0 ns)**, cjk
+−5.3%, paths −3.0%, thai −0.6%; sortKey flat. Far more than 15 instructions
+predict, so two artifacts were ruled out: the bench loop still calls
+`compare` out of line (10 call sites in both binaries — no hoisting), and the
+A/B with every function aligned to 64 bytes in both builds gave the same
+numbers (ascii −22.5%, latin −22.9%). Likely cause, not proven: the removed
+work was on the critical path — the `skipWalk` byte made a store → callee
+store → load round trip through memory, and the 12 restores ran right
+before the result test. Suite 1537/127; cmp-ladder 0 bail-outs, 0 wrong.
+
+ascii compare is now ~10.5 ns against ICU's 9.3 (~1.13×), and ~1 ns of the
+difference is the API's call shape (Docs/27).

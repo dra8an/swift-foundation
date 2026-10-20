@@ -285,6 +285,9 @@ public struct RootCollator: @unchecked Sendable {
     static var optionBitsAreExact: Bool { MemoryLayout<(CollationOptions, UInt8)>.size == MemoryLayout<UInt64>.size }
 
     /// The default-options UTF-8 fast-Latin byte path (the byte-level identical-prefix scan of ICU's UTF-8 doCompare + CollationFastLatin::compareUTF8): native Swift strings expose contiguous UTF-8, so characters are read as raw bytes with no scalar decoding. Returns nil when the options don't match the pre-baked default setup or the byte path bails (non-Latin text, unsafe restart, non-contiguous storage) — the caller then runs the throwing pipeline.
+    ///
+    /// Force-inlined into `compare(_:_:options:)`: out of line, it was a second frame that saved and restored 12 registers on every call, with `skipWalk` passed through the stack and the `Order?` result tested again by the caller — 9 to 16 instructions per compare. Inlining `compareUTF8` as well was 2–3 instructions worse (more spills) (technique log §51).
+    @inline(__always)
     private func compareFastPath(
         _ left: String, _ right: String, options: CollationOptions,
         skipWalk: inout Bool
