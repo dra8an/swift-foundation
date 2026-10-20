@@ -429,6 +429,13 @@ public struct RootCollator: @unchecked Sendable {
         // The options word, computed once for the whole slow path (22 instructions; compareBody used to compute it again — technique log §51).
         let word = options.icuOptions
         var triedFastLatin = false
+        // The gate is checked here, before the call: computing the setup and pinning the strings first cost CJK sorts +2–4% for a pass that always bails on them.
+        if options.strength == .identical,
+           (left.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
+           (right.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
+           let decided = identicalStrengthTertiaryPass(left, right, options: options) {
+            return decided
+        }
         if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
             if word == defaultFLWord, defaultFLPackedOptions >= 0 {
                 // The caller's fast path already ran for these options — but only if both strings had contiguous UTF-8 (bridged strings skip the byte path; compareBody's scalar fast-Latin should still get its chance on those).
@@ -458,6 +465,31 @@ public struct RootCollator: @unchecked Sendable {
         return try compareBody(
             left, right, options: options, word: word, triedFastLatin: triedFastLatin,
             restart: restart)
+    }
+
+    /// Identical strength — `.forcedOrdering`, and so `String.StandardComparator.localizedStandard` — skips the byte fast-Latin path. The levels are compared in order and the first difference decides, so a non-zero result at tertiary strength IS the identical-strength result; only ties need the quaternary and identical levels. This byte fast-Latin pass at tertiary settles almost every compare of distinct Latin strings; nil (a tie, a bail-out, no contiguous UTF-8) sends the caller on to the full path, unchanged. (`.localizedStandard` compares were ~22 ns and ~220 instructions slower than `localizedStandardCompare`; technique log §51.)
+    ///
+    /// Out of line, with its own fastLatinUTF8 call site: merged into compareSlowPath's byte pass, it changed the code of every non-default-options compare (+1–3% on `localizedStandardCompare` and the options compares). The caller runs it only when both strings start with a fast-Latin lead byte: CJK and Thai text always bailed here and paid for the attempt; a non-Latin start loses only this optimization.
+    @inline(never)
+    private func identicalStrengthTertiaryPass(_ left: String, _ right: String, options: CollationOptions) -> Order? {
+        let table = fastLatinTable
+        guard !table.isEmpty else { return nil }
+        var tertiary = options
+        tertiary.strength = .tertiary
+        guard let setup = resolveFastLatinSetup(tertiary.icuOptions), setup.packedOptions >= 0 else { return nil }
+        let safety = restartSafetyPtr
+        let numeric = options.numeric
+        let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
+            right.utf8.withContiguousStorageIfAvailable { rBytes in
+                var mismatch = -1
+                return RootCollator.fastLatinUTF8(
+                    lBytes, rBytes, table: table, primaries: setup.primaries,
+                    options: setup.packedOptions, numeric: numeric, safety: safety,
+                    mismatch: &mismatch)
+            } ?? nil
+        } ?? nil
+        guard let fast, fast != CollationFastLatin.bailOutResult, fast != 0 else { return nil }
+        return fast < 0 ? .ascending : .descending
     }
 
     /// Shared compare body: identical-prefix skip, fast-Latin scalar path, CE pipeline, and identical level. Split out so compareClassic stays small. `word` is `options.icuOptions`, computed once by the caller. `restart` is the scalar count from the byte scan (restartScalarCount), or -1: then the body walks the prefix itself.

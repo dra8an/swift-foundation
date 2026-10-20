@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) committed and pushed (`cfd2ab9d`); baseline recorded 2026-10-20 14:35 with 14 Table 2 APIs; (l) thai restart done, not committed. Suite 1540/128.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) committed and pushed (`cfd2ab9d`); baseline recorded 2026-10-20 14:35 with 14 Table 2 APIs; (l) committed (`ed52658e`); (o) identical-strength byte pass done, not committed. Suite 1542/129.**
 
 #### (a) The audit
 
@@ -3610,3 +3610,61 @@ elements per pass, load ~58 (approximate):
    -no-WMO, which may leave `CollationOptions.from` unspecialized there.
 3. `KeyPathComparator` costs ~100 ns more per comparison than
    `SortDescriptor` over the same key path — presumably the key-path read.
+
+#### (o) `.localizedStandard`: identical strength took the slow path
+
+**Cause.** `String.StandardComparator.localizedStandard` carries
+`.forcedOrdering`, which `CollationOptions.from` maps to strength
+`.identical` (Docs/19); `localizedStandardCompare` uses `.secondary`. The
+engine sent every identical-strength compare past both fast-Latin paths
+(`options.strength != .identical`), so the comparator took compareBody's
+scalar fast Latin (+123, +36 to copy its Sides) instead of the byte path
+(77). Counts of one call (BenchFoundation -no-WMO, `-g`, ascii, after 1000
+warm-up calls): `localizedStandardCompare` 1054, the comparator 1274. Time:
+73 against 95 ns per call (load ~68).
+
+**Change (engine).** The levels are compared in order and the first
+difference decides, so a non-zero tertiary result IS the identical-strength
+result; only ties need the quaternary and identical levels. For identical
+strength, `compareSlowPath` first calls `identicalStrengthTertiaryPass`: a
+byte fast-Latin pass at tertiary; a non-zero result returns, a tie or a
+bail-out continues to compareBody unchanged.
+
+Three shapes, A/B'd in BenchFoundation (WMO on both sides — a fresh release
+`-no-WMO` build of swift-syntax fails with this toolchain, "unable to open
+dependencies file"; the runbook allows WMO on machine 2), 5 rounds:
+
+| shape | `.localizedStandard` sort, ascii / latin / cjk | non-identical rows (`localizedStandardCompare`, options compares) |
+|---|---|---|
+| one merged byte pass in compareSlowPath | −8.5% / −11.9% / **+6.8%** | **+1..+3%**, mostly 5/5 |
+| own `@inline(never)` method, gate inside it | −10.8% / −13.3% / **+4.1%** | flat |
+| **own method, gate before the call (shipped)** | **−9.6% / −12.0% / −0.2%** | flat; two rows +1.2..+1.7% (~1 ns), likely placement, not checked with aligned builds |
+
+The gate: both strings start with a fast-Latin lead byte (`utf8.first` ≤
+0xC5). CJK and Thai text always bailed in the pass; checking inside the
+method still paid the call, the tertiary word, the setup lookup and the
+pinning (+2–4% on CJK sorts). The non-identical path is byte for byte the
+same as before. `SortDescriptor` −6.0% / −7.1% and `KeyPathComparator`
+−5.0% / −6.6% on ascii / latin (both use `.localizedStandard`); cjk flat.
+
+Counts of one call (BenchFoundation -no-WMO, `-g`, an earlier shape with the
+same pass): the comparator 1274 → 1043.
+
+**Tests.** `IdenticalStrengthTests`: compare() at identical strength against
+identical-strength sort-key order for the fuzz corpus, every 7th riwords
+pair and built ties (zero-width space, soft hyphen, canonical equivalents),
+numeric off and on; and `.localizedStandard` against the engine. The
+mutation "return .same on a tertiary tie" fails it (6 issues). Suite
+1542/129.
+
+**A race the new test exposed — a test-harness issue, not a product bug.**
+The comparator test first failed `wrapperAppliesTailoringDefaults` 1 run in
+8: that test switches the current locale with the test-only
+`LocaleCache.resetCurrent(to:)` ("not safe to use in concurrent testing",
+its own documentation), which changes the locale WITHOUT a new generation.
+A concurrent read between its `reset()` and its `resetCurrent` stored the old
+locale's collator under the new generation. In production a locale change
+goes through `LocaleNotifications.reset()`, which clears the locale cache
+before it bumps the generation, so the CollatorCache stays correct. Fix: the
+new test runs on the preferences actor (`usingCurrentInternationalizationPreferences`);
+12 of 12 runs then passed.
