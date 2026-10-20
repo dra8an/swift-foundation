@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-## START HERE (current as of 2026-10-16 — everything below this section is history)
+## START HERE (current as of 2026-10-20 — everything below this section is history)
 
 **If anything in the history below contradicts this section, this section
 wins.** The history has stale rules and numbers on purpose; it is the record.
@@ -9,35 +9,43 @@ wins.** The history has stale rules and numbers on purpose; it is the record.
 (ICU4C collation v2 design, ICU4X model) inside swift-foundation:
 `Sources/FoundationInternationalization/Collation/`. Repo
 `~/Projects/dra8an/swift-foundation-collation`, branch `port/collation`,
-remote `origin` = github.com/dra8an/swift-foundation (never push
-`upstream`). The tools and docs live under `Collation/`.
+remote `origin` = `git@github-personal:dra8an/swift-foundation.git` (an SSH
+alias to ssh.github.com:443 — see "Network" below; never push `upstream`,
+which this repo does not even have). The tools and docs live under
+`Collation/`.
 
-**State at the time of writing.** This section was written on top of HEAD
-`18d752f4` and committed after it, together with the doc fixes of the same
-handoff; at that point the tree was clean and the branch about 8 commits ahead
-of `origin` (the decimal benchmark output, the §50 compare work, docs).
-**Verify with git; do not trust this paragraph.** A git worktree
-`../collation-baseline` exists, detached at `b31aeea6` (the A/B baseline of
-the last round); move it with `git -C ../collation-baseline checkout --detach
-<commit>` or remove it with `git worktree remove ../collation-baseline`.
-Suite gate: **1529 tests in 124 suites** — `swift test` prints three summary
-lines (45/5, 543/79, 941/40); add them up.
+**State at the time of writing (VERIFY WITH GIT — do not trust this
+paragraph).** HEAD `a92f217d` plus the handoff commit that adds this section
+and the helper scripts under `Collation/Tools/insn-count/` and
+`Collation/Tools/ab/`; tree clean; about 6 commits ahead of `origin` (not
+pushed: `d3c9eed9` … `a92f217d` and the handoff). The A/B worktree
+`../collation-baseline` is detached at `a421d2c2`; it holds an EngineBench
+build (`.build/engine-bench/...`) and a WMO BenchFoundation build in
+`.build-bf/` (its `.build/` release state for swift-syntax is broken — see
+"How to measure"). Move it with `git -C ../collation-baseline checkout
+--detach <commit>`; remove it with `git worktree remove ../collation-baseline`.
+Suite gate: **1542 tests in 129 suites** — `swift test` prints three summary
+lines (45/5, 556/84, 941/40); add them up.
 
 **Read next, in this order:**
-1. The memory index (loaded automatically) and its feedback files — they hold
-   the user's working rules.
-2. `Collation/Docs/optimization-targets.md` **§50** (the compare ladder, Fix
-   A3, the instruction count, the restart-safety fix) and **§49** (the sortKey
-   ladder refresh, the writer tail, the dead writers moved to tools). Then the
-   ALLOCATION/RESOLUTION HUNT note at the top of that file.
-3. `Collation/Docs/21-foundation-api-benchmark.md` — the current baseline.
+1. The memory index (loaded automatically) and ALL its feedback files — the
+   user's working rules. New or changed on 2026-10-20:
+   `feedback-no-silent-wait-loops`, `feedback-no-foundationessentials-changes`,
+   `project-array-vs-pointer`, `project-next-steps-2026-10-20`,
+   `reference-github-ssh-443`.
+2. `Collation/Docs/optimization-targets.md` **§51, all of it, (a)–(o)** — the
+   technique log of the 2026-10-16…20 round (every change, every rejected
+   variant, every measurement). Then §50 (g) (the instruction-count method)
+   and the ALLOCATION/RESOLUTION HUNT note at the top of the file.
+3. `Collation/Docs/21-foundation-api-benchmark.md` — the current baseline
+   (2026-10-20 14:35), including "The sort rows, split".
 4. `Collation/Docs/27-benchmark-runbook.md` — how to measure, the harness
-   cost, the wake rule, the sanity gates.
+   cost, the gates.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-20 14:35,
-`cfd2ab9d`, ns per call, ours / ICU):**
+**Current engine numbers (Table 1, EngineBench vs ICU C, baseline 2026-10-20
+14:35 at `cfd2ab9d`, ns per call, ours / ICU):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
@@ -47,170 +55,196 @@ lines (45/5, 543/79, 941/40); add them up.
 | paths | 18.5 / 29.7 | 0.62× | 332.5 / 366.5 | 0.91× |
 | thai | 198.4 / 170.7 | 1.16× | 176.1 / 154.6 | 1.14× |
 
-(§51 of the technique log has the changes since 2026-10-16. Table 2 now has
-14 API families, including four sort APIs.)
+At the start of the round (2026-10-16) the ranges were compare 0.63–1.62×
+and sortKey 1.03–1.50×. **Since the 14:35 baseline, two code changes landed
+that no matrix has recorded yet:** §51 (l) thai compare −3.5% in an A/B
+(196.7 → 189.6 ns, ~1.11×), and §51 (o) identical-strength compares
+(`.localizedStandard` sorts −10..−12% on Latin; Table 1 unaffected). Run the
+full matrix again before you quote absolute numbers.
 
-Table 2 (Foundation APIs vs system ICU) is ahead everywhere, but mostly
-because it skips the system NSString → CoreFoundation → C++ bridge. **Never
-use Table 2 as evidence about the engine.**
+Table 2 (Foundation APIs vs system ICU, now 14 API families including an
+options compare and four sort APIs, floor 1.54×) is ahead everywhere, but
+mostly because it skips the system NSString → CoreFoundation → C++ bridge.
+**Never use Table 2 as evidence about the engine; never cite it as
+consolation for a Table 1 gap.**
 
 **Hard rules from the user (also in memory):**
 - **Commit and push only when the user says so, in that message. The user
   runs every git write command.** A global hook,
-  `~/.claude/hooks/block-git-write.sh`, blocks `git add`, `git commit`,
-  `git push` and other git writes for you — and it matches the TEXT, so a
-  shell command that only contains those words (in a grep, an echo, a
-  heredoc) is blocked too. Write docs that mention them with the file tools,
-  not through the shell. (`.claude/settings.local.json` has `ask` rules for
-  commit and push; the old "deny rule" in the history below is stale.) Give
-  each commit as two lines: an add with the exact files, and a commit with a
-  ONE-LINE `-m` message starting "Collation: ", with no backticks or `$`. No
-  long messages, no message files, no heredocs. Before a push, verify for
-  the user: the commits in `origin/port/collation..HEAD`, the attribution
-  grep (`claude|co-authored|anthropic` must count 0), and author/committer
-  `dra8an <chonbey@hotmail.com>`; the user then pushes with the `!` prefix.
+  `~/.claude/hooks/block-git-write.sh`, blocks git writes for you — and it
+  matches the TEXT of a shell command, so a command that only contains those
+  words (a grep, an echo, a heredoc, a Python script) is blocked too; write
+  docs that mention them with the Write/Edit tools. Give each commit as two
+  lines: the add with the exact files, and the commit with a ONE-LINE `-m`
+  message starting "Collation: ", with no backticks or `$`. No long messages,
+  no message files, no heredocs. Before a push, verify for the user: the
+  commits in `origin/port/collation..HEAD`, the attribution grep
+  (`claude|co-authored|anthropic` must count 0), author/committer
+  `dra8an <chonbey@hotmail.com>`, and that the remote tip is an ancestor of
+  HEAD (fetch first). The user pushes with the `!` prefix.
 - **Ask before anything long-running, hard to stop, or with wide effect.**
-  Stop at once when the user says stop. Do not suggest stopping work.
+  Stop at once when the user says stop. Never suggest stopping work.
+- **Never sit in a polling loop** (for example `sleep` until the load drops).
+  Check the load ONCE; if acceptable, run — the system-ICU control decides
+  whether a matrix run is valid, and interleaved A/Bs are valid for direction
+  under load. If the machine is clearly too busy, say so in one line and do
+  useful work meanwhile; run unavoidable waits in the background.
 - **Work solo** (no Workflow tool, no multi-agent fan-out) unless the user
   asks for it.
+- **Scope: the collation port only.** Never propose changes to
+  FoundationEssentials (an `@inlinable` on `sorted(using:)` was called "a
+  non-starter"); record such costs as observations. The
+  FoundationInternationalization files that the port wires
+  (String+Collation.swift, StringProtocol+Locale.swift,
+  String+SortComparator.swift) are in scope.
 - **Do not create directories outside the project** without approval; keep
   artifacts in `.build/` (git-ignored) or the approved worktree. `/tmp` is
-  cleaned between sessions.
+  cleaned between sessions. `~/.ssh` is not readable for you.
 - **A/B baselines come from a git worktree, never from a stash.** Verify both
   sides before you run (a source grep, the binary hash, a symbol or a count).
-  Do not leave copies of uncommitted files in the worktree.
 - **Benchmarks:** thai at 10 repetitions maximum. Wait at least 10 minutes
-  after a wake from sleep AND until the 5-minute load is near the resting
-  level (about 8–15 on this machine, and close to the 1-minute value — a
-  5-minute value far above the 1-minute one means a burst is still running);
-  check the wake with
-  `pmset -g log | grep -E " (Sleep|Wake|DarkWake) " | tail -3`. Run under
-  `caffeinate -i`. Check the system-ICU control first — it decides, not the
-  load. Record two runs that agree.
+  after a wake from sleep (`pmset -g log | grep -E " (Sleep|Wake|DarkWake) "
+  | tail -3`). Run under `caffeinate -i`. Record two matrix runs that agree.
 - **Precision means removing OUR harness overhead — never making the ICU
-  reference slower** (for example, no UTF-16 conversion inside ICU's timer).
+  reference slower.**
+- **Fix bugs you find in the same pass** — never park them behind a
+  known-issue marker; report the cost and let the user judge.
 - **Writing:** ASD-STE100 Simplified Technical English for all user-facing
-  text, docs, and comments. Say "Swift implementation", never "pure Swift".
+  text, docs and comments. Say "Swift implementation", never "pure Swift".
   Plain terms ("ICU reference answers", not "oracle"). Report failures and
-  wrong conclusions plainly.
+  wrong conclusions plainly, and correct your own wrong numbers at once.
 
 **How to measure:**
-- Full matrix: `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
+- **Full matrix:** `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
   ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i Collation/Tools/run_benchmarks.sh 3`
-  (about 4–7 minutes). Gates: system-ICU `localizedCompare` about
-  194/365/369/300/494; ICU C about 9.3/10.1/40.5/29.7/173.8 compare.
-- A/B of the engine: `Collation/Tools/build_engine_bench.sh` in each tree
-  (it prints the binary path,
-  `.build/engine-bench/.build/out/Products/Release/EngineBench`), then 5
-  interleaved rounds with alternating order; report the min, the mean of
-  (variant − base), and the per-round signs.
-- Ladders: `build_sk_ladder.sh` (sortKey stages) and `build_cmp_ladder.sh`
-  (compare stages, removal clones, a count mode). Ladder differences are
-  CEILINGS; confirm every ladder finding with an A/B of the real entry.
-- **Instruction count** (exact, load-independent; use it below ~1 ns):
-  `Collation/Tools/insn-count/` (`count_insns.py` with the `count_insns` and
-  `trace_insns` commands, `icu_count.c`; usage in their headers). Use Xcode's
-  lldb (`/Applications/Xcode26.app/Contents/Developer/usr/bin/lldb`; the
-  swiftly toolchain's lldb lacks its Python framework). The release builds
-  are stripped, so build the target with debug info: for EngineBench, run
-  `build_engine_bench.sh` first, then `(cd .build/engine-bench && swift build
-  -c release -Xswiftc -g)` — the names then come from the `.dSYM`; `-g` does
-  not change the generated code. In EngineBench, break on `compareFastPath`
-  (`breakpoint set -r compareFastPath`; the public `compare` is inlined into
-  the loop) and run with 1 repetition: one pass is (lines − 1) calls, so
-  `breakpoint modify -i <3 × (lines − 1)> 1` skips the warm-up pass and two
-  timed passes (597 for ascii and latin, 1314 for paths); then
-  `count_insns <label> <file>` + `continue`, 10 times. **Count in the binary
-  that shows the timing effect** — the ladder and EngineBench generate
-  different code.
+  (about 6–8 minutes now). Gates: system-ICU `localizedCompare` about
+  194/365/369/300/494; ICU C about 9.3/10.1/40.8/29.7/171 compare. Record
+  run B in Docs/21 (and START HERE, the runbook ratio line, §51).
+- **Engine A/B:** `Collation/Tools/build_engine_bench.sh` in each tree, then
+  `Collation/Tools/ab/engine_ab.sh <base> <variant> <out> 5` and
+  `python3 Collation/Tools/ab/engine_ab_report.py <out>` (min, mean of
+  variant − base, per-round signs). When a change moves rows whose code did
+  not change, rebuild both sides with `-Xswiftc -Xllvm -Xswiftc
+  -align-all-functions=6 --scratch-path .build-al` and A/B again: if the
+  difference goes away, it is code placement.
+- **Foundation (Table 2) A/B:** `python3 Collation/Tools/ab/foundation_ab.py
+  <base BenchFoundation> <variant> 5`. A FRESH release build with
+  `-no-whole-module-optimization` fails in swift-syntax ("unable to open
+  dependencies file") — build both sides with normal WMO into fresh scratch
+  paths (`--scratch-path .build-wmo` here, `.build-bf` in the worktree); the
+  runbook allows WMO on this machine.
+- **Instruction counts** (exact, load-independent — the main tool of this
+  round): Xcode's lldb, a `-g` build (`build_engine_bench.sh`, then
+  `(cd .build/engine-bench && swift build -c release -Xswiftc -g)`).
+  `Collation/Tools/insn-count/count_compare.sh <EngineBench> <corpus> <skip>
+  <out> [n]` counts whole `compare(_:_:options:)` calls from the first
+  instruction (skip 597 for ascii/latin/cjk, 1314 for paths, 200 for thai);
+  `count_calls.sh` counts any function (sortKey: the mangled-name spec in its
+  header; skip 600; drop the first 2 calls — the bench grows its key array);
+  `summarize.py` splits by function or line; `trace_lines.py` traces one call
+  with source lines; `icu_count.c` counts ICU (`ucol_strcollUTF8`) on the same
+  pairs. lldb pitfalls: `-r` regexes do not match names with argument types;
+  `-a` addresses miss (ASLR); a copied binary cannot find its resource bundle
+  (run variants from their build folder); counting 60 thai pairs takes about
+  15 minutes, so run long counts in the background. **Counts find work; only
+  the A/B tells its value** — on thai, −17% instructions gave −3.5% time
+  (§51 (l)).
+- **Ladders** (`build_sk_ladder.sh`, `build_cmp_ladder.sh`, thai-ladder,
+  disc-probe): they copy the engine sources and widen private members in the
+  copy. **Build all four after any change to an internal signature** — C4
+  broke two of them unnoticed until the next round (§51 (h)).
 
 **The ICU checkout is not 79.0.1.** `~/Projects/Unicode/icu-DraganBesevic-2`
 is on the CLDR 49 integration branch with ICU 79.1 and Unicode 18 data. Its
 speed equals 79.0.1, so Table 1 stays comparable, but its KEYS differ from
-our bundled 79.0.1 data (all 42 key files differ; the order matrices match).
-**Never generate golden files from it.** In that checkout, build and test
-in-source only, never `build/icuhost` (see `~/CLAUDE.md`).
+our bundled 79.0.1 data. **Never generate golden files from it.** In that
+checkout, build and test in-source only, never `build/icuhost` (see
+`~/CLAUDE.md`).
 
-**Compare fast path (where the current work is).** `compare(_:_:options:)` →
-`compareFastPath` (the guard; both strings pinned through nested
-`withContiguousStorageIfAvailable` closures) → `fastLatinUTF8` (identical
-prefix scan; the restart-safety check only after a shared prefix) →
-`CollationFastLatin.compareUTF8`. The default setup is in one box
-(`DefaultFastLatinSetup`, `defaultFLSetupPtr`); `RestartSafety` has its OWN
-box (`restartSafetyPtr`) and is passed BY POINTER, with a 768-byte table for
-code points below U+0300.
+**The code as it is now (details in §51):**
+- **compare:** `compare(_:_:options:)` with `compareFastPath` force-inlined
+  (§51 (i), ascii/latin −22%). The guard compares the options as one 64-bit
+  pattern (`bits(of:)`, `optionBitsAreExact`; §51 (g)). `fastLatinUTF8` does
+  the prefix scan and calls `CollationFastLatin.compareUTF8`; on a bail,
+  `quickCJKDispatch`, then `restartScalarCount` (ICU's backup rule on the
+  pinned bytes, §51 (l)) hands a restart count to `compareSlowPath` →
+  `compareBody(restart:)`. Identical strength first tries
+  `identicalStrengthTertiaryPass` (§51 (o)). `RestartSafety` has a 768-byte
+  table below U+0300 and a two-level BMP table above it; pointer callers use
+  the static `isUnsafe(_:_:numeric:)` (no struct copy; §51 (d)).
+- **sortKey:** `ScratchBuffers.resetCollectAndWriteKey` runs reset, CE
+  production and the writer under ONE access scope; the writer builds the
+  whole key in its region and writes it with one `replaceSubrange` (§51 (j)).
+  CEs live in `CEBuffer` (a `~Copyable` buffer with an explicit count; §51
+  (h)); `ScratchBuffers.left/right` are `UnsafeMutablePointer<CEIterator>`,
+  reached through `.pointee` — no dynamic exclusivity checks (§51 (k)).
+- **Creation and caches:** `CollationData.root()`, `rootICU4X()` and
+  `NormalizationData.standard()` are parsed once per process (`static let`);
+  `RootCollator()` and `RootCollator(tailoringNamed:)` share one Storage per
+  name (§51 (e)). `FastLatinCache` is lock-free for readers, keyed by
+  `CollationFastLatin.primariesKey` (at most 10 keys; §51 (e), (g)).
+- **Tests added this round:** RestartSafetyTests, CollationConcurrencyTests
+  (also run under `swift test --sanitize=thread --scratch-path .build/tsan`),
+  CollationOptionsBitsTests, RestartBackupTests, IdenticalStrengthTests.
+  Tests that read the current locale heavily must run on the preferences
+  actor (`usingCurrentInternationalizationPreferences`): the test-only
+  `LocaleCache.resetCurrent(to:)` races with concurrent readers (§51 (o)).
 
-**How paths compare went from 1.38× to 0.78× of ICU (§50 (g)):** paths pairs
-always share a prefix, so every paths compare ran the restart-safety check on
-two characters; the shortcut threshold was U+0034, not U+0300, so each check
-on a letter took the slow path (~100 instructions). The table below U+0300
-made it one load. The ascii and cjk gains came from the second fix: the
-compiler had loaded all of `RestartSafety` on every call; the pointer stops
-that.
+**NEXT TASK (agreed with the user 2026-10-20): the generic String conversion
+in the `localized*` String methods.** In
+`Sources/FoundationInternationalization/String/StringProtocol+Locale.swift`,
+the methods (`localizedCompare`, `localizedStandardCompare`,
+`localizedCaseInsensitiveCompare`, …) are generic over `StringProtocol` and
+not `@inlinable`, so callers in other modules run the unspecialized code; its
+`String(self)` / `String(aString)` go through the generic
+`Sequence`-of-`Character` String initializer. An instruction count of one
+`localizedStandardCompare` call (BenchFoundation `-no-WMO` `-g`, ascii) put
+~240 of its ~1054 instructions there (116 + 100 + 24 Character value witness,
+plus ~30 `___chkstk_darwin`) — the largest single cost left in Table 2.
+Start with counts (both String and Substring arguments), find a conversion
+that is cheap for `String` and correct for every StringProtocol type, keep
+the public signatures unchanged, then A/B with `foundation_ab.py`. Stay
+inside FoundationInternationalization.
 
-**NEXT TASK (the user's request, 2026-10-16): apply the two §50 (g) patterns
-elsewhere, and look for similar defects.** The paths win came from two
-patterns, not from one place:
-- **Pattern 1 — a per-character check that searches where a small table
-  would do.** `isUnsafe` had a shortcut threshold far too low (U+0034), so
-  letters took two binary searches + a ccc lookup + a trie lookup. Look for
-  every check per character or per scalar whose fast case is rare in
-  practice, and every "safe below" / "minimum" constant: is its real value
-  what the comment says? Candidates found by a scan (verify each):
-  the NFD front end (`NFDIterator`: `leadCCC`, `isInert`, `quickDecomp` per
-  scalar; §36 put `isInert` at ~0.9 ns per scalar; it runs in every sortKey
-  and in every compare that leaves the fast path); the per-character trie
-  lookups of the CE iterator (`simpleCEs` covers only ASCII and the Thai
-  block — note that §12, a combining-mark CE table to U+036F, was TRIED and
-  REJECTED: −2–3% latin sortKey for +6 KB); the boundary checks of the search
-  entries (`CollationSearch.swift`) at every candidate position.
-- **Pattern 2 — a large struct loaded (or copied) on every call although only
-  a rare branch uses it.** Confirmed candidate: `quickCJKDispatch` calls
-  `quickCJKPrimary(lc, setup.pointee)` and `quickCJKPrimary(rc,
-  setup.pointee)` — `QuickCJKSetup` (two `UTrie2`s, two buffers) passed BY
-  VALUE out of a raw pointer, the shape that cost paths +2.7% in Fix A; it is
-  on the cjk compare path. Also check `compareBody` (the slow path calls
-  `restartSafety.isUnsafe` from the storage `let`) and the search entries
-  for the same eager copy.
-- **Method:** the instruction count in EngineBench finds both patterns — a
-  trace (`trace_insns`) shows a block of loads/stores to the stack at the top
-  of a function, and per-line counts show a search where a table would be
-  one load. Then an A/B of the real entry, as always. Report every candidate
-  with its count before you change code.
+**Open items after that:**
+1. Run the full matrix to record (l), (o) and the next change.
+2. The FIRST `RootCollator()` in a process takes 7–22 ms (one-time; the first
+   resource lookup and file reads) — split it.
+3. §51 (o) left about +1 ns on two Table 2 rows (`localizedStandardCompare`
+   latin, the options compare) whose code did not change — likely placement;
+   not verified with aligned builds.
+4. Writer and CE-production instructions remain (stack spills, ~70 per ASCII
+   character) — the kind §36 found nearly free in time; A/B before believing
+   any count.
+5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
+   user's decision.
 
-**Open engine items, in the order I would take them:**
-1. The guard computes `options.icuOptions` on every call: 22 instructions.
-2. About 90 instructions per call in `compareFastPath` have no source line
-   (prologue/epilogue, a 720-byte frame, 12 saved registers) — look at them
-   with `trace_insns` before you guess.
-3. ~~Fix B: the no-options `compare(_:_:)` could skip the options check.~~ **DROPPED 2026-10-20:** after C4 the check is ~6 instructions (≤8 with the `defaultOptions` load, ~0.4% of `localizedCompare`, the only Foundation caller of that entry; EngineBench never calls it). Do not redo without new evidence (technique log §51 (m)).
-4. A non-throwing `compare`: ~0.5 ns per call, but it changes the public API —
-   a user decision.
-5. sortKey: the writer is about half of the call (§49 ladder); thai is bound
-   by the NFD per-scalar floor (§36).
+**Do not redo (measured and rejected; details in §51 and §49/§50):** tighter
+per-CE byte bounds (UNSAFE); `RestartSafety` by value out of a raw pointer;
+the `takeScratch` hot/cold split; golden keys from ICU 79.1; adding cost to
+the ICU harness; the writer specialized for default options (W3a, worse);
+inlining `compareUTF8` into the entry (worse); a forward single-pass restart
+count (worse); Fix B (dropped); a one-slot or locked `FastLatinCache`; a cache
+key of the whole options word (fills up); merging the identical-strength pass
+into the options byte pass (+1–3% on common rows); any FoundationEssentials
+change.
 
-§50 (f) also lists "a hot/cold split inside `compareFastPath`" (moving the
-CJK-dispatch and restart-check calls out of the closures). The ladder argues
-against it: stage L1a has the same closures and the same copies per string
-form and is as fast as the bare core, and those calls are already out of
-line. Measure item 2 first. (This is NOT the `takeScratch` hot/cold split
-below, which was about the scratch-buffer fetch.)
+**Machine notes (Apple Silicon, 10 cores):** the 1-minute load rests around
+8–15 (`suggestd`, `WindowServer` …) and often rises to 20–70 during the
+user's working day; the system-ICU control decides a matrix run, interleaving
+handles A/Bs.
 
-**Do not redo (measured and rejected):** the tighter per-CE byte bounds
-(UNSAFE: one CE can emit 5 primary bytes); `RestartSafety` passed by value out
-of a raw pointer (forces a copy; paths +2.7%); the `takeScratch` hot/cold
-split (the scratch-buffer fetch; neutral); golden keys from ICU 79.1; adding
-cost to the ICU harness.
-
-**Machine notes (Apple Silicon, 10 cores):** the 1-minute load sits around
-8–15 at rest, because `suggestd`, `WindowServer` and others run constantly;
-the system-ICU control decides whether a run is valid, not the load alone.
-A video call or a recent wake makes runs 1–3% slow.
+**Network:** on the wired network (`en18`, 10.5.141.x) SSH on port 22 to
+GitHub is intercepted (TCP opens, no banner); `en0` works. `origin` therefore
+uses the `github-personal` alias (ssh.github.com:443, in ~/.ssh/config), the
+same as the user's other machine. Fallback: the one-off URL
+`ssh://git@ssh.github.com:443/dra8an/swift-foundation.git` (memory
+`reference-github-ssh-443`).
 
 ---
 
 
-> HISTORY (written 2026-06-12, extended through 2026-10-16). The current
+> HISTORY (written 2026-06-12, extended through 2026-10-20). The current
 > state is in START HERE above; the sections below are the record.
 
 ## What this project is
