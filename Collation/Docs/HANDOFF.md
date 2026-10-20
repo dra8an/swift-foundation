@@ -183,7 +183,7 @@ patterns, not from one place:
 2. About 90 instructions per call in `compareFastPath` have no source line
    (prologue/epilogue, a 720-byte frame, 12 saved registers) — look at them
    with `trace_insns` before you guess.
-3. Fix B: the no-options `compare(_:_:)` could skip the options check.
+3. ~~Fix B: the no-options `compare(_:_:)` could skip the options check.~~ **DROPPED 2026-10-20:** after C4 the check is ~6 instructions (≤8 with the `defaultOptions` load, ~0.4% of `localizedCompare`, the only Foundation caller of that entry; EngineBench never calls it). Do not redo without new evidence (technique log §51 (m)).
 4. A non-throwing `compare`: ~0.5 ns per call, but it changes the public API —
    a user decision.
 5. sortKey: the writer is about half of the call (§49 ladder); thai is bound

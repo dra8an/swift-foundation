@@ -269,16 +269,30 @@ example `localizedCompare` thai 325 → 304 ns against the 2026-10-19 18:03
 run, from §51 (k)). Thai is the weakest family; it is also the engine's
 slowest corpus.
 
-**The comparator path costs more per comparison than the String methods.**
-A 200-line sort makes about 7.6 comparisons per element, so the ascii sort
-rows put one comparison at about 2133 / 7.6 ≈ 280 ns through
-`String.Comparator(options: [], locale:)`, and about 330 ns through
-`.localizedStandard` (`String.StandardComparator`), against 59 ns for
-`localizedCompare` and 77 ns for `localizedStandardCompare` on the same
-corpus. Part of that is the sort's own work (moving String values), but the
-gap is large enough to be worth a profile (not yet done). The system side
-pays even more (about 0.7–2 µs per comparison), so these rows are still
-2.4–6.5× ahead.
+**The sort rows, split (2026-10-20, temporary probe rows; ascii, load ~58,
+so approximate).** Swift's sort makes **14.0 comparisons per element** on 200
+lines (counted), not n·log2(n) ≈ 7.6 — an earlier version of this paragraph
+assumed 7.6 and gave 280–330 ns per comparison, about twice too much.
+Per comparison (ns per element ÷ 14):
+
+| how the sort compares | ns per comparison |
+|---|---:|
+| `sorted { (try? collator.compare($0, $1)) == .ascending }` (engine) | ~20 |
+| `sorted { $0.localizedCompare($1) == .orderedAscending }` | ~67 |
+| `sorted { comparator.compare($0, $1) == … }`, `String.Comparator` | ~74 |
+| `sorted(using: String.Comparator(…))` | ~153 |
+| `sorted { comparator.compare … }`, `.localizedStandard` | ~103 |
+| `sorted(using: .localizedStandard)` | ~183 |
+| `sorted(using: SortDescriptor(…))` | ~210 |
+| `sorted(using: KeyPathComparator(…))` | ~288 |
+
+So `Sequence.sorted(using:)` itself adds ~80 ns per comparison: it is a
+public generic in FoundationEssentials that is not `@inlinable`, so a caller
+in another module runs the unspecialized generic sort (elements moved through
+value witnesses, every comparison through the `SortComparator` witness
+table). The system side runs the same generic code. `.localizedStandard`
+costs ~31 ns more per call than `localizedStandardCompare`, and
+`KeyPathComparator` ~100 ns more than `SortDescriptor`.
 
 ## How to reproduce
 

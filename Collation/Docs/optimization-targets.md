@@ -3513,9 +3513,10 @@ Full matrix after (k) (Docs/21, run B, 2026-10-20 14:35, control within
 0.8%): compare 1.13× ascii, 1.09× latin, 0.49× cjk, 0.62× paths, 1.16× thai;
 sortKey 1.19×, 1.08×, 1.23×, 0.91×, 1.14×. Table 2 gained five rows (an
 options compare and four sort APIs, all ahead of system ICU, floor 1.54×).
-Open: the comparator path costs ~280–330 ns per comparison inside a sort,
-against 59–77 ns for the String methods (Docs/21, "The comparator path") —
-profile it.
+~~Open: the comparator path costs ~280–330 ns per comparison inside a
+sort~~ — WRONG: that assumed 7.6 comparisons per element; Swift's sort makes
+14.0 on 200 lines. Corrected split in Docs/21 ("The sort rows, split") and
+§51 (n).
 
 #### (l) Thai compare: ICU's backup rule, computed on the pinned bytes
 
@@ -3569,3 +3570,44 @@ removed work (re-processing the prefix, the String-iterator walk) is worth
 less time per instruction than the rest of the compare — observed, the
 cause not established. Count in instructions to find work; trust only the
 A/B for its value.
+
+#### (m) Fix B — DROPPED
+
+The no-options `compare(_:_:)` forwards the collator's `defaultOptions`, so
+its guard check always succeeds; a dedicated entry could skip it. After C4
+the check is a mask, a load, a compare and a branch — ≤8 instructions with
+the `defaultOptions` load, ~0.2–0.3 ns. In the Foundation layer only
+`localizedCompare` uses that entry (`StringProtocol+Locale.swift`); every
+other wrapper and EngineBench pass explicit options. Below what an A/B can
+resolve, and a second fast-path entry to keep in sync: dropped (user
+decision, 2026-10-20).
+
+#### (n) The comparator path inside a sort
+
+Temporary probe rows in BenchFoundation (removed again), ascii, 1200 sorted
+elements per pass, load ~58 (approximate):
+
+- Swift's sort makes **14.0 comparisons per element** on 200 lines
+  (counted). The Docs/21 estimate of 280–330 ns per comparison had assumed
+  n·log2(n) ≈ 7.6 and was about twice too high.
+- Per comparison: the engine through a closure ~20 ns; `localizedCompare`
+  ~67; `String.Comparator` through a closure at the call site ~74, through
+  `sorted(using:)` ~153; `.localizedStandard` ~103 and ~183;
+  `SortDescriptor` ~210; `KeyPathComparator` ~288.
+
+**Findings, none of them in the collation engine:**
+
+1. `Sequence.sorted(using:)` (FoundationEssentials/SortComparator.swift)
+   adds ~80 ns per comparison — half of the sort. It is a public generic
+   that is not `@inlinable`, so callers in other modules run the
+   unspecialized generic sort. Candidate fix: `@inlinable` (or
+   `@_alwaysEmitIntoClient`) on it, its `[SortComparator]` twin and
+   `MutableCollection.sort(using:)` — a FoundationEssentials API-attribute
+   change outside the collation port: an upstream decision. The system side
+   runs the same generic code.
+2. `.localizedStandard` (String.StandardComparator.compare) costs ~31 ns
+   more per call than `localizedStandardCompare`, though both resolve the
+   same collator and options. Not yet profiled; the Table 2 bench is built
+   -no-WMO, which may leave `CollationOptions.from` unspecialized there.
+3. `KeyPathComparator` costs ~100 ns more per comparison than
+   `SortDescriptor` over the same key path — presumably the key-path read.
