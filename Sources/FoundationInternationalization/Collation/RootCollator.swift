@@ -267,11 +267,11 @@ public struct RootCollator: @unchecked Sendable {
     public func compare(
         _ left: String, _ right: String, options: CollationOptions
     ) throws -> Order {
-        var skipWalk = false
-        if let fast = compareFastPath(left, right, options: options, skipWalk: &skipWalk) {
+        var restart = -1
+        if let fast = compareFastPath(left, right, options: options, restart: &restart) {
             return fast
         }
-        return try compareSlowPath(left, right, options: options, skipWalk: skipWalk)
+        return try compareSlowPath(left, right, options: options, restart: restart)
     }
 
     /// The bytes of `options`, padded with a zero byte to 64 bits. Two option values are equal exactly when their patterns are equal: all seven fields are one byte (enum tags and Bools, which the compiler keeps canonical), so the 7-byte struct has no padding. A field-by-field `==` compiled to 13 more instructions than the options word, because the compiler rebuilt the stored value byte by byte. `CollationOptionsBitsTests` checks the claim over all 960 option combinations.
@@ -286,11 +286,13 @@ public struct RootCollator: @unchecked Sendable {
 
     /// The default-options UTF-8 fast-Latin byte path (the byte-level identical-prefix scan of ICU's UTF-8 doCompare + CollationFastLatin::compareUTF8): native Swift strings expose contiguous UTF-8, so characters are read as raw bytes with no scalar decoding. Returns nil when the options don't match the pre-baked default setup or the byte path bails (non-Latin text, unsafe restart, non-contiguous storage) — the caller then runs the throwing pipeline.
     ///
-    /// Force-inlined into `compare(_:_:options:)`: out of line, it was a second frame that saved and restored 12 registers on every call, with `skipWalk` passed through the stack and the `Order?` result tested again by the caller — 9 to 16 instructions per compare. Inlining `compareUTF8` as well was 2–3 instructions worse (more spills) (technique log §51).
+    /// Force-inlined into `compare(_:_:options:)`: out of line, it was a second frame that saved and restored 12 registers on every call, with the restart flag passed through the stack and the `Order?` result tested again by the caller — 9 to 16 instructions per compare. Inlining `compareUTF8` as well was 2–3 instructions worse (more spills) (technique log §51).
+    ///
+    /// When it returns nil after the byte scan, `restart` holds the number of leading scalars that the CE pipeline may skip (see restartScalarCount), or -1 when the scan gave no position.
     @inline(__always)
     private func compareFastPath(
         _ left: String, _ right: String, options: CollationOptions,
-        skipWalk: inout Bool
+        restart: inout Int
     ) -> Order? {
         // One pointer for the default setup, loaded once (see DefaultFastLatinSetup); the CJK setup pointer and the storage object likewise, so the closures below capture plain values, not self.
         let setup = defaultFLSetupPtr
@@ -302,7 +304,7 @@ public struct RootCollator: @unchecked Sendable {
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
-        var unsafeRestart = false
+        var restartScalars = -1
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 var mismatch = -1
@@ -318,8 +320,8 @@ public struct RootCollator: @unchecked Sendable {
                     setup: cjkSetup,
                     numeric: options.numeric, safety: safety)
                 if q != CollationFastLatin.bailOutResult { return q }
-                // Headed for the pipeline: decide here — while the bytes are pinned — whether compareBody's identical-prefix walk would be discarded. STATIC helper with trivial parameters — instance methods or fat arguments called from these pinned-buffer closures regress every corpus.
-                unsafeRestart = RootCollator.mismatchRestartIsUnsafe(
+                // Headed for the pipeline: decide here — while the bytes are pinned — where compareBody may restart CE iteration, so it needs no identical-prefix walk of its own. STATIC helper with trivial parameters — instance methods or fat arguments called from these pinned-buffer closures regress every corpus.
+                restartScalars = RootCollator.restartScalarCount(
                     lBytes, rBytes, at: mismatch,
                     safety: safety, numeric: options.numeric)
                 return CollationFastLatin.bailOutResult
@@ -328,24 +330,37 @@ public struct RootCollator: @unchecked Sendable {
         if fast != CollationFastLatin.bailOutResult {
             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
         }
-        skipWalk = unsafeRestart
+        restart = restartScalars
         return nil
     }
 
-    /// True when compareBody's identical-prefix walk is provably useless: the byte scan's mismatch offset locates the first differing scalars, and if either is an unsafe restart the walk always ends in the shared=0 fallback (88% of Thai dictionary pairs in probe statistics), so compareBody can reset from the start directly, which is exactly the behavior those pairs get today, minus the ~123 ns walk. Conservative false when the mismatch is at either string's end (a length-divergent pair keeps its walk) or out of view. STATIC with trivial parameters, like every helper called from the pinned-buffer closures.
-    private static func mismatchRestartIsUnsafe(
+    /// The number of leading scalars that the CE pipeline may skip, from the byte scan's mismatch offset — ICU's backup rule (RuleBasedCollator::doCompare): if either first-differing scalar is unsafe to restart at, step back over the shared prefix while the scalar at the new position is unsafe. The scalar at the restart point is then safe, so no contraction, prefix match or canonical reordering crosses it — the same argument that already allows a restart at a safe mismatch. A mismatch at the end of one string counts the other string's next scalar only. Returns -1 when the scan gave no position (the Latin path's own unsafe reset); compareBody then walks the prefix itself.
+    ///
+    /// Before this, an unsafe mismatch restarted at 0, and a mismatch at a string end (one word a prefix of the next) went through compareBody's String-iterator walk and then usually restarted at 0 too: on the thai dictionary, ICU's rule restarts later on 39% of adjacent pairs (mean restart 1.15 against 0.40 scalars), and 20% of the pairs paid the walk (technique log §51). STATIC with trivial parameters, like every helper called from the pinned-buffer closures.
+    ///
+    /// Out of line on purpose: it runs only after the fast path bails, so its body may inline the scalar decode and the restart-safety table lookup (one step back cost two out-of-line calls) without adding register pressure to compareFastPath.
+    @inline(never)
+    private static func restartScalarCount(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
         at mismatch: Int, safety: UnsafePointer<RestartSafety>, numeric: Bool
-    ) -> Bool {
-        guard mismatch >= 0, mismatch < lBytes.count, mismatch < rBytes.count else {
-            return false
+    ) -> Int {
+        guard mismatch >= 0, mismatch <= lBytes.count, mismatch <= rBytes.count else { return -1 }
+        // The scan leaves the mismatch at a scalar start; the bytes below it are equal on both sides.
+        @inline(__always)
+        func unsafe(_ bytes: UnsafeBufferPointer<UInt8>, _ i: Int) -> Bool {
+            RestartSafety.isUnsafeInline(safety, decodeScalar(bytes, i), numeric: numeric)
         }
-        // Back up to the scalar start: prefix bytes below the mismatch are equal on both sides, so both scalars start at the same offset and share the same lead byte (hence the same length, in bounds by UTF-8 validity of native Strings).
-        var start = mismatch
-        while start > 0, lBytes[start] & 0xc0 == 0x80 { start -= 1 }
-        let lc = scalarAt(lBytes, start)
-        let rc = scalarAt(rBytes, start)
-        return RestartSafety.isUnsafe(safety, lc, numeric: numeric) || RestartSafety.isUnsafe(safety, rc, numeric: numeric)
+        var q = mismatch
+        if q > 0, (q < lBytes.count && unsafe(lBytes, q)) || (q < rBytes.count && unsafe(rBytes, q)) {
+            // while (--equalPrefixLength > 0 && isUnsafeBackward(left[equalPrefixLength])). Backwards, as ICU does: a forward pass that finds the last safe scalar and counts in one go measured 24 instructions worse per compare on thai (it must walk the whole prefix; this stops at the first safe scalar).
+            repeat {
+                q -= 1
+                while q > 0, lBytes[q] & 0xc0 == 0x80 { q -= 1 }
+            } while q > 0 && unsafe(lBytes, q)
+        }
+        var scalars = 0
+        for k in 0..<q where lBytes[k] & 0xc0 != 0x80 { scalars += 1 }
+        return scalars
     }
 
     /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called only after fastLatinUTF8 bails (CJK/Thai text) — Latin-resolved compares never evaluate it or its arguments. When both first-differing scalars are CJK ideographs with distinct single-CE primaries — the dominant case for CJK text — this decides the compare right here, skipping compareBody's fresh scalar iterators and re-decode (~21 ns against ~200 ns of machinery).
@@ -409,7 +424,7 @@ public struct RootCollator: @unchecked Sendable {
     /// The non-default-options byte path and the CE pipeline. `triedFastLatin` semantics: when the caller's fast path bailed, the byte scan already proved fast-Latin inapplicable, but compareBody re-derives that cheaply via its own eligibility checks, so no flag needs to be threaded.
     private func compareSlowPath(
         _ left: String, _ right: String, options: CollationOptions,
-        skipWalk: Bool = false
+        restart: Int = -1
     ) throws -> Order {
         // The options word, computed once for the whole slow path (22 instructions; compareBody used to compute it again — technique log §51).
         let word = options.icuOptions
@@ -442,26 +457,27 @@ public struct RootCollator: @unchecked Sendable {
         }
         return try compareBody(
             left, right, options: options, word: word, triedFastLatin: triedFastLatin,
-            skipWalk: skipWalk)
+            restart: restart)
     }
 
-    /// Shared compare body: identical-prefix skip, fast-Latin scalar path, CE pipeline, and identical level. Split out so compareClassic stays small. `word` is `options.icuOptions`, computed once by the caller.
+    /// Shared compare body: identical-prefix skip, fast-Latin scalar path, CE pipeline, and identical level. Split out so compareClassic stays small. `word` is `options.icuOptions`, computed once by the caller. `restart` is the scalar count from the byte scan (restartScalarCount), or -1: then the body walks the prefix itself.
     private func compareBody(
         _ left: String, _ right: String, options: CollationOptions, word: Int32, triedFastLatin: Bool,
-        skipWalk: Bool = false
+        restart: Int = -1
     ) throws -> Order {
         // No `if left == right` shortcut here. Swift's String == is canonical equivalence, which for non-binary-equal strings runs NFC normalization to prove (in)equality — measured at ~250–400 ns per call on text with combining marks (Thai, etc.), on *every* non-equal compare. Canonical equivalence is already handled correctly by the CE pipeline below (the NFD front end yields equal CEs for equivalent strings), so the shortcut was pure cost on the non-Latin path. The byte fast path above still settles binary equality cheaply for non-identical strengths.
 
-        // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar prefixes produce identical CEs, so iteration can start at the first difference — when restarting there is provably equivalent to full iteration (see unsafeStart). On an unsafe boundary we compare from the start instead; ICU backs up partially, but skipping less is always sound and keeps the common path free of index arithmetic.
+        // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar prefixes produce identical CEs, so iteration can start at the first difference — when restarting there is provably equivalent to full iteration (see unsafeStart). When the byte scan already placed the restart (ICU's backup rule, restartScalarCount), the walk is skipped. Otherwise (non-default options, bridged strings) the walk finds the difference, and an unsafe boundary restarts at 0 — skipping less is always sound.
         var lIter = left.unicodeScalars.makeIterator()
         var rIter = right.unicodeScalars.makeIterator()
         var shared = 0
         var lNext: Unicode.Scalar? = nil
         var rNext: Unicode.Scalar? = nil
         var fellBack = false
-        if skipWalk {
-            // The byte scan already proved the first-differing scalar is an unsafe restart (mismatchRestartIsUnsafe): the walk below would end in the shared=0 fallback, so take that exit directly.
-            fellBack = true
+        let restartKnown = restart >= 0
+        if restartKnown {
+            // The byte scan located the difference and backed up to a safe scalar: restart there, with no walk.
+            shared = restart
         } else {
             lNext = lIter.next()
             rNext = rIter.next()
@@ -489,7 +505,7 @@ public struct RootCollator: @unchecked Sendable {
         // Fast Latin (CollationFastLatin): when both remainders start within the mini-CE table's range, compare on the precompiled table with no iterator pipeline (and no scratch buffers); any unsupported character or mapping bails out to the regular path. The skip walk's iterators are reusable unless an unsafe boundary forced the comparison back to the start.
         var fastResult = CollationFastLatin.bailOutResult
         let table = fastLatinTable
-        if !table.isEmpty, !triedFastLatin {
+        if !table.isEmpty, !triedFastLatin, !restartKnown {
             var lSide: CollationFastLatin.Side
             var rSide: CollationFastLatin.Side
             if shared > 0 || !fellBack {
@@ -520,8 +536,16 @@ public struct RootCollator: @unchecked Sendable {
             // CEs are generated lazily: the primary level usually decides the comparison after a few characters.
             let s = takeScratch()
             scratch = s
-            // Resets + comparison under two access scopes instead of four; see resetBothAndCompare.
-            if fellBack {
+            // Resets + comparison under one call; see resetBothAndCompare.
+            if restartKnown {
+                // Restart after the byte scan's restart count (ICU's backup rule); the resets skip that many scalars.
+                result = try s.resetBothAndCompare(
+                    numeric: options.numeric,
+                    leftScalars: left.unicodeScalars, rightScalars: right.unicodeScalars,
+                    skippingFirst: shared,
+                    options: word,
+                    variableTopValue: variableTopValue(options), reordering: reordering)
+            } else if fellBack {
                 // The skip was abandoned (unsafe boundary): iterate from start.
                 result = try s.resetBothAndCompare(
                     numeric: options.numeric,
@@ -849,6 +873,22 @@ public struct RootCollator: @unchecked Sendable {
             left: lBytes, leftStart: i, right: rBytes, rightStart: i)
     }
 
+    /// scalarAt, force-inlined, for restartScalarCount's out-of-line body (scalarAt itself stays out of line: the hot fast path calls it).
+    @inline(__always)
+    private static func decodeScalar(_ bytes: UnsafeBufferPointer<UInt8>, _ i: Int) -> UInt32 {
+        let b0 = UInt32(bytes[i])
+        if b0 < 0x80 { return b0 }
+        if b0 < 0xe0 {
+            return ((b0 & 0x1f) << 6) | (UInt32(bytes[i + 1]) & 0x3f)
+        }
+        if b0 < 0xf0 {
+            return ((b0 & 0x0f) << 12) | ((UInt32(bytes[i + 1]) & 0x3f) << 6)
+                | (UInt32(bytes[i + 2]) & 0x3f)
+        }
+        return ((b0 & 0x07) << 18) | ((UInt32(bytes[i + 1]) & 0x3f) << 12)
+            | ((UInt32(bytes[i + 2]) & 0x3f) << 6) | (UInt32(bytes[i + 3]) & 0x3f)
+    }
+
     /// Decodes the scalar at byte offset `i` (a lead byte of well-formed UTF-8, as produced by String).
     private static func scalarAt(_ bytes: UnsafeBufferPointer<UInt8>, _ i: Int) -> UInt32 {
         let b0 = UInt32(bytes[i])
@@ -1042,6 +1082,19 @@ struct RestartSafety {
     static func isUnsafe(_ s: UnsafePointer<RestartSafety>, _ c: UInt32, numeric: Bool) -> Bool {
         if c < latinTableLimit {
             return s.pointee.latinTable[Int(c)] & (numeric ? 2 : 1) != 0
+        }
+        return isUnsafeAboveLatin(s, c, numeric: numeric)
+    }
+
+    /// `isUnsafe(_:_:numeric:)` with the BMP table lookup inlined too, for callers off the hot path that may grow (restartScalarCount); supplementary code points still take the full check.
+    @inline(__always)
+    static func isUnsafeInline(_ s: UnsafePointer<RestartSafety>, _ c: UInt32, numeric: Bool) -> Bool {
+        if c < latinTableLimit {
+            return s.pointee.latinTable[Int(c)] & (numeric ? 2 : 1) != 0
+        }
+        if c < 0x10000 {
+            let block = Int(s.pointee.bmpBlocks[Int(c >> 6)])
+            return (s.pointee.bmpWords[block &* 2 &+ (numeric ? 1 : 0)] >> UInt64(c & 63)) & 1 != 0
         }
         return isUnsafeAboveLatin(s, c, numeric: numeric)
     }

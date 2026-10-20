@@ -61,7 +61,7 @@ extension RootCollator {
     // shipping body (the control — it must read like L1); R1–R4 each remove ONE
     // item. Copy the body again if compareFastPath changes.
 
-    @inline(never) func r0Exact(_ left: String, _ right: String, options: CollationOptions, skipWalk: inout Bool) -> Order? {
+    @inline(never) func r0Exact(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
@@ -70,7 +70,7 @@ extension RootCollator {
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
-        var unsafeRestart = false
+        var restartScalars = -1
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 var mismatch = -1
@@ -82,7 +82,7 @@ extension RootCollator {
                     lBytes, rBytes, at: mismatch, setup: cjkSetup,
                     numeric: options.numeric, safety: safety)
                 if q != CollationFastLatin.bailOutResult { return q }
-                unsafeRestart = RootCollator.mismatchRestartIsUnsafe(
+                restartScalars = RootCollator.restartScalarCount(
                     lBytes, rBytes, at: mismatch, safety: safety, numeric: options.numeric)
                 return CollationFastLatin.bailOutResult
             } ?? CollationFastLatin.bailOutResult
@@ -90,12 +90,12 @@ extension RootCollator {
         if fast != CollationFastLatin.bailOutResult {
             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
         }
-        skipWalk = unsafeRestart
+        restart = restartScalars
         return nil
     }
 
-    // R1: no bail-out calls (no CJK dispatch, no restart check, no unsafeRestart).
-    @inline(never) func r1NoBailCalls(_ left: String, _ right: String, options: CollationOptions, skipWalk: inout Bool) -> Order? {
+    // R1: no bail-out calls (no CJK dispatch, no restart check, no restart count).
+    @inline(never) func r1NoBailCalls(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
@@ -118,7 +118,7 @@ extension RootCollator {
     }
 
     // R2: no options checks in the guard (only the init-time eligibility flag).
-    @inline(never) func r2NoOptionsCheck(_ left: String, _ right: String, options: CollationOptions, skipWalk: inout Bool) -> Order? {
+    @inline(never) func r2NoOptionsCheck(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
@@ -127,7 +127,7 @@ extension RootCollator {
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
-        var unsafeRestart = false
+        var restartScalars = -1
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 var mismatch = -1
@@ -139,7 +139,7 @@ extension RootCollator {
                     lBytes, rBytes, at: mismatch, setup: cjkSetup,
                     numeric: options.numeric, safety: safety)
                 if q != CollationFastLatin.bailOutResult { return q }
-                unsafeRestart = RootCollator.mismatchRestartIsUnsafe(
+                restartScalars = RootCollator.restartScalarCount(
                     lBytes, rBytes, at: mismatch, safety: safety, numeric: options.numeric)
                 return CollationFastLatin.bailOutResult
             } ?? CollationFastLatin.bailOutResult
@@ -147,12 +147,12 @@ extension RootCollator {
         if fast != CollationFastLatin.bailOutResult {
             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
         }
-        skipWalk = unsafeRestart
+        restart = restartScalars
         return nil
     }
 
     // R3: returns Int32 — no conversion to Order? (bail-out reported as the bail value).
-    @inline(never) func r3NoConversion(_ left: String, _ right: String, options: CollationOptions, skipWalk: inout Bool) -> Int32 {
+    @inline(never) func r3NoConversion(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Int32 {
         let setup = defaultFLSetupPtr
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
@@ -161,7 +161,7 @@ extension RootCollator {
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
-        var unsafeRestart = false
+        var restartScalars = -1
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 var mismatch = -1
@@ -173,17 +173,17 @@ extension RootCollator {
                     lBytes, rBytes, at: mismatch, setup: cjkSetup,
                     numeric: options.numeric, safety: safety)
                 if q != CollationFastLatin.bailOutResult { return q }
-                unsafeRestart = RootCollator.mismatchRestartIsUnsafe(
+                restartScalars = RootCollator.restartScalarCount(
                     lBytes, rBytes, at: mismatch, safety: safety, numeric: options.numeric)
                 return CollationFastLatin.bailOutResult
             } ?? CollationFastLatin.bailOutResult
         } ?? CollationFastLatin.bailOutResult
-        skipWalk = unsafeRestart
+        restart = restartScalars
         return fast
     }
 
     // R4: `numeric` as a plain Bool parameter; the closures do not capture `options`.
-    @inline(never) func r4NoOptionsCapture(_ left: String, _ right: String, options: CollationOptions, skipWalk: inout Bool) -> Order? {
+    @inline(never) func r4NoOptionsCapture(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
@@ -193,7 +193,7 @@ extension RootCollator {
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
         let numeric = options.numeric
-        var unsafeRestart = false
+        var restartScalars = -1
         let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 var mismatch = -1
@@ -205,7 +205,7 @@ extension RootCollator {
                     lBytes, rBytes, at: mismatch, setup: cjkSetup,
                     numeric: numeric, safety: safety)
                 if q != CollationFastLatin.bailOutResult { return q }
-                unsafeRestart = RootCollator.mismatchRestartIsUnsafe(
+                restartScalars = RootCollator.restartScalarCount(
                     lBytes, rBytes, at: mismatch, safety: safety, numeric: numeric)
                 return CollationFastLatin.bailOutResult
             } ?? CollationFastLatin.bailOutResult
@@ -213,7 +213,7 @@ extension RootCollator {
         if fast != CollationFastLatin.bailOutResult {
             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
         }
-        skipWalk = unsafeRestart
+        restart = restartScalars
         return nil
     }
 
@@ -275,8 +275,8 @@ let numeric = opts.numeric
 var bailL1 = 0, bailL2 = 0, wrong = 0
 for i in 1..<lines.count {
     let r0 = try! collator.compare(lines[i - 1], lines[i], options: opts)
-    var skip = false
-    if let r1 = collator.compareFastPath(lines[i - 1], lines[i], options: opts, skipWalk: &skip) {
+    var skip = -1
+    if let r1 = collator.compareFastPath(lines[i - 1], lines[i], options: opts, restart: &skip) {
         if r1 != r0 { wrong += 1 }
     } else { bailL1 += 1 }
     var mismatch = -1
@@ -290,14 +290,14 @@ for i in 1..<lines.count {
                              packed: packed, numeric: numeric, safety: safety)
     if r1a != CollationFastLatin.bailOutResult, order(r1a) != r0 { wrong += 1 }
     if let r1g = collator.guardThenCore(pinned[i - 1], pinned[i], options: opts), r1g != r0 { wrong += 1 }
-    var sk = false
-    for r in [collator.r0Exact(lines[i - 1], lines[i], options: opts, skipWalk: &sk),
-              collator.r1NoBailCalls(lines[i - 1], lines[i], options: opts, skipWalk: &sk),
-              collator.r2NoOptionsCheck(lines[i - 1], lines[i], options: opts, skipWalk: &sk),
-              collator.r4NoOptionsCapture(lines[i - 1], lines[i], options: opts, skipWalk: &sk)] {
+    var sk = -1
+    for r in [collator.r0Exact(lines[i - 1], lines[i], options: opts, restart: &sk),
+              collator.r1NoBailCalls(lines[i - 1], lines[i], options: opts, restart: &sk),
+              collator.r2NoOptionsCheck(lines[i - 1], lines[i], options: opts, restart: &sk),
+              collator.r4NoOptionsCapture(lines[i - 1], lines[i], options: opts, restart: &sk)] {
         if let r, r != r0 { wrong += 1 }
     }
-    let r3 = collator.r3NoConversion(lines[i - 1], lines[i], options: opts, skipWalk: &sk)
+    let r3 = collator.r3NoConversion(lines[i - 1], lines[i], options: opts, restart: &sk)
     if r3 != CollationFastLatin.bailOutResult, order(r3) != r0 { wrong += 1 }
 }
 print("corpus: \(lines.count) lines, \(lines.count - 1) pairs | L1 bail-outs \(bailL1), L2 bail-outs \(bailL2), wrong results \(wrong)")
@@ -340,29 +340,29 @@ measure("L0d public compare(_:_:)    ") {
 measure("L1  compareFastPath         ") {
     let c = collator
     for _ in 0..<reps { for i in 1..<lines.count {
-        var skip = false
-        sink &+= c.compareFastPath(lines[i - 1], lines[i], options: opts, skipWalk: &skip)?.rawValue ?? 9
+        var skip = -1
+        sink &+= c.compareFastPath(lines[i - 1], lines[i], options: opts, restart: &skip)?.rawValue ?? 9
     } }
 }
 measure("R0  clone, exact (control)  ") {
     let c = collator
-    for _ in 0..<reps { for i in 1..<lines.count { var s = false; sink &+= c.r0Exact(lines[i - 1], lines[i], options: opts, skipWalk: &s)?.rawValue ?? 9 } }
+    for _ in 0..<reps { for i in 1..<lines.count { var s = -1; sink &+= c.r0Exact(lines[i - 1], lines[i], options: opts, restart: &s)?.rawValue ?? 9 } }
 }
 measure("R1  clone, no bail calls    ") {
     let c = collator
-    for _ in 0..<reps { for i in 1..<lines.count { var s = false; sink &+= c.r1NoBailCalls(lines[i - 1], lines[i], options: opts, skipWalk: &s)?.rawValue ?? 9 } }
+    for _ in 0..<reps { for i in 1..<lines.count { var s = -1; sink &+= c.r1NoBailCalls(lines[i - 1], lines[i], options: opts, restart: &s)?.rawValue ?? 9 } }
 }
 measure("R2  clone, no options check ") {
     let c = collator
-    for _ in 0..<reps { for i in 1..<lines.count { var s = false; sink &+= c.r2NoOptionsCheck(lines[i - 1], lines[i], options: opts, skipWalk: &s)?.rawValue ?? 9 } }
+    for _ in 0..<reps { for i in 1..<lines.count { var s = -1; sink &+= c.r2NoOptionsCheck(lines[i - 1], lines[i], options: opts, restart: &s)?.rawValue ?? 9 } }
 }
 measure("R3  clone, no Order? convert") {
     let c = collator
-    for _ in 0..<reps { for i in 1..<lines.count { var s = false; sink &+= Int(c.r3NoConversion(lines[i - 1], lines[i], options: opts, skipWalk: &s)) } }
+    for _ in 0..<reps { for i in 1..<lines.count { var s = -1; sink &+= Int(c.r3NoConversion(lines[i - 1], lines[i], options: opts, restart: &s)) } }
 }
 measure("R4  clone, no options capture") {
     let c = collator
-    for _ in 0..<reps { for i in 1..<lines.count { var s = false; sink &+= c.r4NoOptionsCapture(lines[i - 1], lines[i], options: opts, skipWalk: &s)?.rawValue ?? 9 } }
+    for _ in 0..<reps { for i in 1..<lines.count { var s = -1; sink &+= c.r4NoOptionsCapture(lines[i - 1], lines[i], options: opts, restart: &s)?.rawValue ?? 9 } }
 }
 measure("S   pin both strings only   ") {
     for _ in 0..<reps { for i in 1..<lines.count { sink &+= Int(pinOnly(lines[i - 1], lines[i])) } }

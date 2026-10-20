@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) committed and pushed (`cfd2ab9d`); baseline recorded 2026-10-20 14:35 with 14 Table 2 APIs. Suite 1537/127.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) committed and pushed (`cfd2ab9d`); baseline recorded 2026-10-20 14:35 with 14 Table 2 APIs; (l) thai restart done, not committed. Suite 1540/128.**
 
 #### (a) The audit
 
@@ -3516,3 +3516,56 @@ options compare and four sort APIs, all ahead of system ICU, floor 1.54×).
 Open: the comparator path costs ~280–330 ns per comparison inside a sort,
 against 59–77 ns for the String methods (Docs/21, "The comparator path") —
 profile it.
+
+#### (l) Thai compare: ICU's backup rule, computed on the pinned bytes
+
+**Where the gap was.** ICU's instruction count for the same 10 thai pairs
+(`icu_count.c`, pairs 201–210): 2119 per compare, ours 2511 (1.19×, matching
+the 1.16× in time). The gap was NOT spread evenly: six pairs were within 5%
+(two below ICU); pair 201 — one word a prefix of the next — cost 4173
+against 1541, and pair 210 — a safe mismatch at a prefix vowel — 2941
+against 1835.
+
+**Corpus-wide** (a probe with the real RestartSafety, 32,894 adjacent
+pairs): 79.6% unsafe first-differing scalar (restart at 0, no walk), 13.4%
+prefix pairs, 7.1% safe mismatch (both through compareBody's String-iterator
+walk, ~450–700 instructions, although the byte scan already knew the
+mismatch). Mean shared prefix 3.28 scalars; mean restart ours 0.40, ICU 1.15;
+ICU's rule restarts later on 39.1% of the pairs; prefix scalars processed
+again per pair (both sides): ours 5.75, ICU 4.25.
+
+**Change.** `restartScalarCount` (replaces `mismatchRestartIsUnsafe`)
+applies ICU's doCompare rule on the pinned bytes — if either boundary scalar
+is unsafe, step back while the scalar at the new position is unsafe — and
+counts the scalars before the restart. The count replaces the `skipWalk`
+flag (compare → compareSlowPath → compareBody); compareBody then skips its
+walk and resets both iterators with `skippingFirst:` (also used as the
+identical level's start). -1 (non-default options, bridged strings, the
+Latin path's own reset) keeps the old walk. Sound for the same reason as the
+existing restart at a safe mismatch: the scalar at the restart is safe, so
+no contraction, prefix match or reordering crosses it.
+
+Variants (counts, the same 10 pairs; ICU 2119): v1 (decode and table lookup
+as out-of-line calls) 2342; **v2 (helper `@inline(never)`, decode and BMP
+lookup inlined inside it) 2313 — shipped**; v3 (one forward pass that finds
+the last safe scalar and counts) 2337 — worse, it walks the whole prefix.
+Pair 201: 4173 → 1852. Pairs whose backup reaches 0 (Thai words start with
+consonants) pay ~+77 for the extra checks.
+
+**Tests.** `RestartBackupTests`: compare() against byte-wise sort-key order
+(sortKey never skips) for all adjacent riwords pairs (root, th), the fuzz
+corpus, and built pairs (`w` / `w + c`, `w + x` / `w + y` with continuations:
+Thai consonant, prefix vowel, tone mark, sara aa, sara a, Latin a, U+0301,
+1, U+00B7, か, U+3099) under root, th, ja, sv, fr_CA. Mutations — no backup;
+back up one scalar only — fail it (38 and 24 issues). Suite 1540/128.
+
+A/B against `d3c9eed9` (5 rounds, 2026-10-20 ~15:00, load 10–18, 5-minute
+load 35–42): **thai compare −3.5% (196.7 → 189.6, 5/5, ~1.11× of ICU)**; the
+other compare rows flat; sortKey flat (thai −1.8%, placement — sortKey code
+did not change). A second count sample, 60 pairs from line 10,000: base
+2879, new 2391 (−17.0%), all 60 pairs better (gains −74 to −2361). So the
+count drops 8–17% on two samples while the time drops 3.5%: on thai the
+removed work (re-processing the prefix, the String-iterator walk) is worth
+less time per instruction than the rest of the compare — observed, the
+cause not established. Count in instructions to find work; trust only the
+A/B for its value.

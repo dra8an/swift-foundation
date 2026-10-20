@@ -35,7 +35,7 @@ sed -i '' \
   -e 's/private var defaultFLSetupPtr:/var defaultFLSetupPtr:/' \
   -e 's/private let storage: Storage/let storage: Storage/' \
   -e 's/private static func quickCJKDispatch(/static func quickCJKDispatch(/' \
-  -e 's/private static func mismatchRestartIsUnsafe(/static func mismatchRestartIsUnsafe(/' \
+  -e 's/private static func restartScalarCount(/static func restartScalarCount(/' \
   "$OUT/Sources/CmpLadder/RootCollator.swift"
 
 cat > "$OUT/Package.swift" <<'MANIFEST'

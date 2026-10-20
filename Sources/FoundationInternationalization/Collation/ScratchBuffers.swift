@@ -131,14 +131,15 @@ final class ScratchBuffers {
     func resetBothAndCompare(
         numeric: Bool,
         leftScalars: String.UnicodeScalarView, rightScalars: String.UnicodeScalarView,
+        skippingFirst: Int = 0,
         options: Int32, variableTopValue: UInt32, reordering: Reordering?
     ) throws -> Int {
         try ScratchBuffers.resetBothAndCompare(
             &left.pointee, &right.pointee, options: options, variableTopValue: variableTopValue,
             reordering: reordering
         ) { l, r in
-            l.reset(numeric: numeric, scalars: leftScalars)
-            r.reset(numeric: numeric, scalars: rightScalars)
+            l.reset(numeric: numeric, scalars: leftScalars, skippingFirst: skippingFirst)
+            r.reset(numeric: numeric, scalars: rightScalars, skippingFirst: skippingFirst)
         }
     }
 
