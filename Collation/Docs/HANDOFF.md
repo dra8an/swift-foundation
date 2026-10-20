@@ -36,19 +36,18 @@ lines (45/5, 543/79, 941/40); add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-19 14:14,
-`6d6cc1f6`, ns per call, ours / ICU):**
+**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-19 18:03,
+`32292a45`, ns per call, ours / ICU):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
-| ascii | 15.0 / 9.3 | 1.61× | 157.9 / 104.0 | 1.52× |
-| latin | 14.7 / 10.1 | 1.46× | 176.3 / 121.2 | 1.45× |
-| cjk | 22.0 / 41.2 | 0.53× | 175.7 / 118.4 | 1.48× |
-| paths | 20.6 / 29.7 | 0.69× | 391.3 / 369.8 | 1.06× |
-| thai | 243.6 / 172.9 | 1.41× | 212.3 / 155.6 | 1.36× |
+| ascii | 10.5 / 9.3 | 1.13× | 142.3 / 104.0 | 1.37× |
+| latin | 11.0 / 10.1 | 1.09× | 161.8 / 121.1 | 1.34× |
+| cjk | 20.1 / 40.5 | 0.50× | 164.6 / 118.2 | 1.39× |
+| paths | 18.5 / 29.7 | 0.62× | 361.2 / 369.8 | 0.98× |
+| thai | 221.0 / 173.9 | 1.27× | 201.4 / 155.1 | 1.30× |
 
-(sortKey executes the same instructions as on 2026-10-16; its moves are code
-placement — technique log §51 and Docs/21.)
+(§51 of the technique log has the changes since 2026-10-16.)
 
 Table 2 (Foundation APIs vs system ICU) is ahead everywhere, but mostly
 because it skips the system NSString → CoreFoundation → C++ bridge. **Never

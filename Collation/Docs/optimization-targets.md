@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 (`compareFastPath` inlined) done, not committed. Suite 1537/127.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03. Suite 1537/127.**
 
 #### (a) The audit
 
@@ -3417,4 +3417,6 @@ store → load round trip through memory, and the 12 restores ran right
 before the result test. Suite 1537/127; cmp-ladder 0 bail-outs, 0 wrong.
 
 ascii compare is now ~10.5 ns against ICU's 9.3 (~1.13×), and ~1 ns of the
-difference is the API's call shape (Docs/27).
+difference is the API's call shape (Docs/27). Confirmed by the full matrix (Docs/21, run
+B, 2026-10-19 18:03): compare 1.13× ascii, 1.09× latin, 0.50× cjk, 0.62×
+paths, 1.27× thai; sortKey 1.37×, 1.34×, 1.39×, 0.98×, 1.30×.
