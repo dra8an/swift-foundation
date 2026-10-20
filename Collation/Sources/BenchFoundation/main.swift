@@ -167,4 +167,45 @@ measure("range(backwards)  ", ops: lines.count * reps) {
     }
 }
 
+// 8. compare(_:options:range:locale:) with non-default options — the options-translation path
+measure("compare(opts:loc:) ", ops: (lines.count - 1) * reps) {
+    for _ in 0..<reps {
+        for i in 1..<lines.count {
+            sink += lines[i - 1].compare(lines[i], options: [.caseInsensitive, .diacriticInsensitive], range: nil, locale: locale).rawValue
+        }
+    }
+}
+
+// 9. The sorting APIs: one op is one ELEMENT of a sort (a sort of n lines makes about n·log2(n) comparisons). Each pass sorts max(1, reps / 50) times, so thai (~33k lines, 10 reps) sorts once.
+struct Item { let name: String }
+let items = lines.map { Item(name: $0) }
+let sorts = max(1, reps / 50)
+
+measure("sortStdComparator ", ops: lines.count * sorts) {
+    for _ in 0..<sorts {
+        sink += lines.sorted(using: String.StandardComparator.localizedStandard).count
+    }
+}
+
+measure("sortCmp(locale)   ", ops: lines.count * sorts) {
+    let comparator = String.Comparator(options: [], locale: locale)
+    for _ in 0..<sorts {
+        sink += lines.sorted(using: comparator).count
+    }
+}
+
+measure("sortKeyPathCmp    ", ops: lines.count * sorts) {
+    let comparator = KeyPathComparator(\Item.name, comparator: String.StandardComparator.localizedStandard)
+    for _ in 0..<sorts {
+        sink += items.sorted(using: comparator).count
+    }
+}
+
+measure("sortSortDescriptor", ops: lines.count * sorts) {
+    let descriptor = SortDescriptor(\Item.name, comparator: String.StandardComparator.localizedStandard)
+    for _ in 0..<sorts {
+        sink += items.sorted(using: descriptor).count
+    }
+}
+
 if sink == Int.min { print("") }

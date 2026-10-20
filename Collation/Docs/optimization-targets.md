@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) scratch iterators behind pointers done, not committed. Suite 1537/127.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) committed and pushed (`cfd2ab9d`); baseline recorded 2026-10-20 14:35 with 14 Table 2 APIs. Suite 1537/127.**
 
 #### (a) The audit
 
@@ -3508,3 +3508,11 @@ The base column also confirms W1 + W2 on a quieter machine (ascii sortKey
 132.8 here against 142.8 at `4cca3da5`). Suite 1537/127; TSan clean (77
 tests: concurrency, search, position invariants, sort keys); the four tools
 build; the sk-ladder identity checks clean (ascii, thai).
+
+Full matrix after (k) (Docs/21, run B, 2026-10-20 14:35, control within
+0.8%): compare 1.13× ascii, 1.09× latin, 0.49× cjk, 0.62× paths, 1.16× thai;
+sortKey 1.19×, 1.08×, 1.23×, 0.91×, 1.14×. Table 2 gained five rows (an
+options compare and four sort APIs, all ahead of system ICU, floor 1.54×).
+Open: the comparator path costs ~280–330 ns per comparison inside a sort,
+against 59–77 ns for the String methods (Docs/21, "The comparator path") —
+profile it.

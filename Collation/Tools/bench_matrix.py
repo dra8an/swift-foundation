@@ -103,7 +103,9 @@ for label, _, _, _ in CORPORA:
 print("\n===== TABLE 2: FOUNDATION APIs (speedup = sys/ours; >1 = ours faster) =====")
 APIS = ["compare(locale:)", "localizedCompare", "localizedStdCmp",
         "localizedCaseICmp", "localizedStdContns", "localizedCaseICnt",
-        "localizedStdRange", "range(of:locale:)", "range(backwards)"]
+        "localizedStdRange", "range(of:locale:)", "range(backwards)",
+        "compare(opts:loc:)", "sortStdComparator", "sortCmp(locale)",
+        "sortKeyPathCmp", "sortSortDescriptor"]
 for api in APIS:
     print(f"\n--- {api} ---")
     print(f"{'corpus':6} | {'sysICU':>7} {'ours':>7} {'speedup':>7}")

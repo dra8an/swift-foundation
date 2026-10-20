@@ -36,18 +36,19 @@ lines (45/5, 543/79, 941/40); add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-19 18:03,
-`32292a45`, ns per call, ours / ICU):**
+**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-20 14:35,
+`cfd2ab9d`, ns per call, ours / ICU):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
-| ascii | 10.5 / 9.3 | 1.13× | 142.3 / 104.0 | 1.37× |
-| latin | 11.0 / 10.1 | 1.09× | 161.8 / 121.1 | 1.34× |
-| cjk | 20.1 / 40.5 | 0.50× | 164.6 / 118.2 | 1.39× |
-| paths | 18.5 / 29.7 | 0.62× | 361.2 / 369.8 | 0.98× |
-| thai | 221.0 / 173.9 | 1.27× | 201.4 / 155.1 | 1.30× |
+| ascii | 10.5 / 9.3 | 1.13× | 124.2 / 104.6 | 1.19× |
+| latin | 11.0 / 10.1 | 1.09× | 131.3 / 121.6 | 1.08× |
+| cjk | 20.1 / 40.8 | 0.49× | 144.5 / 117.8 | 1.23× |
+| paths | 18.5 / 29.7 | 0.62× | 332.5 / 366.5 | 0.91× |
+| thai | 198.4 / 170.7 | 1.16× | 176.1 / 154.6 | 1.14× |
 
-(§51 of the technique log has the changes since 2026-10-16.)
+(§51 of the technique log has the changes since 2026-10-16. Table 2 now has
+14 API families, including four sort APIs.)
 
 Table 2 (Foundation APIs vs system ICU) is ahead everywhere, but mostly
 because it skips the system NSString → CoreFoundation → C++ bridge. **Never
