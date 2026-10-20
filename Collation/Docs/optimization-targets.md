@@ -3600,11 +3600,10 @@ elements per pass, load ~58 (approximate):
 1. `Sequence.sorted(using:)` (FoundationEssentials/SortComparator.swift)
    adds ~80 ns per comparison — half of the sort. It is a public generic
    that is not `@inlinable`, so callers in other modules run the
-   unspecialized generic sort. Candidate fix: `@inlinable` (or
-   `@_alwaysEmitIntoClient`) on it, its `[SortComparator]` twin and
-   `MutableCollection.sort(using:)` — a FoundationEssentials API-attribute
-   change outside the collation port: an upstream decision. The system side
-   runs the same generic code.
+   unspecialized generic sort. The system side runs the same generic code.
+   **Not ours to fix:** it lives in FoundationEssentials, and changes there
+   are a non-starter (user decision, 2026-10-20). Recorded as an
+   observation only.
 2. `.localizedStandard` (String.StandardComparator.compare) costs ~31 ns
    more per call than `localizedStandardCompare`, though both resolve the
    same collator and options. Not yet profiled; the Table 2 bench is built
