@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03. Suite 1537/127.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) done, not committed, A/B under load only. Suite 1537/127.**
 
 #### (a) The audit
 
@@ -3420,3 +3420,42 @@ ascii compare is now ~10.5 ns against ICU's 9.3 (~1.13×), and ~1 ns of the
 difference is the API's call shape (Docs/27). Confirmed by the full matrix (Docs/21, run
 B, 2026-10-19 18:03): compare 1.13× ascii, 1.09× latin, 0.50× cjk, 0.62×
 paths, 1.27× thai; sortKey 1.37×, 1.34×, 1.39×, 0.98×, 1.30×.
+
+#### (j) The sortKey writer, round 1: one access scope, one key write
+
+A profile of one ascii sortKey (2268 steady-state instructions at
+`4cca3da5`) put about 45% in the writer and the key array, and showed a
+regression from (h):
+
+- **Two exclusivity scopes, not one (~160 instructions).** With `CEBuffer`
+  noncopyable, `writeSortKeyUpToQuaternarySingle(ces: scratch.left.ces, …)`
+  BORROWS a class property for the whole writer call — a second dynamically
+  checked access (`swift_beginAccess`, `AccessSet::insert`,
+  `swift_endAccess`, ~80 instructions). The old `Array` was copied instead.
+  The (h) A/B gains were net of this cost.
+- **The key array (~260 instructions):** `key.removeAll` (the general
+  `replaceSubrange`), two `append(contentsOf:)` (primary level, then the
+  compacted tail) and `append(0)` for the terminator — each with the general
+  Array code and a uniqueness check.
+
+**W1:** `ScratchBuffers.resetCollectAndWriteKey` runs reset, CE production
+and the writer under ONE `inout` access to `left` (the §48 pattern).
+Counts: −110 on every corpus (ascii 2268.5 → 2158.5); exclusivity back to
+81. A/B against `4cca3da5` (load 15–33): sortKey −4.0..−6.3%, 5/5.
+
+**W2 (variant R):** the region already holds the whole key contiguously
+(the primary level at its head, the tail compacted right behind it), so the
+writer adds the terminator there too (one more byte of slack, 5 instead of
+4; the identical level keeps its own terminator via `terminate: false`) and
+writes the key with ONE `replaceSubrange(key.indices, with:)`. Counts on
+top of W1: ascii 2158.5 → 1980.5, latin 1989 → 1807.5, cjk 2136.5 → 1951.8,
+paths 4767 → 4589, thai 2000.5 → 1809 (−8.2..−9.6%, paths −3.7%). §49's
+"one whole-key append" (variant A, +2.5% ascii) kept the separate clear and
+terminator; R removes both.
+
+A/B of W1 + W2 against `4cca3da5` — UNDER LOAD (18 at the start, 70 at the
+end), to be repeated quiet: sortKey min ascii −6.7%, latin −13.0%, cjk
+−5.3%, paths −4.3%, thai −7.3% (means 5/5 except paths, one spike round);
+skRet −8.8..−14.7% (one exact-size allocation instead of two growth steps).
+Suite 1537/127; the sk-ladder identity checks (S1/S2 vs S0; three writers ×
+10 option sets) clean on all five corpora.

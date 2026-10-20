@@ -635,22 +635,19 @@ public struct RootCollator: @unchecked Sendable {
     ) throws {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
-        // One access scope for reset + CE production; see resetAndCollectLeft.
-        try scratch.resetAndCollectLeft(numeric: options.numeric, scalars: s.unicodeScalars)
-        let compressibleBytes = storage.compressibleBytes
-        key.removeAll(keepingCapacity: true)
-        // Single-pass writer: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. Two reference writers in Collation/Tools/sk-ladder/ReferenceWriters.swift do not ship; the sk-ladder probe checks byte identity against them across the option matrix.
-        CollationKeys.writeSortKeyUpToQuaternarySingle(
-            ces: scratch.left.ces, compressibleBytes: compressibleBytes,
+        // One access scope for reset + CE production + the writer; see resetCollectAndWriteKey. The writer is single-pass: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. Two reference writers in Collation/Tools/sk-ladder/ReferenceWriters.swift do not ship; the sk-ladder probe checks byte identity against them across the option matrix.
+        try scratch.resetCollectAndWriteKey(
+            numeric: options.numeric, scalars: s.unicodeScalars,
+            compressibleBytes: storage.compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key)
+            reordering: reordering, terminate: options.strength != .identical, into: &key)
         if options.strength == .identical {
             key.append(1)  // level separator
             // Two access scopes for the whole drain, not two per scalar; see collectNFDScalars.
             scratch.collectNFDScalars(scalars: s.unicodeScalars)
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
+            key.append(0)  // terminator (the writer adds it for the other strengths)
         }
-        key.append(0)  // terminator
     }
 
     private func takeScratch() -> ScratchBuffers {

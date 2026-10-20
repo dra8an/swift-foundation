@@ -192,7 +192,7 @@ enum CollationKeys {
     static func writeSortKeyUpToQuaternarySingle(
         ces: borrowing CEBuffer, compressibleBytes: UnsafeBufferPointer<Bool>,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
-        into key: inout [UInt8]
+        terminate: Bool = true, into key: inout [UInt8]
     ) {
         var levels = levelFlags(strength: CollationOptions.strength(of: options))
         if (options & CollationOptions.Bits.caseLevel) != 0 {
@@ -221,7 +221,7 @@ enum CollationKeys {
         let capQuaternaries = (levels & quaternaryFlag) != 0 ? quaternaryBytesPerCE * n : 0
 
         // Each level after the primary gets ONE byte of slack ahead of its data, which is where its 01 separator lands during assembly. That slack is what makes the in-place compaction provably safe: level i's data starts at sum(cap_j + 1) for j < i, and it is compacted to sum(actual_j + 1) for j < i, so the destination is always at or below the source (actual_j <= cap_j) and a forward copy per level cannot overwrite bytes it has yet to read. See the assembly block at the end of this function.
-        let slack = 4
+        let slack = 5  // one per level after the primary, plus the terminator
         withUnsafeTemporaryAllocation(
             of: UInt8.self,
             capacity: capPrimaries + capSecondaries + capCases + capTertiaries + capQuaternaries + slack
@@ -480,16 +480,9 @@ enum CollationKeys {
                 if (lower32 >> 24) == UInt32(levelSeparator) { break }  // ce == NO_CE
             }
 
-            // Assemble in two appends instead of five.
+            // Assemble the whole key in the region, then write it to `key` in ONE operation. The primary level already starts at the head of the region; the beyond-primary levels compact down right behind it — gaps closed, each one's trailing 01 from NO_CE dropped, separators inserted — and the terminator follows unless the caller adds an identical level. Every move is downward: level i's data begins at sum(cap_j + 1) for j < i and lands at sum(actual_j + 1), and actual_j <= cap_j, which the one byte of slack per level buys and `compactTo` asserts.
             //
-            // The shape that this replaced made one append per level and one per separator. Each append pays a `swift_isUniquelyReferenced_nonNull_native` call and a capacity check, and the optimizer cannot hoist them, because a reallocation can occur between any two. At the default strength that is five appends; the case level and the quaternary level add more.
-            //
-            // The primary level goes out first, in its own append. It already starts at the head of the region and has no trailing separator to drop. One whole-key append measured worse on ascii (+2.5%) and cjk (+2.3%), 5 of 5 rounds each, while latin and thai improved. This split keeps the latin and thai gain and leaves ascii and cjk flat. The cause of the ascii and cjk loss is not established; technique log §49 has the measurements.
-            //
-            // The beyond-primary levels then compact into one contiguous run — gaps closed, each one's trailing 01 from NO_CE dropped, separators inserted — and go out in a single append. Every move is downward: level i's data begins at sum(cap_j + 1) for j < i and lands at sum(actual_j + 1), and actual_j <= cap_j, which the one byte of slack per level buys and `compactTo` asserts.
-            if primaries.count > 0 {
-                key.append(contentsOf: UnsafeBufferPointer(start: start, count: primaries.count))
-            }
+            // One `replaceSubrange` replaces the old contents, where the caller's clear plus two appends plus the terminator's append each paid the general Array code and a uniqueness check (~260 instructions per short key; technique log §51).
             let tailStart = primaries.count
             var w = tailStart
             if (levels & secondaryFlag) != 0 {
@@ -532,9 +525,11 @@ enum CollationKeys {
                 w += 1
                 w += quaternaries.compactTo(start + w)
             }
-            if w > tailStart {
-                key.append(contentsOf: UnsafeBufferPointer(start: start + tailStart, count: w - tailStart))
+            if terminate {
+                start[w] = 0
+                w += 1
             }
+            key.replaceSubrange(key.startIndex..<key.endIndex, with: UnsafeBufferPointer(start: start, count: w))
         }
     }
 

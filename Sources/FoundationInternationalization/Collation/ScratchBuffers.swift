@@ -76,6 +76,34 @@ final class ScratchBuffers {
         try ScratchBuffers.resetAndCollect(&left, numeric: numeric, scalars: scalars)
     }
 
+    /// sortKey's whole body under ONE access scope to `left`: reset, CE production, then the writer. With CEBuffer noncopyable, passing `left.ces` to the writer borrows a class property for the whole writer call, which is a second dynamically-checked scope (~80 instructions per sortKey: swift_beginAccess, AccessSet::insert, swift_endAccess); routing the writer through the same `inout` argument as the reset removes it (technique log §51). The writer replaces the key only after CE production succeeds, so a throw leaves it unchanged, as before.
+    @inline(__always)
+    func resetCollectAndWriteKey(
+        numeric: Bool, scalars: String.UnicodeScalarView,
+        compressibleBytes: UnsafeBufferPointer<Bool>, options: Int32, variableTopValue: UInt32,
+        reordering: Reordering?, terminate: Bool, into key: inout [UInt8]
+    ) throws {
+        try ScratchBuffers.resetCollectAndWriteKey(
+            &left, numeric: numeric, scalars: scalars, compressibleBytes: compressibleBytes,
+            options: options, variableTopValue: variableTopValue, reordering: reordering,
+            terminate: terminate, into: &key)
+    }
+
+    @inline(__always)
+    private static func resetCollectAndWriteKey(
+        _ iter: inout CEIterator, numeric: Bool, scalars: String.UnicodeScalarView,
+        compressibleBytes: UnsafeBufferPointer<Bool>, options: Int32, variableTopValue: UInt32,
+        reordering: Reordering?, terminate: Bool, into key: inout [UInt8]
+    ) throws {
+        iter.reset(numeric: numeric, scalars: scalars)
+        try iter.collectAll()
+        // The writer replaces the key's old contents itself.
+        CollationKeys.writeSortKeyUpToQuaternarySingle(
+            ces: iter.ces, compressibleBytes: compressibleBytes,
+            options: options, variableTopValue: variableTopValue,
+            reordering: reordering, terminate: terminate, into: &key)
+    }
+
     @inline(__always)
     private static func resetAndCollect(
         _ iter: inout CEIterator, numeric: Bool, scalars: String.UnicodeScalarView

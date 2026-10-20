@@ -27,20 +27,19 @@ extension RootCollator {
         _ s: String, into key: inout [UInt8], scratch: ScratchBuffers,
         options: CollationOptions = CollationOptions()
     ) throws {
-        try scratch.resetAndCollectLeft(numeric: options.numeric, scalars: s.unicodeScalars)
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
-        key.removeAll(keepingCapacity: true)
-        CollationKeys.writeSortKeyUpToQuaternarySingle(
-            ces: scratch.left.ces, compressibleBytes: compressibleBytes,
+        try scratch.resetCollectAndWriteKey(
+            numeric: options.numeric, scalars: s.unicodeScalars,
+            compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key)
+            reordering: reordering, terminate: options.strength != .identical, into: &key)
         if options.strength == .identical {
             key.append(1)
             scratch.collectNFDScalars(scalars: s.unicodeScalars)
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
+            key.append(0)
         }
-        key.append(0)
     }
 
     // S2: byte-for-byte the S1 body, but non-throwing (try! inside).
@@ -48,20 +47,19 @@ extension RootCollator {
         _ s: String, into key: inout [UInt8], scratch: ScratchBuffers,
         options: CollationOptions = CollationOptions()
     ) {
-        try! scratch.resetAndCollectLeft(numeric: options.numeric, scalars: s.unicodeScalars)
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
-        key.removeAll(keepingCapacity: true)
-        CollationKeys.writeSortKeyUpToQuaternarySingle(
-            ces: scratch.left.ces, compressibleBytes: compressibleBytes,
+        try! scratch.resetCollectAndWriteKey(
+            numeric: options.numeric, scalars: s.unicodeScalars,
+            compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key)
+            reordering: reordering, terminate: options.strength != .identical, into: &key)
         if options.strength == .identical {
             key.append(1)
             scratch.collectNFDScalars(scalars: s.unicodeScalars)
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
+            key.append(0)
         }
-        key.append(0)
     }
 
     // S3: pipeline only — reset + collectAll, no writer. Uses the same fused
@@ -135,12 +133,11 @@ extension RootCollator {
     ) {
         let compressibleBytes = data.compressibleBytes.isEmpty
             ? base!.compressibleBytes : data.compressibleBytes
-        key.removeAll(keepingCapacity: true)
+        // The writer replaces the key's contents and adds the terminator itself.
         CollationKeys.writeSortKeyUpToQuaternarySingle(
             ces: ces, compressibleBytes: compressibleBytes,
             options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, into: &key)
-        key.append(0)
+            reordering: reordering, terminate: true, into: &key)
     }
 
     // A DEDICATED probe scratch — the thread-local slot must stay free so
