@@ -509,8 +509,9 @@ struct CollationSearch {
         if !result.isEmpty { result.removeAll(keepingCapacity: true) }
         var afterVariable = false
         do {
-            let allCEs = try iter.collectAll()
-            for ce in allCEs {
+            try iter.collectAll()
+            for i in 0..<iter.ces.count {
+                let ce = iter.ces[i]
                 if ce == CollationConstants.noCE { break }
                 if let masked = maskedCE(ce, mask: mask, afterVariable: &afterVariable) {
                     result.append(masked)

@@ -81,7 +81,7 @@ final class ScratchBuffers {
         _ iter: inout CEIterator, numeric: Bool, scalars: String.UnicodeScalarView
     ) throws {
         iter.reset(numeric: numeric, scalars: scalars)
-        _ = try iter.collectAll()
+        try iter.collectAll()
     }
 
     /// Resets both iterators and runs the comparison under TWO access scopes instead of four.

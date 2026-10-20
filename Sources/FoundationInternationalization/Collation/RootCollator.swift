@@ -868,7 +868,8 @@ public struct RootCollator: @unchecked Sendable {
     func collationElements(of s: String, numeric: Bool = false) throws -> [Int64] {
         var iter = CEIterator(
             data: data, base: base, norm: norm, numeric: numeric, scalars: s.unicodeScalars)
-        return try iter.collectAll()
+        try iter.collectAll()
+        return iter.ces.toArray()
     }
 
     /// All primary weights (including ignorable zeros, excluding the NO_CE terminator) for a string. Test hook.

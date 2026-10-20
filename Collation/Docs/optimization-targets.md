@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1, C2, C3, C7 committed (`6d6cc1f6`); C4 done, not committed; C3b kept eager (its cost is now once per process). Open: C5, C6. Suite 1537/127.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 (CEBuffer) done, not committed. Next: START HERE item 2 (the `compareFastPath` frame). Suite 1537/127.**
 
 #### (a) The audit
 
@@ -3339,3 +3339,48 @@ all 960 combinations on root, zh, ja, ru, el and de-phonebook, that
 replaces bits 15..0, the same packed options as on the word. The writer test
 alone: 14.5–15.4 s against 16.9–17.2 s with whole-word keys (interleaved
 runs). Table 1 counts unchanged; TSan clean. Suite 1537/127.
+
+#### (h) C5 + C6: the CE buffer with an explicit count
+
+`Array` has no cheap "count = 0": `removeAll(keepingCapacity:)`,
+`removeLast(n)`, `removeSubrange` and `removeAll(where:)` all go through the
+general `replaceSubrange` (a probe timed them equal). And each `ces.append`
+called the runtime's `isUniquelyReferenced` out of line — 13 times for a
+12-letter key; the compiler does not hoist it out of the per-character loop
+(the memory note "isUniquelyReferenced is hoisted" does not hold here).
+
+**Change:** `CEBuffer`, a noncopyable struct (`~Copyable`, `deinit` frees):
+pointer, count, capacity. An append is a capacity test and a store (growth
+out of line); `removeAll()` sets the count to 0; the subscript keeps
+`Array`'s bounds check (`precondition`). `CEIterator` became noncopyable too,
+so the compiler rejects any second owner; no class, so no reference counting
+and no new exclusivity scope. `collectAll()` no longer returns the array
+(`toArray()` serves the test hook and the tools); the writer takes
+`ces: borrowing CEBuffer`. About 58 lines in 5 files use `ces`; nearly all
+compiled unchanged.
+
+Instruction counts (`3442256f` → CEBuffer), steady-state sortKey: ascii
+2444 → 2269 (−7.2%), latin 2235 → 2098, cjk 2337 → 2243, paths 5338 → 4877
+(−8.6%), thai 2252 → 2110; thai compare 3077 → 2758 (−10.4%); the
+fast-path compare unchanged.
+
+A/B against `3442256f` (5 rounds, 2026-10-19 17:04, load 11–15, all 5/5):
+
+| row | change |
+|---|---|
+| sortKey | ascii **−8.2%** (158.3 → 143.1), latin −6.6%, cjk −4.6%, paths **−8.6%** (388.2 → 351.9: below ICU's 370), thai −4.8% |
+| skRet | −3.2..−8.3% |
+| compare | thai **−8.3%** (239.9 → 219.6), cjk −3.0%; ascii, latin, paths within ±1.1%, mixed |
+
+Checks: suite 1537/127; TSan clean (concurrency, search, position
+invariants); the sk-ladder identity checks (S1/S2 vs S0, three writers × 10
+option sets) and the cmp-ladder (0 bail-outs, 0 wrong) clean on ascii and
+paths.
+
+**Tools broken by C4 and fixed here.** C4 (committed in `3442256f`)
+removed `DefaultFastLatinSetup.word` and gave `compareBody` a `word`
+parameter; the cmp-ladder (4 guard clones) and the thai-ladder did not
+build. Fixed: the clones mirror the new bit-pattern guard; the thai-ladder
+passes a hoisted word. The sk-ladder keeps one `CEBuffer` per line in a
+small class box for the shipping writer. Lesson: build every tool under
+`Collation/Tools/` before a commit that changes an internal signature.

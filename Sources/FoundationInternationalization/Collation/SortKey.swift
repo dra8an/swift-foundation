@@ -190,7 +190,7 @@ enum CollationKeys {
     ///
     /// This is the third point in the writer design space: the buffered writer is single-pass with heap level buffers, the direct writer is multi-pass with none, and this one is single-pass with region level buffers. At the default tertiary strength the direct writer traverses the CE array three times and re-runs the variable-CE skip on each pass; this traverses once. Nothing is fused with CE production — the CE array is still materialized first (that fusion is rejected, technique log §15).
     static func writeSortKeyUpToQuaternarySingle(
-        ces: borrowing [Int64], compressibleBytes: UnsafeBufferPointer<Bool>,
+        ces: borrowing CEBuffer, compressibleBytes: UnsafeBufferPointer<Bool>,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
         into key: inout [UInt8]
     ) {

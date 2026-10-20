@@ -66,8 +66,7 @@ extension RootCollator {
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
         let cjkSetup = st.quickCJKSetupPtr
-        guard setup.pointee.eligible, options.strength != .identical,
-              options.icuOptions == setup.pointee.word else { return nil }
+        guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return nil }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
@@ -100,8 +99,7 @@ extension RootCollator {
         let setup = defaultFLSetupPtr
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
-        guard setup.pointee.eligible, options.strength != .identical,
-              options.icuOptions == setup.pointee.word else { return nil }
+        guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return nil }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
@@ -159,8 +157,7 @@ extension RootCollator {
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
         let cjkSetup = st.quickCJKSetupPtr
-        guard setup.pointee.eligible, options.strength != .identical,
-              options.icuOptions == setup.pointee.word else { return CollationFastLatin.bailOutResult }
+        guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return CollationFastLatin.bailOutResult }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
@@ -191,8 +188,7 @@ extension RootCollator {
         let st = storage
         let safety = UnsafePointer(st.restartSafetyPtr)
         let cjkSetup = st.quickCJKSetupPtr
-        guard setup.pointee.eligible, options.strength != .identical,
-              options.icuOptions == setup.pointee.word else { return nil }
+        guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return nil }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions

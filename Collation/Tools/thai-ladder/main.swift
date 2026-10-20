@@ -46,10 +46,11 @@ measure("P0.compareFull ", ops: pairOps) {
 
 measure("P1.compareBody ", ops: pairOps) {
     let c = collator
+    let word = opts.icuOptions  // compareSlowPath computes it once and passes it down
     for _ in 0..<reps {
         for i in 1..<lines.count {
             sink += (try! c.compareBody(
-                lines[i - 1], lines[i], options: opts, triedFastLatin: true)).rawValue
+                lines[i - 1], lines[i], options: opts, word: word, triedFastLatin: true)).rawValue
         }
     }
 }
@@ -215,9 +216,11 @@ measure("P6.collectAll  ", ops: pairOps) {
     for _ in 0..<reps {
         for i in 1..<lines.count {
             s.left.reset(numeric: false, scalars: lines[i - 1].unicodeScalars)
-            sink += (try! s.left.collectAll()).count
+            try! s.left.collectAll()
+            sink += s.left.ces.count
             s.left.reset(numeric: false, scalars: lines[i].unicodeScalars)
-            sink += (try! s.left.collectAll()).count
+            try! s.left.collectAll()
+            sink += s.left.ces.count
         }
     }
 }

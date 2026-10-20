@@ -130,7 +130,7 @@ extension RootCollator {
     // S4/S4b keep the buffered and direct writers reachable for the
     // writer-vs-writer comparison; only this one reflects the module.
     func skWriterSingle(
-        ces: [Int64], into key: inout [UInt8],
+        ces: borrowing CEBuffer, into key: inout [UInt8],
         options: CollationOptions = CollationOptions()
     ) {
         let compressibleBytes = data.compressibleBytes.isEmpty
@@ -192,6 +192,14 @@ do {
 // WHOLE MATRIX — the stage clones must track the public entry at every option
 // set, not just the default one.
 var lineCEs: [[Int64]] = []
+/// The same CEs as a CEBuffer per line, for the shipping writer (it takes a CEBuffer; a noncopyable value cannot be an array element, hence the box — the module reads `scratch.left.ces` through a class too).
+final class CEBox {
+    var ces = CEBuffer()
+    init(_ source: borrowing CEBuffer) {
+        for i in 0..<source.count { ces.append(source[i]) }
+    }
+}
+var lineBoxes: [CEBox] = []
 var s0key: [UInt8] = [], s1key: [UInt8] = [], s2key: [UInt8] = []
 var stageMismatches: [String: Int] = [:]
 for line in lines {
@@ -199,7 +207,8 @@ for line in lines {
     _ = try! scratch.left.collectAll()
     // Verbatim buffer state (sentinel included) — S4 must see exactly what
     // the real body hands the writer.
-    lineCEs.append(Array(scratch.left.ces))
+    lineCEs.append(scratch.left.ces.toArray())
+    lineBoxes.append(CEBox(scratch.left.ces))
 }
 for (name, opts) in optionMatrix {
     var bad = 0
@@ -222,10 +231,10 @@ var bufKey: [UInt8] = [], dirKey: [UInt8] = [], sglKey: [UInt8] = []
 for (name, opts) in optionMatrix {
     var bad = 0
     var badSingle = 0
-    for ces in lineCEs {
+    for (k, ces) in lineCEs.enumerated() {
         collator.skWriterBuffered(ces: ces, into: &bufKey, levels: &ladderLevels, options: opts)
         collator.skWriterDirect(ces: ces, into: &dirKey, options: opts)
-        collator.skWriterSingle(ces: ces, into: &sglKey, options: opts)
+        collator.skWriterSingle(ces: lineBoxes[k].ces, into: &sglKey, options: opts)
         if bufKey != dirKey { bad += 1 }
         if bufKey != sglKey { badSingle += 1 }
     }
@@ -282,7 +291,7 @@ measure("S4b writer-direct") {
 }
 measure("S4c writer-single") {
     let c = collator
-    for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterSingle(ces: lineCEs[i], into: &key); sink += key.count } }
+    for _ in 0..<reps { for (i, _) in lines.enumerated() { c.skWriterSingle(ces: lineBoxes[i].ces, into: &key); sink += key.count } }
 }
 measure("S5 reset-only   ") {
     let c = collator
@@ -299,7 +308,7 @@ if args.contains("holdS4") {
     let c = collator
     for _ in 0..<200000 {
         for (i, _) in lines.enumerated() {
-            c.skWriterSingle(ces: lineCEs[i], into: &key)
+            c.skWriterSingle(ces: lineBoxes[i].ces, into: &key)
             sink += key.count
         }
     }

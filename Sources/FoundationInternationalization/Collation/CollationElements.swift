@@ -2,7 +2,70 @@
 //
 // Because the scalar stream is already fully NFD-normalized and canonically ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and discontiguous matching operates on discrete combining marks exactly as UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state snapshots a struct copy, which replaces the TRIE half of ICU's SkippedState machinery; the POSITION half is still needed, because a discontiguous match consumes a non-contiguous set of scalars (see `spanStart`).
 
-struct CEIterator {
+/// The collation elements of one iteration: a growable buffer with an explicit count, like ICU's CEBuffer. An append is a capacity test and a store, and `removeAll()` sets the count to 0. As a Swift `Array`, every append called the runtime's uniqueness check out of line (13 times for a 12-letter key; the compiler cannot hoist it out of the per-character loop), and every clear ran the general `replaceSubrange` (~85 instructions) — together ~10% of a short sortKey's instructions (technique log §51).
+///
+/// Noncopyable: it owns its memory and frees it in `deinit`, so a copy would be a second owner. The compiler rejects copies; owners pass it `inout` or `borrowing`. Reads keep the bounds check that `Array` has.
+struct CEBuffer: ~Copyable {
+    private var storage: UnsafeMutablePointer<Int64>
+    private var capacity: Int
+    private(set) var count = 0
+
+    init(capacity: Int = 32) {
+        storage = .allocate(capacity: capacity)
+        self.capacity = capacity
+    }
+
+    deinit {
+        storage.deallocate()
+    }
+
+    var isEmpty: Bool { count == 0 }
+
+    subscript(i: Int) -> Int64 {
+        @inline(__always) get {
+            precondition(i >= 0 && i < count, "CE index out of range")
+            return storage[i]
+        }
+        @inline(__always) set {
+            precondition(i >= 0 && i < count, "CE index out of range")
+            storage[i] = newValue
+        }
+    }
+
+    @inline(__always)
+    mutating func append(_ ce: Int64) {
+        if count == capacity { grow(to: capacity &* 2) }
+        storage[count] = ce
+        count &+= 1
+    }
+
+    /// Empties the buffer and keeps its memory.
+    @inline(__always)
+    mutating func removeAll() {
+        count = 0
+    }
+
+    mutating func reserveCapacity(_ minimumCapacity: Int) {
+        if minimumCapacity > capacity { grow(to: minimumCapacity) }
+    }
+
+    @inline(never)
+    private mutating func grow(to newCapacity: Int) {
+        let newStorage = UnsafeMutablePointer<Int64>.allocate(capacity: newCapacity)
+        newStorage.update(from: storage, count: count)
+        storage.deallocate()
+        storage = newStorage
+        capacity = newCapacity
+    }
+
+    /// A copy of the elements as an array (test hooks, search, tools).
+    func toArray() -> [Int64] {
+        Array(UnsafeBufferPointer(start: storage, count: count))
+    }
+}
+
+/// Noncopyable because its CE buffer is (see CEBuffer).
+struct CEIterator: ~Copyable {
     /// The tailoring data (or root when there is no tailoring).
     let data: CollationData
     /// The base (root) data when `data` is a tailoring; lookups fall back here when the tailoring maps a character to FALLBACK_CE32.
@@ -22,7 +85,7 @@ struct CEIterator {
     private let thaiCEsNumeric: UnsafeBufferPointer<Int64>
     private let simpleCEsWithDigits: UnsafeBufferPointer<Int64>
     private let thaiCEsWithDigits: UnsafeBufferPointer<Int64>
-    var ces: [Int64] = []
+    var ces = CEBuffer()
 
     /// Number of NFD scalars consumed so far. Every scalar is counted exactly once, including the ones a discontiguous contraction consumes out of order, so this always equals the number of scalars the NFD front end has yielded (PositionInvariantTests gates that).
     private(set) var scalarsConsumed = 0
@@ -98,7 +161,7 @@ struct CEIterator {
     @inline(__always)
     private mutating func clearState() {
         // isEmpty guards: see appendMore.
-        if !ces.isEmpty { ces.removeAll(keepingCapacity: true) }
+        ces.removeAll()
         if !lookahead.isEmpty { lookahead.removeAll(keepingCapacity: true) }
         lookaheadStart = 0
         prev1 = nil
@@ -193,11 +256,10 @@ struct CEIterator {
     /// True once the NO_CE terminator has been appended.
     private(set) var terminated = false
 
-    /// All CEs of the string, terminated by NO_CE.
+    /// Produces all CEs of the string into `ces`, terminated by NO_CE.
     @inline(__always)
-    mutating func collectAll() throws -> [Int64] {
+    mutating func collectAll() throws {
         while try appendMore() {}
-        return ces
     }
 
     /// Pops the next scalar, bypassing the lookahead buffer when it is empty (the common case — the buffer fills only during context matching). Starts a fresh span at the popped scalar's position.
