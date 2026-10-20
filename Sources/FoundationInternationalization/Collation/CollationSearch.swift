@@ -67,7 +67,7 @@ struct CollationSearch {
         // Two access scopes for the whole body — one for the iterator, one for the buffer bundle — instead of one per buffer touched. See ScratchBuffers.SearchBuffers.
         return searchFused(
             for: pattern, in: text, mask: strengthMask(for: options.strength),
-            iter: &scratch.left, buffers: &scratch.search)
+            iter: &scratch.left.pointee, buffers: &scratch.search)
     }
 
     /// The byte-scan fast paths are sound only when every clean-ASCII byte is guaranteed a nonzero collation element: strength at least tertiary (case differences stay significant), numeric off (digit runs would collapse into single elements), and alternate=nonIgnorable (shifted drops spaces/punctuation below the mask).
@@ -99,7 +99,7 @@ struct CollationSearch {
 
         return searchBackwardsFused(
             for: pattern, in: text, mask: strengthMask(for: options.strength),
-            iter: &scratch.left, buffers: &scratch.search)
+            iter: &scratch.left.pointee, buffers: &scratch.search)
     }
 
     /// Returns true if `pattern` appears anywhere in `text`. Fast path: no position tracking, no array allocations for index/NFD maps.
@@ -120,7 +120,7 @@ struct CollationSearch {
 
         return containsFused(
             pattern: pattern, in: text, mask: strengthMask(for: options.strength),
-            iter: &scratch.left, buffers: &scratch.search)
+            iter: &scratch.left.pointee, buffers: &scratch.search)
     }
 
     private func containsScan(

@@ -120,14 +120,14 @@ measure("P4.pipelineCore", ops: pairOps) {
                 fellBack = true
             }
             if fellBack {
-                s.left.reset(numeric: false, scalars: left.unicodeScalars)
-                s.right.reset(numeric: false, scalars: right.unicodeScalars)
+                s.left.pointee.reset(numeric: false, scalars: left.unicodeScalars)
+                s.right.pointee.reset(numeric: false, scalars: right.unicodeScalars)
             } else {
-                s.left.reset(numeric: false, source: lIter, first: lNext?.value)
-                s.right.reset(numeric: false, source: rIter, first: rNext?.value)
+                s.left.pointee.reset(numeric: false, source: lIter, first: lNext?.value)
+                s.right.pointee.reset(numeric: false, source: rIter, first: rNext?.value)
             }
             sink += try! CollationCompare.compareUpToQuaternary(
-                &s.left, &s.right, options: opts.icuOptions,
+                &s.left.pointee, &s.right.pointee, options: opts.icuOptions,
                 variableTopValue: vtop, reordering: reorder)
         }
     }
@@ -137,10 +137,10 @@ measure("P5.nfdDrain    ", ops: pairOps) {
     let s = hoisted
     for _ in 0..<reps {
         for i in 1..<lines.count {
-            s.left.scalars.reset(scalars: lines[i - 1].unicodeScalars)
-            while let c = s.left.scalars.next() { sink &+= Int(c) }
-            s.left.scalars.reset(scalars: lines[i].unicodeScalars)
-            while let c = s.left.scalars.next() { sink &+= Int(c) }
+            s.left.pointee.scalars.reset(scalars: lines[i - 1].unicodeScalars)
+            while let c = s.left.pointee.scalars.next() { sink &+= Int(c) }
+            s.left.pointee.scalars.reset(scalars: lines[i].unicodeScalars)
+            while let c = s.left.pointee.scalars.next() { sink &+= Int(c) }
         }
     }
 }
@@ -215,12 +215,12 @@ measure("P6.collectAll  ", ops: pairOps) {
     let s = hoisted
     for _ in 0..<reps {
         for i in 1..<lines.count {
-            s.left.reset(numeric: false, scalars: lines[i - 1].unicodeScalars)
-            try! s.left.collectAll()
-            sink += s.left.ces.count
-            s.left.reset(numeric: false, scalars: lines[i].unicodeScalars)
-            try! s.left.collectAll()
-            sink += s.left.ces.count
+            s.left.pointee.reset(numeric: false, scalars: lines[i - 1].unicodeScalars)
+            try! s.left.pointee.collectAll()
+            sink += s.left.pointee.ces.count
+            s.left.pointee.reset(numeric: false, scalars: lines[i].unicodeScalars)
+            try! s.left.pointee.collectAll()
+            sink += s.left.pointee.ces.count
         }
     }
 }
@@ -237,10 +237,10 @@ measure("P8.noWalkCore  ", ops: pairOps) {
     let reorder = c.reordering
     for _ in 0..<reps {
         for i in 1..<lines.count {
-            s.left.reset(numeric: false, scalars: lines[i - 1].unicodeScalars)
-            s.right.reset(numeric: false, scalars: lines[i].unicodeScalars)
+            s.left.pointee.reset(numeric: false, scalars: lines[i - 1].unicodeScalars)
+            s.right.pointee.reset(numeric: false, scalars: lines[i].unicodeScalars)
             sink += try! CollationCompare.compareUpToQuaternary(
-                &s.left, &s.right, options: opts.icuOptions,
+                &s.left.pointee, &s.right.pointee, options: opts.icuOptions,
                 variableTopValue: vtop, reordering: reorder)
         }
     }

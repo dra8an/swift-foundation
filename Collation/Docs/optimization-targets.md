@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) done, not committed, A/B under load only. Suite 1537/127.**
+**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) scratch iterators behind pointers done, not committed. Suite 1537/127.**
 
 #### (a) The audit
 
@@ -3459,3 +3459,52 @@ end), to be repeated quiet: sortKey min ascii −6.7%, latin −13.0%, cjk
 skRet −8.8..−14.7% (one exact-size allocation instead of two growth steps).
 Suite 1537/127; the sk-ladder identity checks (S1/S2 vs S0; three writers ×
 10 option sets) clean on all five corpora.
+
+**W3a — the writer specialized for the default options (REJECTED).** A
+dispatcher called an `@inline(__always)` core twice, once with constant
+options (tertiary, non-ignorable, no case level, no backwards, no
+reordering) so the dead branches and their live values could fold away.
+The compiler left the core out of line and inlined the region closure into
+it: +59..+181 instructions on every corpus. Not shipped.
+
+**What is left in the writer, and why it may not pay.** About 16% of the
+writer closure is stack traffic (90 loads, 68 stores per ascii key; the
+common-run counters live on the stack), and CE production costs ~70
+instructions per ASCII character (span bookkeeping, NFD buffer checks,
+history stores). §36 measured this kind of work — independent loads and
+stores — as nearly free in time. The serial work was the runtime calls,
+which (h), W1, W2 and (k) removed.
+
+#### (k) The last exclusivity scope: the scratch iterators behind pointers
+
+After W1 one dynamically checked scope remained per sortKey (~105
+instructions: `swift_beginAccess`, `SwiftTLSContext::get`,
+`AccessSet::insert`, `swift_endAccess` — a serial chain), and two per
+slow-path compare (~220), because `left` and `right` were `var` stored
+properties of the class `ScratchBuffers`. The check cannot fire: a
+ScratchBuffers belongs to one thread at a time (`ThreadLocalScratch.take`
+removes it from the slot, so a nested call gets another one).
+
+§48 named two ways out: `@exclusivity(unchecked)`, or `unsafeAddress` /
+`unsafeMutableAddress` accessors. Neither came through Swift Evolution (the
+accessors are what the standard library uses for
+`UnsafeMutablePointer.pointee`). The accessor form, tried in the scratch
+copy: sortKey −110..−114, thai compare −228, exclusivity 0.
+
+**Shipped instead, with public API only:** `let left, right:
+UnsafeMutablePointer<CEIterator>`, allocated in `init`, freed in a new
+`deinit`, every access through `.pointee` (8 sites in ScratchBuffers, 3 in
+CollationSearch, the sk- and thai-ladders). A `let` class property and
+memory behind a pointer have no dynamic exclusivity check; the compile-time
+checks still apply. Counts: one instruction below the accessor form on every
+row — sortKey ascii 1980.5 → 1869.5, latin 1807.5 → 1693.5, cjk 1951.8 →
+1837.0, paths 4589.4 → 4478.4, thai 1809.0 → 1697.9; thai compare 2740.0 →
+2510.8; the fast-path compare unchanged.
+
+A/B against `b6f8ea52` (5 rounds, 2026-10-20 11:47, load 8–15, all 5/5):
+sortKey ascii −6.4% (132.8 → 124.3), latin −6.4%, cjk −6.7%, paths −3.8%,
+thai −3.1%; skRet −2.8..−6.7%; **thai compare −8.2% (215.7 → 197.3)**.
+The base column also confirms W1 + W2 on a quieter machine (ascii sortKey
+132.8 here against 142.8 at `4cca3da5`). Suite 1537/127; TSan clean (77
+tests: concurrency, search, position invariants, sort keys); the four tools
+build; the sk-ladder identity checks clean (ascii, thai).

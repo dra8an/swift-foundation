@@ -29,8 +29,9 @@ struct PoolLock {
 
 /// One set of buffers: everything a single compare() or sortKey() call needs.
 final class ScratchBuffers {
-    var left: CEIterator
-    var right: CEIterator
+    /// The two CE iterators, in memory this object allocates and frees, reached through `pointee`. As `var` stored properties of this class, every `inout` access to them opened a dynamically-checked access scope (swift_beginAccess, a thread-local lookup, AccessSet::insert, swift_endAccess — ~105 instructions per scope, a serial chain: one scope per sortKey, two per slow-path compare). The check cannot fire here: a ScratchBuffers belongs to one thread at a time (ThreadLocalScratch.take removes it from the thread's slot, so even a nested call gets a different one). Memory behind a pointer has no dynamic exclusivity check; the compile-time checks still apply to each statement (technique log §51).
+    let left: UnsafeMutablePointer<CEIterator>
+    let right: UnsafeMutablePointer<CEIterator>
     /// sortKey: the key bytes under construction.
     var key: [UInt8] = []
     /// sortKey: NFD scalars for the identical level.
@@ -60,8 +61,17 @@ final class ScratchBuffers {
          simpleCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
          thaiCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         let empty = "".unicodeScalars
-        self.left = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
-        self.right = CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
+        left = .allocate(capacity: 1)
+        left.initialize(to: CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits))
+        right = .allocate(capacity: 1)
+        right.initialize(to: CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits))
+    }
+
+    deinit {
+        left.deinitialize(count: 1)
+        left.deallocate()
+        right.deinitialize(count: 1)
+        right.deallocate()
     }
 
     /// Resets `left` onto `scalars` and produces all its CEs under ONE dynamic access scope.
@@ -73,7 +83,7 @@ final class ScratchBuffers {
     /// This is not the §37 anti-pattern: that rule is about `inout` parameters on an entry whose common case bails before touching them, so the caller pays the scope ahead of the bail. `sortKey` has no fast path — it always produces CEs — so the scope is opened exactly where the work happens.
     @inline(__always)
     func resetAndCollectLeft(numeric: Bool, scalars: String.UnicodeScalarView) throws {
-        try ScratchBuffers.resetAndCollect(&left, numeric: numeric, scalars: scalars)
+        try ScratchBuffers.resetAndCollect(&left.pointee, numeric: numeric, scalars: scalars)
     }
 
     /// sortKey's whole body under ONE access scope to `left`: reset, CE production, then the writer. With CEBuffer noncopyable, passing `left.ces` to the writer borrows a class property for the whole writer call, which is a second dynamically-checked scope (~80 instructions per sortKey: swift_beginAccess, AccessSet::insert, swift_endAccess); routing the writer through the same `inout` argument as the reset removes it (technique log §51). The writer replaces the key only after CE production succeeds, so a throw leaves it unchanged, as before.
@@ -84,7 +94,7 @@ final class ScratchBuffers {
         reordering: Reordering?, terminate: Bool, into key: inout [UInt8]
     ) throws {
         try ScratchBuffers.resetCollectAndWriteKey(
-            &left, numeric: numeric, scalars: scalars, compressibleBytes: compressibleBytes,
+            &left.pointee, numeric: numeric, scalars: scalars, compressibleBytes: compressibleBytes,
             options: options, variableTopValue: variableTopValue, reordering: reordering,
             terminate: terminate, into: &key)
     }
@@ -124,7 +134,7 @@ final class ScratchBuffers {
         options: Int32, variableTopValue: UInt32, reordering: Reordering?
     ) throws -> Int {
         try ScratchBuffers.resetBothAndCompare(
-            &left, &right, options: options, variableTopValue: variableTopValue,
+            &left.pointee, &right.pointee, options: options, variableTopValue: variableTopValue,
             reordering: reordering
         ) { l, r in
             l.reset(numeric: numeric, scalars: leftScalars)
@@ -140,7 +150,7 @@ final class ScratchBuffers {
         options: Int32, variableTopValue: UInt32, reordering: Reordering?
     ) throws -> Int {
         try ScratchBuffers.resetBothAndCompare(
-            &left, &right, options: options, variableTopValue: variableTopValue,
+            &left.pointee, &right.pointee, options: options, variableTopValue: variableTopValue,
             reordering: reordering
         ) { l, r in
             l.reset(numeric: numeric, source: leftSource, first: leftFirst)
@@ -169,7 +179,7 @@ final class ScratchBuffers {
         left: String.UnicodeScalarView, right: String.UnicodeScalarView, skippingFirst shared: Int
     ) -> RootCollator.Order {
         ScratchBuffers.compareIdenticalLevel(
-            &self.left, &self.right, left: left, right: right, skippingFirst: shared)
+            &self.left.pointee, &self.right.pointee, left: left, right: right, skippingFirst: shared)
     }
 
     @inline(__always)
@@ -200,7 +210,7 @@ final class ScratchBuffers {
     /// Drains the NFD scalars for the sort key's identical level into `nfdScalars` under two access scopes instead of two per scalar (`left` for `next()`, `nfdScalars` for `append`).
     @inline(__always)
     func collectNFDScalars(scalars view: String.UnicodeScalarView) {
-        ScratchBuffers.collectNFDScalars(&left, into: &nfdScalars, scalars: view)
+        ScratchBuffers.collectNFDScalars(&left.pointee, into: &nfdScalars, scalars: view)
     }
 
     @inline(__always)

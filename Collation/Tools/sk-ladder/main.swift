@@ -66,7 +66,7 @@ extension RootCollator {
     // single-scope helper the shipping body calls.
     func skPipelineOnly(_ s: String, scratch: ScratchBuffers) -> Int {
         try! scratch.resetAndCollectLeft(numeric: false, scalars: s.unicodeScalars)
-        return scratch.left.ces.count
+        return scratch.left.pointee.ces.count
     }
 
     // S4: writer only, on CEs collected once outside the timing loop. The
@@ -88,8 +88,8 @@ extension RootCollator {
 
     // S5: reset only.
     func skResetOnly(_ s: String, scratch: ScratchBuffers) -> Int {
-        scratch.left.reset(numeric: false, scalars: s.unicodeScalars)
-        return scratch.left.ces.count
+        scratch.left.pointee.reset(numeric: false, scalars: s.unicodeScalars)
+        return scratch.left.pointee.ces.count
     }
 
     // S4b: the §43 direct multi-pass writer, on the same pre-collected CEs.
@@ -189,7 +189,7 @@ do {
 // WHOLE MATRIX — the stage clones must track the public entry at every option
 // set, not just the default one.
 var lineCEs: [[Int64]] = []
-/// The same CEs as a CEBuffer per line, for the shipping writer (it takes a CEBuffer; a noncopyable value cannot be an array element, hence the box — the module reads `scratch.left.ces` through a class too).
+/// The same CEs as a CEBuffer per line, for the shipping writer (it takes a CEBuffer; a noncopyable value cannot be an array element, hence the box — the module reads `scratch.left.pointee.ces` through a class too).
 final class CEBox {
     var ces = CEBuffer()
     init(_ source: borrowing CEBuffer) {
@@ -200,12 +200,12 @@ var lineBoxes: [CEBox] = []
 var s0key: [UInt8] = [], s1key: [UInt8] = [], s2key: [UInt8] = []
 var stageMismatches: [String: Int] = [:]
 for line in lines {
-    scratch.left.reset(numeric: false, scalars: line.unicodeScalars)
-    _ = try! scratch.left.collectAll()
+    scratch.left.pointee.reset(numeric: false, scalars: line.unicodeScalars)
+    _ = try! scratch.left.pointee.collectAll()
     // Verbatim buffer state (sentinel included) — S4 must see exactly what
     // the real body hands the writer.
-    lineCEs.append(scratch.left.ces.toArray())
-    lineBoxes.append(CEBox(scratch.left.ces))
+    lineCEs.append(scratch.left.pointee.ces.toArray())
+    lineBoxes.append(CEBox(scratch.left.pointee.ces))
 }
 for (name, opts) in optionMatrix {
     var bad = 0
