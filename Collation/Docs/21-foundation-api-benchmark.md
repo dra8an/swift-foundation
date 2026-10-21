@@ -306,7 +306,7 @@ costs ~31 ns more per call than `localizedStandardCompare`, and
 cd swift-foundation-collation
 ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2 \
 ICU_BUILD=$ICU_SRC/icu4c/source \
-  caffeinate -i zsh Collation/Tools/run_benchmarks.sh 3   # through zsh: HANDOFF START HERE, "Full matrix"
+  caffeinate -i /Users/dragan/Projects/dra8an/swift-foundation-collation/Collation/Tools/run_benchmarks.sh 3   # absolute path: HANDOFF START HERE, "Full matrix"
 ```
 
 K=3 takes about 6–8 minutes (14 Table 2 APIs). Check the machine first — load average, memory,

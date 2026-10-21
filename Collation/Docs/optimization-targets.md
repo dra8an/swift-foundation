@@ -3817,3 +3817,52 @@ The first compare stays 2–3 µs. Suite 1544/129.
 the data read and parse (~0.75 ms; `Data(contentsOf:)` then a copy into
 `[UInt8]`, then the parts copied again — mapping the file as ICU does is the
 next candidate), the storage build (0.18 ms).
+
+#### (r) The writer's level cursors: one pointer, not base + count (START HERE item 4)
+
+**Where.** One steady-state ascii sortKey: 1869.5 instructions, CE
+production (inlined into `sortKey`) 833, the writer closure 780.5. A trace
+of one call: the writer executed 997 instructions, 158 of them stack loads
+and stores (69 reloads without a source line; stores at the closure entry,
+the loop head and the run counters). The loop keeps ~25 values live (five
+`RegionLevel`s of base + count, five run counters, the previous primary and
+secondary, the CE index, the option flags, the buffers), more than arm64's
+free registers. The sk-ladder split (S3 pipeline 37 ns, S4c writer 106 ns of
+S0 137 ns, ascii) put most of the TIME in the writer, against 42% of the
+instructions — so the writer runs at a low IPC.
+
+**Change (V1).** `RegionLevel` keeps a write `cursor` instead of a `count`;
+`count` and `isEmpty` are computed (`cursor - base`, `cursor == base`), and
+`appendByte` stores at the cursor and advances it. An append then needs
+one live value, not two, and `base` is left for the rare paths and the
+assembly.
+
+**Counts went the wrong way:** ascii 1869.5 → 1900.9, latin 1693.5 →
+1720.6, cjk 1837.0 → 1867.5 (+27..+31); the writer became its own function
+(no longer an inlined closure), and the traced call had 238 stack loads and
+stores against 215.
+
+**A/B against HEAD `31475060`** (EngineBench, 5 interleaved rounds,
+2026-10-21, load 15–23; min ns, all sortKey rows 5/5):
+
+| row | plain builds | every function aligned to 64 bytes |
+|---|---|---|
+| sortKey ascii | 123.2 → 111.3 (−9.7%) | 123.4 → 110.9 (−10.1%) |
+| sortKey latin | −2.5% | −3.5% |
+| sortKey cjk | −8.0% | −10.3% |
+| sortKey paths | −6.6% | −6.2% |
+| sortKey thai | −4.1% | −4.4% |
+| skRet | −1.9..−7.2% | −2.8..−8.6% |
+| compare (unchanged code) | within ±0.5% | within ±1.0% |
+
+The aligned builds give the same result, so it is not code placement.
+Likely cause, not proven: with base + count every store waits for the
+count (a loop-carried value that is often spilled), and the address is
+computed again from two values; a cursor is one add, and the store does not
+wait for an index. More instructions, shorter dependency chains — the §51
+(l) lesson again in the other direction: count to find work, A/B for its
+value. sortKey ascii is now ~1.05× of ICU C (106 ns in the 2026-10-21
+matrix). Checks: suite 1544/129 (debug builds run the capacity assert);
+the sk-ladder identity checks (the shipping writer against both reference
+writers, 3 checks × 10 option sets) 0 mismatched lines on all five
+corpora; the four ladder tools build.

@@ -15,20 +15,19 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the §51 (q) commit (the bundled resources
-found by path: CollationData.swift, NormalizationData.swift, this file and
-optimization-targets.md) on top of `0528e55e` (§51 (p) and the 2026-10-21
-matrix baseline). If it is missing, those four files are modified — say so
-and give the add/commit lines. Tree clean otherwise; about 9 commits ahead
-of `origin` (not pushed: `d3c9eed9` … and the (p) and (q) commits). The
+paragraph).** Expected: HEAD = the §51 (r) commit (the writer's level
+cursors: SortKey.swift, this file, optimization-targets.md, Docs/21) on top
+of `31475060` (§51 (q)). If it is missing, those four files are modified —
+say so and give the add/commit lines. Tree clean otherwise; about 10
+commits ahead of `origin` (not pushed: `d3c9eed9` … and the (p), (q) and
+(r) commits). The A/B worktree is now at `31475060` with its own
+`main.swift` (the probe copy was restored). The
 first-collator probe packages are `.build/first-collator/` (base engine
-sources, all probe modes) and `.build/first-collator-new/`. The A/B worktree
-`../collation-baseline` is detached at `4c24d059` (before (p)); it holds an
-EngineBench build (`.build/engine-bench/...`), a WMO BenchFoundation in
-`.build-bf/` and a WMO `-g` one in `.build-bfg/`, both built from the
-§51 (p) PROBE `main.swift` (the worktree's own copy is saved as
-`.build/BenchFoundation-main.swift.orig` there — restore it before its next
-checkout). The probe version is also in the main tree at
+sources, all probe modes) and `.build/first-collator-new/`. The worktree holds EngineBench builds in `.build/engine-bench/` (plain
+and, in `.build-al/`, with every function aligned to 64 bytes) and older
+WMO BenchFoundation builds in `.build-bf/` and `.build-bfg/` (from
+`4c24d059` with the §51 (p) probe rows; rebuild them before a Table 2
+A/B). The §51 (p) probe `main.swift` is in the main tree at
 `.build/insn-wrappers/main-probe.swift`, with the count runner `run.sh`,
 `classify.py` and the A/B row list `foundation_ab_wrappers.py`. Remove the
 worktree with `git worktree remove ../collation-baseline` when the A/B work
@@ -141,7 +140,7 @@ consolation for a Table 1 gap.**
 
 **How to measure:**
 - **Full matrix:** `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
-  ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i zsh Collation/Tools/run_benchmarks.sh 3`
+  ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i /Users/dragan/Projects/dra8an/swift-foundation-collation/Collation/Tools/run_benchmarks.sh 3`
   (about 6–8 minutes with the 14 Table 2 APIs). Run it in the MAIN tree: it
   builds BenchFoundation with `-no-whole-module-optimization`, which works
   there only because the swift-syntax objects are cached (see below). Gates
@@ -149,14 +148,16 @@ consolation for a Table 1 gap.**
   194/365/369/300/494 (the long-term reference; run B read 196/363/370/301/505);
   ICU C compare about 9.5/10.1/40.8/29.7/172.0 and
   sortKey about 106.1/122.1/119.3/369.6/154.7. Record run B in Docs/21 (and
-  START HERE, the runbook ratio line, §51). **Start it through `zsh`, as
-  above:** on 2026-10-21 the script started directly (`caffeinate -i
-  Collation/Tools/run_benchmarks.sh 3`) failed three times at its first
-  `swift build` with "Invalid manifest … sandbox-exec: sandbox_apply:
-  Operation not permitted" (SwiftPM compiled the manifest again, and the
-  tool sandbox does not permit `sandbox-exec`). The same command through
-  `zsh` passed twice. The cause is not established; the same build typed
-  directly passed every time.
+  START HERE, the runbook ratio line, §51). **Start every build script with
+  its ABSOLUTE path** (or any command text that contains "swift"): Apple
+  Claude Code runs a shell command outside its process sandbox only if the
+  command text matches `~/.claude/apple/tool_allowlist.csv`, whose entry
+  `swift,contains_match` matches the repo path. A command without "swift"
+  in its text runs sandboxed, and a `swift build` inside it fails with
+  "Invalid manifest … sandbox-exec: sandbox_apply: Operation not permitted"
+  whenever SwiftPM must compile a manifest (a new package, a new toolchain,
+  or a new environment, e.g. `ICU_SRC` set). Found 2026-10-21; the earlier
+  "start it through zsh" note was wrong.
 - **Engine A/B:** `Collation/Tools/build_engine_bench.sh` in each tree, then
   `Collation/Tools/ab/engine_ab.sh <base> <variant> <out> 5` and
   `python3 Collation/Tools/ab/engine_ab_report.py <out>` (min, mean of
@@ -286,13 +287,18 @@ sort controls flat. Suite 1544/129.
    app's launch 2.3 → 2.2 ms. Left: the bundle open (~0.9 ms, SwiftPM's
    accessor) and the data read and parse (~0.75 ms; mapping the file is
    the next candidate).
-3. §51 (o) left about +1 ns on two Table 2 rows (`localizedStandardCompare`
-   latin, the options compare) whose code did not change. (p) changed the
-   code of both rows, so check this only if the new matrix shows those two
-   rows behind the others.
-4. Writer and CE-production instructions remain (stack spills, ~70 per ASCII
-   character) — the kind §36 found nearly free in time; A/B before believing
-   any count.
+3. ~~§51 (o) left about +1 ns on two Table 2 rows~~ CLOSED 2026-10-21: in
+   the new matrix `localizedStandardCompare` latin (65 ns) equals
+   `localizedCaseInsensitiveCompare` latin (65), and the options compare
+   latin (91) has the same latin/ascii step as the other rows.
+4. Writer and CE-production instructions. FIRST STEP DONE 2026-10-21,
+   §51 (r): the writer's level cursors (a pointer, not base + count) —
+   sortKey −2.5..−10% (ascii 123 → 111 ns, ~1.05× of ICU), confirmed with
+   aligned builds, although the count went UP by ~30 instructions. Next in
+   the writer: the five common-run counters and the other loop-carried
+   values (the same latency argument); CE production (~70 instructions per
+   ASCII character) is still untouched. A/B every variant — the counts
+   pointed the wrong way here.
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
 6. A Substring argument still pays its copy into a String (~293

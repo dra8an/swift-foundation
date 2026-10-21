@@ -67,21 +67,24 @@ enum CollationKeys {
     private struct RegionLevel {
         let base: UnsafeMutablePointer<UInt8>
         let capacity: Int
-        var count = 0
+        /// The next free byte. A cursor, not a count: an append then needs one live value per level, not the base and the count, and the writer loop keeps five levels live at once.
+        var cursor: UnsafeMutablePointer<UInt8>
 
         @inline(__always)
         init(_ base: UnsafeMutablePointer<UInt8>, _ capacity: Int) {
             self.base = base
             self.capacity = capacity
+            self.cursor = base
         }
 
-        var isEmpty: Bool { count == 0 }
+        var count: Int { cursor - base }
+        var isEmpty: Bool { cursor == base }
 
         @inline(__always)
         mutating func appendByte(_ b: UInt32) {
             assert(count < capacity, "level buffer overflow — the per-CE byte bound is wrong")
-            base[count] = UInt8(truncatingIfNeeded: b)
-            count += 1
+            cursor.pointee = UInt8(truncatingIfNeeded: b)
+            cursor += 1
         }
 
         /// Appends the non-zero bytes of a 16-bit weight.
