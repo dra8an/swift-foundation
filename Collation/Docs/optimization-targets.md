@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-20): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); baselines recorded 2026-10-19 18:03 and 2026-10-20 14:35 (the latter before (l) and (o)). Suite 1542/129. Next: START HERE NEXT TASK.**
+**Status (2026-10-21): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); (p) done, not yet committed at the time of writing; baselines recorded 2026-10-19 18:03, 2026-10-20 14:35 and 2026-10-21 (the last one includes (l), (o) and (p)). Suite 1544/129. Next: START HERE.**
 
 #### (a) The audit
 
@@ -3669,17 +3669,109 @@ before it bumps the generation, so the CollatorCache stays correct. Fix: the
 new test runs on the preferences actor (`usingCurrentInternationalizationPreferences`);
 12 of 12 runs then passed.
 
-#### (p) Next: the generic String conversion in the localized* methods (not started)
+#### (p) The generic String conversion in the localized* methods
 
-The same instruction profile of one `localizedStandardCompare` call
-(BenchFoundation `-no-WMO -g`, ascii, before (o) — (o) left this path
-unchanged) put ~240 of its ~1054 instructions outside collation: 116 in the
-unspecialized generic body of `localizedStandardCompare<T: StringProtocol>`,
-100 in the generic `String.init` from a `Sequence` of `Character`, 24 in the
-`Character` value witnesses, and ~30 in `___chkstk_darwin`. The methods in
-StringProtocol+Locale.swift are generic over `StringProtocol` and not
-`@inlinable`, so callers in other modules run the unspecialized code, and
-`String(self)` / `String(aString)` take the generic initializer. Measure it
-again in both build modes (HANDOFF START HERE, "Two build modes") before any
-change; the risky tests are the Substring index-space cases of §39
-(SubstringReceiverTests).
+**Cause.** The eight collation wrappers in `StringProtocol+Locale.swift`
+(`localizedCompare`, `localizedCaseInsensitiveCompare`,
+`localizedStandardCompare`, `compare(_:options:range:locale:)`,
+`localizedStandardContains`, `localizedCaseInsensitiveContains`,
+`localizedStandardRange(of:)`, `range(of:options:range:locale:)`) are public
+generics over `StringProtocol` and not `@inlinable`. A caller in another
+module runs their unspecialized code, so each `String(self)` /
+`String(aString)` calls the generic `String.init<S: Sequence &
+LosslessStringConvertible>` (the stdlib dispatches to its `S == String` /
+`S == Substring` specializations from inside it), and the generic body pays
+value-witness copies, witness-table lookups and `___chkstk_darwin`.
+**The WMO build has the same cost:** SwiftPM's cross-module optimization did
+NOT specialize these methods for the bench (generic body 131–241, the init
+100 / 126, the runtime work 64–162 instructions per call in both modes). So
+the "Two build modes" question has the answer "both".
+
+**Change (FoundationInternationalization only; public signatures unchanged):**
+1. `_collationString` (`@inline(__always)`, fileprivate on StringProtocol):
+   `_specialize(self, for: String.self)` (the stdlib's `@_transparent`,
+   `@_alwaysEmitIntoClient` metatype compare + `reinterpretCast`) returns
+   the String itself; then the same for Substring (`String(substring)`, the
+   copy every Substring needs); `String(self)` for any other type.
+2. Each public generic converts its arguments and calls a fileprivate,
+   non-generic `String` method that does the collator work (the old bodies,
+   moved). The fallbacks (no collator, a throwing compare, `.literal`) are
+   unchanged.
+3. The range rebase. A String receiver searched ITSELF (`_collationString`
+   returned self, the search builds its indices on its `text`), so
+   `rebaseRange(_:from:)` returns the range as is when `Self == String`.
+   For the other cases (a Substring receiver, a search range), `source` is
+   a copy of self from `base` on with the same UTF-8 code units, so the
+   rebase maps UTF-8 offsets (O(1) on native strings) instead of walking
+   scalars in both strings, and dispatches String and Substring receivers
+   to their concrete UTF-8 views (`_rebase`, `@inline(__always)`).
+
+**Instruction counts of one call** (ascii, 5 calls after 1000 warm-up
+calls, BenchFoundation `-g`; temporary `@inline(never)` wrapper rows; the
+search rows vary per call because only some lines match):
+
+| method | String, -no-WMO | String, WMO | Substring, -no-WMO | Substring, WMO |
+|---|---|---|---|---|
+| `localizedCompare` | 913 → 741 (−19%) | 687 → 553 (−20%) | 1326 → 1161 (−12%) | 1100 → 974 (−11%) |
+| `localizedCaseInsensitiveCompare` | 1084 → 911 (−16%) | 809 → 665 (−18%) | 1497 → 1331 (−11%) | 1222 → 1086 (−11%) |
+| `localizedStandardCompare` | 1081 → 908 (−16%) | 802 → 619 (−23%) | 1494 → 1328 (−11%) | 1215 → 1039 (−14%) |
+| `compare(_:options:range:locale:)` | 1319 → 1120 (−15%) | 1016 → 836 (−18%) | 1732 → 1542 (−11%) | 1429 → 1260 (−12%) |
+| `localizedStandardContains` | 4266 → 4100 (−4%) | 3106 → 2971 (−4%) | 4660 → 4501 (−3%) | 3499 → 3372 (−4%) |
+| `localizedCaseInsensitiveContains` | 4270 → 4103 (−4%) | 3119 → 2979 (−4%) | 4664 → 4504 (−3%) | 3512 → 3380 (−4%) |
+| `localizedStandardRange(of:)` | 5598 → 5279 (−6%) | 3564 → 3271 (−8%) | 5996 → 5741 (−4%) | 3962 → 3730 (−6%) |
+| `range(of:options:range:locale:)` | 1627 → 1260 (−23%) | 1297 → 952 (−27%) | 2026 → 1725 (−15%) | 1695 → 1415 (−17%) |
+
+Steps measured apart (WMO): step 1 + 2 −126..−183 on every row; on a call
+that finds a match, step 3 removes 781–845 more for a String receiver (the
+scalar rebase walked the line) and, for a Substring receiver, 2232 → 1771
+(UTF-8 offsets) → 1660 (concrete views) on `range(of:)`.
+
+What stays: a Substring argument still costs ~293 instructions for its copy
+into a String (`_uncheckedFromUTF8`, `_copying`, `_allASCII`) and ~90 of
+reference counting, because the engine entries take `String`. Avoiding the
+copy needs engine entries for Substring or UTF-8 buffers — a wider change,
+not made (user decision).
+
+**A/B against HEAD `4c24d059`** (WMO `-g` BenchFoundation on both sides, the
+same probe `main.swift` in both trees, 5 interleaved rounds, 2026-10-21,
+load 71 → 41; min ns per call, ascii / latin / cjk; all changed rows 5/5):
+
+| row | base → new |
+|---|---|
+| `localizedCompare` | 45 → 40, 45 → 38, 62 → 49 |
+| `localizedStandardCompare` | 54 → 40 (−26%), 57 → 41 (−28%), 77 → 64 |
+| `localizedCaseInsensitiveCompare` | 55 → 44, 57 → 44, 79 → 67 |
+| `compare(_:locale:)` | 61 → 49, 62 → 51, 78 → 67 |
+| `compare(_:options:range:locale:)` | 71 → 59, 72 → 60, 95 → 83 |
+| both contains, `localizedStandardRange` | −4..−5% |
+| `range(of:locale:)`, backwards | −14 / −16% ascii, −5% latin and cjk |
+| Substring rows (probe, all 8 methods) | −1..−12% |
+| probe, a match on every call: String `range(of:)` | 160 → 75 (−53%), −21%, −22% |
+| the same, Substring | 202 → 139 (−31%), −14%, −14% |
+| the same, `localizedStandardRange`: String / Substring | −21..−27% / −12..−17% |
+| sorts (unchanged code, the controls) | −1.6..+0.8% min, mixed signs |
+
+An earlier A/B of steps 1 + 2 with only the String shortcut of step 3
+(load 30 → 15) gave the same compare rows within 1–2 ns. The time gain is
+larger than the counts predict (−14 ns for −183 instructions on
+`localizedStandardCompare`): the removed work is a serial chain of type
+dispatch and value-witness calls — the §50 (g) "call boundary" kind.
+
+**Tests.** `SubstringReceiverTests` +2: `stringReceiverRangeEqualsRebasedRange`
+(a String receiver's unrebased range equals the rebased range of the same
+text as a whole-string Substring; `localizedStandardRange`, `range(of:)`
+forward and backward; 9 texts with decomposed, emoji, Hangul, Thai and ß
+cases) and `rebaseWithMultibyteText` (Substring receivers and search ranges
+after a multibyte prefix, where UTF-8, scalar and Character offsets all
+differ). Mutations — the String shortcut returns `source.startIndex..<
+upperBound`; the rebase counts scalars on one side — each fail them. Suite
+1544/129.
+
+**Tool notes.** (1) Swift's function-merging pass folds `@inline(never)`
+wrappers that differ only in the callee into one `…Tm` function; lldb then
+finds no location for them ("no locations (pending)"). Give each probe
+wrapper a different body (an `&+ 1`, an `&* 3`) and check the symbols with
+`nm -a <binary>.dSYM/Contents/Resources/DWARF/<name> | grep tmp`. (2)
+`swift build --package-path <tree> --scratch-path <rel>` resolves `<rel>`
+from the CURRENT directory, not from the package: build a worktree from
+inside it.

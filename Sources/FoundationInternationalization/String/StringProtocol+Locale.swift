@@ -89,58 +89,41 @@ extension StringProtocol {
     }
 }
 
+// The collation wrappers below are generic and not `@inlinable`, so a caller in another module runs their unspecialized code. Each one converts its arguments with `_collationString` and calls a non-generic `String` method, so the collator work runs as specialized code.
 @available(macOS 10.10, iOS 8.0, watchOS 2.0, tvOS 9.0, *)
 extension StringProtocol {
+    /// `String(self)` without the generic `String.init` in unspecialized code: a metatype compare finds a `String` (no copy) or a `Substring` first.
+    @inline(__always)
+    fileprivate var _collationString: String {
+        if let string = _specialize(self, for: String.self) { return string }
+        if let substring = _specialize(self, for: Substring.self) { return String(substring) }
+        return String(self)
+    }
+
     /// Compares the string with another using a localized comparison in the current locale.
     public func localizedCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale(),
-           let result = try? collator.compare(String(self), String(aString)) {
-            return result.comparisonResult
-        }
-        return String(self).compare(aString)
+        _collationString._localizedCompare(aString._collationString)
     }
 
     public func localizedCaseInsensitiveCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
-            opts.strength = .secondary
-            if let result = try? collator.compare(String(self), String(aString), options: opts) {
-                return result.comparisonResult
-            }
-        }
-        return String(self).compare(aString, options: .caseInsensitive)
+        _collationString._localizedCaseInsensitiveCompare(aString._collationString)
     }
 
     public func localizedStandardCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
-            opts.strength = .secondary
-            opts.numeric = true
-            if let result = try? collator.compare(String(self), String(aString), options: opts) {
-                return result.comparisonResult
-            }
-        }
-        return String(self).compare(aString, options: [.caseInsensitive, .numeric])
+        _collationString._localizedStandardCompare(aString._collationString)
     }
 
     /// Compares the string using the specified options and locale.
     public func compare<T: StringProtocol>(_ aString: T, options mask: String.CompareOptions = [], range: Range<Index>? = nil, locale: Locale?) -> ComparisonResult {
-        if let locale {
-            if mask.contains(.literal) {
-                var substr = Substring(self)
-                if let range { substr = substr[range] }
-                return String(substr).compare(Substring(aString), options: mask)
-            }
-            let collator = CollatorCache.shared.collator(for: locale)
-            let opts = CollationOptions.from(foundationOptions: mask, base: collator?.defaultOptions ?? CollationOptions())
+        if let locale, !mask.contains(.literal) {
             let lhs: String
             if let range {
-                lhs = String(self[range])
+                lhs = self[range]._collationString
             } else {
-                lhs = String(self)
+                lhs = _collationString
             }
-            if let collator, let result = try? collator.compare(lhs, String(aString), options: opts) {
-                return result.comparisonResult
+            if let result = lhs._compare(aString._collationString, options: mask, locale: locale) {
+                return result
             }
         }
         var substr = Substring(self)
@@ -150,81 +133,142 @@ extension StringProtocol {
 
     /// Returns true if the string contains the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
     public func localizedStandardContains<T: StringProtocol>(_ string: T) -> Bool {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
-            opts.strength = .primary
-            opts.numeric = true
-            return collator.contains(pattern: String(string), in: String(self), options: opts)
-        }
-        return String(self).localizedCaseInsensitiveContains(String(string))
+        _collationString._localizedStandardContains(string._collationString)
     }
 
     public func localizedCaseInsensitiveContains<T: StringProtocol>(_ string: T) -> Bool {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
-            opts.strength = .secondary
-            return collator.contains(pattern: String(string), in: String(self), options: opts)
-        }
-        return String(self).contains(String(string))
+        _collationString._localizedCaseInsensitiveContains(string._collationString)
     }
 
     /// Returns the range of the first occurrence of the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
     public func localizedStandardRange<T: StringProtocol>(of string: T) -> Range<Index>? {
-        let collator = CollatorCache.shared.collatorForCurrentLocale()
-        if let collator {
-            var opts = collator.defaultOptions
-            opts.strength = .primary
-            opts.numeric = true
-            let text = String(self)  // once: search input AND rebase source
-            if let range = collator.search(for: String(string), in: text, options: opts) {
-                return rebaseRange(range, from: text)
-            }
-        }
-        return nil
+        let text = _collationString  // once: search input AND rebase source
+        guard let range = text._localizedStandardSearch(for: string._collationString) else { return nil }
+        return rebaseRange(range, from: text)
     }
 
     /// Returns the range of the first occurrence of the given string, searching with the specified options and locale.
     public func range<T: StringProtocol>(of aString: T, options mask: String.CompareOptions = [], range searchRange: Range<Index>? = nil, locale: Locale?) -> Range<Index>? {
         guard let locale else { return nil }
         if mask.contains(.literal) { return nil }
-        let collator = CollatorCache.shared.collator(for: locale)
-        let opts = CollationOptions.from(foundationOptions: mask, base: collator?.defaultOptions ?? CollationOptions())
-        let backwards = mask.contains(.backwards)
         let text: String
         if let searchRange {
-            text = String(self[searchRange])
+            text = self[searchRange]._collationString
         } else {
-            text = String(self)
+            text = _collationString
         }
-        if let collator {
-            let range = backwards
-                ? collator.searchBackwards(for: String(aString), in: text, options: opts)
-                : collator.search(for: String(aString), in: text, options: opts)
-            if let range {
-                if let searchRange {
-                    return rebaseRange(range, from: text, offsetBy: searchRange.lowerBound)
-                }
-                return rebaseRange(range, from: text)
-            }
+        guard let range = text._search(for: aString._collationString, options: mask, locale: locale) else { return nil }
+        if let searchRange {
+            return rebaseRange(range, from: text, offsetBy: searchRange.lowerBound)
         }
+        return rebaseRange(range, from: text)
+    }
+
+    /// Maps a range the search produced (indices into the materialized `source` String) back into SELF's index space. A Substring's indices stay base-string-relative — mapping through a fresh `String(self)` returned copy-space indices, misaligned for every Substring receiver (caught by SubstringReceiverTests).
+    private func rebaseRange(_ range: Range<String.Index>, from source: String) -> Range<Index>? {
+        // A String receiver gave `_collationString` itself, not a copy, and the search builds its indices on `source`: the range is already in self's index space.
+        if Self.self == String.self { return range }
+        return rebaseRange(range, from: source, offsetBy: startIndex)
+    }
+
+    /// As above, with the search having run on the slice starting at `base` in self (the `range(of:range:)` case). `source` is a copy of self from `base` on, so it holds the same UTF-8 code units: UTF-8 offsets carry over, and both index steps are O(1) on native strings (scalar offsets walked both strings).
+    private func rebaseRange(_ range: Range<String.Index>, from source: String, offsetBy base: Index) -> Range<Index>? {
+        // The two common receivers step through their concrete UTF-8 views, not through the generic witnesses.
+        if let substring = _specialize(self, for: Substring.self) {
+            return _rebase(range, from: source, into: substring.utf8, offsetBy: base, limit: endIndex)
+        }
+        if let string = _specialize(self, for: String.self) {
+            return _rebase(range, from: source, into: string.utf8, offsetBy: base, limit: endIndex)
+        }
+        return _rebase(range, from: source, into: utf8, offsetBy: base, limit: endIndex)
+    }
+}
+
+@inline(__always)
+private func _rebase<UTF8: Collection>(_ range: Range<String.Index>, from source: String, into target: UTF8, offsetBy base: String.Index, limit: String.Index) -> Range<String.Index>? where UTF8.Index == String.Index {
+    let sourceUTF8 = source.utf8
+    let startOffset = sourceUTF8.distance(from: sourceUTF8.startIndex, to: range.lowerBound)
+    let endOffset = sourceUTF8.distance(from: sourceUTF8.startIndex, to: range.upperBound)
+    guard let start = target.index(base, offsetBy: startOffset, limitedBy: limit),
+          let end = target.index(start, offsetBy: endOffset - startOffset, limitedBy: limit) else {
         return nil
     }
+    return start..<end
+}
 
-    /// Maps a range the search produced (indices into the materialized `source` String) back into SELF's index space. Scalar-offset math on both sides: the search's indices are scalar-aligned, and a Substring's scalar count matches its materialized copy while its indices stay base-string-relative — mapping through a fresh `String(self)` returned copy-space indices, misaligned for every Substring receiver (caught by SubstringReceiverTests).
-    private func rebaseRange(_ range: Range<String.Index>, from source: String) -> Range<Index>? {
-        rebaseRange(range, from: source, offsetBy: startIndex)
+/// The collator work of the wrappers above, on concrete strings.
+extension String {
+    fileprivate func _localizedCompare(_ other: String) -> ComparisonResult {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale(),
+           let result = try? collator.compare(self, other) {
+            return result.comparisonResult
+        }
+        return compare(other)
     }
 
-    /// As above, with the search having run on the slice starting at `base` in self (the `range(of:range:)` case).
-    private func rebaseRange(_ range: Range<String.Index>, from source: String, offsetBy base: Index) -> Range<Index>? {
-        let sourceScalars = source.unicodeScalars
-        let startOffset = sourceScalars.distance(from: sourceScalars.startIndex, to: range.lowerBound)
-        let endOffset = sourceScalars.distance(from: sourceScalars.startIndex, to: range.upperBound)
-        let selfScalars = self.unicodeScalars
-        guard let start = selfScalars.index(base, offsetBy: startOffset, limitedBy: endIndex),
-              let end = selfScalars.index(base, offsetBy: endOffset, limitedBy: endIndex) else {
-            return nil
+    fileprivate func _localizedCaseInsensitiveCompare(_ other: String) -> ComparisonResult {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
+            var opts = collator.defaultOptions
+            opts.strength = .secondary
+            if let result = try? collator.compare(self, other, options: opts) {
+                return result.comparisonResult
+            }
         }
-        return start..<end
+        return compare(other, options: .caseInsensitive)
+    }
+
+    fileprivate func _localizedStandardCompare(_ other: String) -> ComparisonResult {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
+            var opts = collator.defaultOptions
+            opts.strength = .secondary
+            opts.numeric = true
+            if let result = try? collator.compare(self, other, options: opts) {
+                return result.comparisonResult
+            }
+        }
+        return compare(other, options: [.caseInsensitive, .numeric])
+    }
+
+    /// nil if the locale has no collator or the compare throws; the caller then uses the literal comparison.
+    fileprivate func _compare(_ other: String, options mask: String.CompareOptions, locale: Locale) -> ComparisonResult? {
+        guard let collator = CollatorCache.shared.collator(for: locale) else { return nil }
+        let opts = CollationOptions.from(foundationOptions: mask, base: collator.defaultOptions)
+        guard let result = try? collator.compare(self, other, options: opts) else { return nil }
+        return result.comparisonResult
+    }
+
+    fileprivate func _localizedStandardContains(_ pattern: String) -> Bool {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
+            var opts = collator.defaultOptions
+            opts.strength = .primary
+            opts.numeric = true
+            return collator.contains(pattern: pattern, in: self, options: opts)
+        }
+        return _localizedCaseInsensitiveContains(pattern)
+    }
+
+    fileprivate func _localizedCaseInsensitiveContains(_ pattern: String) -> Bool {
+        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
+            var opts = collator.defaultOptions
+            opts.strength = .secondary
+            return collator.contains(pattern: pattern, in: self, options: opts)
+        }
+        return contains(pattern)
+    }
+
+    fileprivate func _localizedStandardSearch(for pattern: String) -> Range<String.Index>? {
+        guard let collator = CollatorCache.shared.collatorForCurrentLocale() else { return nil }
+        var opts = collator.defaultOptions
+        opts.strength = .primary
+        opts.numeric = true
+        return collator.search(for: pattern, in: self, options: opts)
+    }
+
+    fileprivate func _search(for pattern: String, options mask: String.CompareOptions, locale: Locale) -> Range<String.Index>? {
+        guard let collator = CollatorCache.shared.collator(for: locale) else { return nil }
+        let opts = CollationOptions.from(foundationOptions: mask, base: collator.defaultOptions)
+        return mask.contains(.backwards)
+            ? collator.searchBackwards(for: pattern, in: self, options: opts)
+            : collator.search(for: pattern, in: self, options: opts)
     }
 }

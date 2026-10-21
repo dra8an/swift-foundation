@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-## START HERE (current as of 2026-10-20 — everything below this section is history)
+## START HERE (current as of 2026-10-21 — everything below this section is history)
 
 **If anything in the history below contradicts this section, this section
 wins.** The history has stale rules and numbers on purpose; it is the record.
@@ -15,23 +15,22 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = a second docs commit on top of `56148b55`
-(the first handoff commit, which added this section and the helper scripts
-under `Collation/Tools/insn-count/` and `Collation/Tools/ab/`); the second
-one adds the measuring recipes and the quiz fixes to this section, Docs/21,
-Docs/27, §51's status line and the `count_calls.sh` header. No Sources
-change since `a92f217d`. Tree clean; about 7 commits ahead of `origin` (not
-pushed: `d3c9eed9` … `a92f217d` and the two docs commits). If the second
-docs commit is missing, those five files are modified — say so and give the
-add/commit lines. The A/B worktree
-`../collation-baseline` is detached at `a421d2c2` (before §51 (o)); it holds
-an EngineBench build (`.build/engine-bench/...`) and a WMO BenchFoundation
-build in `.build-bf/`; its `.build/` release state for swift-syntax is broken
-(see "How to measure"). **For the next task, the A/B baseline is HEAD (the
-docs commits — the same code as `a92f217d`):** move the worktree there with
-`git -C ../collation-baseline checkout --detach <commit>` and rebuild its
-EngineBench and `.build-bf` BenchFoundation (about 1 and 5 minutes; routine).
-Remove it with `git worktree remove ../collation-baseline` when the A/B work
+paragraph).** Expected: HEAD = the §51 (p) commit (the localized* wrappers
+without the generic String conversion, and the 2026-10-21 matrix baseline:
+StringProtocol+Locale.swift, SubstringReceiverTests.swift, this file,
+optimization-targets.md, Docs/21 and Docs/27) on top of `4c24d059`. If it
+is missing, those six files are modified — say so and give the add/commit
+lines. Tree clean otherwise; about 8 commits ahead of
+`origin` (not pushed: `d3c9eed9` … and the (p) commit). The A/B worktree
+`../collation-baseline` is detached at `4c24d059` (before (p)); it holds an
+EngineBench build (`.build/engine-bench/...`), a WMO BenchFoundation in
+`.build-bf/` and a WMO `-g` one in `.build-bfg/`, both built from the
+§51 (p) PROBE `main.swift` (the worktree's own copy is saved as
+`.build/BenchFoundation-main.swift.orig` there — restore it before its next
+checkout). The probe version is also in the main tree at
+`.build/insn-wrappers/main-probe.swift`, with the count runner `run.sh`,
+`classify.py` and the A/B row list `foundation_ab_wrappers.py`. Remove the
+worktree with `git worktree remove ../collation-baseline` when the A/B work
 ends.
 
 **What is routine and needs no question:** builds and A/Bs of up to about 10
@@ -44,8 +43,8 @@ restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); `git fetch`. Ask before anything longer or with
 wider effect.
-Suite gate: **1542 tests in 129 suites** — `swift test` prints three summary
-lines (45/5, 556/84, 941/40); add them up.
+Suite gate: **1544 tests in 129 suites** — `swift test` prints three summary
+lines (45/5, 558/84, 941/40); add them up.
 
 **Read next, in this order:**
 1. The memory index (loaded automatically) and ALL its feedback files — the
@@ -53,37 +52,35 @@ lines (45/5, 556/84, 941/40); add them up.
    `feedback-no-silent-wait-loops`, `feedback-no-foundationessentials-changes`,
    `project-array-vs-pointer`, `project-next-steps-2026-10-20`,
    `reference-github-ssh-443`.
-2. `Collation/Docs/optimization-targets.md` **§51, all of it, (a)–(o)** — the
-   technique log of the 2026-10-16…20 round (every change, every rejected
+2. `Collation/Docs/optimization-targets.md` **§51, all of it, (a)–(p)** — the
+   technique log of the 2026-10-16…21 round (every change, every rejected
    variant, every measurement). Then §50 (g) (the instruction-count method)
    and the ALLOCATION/RESOLUTION HUNT note at the top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the current baseline
-   (2026-10-20 14:35), including "The sort rows, split".
+   (2026-10-21, run B), including "The sort rows, split".
 4. `Collation/Docs/27-benchmark-runbook.md` — how to measure, the harness
    cost, the gates.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current engine numbers (Table 1, EngineBench vs ICU C, baseline 2026-10-20
-14:35 at `cfd2ab9d`, ns per call, ours / ICU):**
+**Current engine numbers (Table 1, EngineBench vs ICU C, baseline 2026-10-21
+run B at `4c24d059` + §51 (p), ns per call, ours / ICU):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
-| ascii | 10.5 / 9.3 | 1.13× | 124.2 / 104.6 | 1.19× |
-| latin | 11.0 / 10.1 | 1.09× | 131.3 / 121.6 | 1.08× |
-| cjk | 20.1 / 40.8 | 0.49× | 144.5 / 117.8 | 1.23× |
-| paths | 18.5 / 29.7 | 0.62× | 332.5 / 366.5 | 0.91× |
-| thai | 198.4 / 170.7 | 1.16× | 176.1 / 154.6 | 1.14× |
+| ascii | 10.6 / 9.5 | 1.12× | 123.1 / 106.1 | 1.16× |
+| latin | 11.0 / 10.1 | 1.09× | 131.4 / 122.1 | 1.08× |
+| cjk | 20.0 / 40.8 | 0.49× | 144.0 / 119.3 | 1.21× |
+| paths | 18.5 / 29.7 | 0.62× | 331.8 / 369.6 | 0.90× |
+| thai | 195.7 / 172.0 | 1.14× | 177.6 / 154.7 | 1.15× |
 
 At the start of the round (2026-10-16) the ranges were compare 0.63–1.62×
-and sortKey 1.03–1.50×. **Since the 14:35 baseline, two code changes landed
-that no matrix has recorded yet:** §51 (l) thai compare −3.5% in an A/B
-(196.7 → 189.6 ns, ~1.11×), and §51 (o) identical-strength compares
-(`.localizedStandard` sorts −10..−12% on Latin; Table 1 unaffected). Run the
-full matrix again before you quote absolute numbers.
+and sortKey 1.03–1.50×. This baseline records §51 (l), (o) and (p); against
+2026-10-20 14:35 only thai compare moved in Table 1 (198.4 → 195.7; run A
+191.8). No code change since it.
 
 Table 2 (Foundation APIs vs system ICU, now 14 API families including an
-options compare and four sort APIs, floor 1.54×) is ahead everywhere, but
+options compare and four sort APIs, floor 1.58×) is ahead everywhere, but
 mostly because it skips the system NSString → CoreFoundation → C++ bridge.
 **Never use Table 2 as evidence about the engine; never cite it as
 consolation for a Table 1 gap.**
@@ -143,14 +140,22 @@ consolation for a Table 1 gap.**
 
 **How to measure:**
 - **Full matrix:** `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
-  ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i Collation/Tools/run_benchmarks.sh 3`
+  ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i zsh Collation/Tools/run_benchmarks.sh 3`
   (about 6–8 minutes with the 14 Table 2 APIs). Run it in the MAIN tree: it
   builds BenchFoundation with `-no-whole-module-optimization`, which works
   there only because the swift-syntax objects are cached (see below). Gates
-  (2026-10-20 14:35, run B): system-ICU `localizedCompare` about
-  194/365/369/300/494; ICU C compare about 9.3/10.1/40.8/29.7/170.7 and
-  sortKey about 104.6/121.6/117.8/366.5/154.6. Record run B in Docs/21 (and
-  START HERE, the runbook ratio line, §51).
+  (2026-10-21, run B): system-ICU `localizedCompare` about
+  194/365/369/300/494 (the long-term reference; run B read 196/363/370/301/505);
+  ICU C compare about 9.5/10.1/40.8/29.7/172.0 and
+  sortKey about 106.1/122.1/119.3/369.6/154.7. Record run B in Docs/21 (and
+  START HERE, the runbook ratio line, §51). **Start it through `zsh`, as
+  above:** on 2026-10-21 the script started directly (`caffeinate -i
+  Collation/Tools/run_benchmarks.sh 3`) failed three times at its first
+  `swift build` with "Invalid manifest … sandbox-exec: sandbox_apply:
+  Operation not permitted" (SwiftPM compiled the manifest again, and the
+  tool sandbox does not permit `sandbox-exec`). The same command through
+  `zsh` passed twice. The cause is not established; the same build typed
+  directly passed every time.
 - **Engine A/B:** `Collation/Tools/build_engine_bench.sh` in each tree, then
   `Collation/Tools/ab/engine_ab.sh <base> <variant> <out> 5` and
   `python3 Collation/Tools/ab/engine_ab_report.py <out>` (min, mean of
@@ -190,7 +195,12 @@ consolation for a Table 1 gap.**
   with `swift build -c release -Xswiftc -g --product BenchFoundation
   --scratch-path .build-wmo` (the binary is
   `.build-wmo/out/Products/Release/BenchFoundation`) and run `count_calls.sh`
-  on it with the same spec and skip. The `-no-WMO -g` build in the main tree
+  on it with the same spec and skip. Two pitfalls (§51 (p)): Swift's
+  function merging folds wrappers that differ only in the callee into one
+  `…Tm` function, and lldb then finds "no locations" — give each wrapper a
+  different body and check with `nm -a <binary>.dSYM/Contents/Resources/DWARF/BenchFoundation
+  | grep tmp`; and `--scratch-path` is relative to the CURRENT directory,
+  not to `--package-path`, so build the worktree from inside it. The `-no-WMO -g` build in the main tree
   worked four times on 2026-10-20 (about 2.5 minutes each; it rebuilds part
   of the package but keeps swift-syntax usable for the matrix).
 - **Instruction counts** (exact, load-independent — the main tool of this
@@ -251,51 +261,38 @@ checkout, build and test in-source only, never `build/icuhost` (see
   actor (`usingCurrentInternationalizationPreferences`): the test-only
   `LocaleCache.resetCurrent(to:)` races with concurrent readers (§51 (o)).
 
-**NEXT TASK (agreed with the user 2026-10-20): the generic String conversion
-in the `localized*` String methods.** In
-`Sources/FoundationInternationalization/String/StringProtocol+Locale.swift`,
-the methods (`localizedCompare`, `localizedStandardCompare`,
-`localizedCaseInsensitiveCompare`, …) are generic over `StringProtocol` and
-not `@inlinable`, so callers in other modules run the unspecialized code; its
-`String(self)` / `String(aString)` go through the generic
-`Sequence`-of-`Character` String initializer. An instruction count of one
-`localizedStandardCompare` call (BenchFoundation `-no-WMO` `-g`, ascii) put
-~240 of its ~1054 instructions there (116 + 100 + 24 Character value witness,
-plus ~30 `___chkstk_darwin`) — the largest single cost left in Table 2.
-Start with counts (both String and Substring arguments), find a conversion
-that is cheap for `String` and correct for every StringProtocol type, keep
-the public signatures unchanged, then A/B with `foundation_ab.py`. Stay
-inside FoundationInternationalization.
+**DONE 2026-10-21 (the task agreed on 2026-10-20): the generic String
+conversion in the `localized*` String methods — §51 (p).** The eight
+collation wrappers in `StringProtocol+Locale.swift` convert their arguments
+with `_collationString` (the stdlib's `_specialize(_:for:)`: a metatype
+compare, no generic `String.init`) and call fileprivate non-generic `String`
+methods; the range rebase skips String receivers and maps UTF-8 offsets for
+the others. The cost was present in the WMO build too (cross-module
+optimization did not specialize the methods). Counts: −11..−27% per call
+(compare and range methods), −3..−8% (contains, `localizedStandardRange`).
+A/B against `4c24d059` (WMO pair): compare rows −12..−28%, search rows
+−4..−16%, a matched `range(of:)` −53% (String) / −31% (Substring), all 5/5;
+sort controls flat. Suite 1544/129.
 
-How, concretely: (0) the methods in scope are the collation wrappers in that
-file — `localizedCompare`, `localizedCaseInsensitiveCompare`,
-`localizedStandardCompare`, `compare(_:options:range:locale:)`,
-`localizedStandardContains`, `localizedCaseInsensitiveContains`,
-`localizedStandardRange(of:)` and `range(of:options:range:locale:)`. NOT the
-case-mapping methods at the top of the file (`capitalized`, `lowercased`,
-`uppercased` with a locale): the audit list in optimization-targets.md says
-"do not patch from here"; (1) count one call per method with the Table 2 recipe in
-"How to measure" — temporary wrapper rows for String AND for Substring
-arguments (BenchFoundation has no Substring row; add it temporarily);
-(2) count the same rows in a WMO build too (see "Two build modes": with
-cross-module optimization the cost may already be gone there — then say so,
-because shipping-framework clients still pay it); (3) after a change, the
-existing tests that cover these wrappers must pass (the suite gate; the
-Substring index-space cases of §39 / SubstringReceiverTests are the risky
-ones), and the A/B runs on the WMO pair against HEAD.
-
-**Open items after that:**
-1. Run the full matrix to record (l), (o) and the next change.
+**Open items, in order:**
+1. ~~Run the full matrix to record (l), (o) and (p).~~ DONE 2026-10-21
+   (Docs/21, run B; runs A and B agree).
 2. The FIRST `RootCollator()` in a process takes 7–22 ms (one-time; the first
    resource lookup and file reads) — split it.
 3. §51 (o) left about +1 ns on two Table 2 rows (`localizedStandardCompare`
-   latin, the options compare) whose code did not change — likely placement;
-   not verified with aligned builds.
+   latin, the options compare) whose code did not change. (p) changed the
+   code of both rows, so check this only if the new matrix shows those two
+   rows behind the others.
 4. Writer and CE-production instructions remain (stack spills, ~70 per ASCII
    character) — the kind §36 found nearly free in time; A/B before believing
    any count.
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
+6. A Substring argument still pays its copy into a String (~293
+   instructions per argument pair plus ~90 of reference counting; in the
+   A/B a Substring compare took 76–81 ns against 40 ns for Strings, ascii)
+   because the engine entries take `String`; removing it needs engine
+   entries for Substring or UTF-8 buffers — the user's decision (§51 (p)).
 
 **Do not redo (measured and rejected; details in §51 and §49/§50):** tighter
 per-CE byte bounds (UNSAFE); `RestartSafety` by value out of a raw pointer;
