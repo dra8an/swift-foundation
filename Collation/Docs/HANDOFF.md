@@ -15,12 +15,13 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the §51 (r) commit (the writer's level
-cursors: SortKey.swift, this file, optimization-targets.md, Docs/21) on top
-of `31475060` (§51 (q)). If it is missing, those four files are modified —
-say so and give the add/commit lines. Tree clean otherwise; about 10
-commits ahead of `origin` (not pushed: `d3c9eed9` … and the (p), (q) and
-(r) commits). The A/B worktree is now at `31475060` with its own
+paragraph).** Expected: HEAD = the §51 (s) commit (the writer
+specialized for the default options, and the afternoon Table 1: SortKey.swift,
+this file, optimization-targets.md, Docs/21 and Docs/27) on top of
+`15f74f4b` (§51 (r)). If it is missing, those five files are modified — say
+so and give the add/commit lines. Tree clean otherwise; about 11 commits
+ahead of `origin` (not pushed: `d3c9eed9` … and the (p), (q), (r) and (s)
+commits). The A/B worktree is now at `15f74f4b` with its own
 `main.swift` (the probe copy was restored). The
 first-collator probe packages are `.build/first-collator/` (base engine
 sources, all probe modes) and `.build/first-collator-new/`. The worktree holds EngineBench builds in `.build/engine-bench/` (plain
@@ -63,21 +64,23 @@ lines (45/5, 558/84, 941/40); add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current engine numbers (Table 1, EngineBench vs ICU C, baseline 2026-10-21
-run B at `4c24d059` + §51 (p), ns per call, ours / ICU):**
+**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-21
+afternoon run A after §51 (r) and (s), ns per call, ours / ICU):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
-| ascii | 10.6 / 9.5 | 1.12× | 123.1 / 106.1 | 1.16× |
-| latin | 11.0 / 10.1 | 1.09× | 131.4 / 122.1 | 1.08× |
-| cjk | 20.0 / 40.8 | 0.49× | 144.0 / 119.3 | 1.21× |
-| paths | 18.5 / 29.7 | 0.62× | 331.8 / 369.6 | 0.90× |
-| thai | 195.7 / 172.0 | 1.14× | 177.6 / 154.7 | 1.15× |
+| ascii | 10.6 / 9.4 | 1.13× | 94.0 / 106.1 | 0.89× |
+| latin | 11.0 / 10.3 | 1.07× | 107.3 / 123.6 | 0.87× |
+| cjk | 20.3 / 40.9 | 0.50× | 114.0 / 118.8 | 0.96× |
+| paths | 18.4 / 29.8 | 0.62× | 265.9 / 369.6 | 0.72× |
+| thai | 194.8 / 173.0 | 1.13× | 153.3 / 154.7 | 0.99× |
 
 At the start of the round (2026-10-16) the ranges were compare 0.63–1.62×
-and sortKey 1.03–1.50×. This baseline records §51 (l), (o) and (p); against
-2026-10-20 14:35 only thai compare moved in Table 1 (198.4 → 195.7; run A
-191.8). No code change since it.
+and sortKey 1.03–1.50×; now compare 0.50–1.13×, sortKey 0.72–0.99×. Runs B
+and E of the same afternoon ran at load 27–89 (control ~3% high) and gave
+the same ratios within 0.01–0.02 but 1–4% higher absolute values: confirm
+on a quiet machine before you quote absolutes to 1 ns. Table 2 keeps the
+morning baseline (it does not call sortKey).
 
 Table 2 (Foundation APIs vs system ICU, now 14 API families including an
 options compare and four sort APIs, floor 1.58×) is ahead everywhere, but
@@ -291,14 +294,14 @@ sort controls flat. Suite 1544/129.
    the new matrix `localizedStandardCompare` latin (65 ns) equals
    `localizedCaseInsensitiveCompare` latin (65), and the options compare
    latin (91) has the same latin/ascii step as the other rows.
-4. Writer and CE-production instructions. FIRST STEP DONE 2026-10-21,
-   §51 (r): the writer's level cursors (a pointer, not base + count) —
-   sortKey −2.5..−10% (ascii 123 → 111 ns, ~1.05× of ICU), confirmed with
-   aligned builds, although the count went UP by ~30 instructions. Next in
-   the writer: the five common-run counters and the other loop-carried
-   values (the same latency argument); CE production (~70 instructions per
-   ASCII character) is still untouched. A/B every variant — the counts
-   pointed the wrong way here.
+4. Writer and CE-production instructions. DONE for the writer 2026-10-21:
+   §51 (r) level cursors (sortKey −2.5..−10%, although the count went UP)
+   and §51 (s) the writer specialized for the default options by generics
+   (sortKey −10..−18% more, count −15..−20%). Every sortKey row is now at
+   or below ICU C. Left: CE production (~70 instructions per ASCII
+   character, inlined into `sortKey`, ~740 of the ~1520 per ascii key) and
+   the run-time writer path for non-default options (unchanged). A/B every
+   variant.
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
 6. A Substring argument still pays its copy into a String (~293

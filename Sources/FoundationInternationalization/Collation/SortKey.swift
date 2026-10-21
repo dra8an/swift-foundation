@@ -197,24 +197,35 @@ enum CollationKeys {
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
         terminate: Bool = true, into key: inout [UInt8]
     ) {
-        var levels = levelFlags(strength: CollationOptions.strength(of: options))
-        if (options & CollationOptions.Bits.caseLevel) != 0 {
-            levels |= caseFlag
-        }
-
-        let variableTop: UInt32
-        if (options & CollationOptions.Bits.alternateMask) == 0 {
-            variableTop = 0
+        if reordering == nil
+            && CollationOptions.strength(of: options) == CollationOptions.Strength.tertiary.rawValue
+            && (options & (CollationOptions.Bits.alternateMask | CollationOptions.Bits.caseFirstAndUpperMask
+                | CollationOptions.Bits.caseLevel | CollationOptions.Bits.backwardSecondary)) == 0 {
+            writeSinglePass(
+                ces: ces, compressibleBytes: compressibleBytes, config: DefaultSinglePassConfig(),
+                terminate: terminate, into: &key)
         } else {
-            // +1 so that we can use "<" and primary ignorables test out early.
-            variableTop = variableTopValue + 1
+            writeSinglePass(
+                ces: ces, compressibleBytes: compressibleBytes,
+                config: RuntimeSinglePassConfig(
+                    options: options, variableTopValue: variableTopValue, reordering: reordering),
+                terminate: terminate, into: &key)
         }
+    }
 
-        let tertiaryMask = CollationOptions.tertiaryMask(of: options)
-        let strengthIsPrimary =
-            CollationOptions.strength(of: options) == CollationOptions.Strength.primary.rawValue
-        let backwardSecondary = (options & CollationOptions.Bits.backwardSecondary) != 0
-        let upperFirst = (options & CollationOptions.Bits.upperFirst) != 0
+    /// The single-pass writer, generic over its option switches. The default options get a specialization in which the switches are constants, so the levels they leave unused (case, quaternary), their run counters, the variable-CE branch and the reordering do not exist in the loop, and it keeps fewer values live (technique log §51 (s)).
+    private static func writeSinglePass<Config: SinglePassConfig>(
+        ces: borrowing CEBuffer, compressibleBytes: UnsafeBufferPointer<Bool>,
+        config: Config, terminate: Bool, into key: inout [UInt8]
+    ) {
+        let levels = config.levels
+        let variableTop = config.variableTop
+        let tertiaryMask = config.tertiaryMask
+        let strengthIsPrimary = config.strengthIsPrimary
+        let backwardSecondary = config.backwardSecondary
+        let upperFirst = config.upperFirst
+        let alternateNonIgnorable = config.alternateNonIgnorable
+        let reordering = config.reordering
 
         let n = ces.count
         let capPrimaries = primaryBytesPerCE * n
@@ -461,7 +472,7 @@ enum CollationKeys {
                     if (q & 0xc0) == 0 && q > CollationConstants.noCEWeight16 {
                         commonQuaternaries += 1
                     } else if q == CollationConstants.noCEWeight16
-                        && (options & CollationOptions.Bits.alternateMask) == 0
+                        && alternateNonIgnorable
                         && quaternaries.isEmpty {
                         // If alternate=non-ignorable and there are only common quaternary weights, then we need not write anything.
                         quaternaries.appendByte(UInt32(levelSeparator))
@@ -638,6 +649,62 @@ enum CollationKeys {
                 key.append(byte(slopeMin + m2))
                 key.append(byte(slopeMin + m3))
             }
+        }
+    }
+}
+
+/// The option switches of the single-pass writer (`CollationKeys.writeSinglePass`).
+private protocol SinglePassConfig {
+    var levels: UInt32 { get }
+    /// 0 when alternate is non-ignorable; else the variable top + 1.
+    var variableTop: UInt32 { get }
+    var tertiaryMask: UInt32 { get }
+    var strengthIsPrimary: Bool { get }
+    var backwardSecondary: Bool { get }
+    var upperFirst: Bool { get }
+    var alternateNonIgnorable: Bool { get }
+    var reordering: Reordering? { get }
+}
+
+extension CollationKeys {
+    /// The default options: tertiary strength, no case level, non-ignorable, no backward secondary, no case-first, no reordering. Every switch is a constant.
+    private struct DefaultSinglePassConfig: SinglePassConfig {
+        var levels: UInt32 { 0x16 }  // primary, secondary, tertiary
+        var variableTop: UInt32 { 0 }
+        var tertiaryMask: UInt32 { CollationConstants.onlyTertiaryMask }
+        var strengthIsPrimary: Bool { false }
+        var backwardSecondary: Bool { false }
+        var upperFirst: Bool { false }
+        var alternateNonIgnorable: Bool { true }
+        var reordering: Reordering? { nil }
+    }
+
+    /// Any other options, read from the options word at run time.
+    private struct RuntimeSinglePassConfig: SinglePassConfig {
+        let levels: UInt32
+        let variableTop: UInt32
+        let tertiaryMask: UInt32
+        let strengthIsPrimary: Bool
+        let backwardSecondary: Bool
+        let upperFirst: Bool
+        let alternateNonIgnorable: Bool
+        let reordering: Reordering?
+
+        init(options: Int32, variableTopValue: UInt32, reordering: Reordering?) {
+            var levels = CollationKeys.levelFlags(strength: CollationOptions.strength(of: options))
+            if (options & CollationOptions.Bits.caseLevel) != 0 {
+                levels |= CollationKeys.caseFlag
+            }
+            self.levels = levels
+            self.alternateNonIgnorable = (options & CollationOptions.Bits.alternateMask) == 0
+            // +1 so that we can use "<" and primary ignorables test out early.
+            self.variableTop = alternateNonIgnorable ? 0 : variableTopValue + 1
+            self.tertiaryMask = CollationOptions.tertiaryMask(of: options)
+            self.strengthIsPrimary =
+                CollationOptions.strength(of: options) == CollationOptions.Strength.primary.rawValue
+            self.backwardSecondary = (options & CollationOptions.Bits.backwardSecondary) != 0
+            self.upperFirst = (options & CollationOptions.Bits.upperFirst) != 0
+            self.reordering = reordering
         }
     }
 }

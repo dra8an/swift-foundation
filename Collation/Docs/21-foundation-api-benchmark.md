@@ -206,8 +206,29 @@ compare the two sides within a corpus, never one corpus with another.
 
 ### Direct RootCollator (EngineBench, full WMO) — Table 1
 
-ICU column: ICU C, 79.1 libraries with Unicode 18 data (see the ICU note).
-One decimal, run B.
+**Re-measured 2026-10-21 afternoon, after §51 (r) and (s)** (the sortKey
+writer: level cursors, and a specialization for the default options; HEAD
+`15f74f4b` + (s)). Three matrix runs: run A (load 20 → 13, system-ICU
+control within 1.8%) is recorded below; runs B and E ran at load 27–89 with
+the control ~3% high, read 1–4% higher in every cell (ours and ICU alike),
+and give the same ratios within 0.01–0.02. Confirm the absolute values on a
+quiet machine before you quote them to 1 ns. Table 2 does not call sortKey;
+it keeps the morning baseline above.
+
+| Corpus | compare | ICU | ratio | sortKey (inout) | ICU | ratio | sortKey (alloc) | ratio |
+|--------|---------|-----|-------|---------|-----|-------|---------|-------|
+| ASCII  |    10.6 |   9.4 | 1.13× |    94.0 | 106.1 | **0.89×** |   147.5 | 1.39× |
+| Latin  |    11.0 |  10.3 | 1.07× |   107.3 | 123.6 | **0.87×** |   163.4 | 1.32× |
+| CJK    |    20.3 |  40.9 | **0.50×** |   114.0 | 118.8 | **0.96×** |   167.7 | 1.41× |
+| Paths  |    18.4 |  29.8 | **0.62×** |   265.9 | 369.6 | **0.72×** |   312.5 | 0.85× |
+| Thai   |   194.8 | 173.0 | 1.13× |   153.3 | 154.7 | **0.99×** |   209.3 | 1.35× |
+
+sortKey against the morning run (below): ascii 123.1 → 94.0 (−23.6%),
+latin 131.4 → 107.3 (−18.3%), cjk 144.0 → 114.0 (−20.8%), paths 331.8 →
+265.9 (−19.9%), thai 177.6 → 153.3 (−13.7%). Every sortKey row is now at
+or below ICU C.
+
+The morning run (2026-10-21 ~11:30, run B, before (r) and (s)):
 
 | Corpus | compare | ICU | ratio | sortKey (inout) | ICU | ratio | sortKey (alloc) | ratio |
 |--------|---------|-----|-------|---------|-----|-------|---------|-------|
@@ -249,16 +270,16 @@ system ICU is within 1.6% over all 70 cells, ours within 2.0% except
 **Engine (Table 1) against hand-tuned ICU C** — the only engine-versus-engine
 comparison in this file:
 
-- compare 1.12× ascii, 1.09× latin, **0.49× cjk** and **0.62× paths (we are
-  FASTER)**, 1.14× thai
-- sortKey 1.16× ascii, 1.08× latin, 1.21× cjk, **0.90× paths (FASTER)**, 1.15× thai
+- compare 1.13× ascii, 1.07× latin, **0.50× cjk** and **0.62× paths (we are
+  FASTER)**, 1.13× thai
+- sortKey **0.89× ascii, 0.87× latin, 0.96× cjk, 0.72× paths, 0.99× thai
+  (all FASTER)** — since §51 (r) and (s), afternoon run A
 
-Three of the ten rows are ahead of ICU C (cjk and paths compare, paths
-sortKey). Every other row is within 1.08–1.21×: ascii and latin compare
-(~1 ns of each is the API's call shape, Docs/27), latin sortKey 1.08×, thai
-compare and sortKey 1.14–1.15×, ascii and cjk sortKey 1.16–1.21×.
+Seven of the ten rows are at or ahead of ICU C (every sortKey row, cjk and
+paths compare). The three behind are compare on ascii and latin (1.07–1.13×;
+~1 ns of each is the API's call shape, Docs/27) and thai (1.13×).
 
-The `skRet` column (the allocating sortKey overload) stays ~1.0–1.7× because
+The `skRet` column (the allocating sortKey overload) stays ~0.85–1.41× because
 it allocates a fresh `[UInt8]` per call BY API CONTRACT; the inout twin is
 the one to compare against ICU.
 

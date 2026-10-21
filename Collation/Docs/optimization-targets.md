@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-21): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); (p) committed `0528e55e`; (q) done, not yet committed at the time of writing; baselines recorded 2026-10-19 18:03, 2026-10-20 14:35 and 2026-10-21 (the last one includes (l), (o) and (p)). Suite 1544/129. Next: START HERE.**
+**Status (2026-10-21): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); (p) `0528e55e`, (q) `31475060`, (r) `15f74f4b`; (s) done, not yet committed at the time of writing. Baselines 2026-10-19 18:03, 2026-10-20 14:35, 2026-10-21 morning (with (l), (o), (p)) and 2026-10-21 afternoon (Table 1 only, with (r) and (s)). Suite 1544/129. Next: START HERE.**
 
 #### (a) The audit
 
@@ -3866,3 +3866,54 @@ matrix). Checks: suite 1544/129 (debug builds run the capacity assert);
 the sk-ladder identity checks (the shipping writer against both reference
 writers, 3 checks × 10 option sets) 0 mismatched lines on all five
 corpora; the four ladder tools build.
+
+#### (s) The writer specialized for the default options, by generics (START HERE item 4)
+
+**Change (V2).** The single-pass writer reads its switches from a
+`SinglePassConfig` (levels, variable top, tertiary mask, strength-primary,
+backward secondary, upper-first, alternate, reordering) and is generic over
+it: `writeSinglePass<Config>`. `writeSortKeyUpToQuaternarySingle` picks
+`DefaultSinglePassConfig` — every switch a constant — for tertiary strength
+with no case level, non-ignorable, no backward secondary, no case-first and
+no reordering (numeric and maxVariable do not reach the writer), and
+`RuntimeSinglePassConfig` (the switches read from the options word, as
+before) for everything else. In the default specialization the case and
+quaternary levels, their run counters, the variable-CE branch, the
+backward-secondary state and the reordering do not exist, so the loop keeps
+far fewer values live. The loop body did not change; only one read of the
+options word became `alternateNonIgnorable`. W3a (§51 (j)) tried the same
+idea with `@inline(__always)` and the inliner left the core out of line;
+generic specialization of an internal function does not depend on the
+inliner. The config types sit in an `extension CollationKeys` so that they
+reach the private `levelFlags` / `caseFlag` without a visibility change
+(the sk-ladder's `sed` widening depends on the exact declarations).
+
+**Counts** (on top of (r)): ascii 1900.9 → 1523.6 (−20%; the writer 906 →
+527), latin 1720.6 → 1393.9 (−19%), cjk 1867.5 → 1580.8 (−15%).
+
+**A/B against HEAD `15f74f4b`** (EngineBench, 5 interleaved rounds,
+2026-10-21, load 20–23; min ns, all sortKey and skRet rows 5/5):
+
+| row | plain builds | every function aligned to 64 bytes |
+|---|---|---|
+| sortKey ascii | 111.5 → 91.9 (−17.6%) | 112.5 → 89.2 (−20.7%) |
+| sortKey latin | 126.6 → 106.4 (−16.0%) | −17.7% |
+| sortKey cjk | 130.2 → 112.7 (−13.4%) | −14.9% |
+| sortKey paths | 312.6 → 266.4 (−14.8%) | −16.1% |
+| sortKey thai | 169.1 → 152.2 (−10.0%) | −11.3% |
+| skRet | −6.8..−13.0% | −8.6..−13.7% |
+| compare (unchanged code) | −1.5..+0.5% | −2.8..+1.2% |
+
+Here the count and the time agree; with (r) they did not. The two steps
+together: ascii sortKey 123.2 → ~90 ns since this morning.
+
+**Checks.** Suite 1544/129; the sk-ladder identity checks (3 checks × 10
+option sets, the default set among them) 0 mismatched lines on all five
+corpora; the four ladder tools build. Mutation: without `backwardSecondary`
+in the dispatch condition (fr_CA then takes the default path) the suite
+fails with 57 issues (`fuzzKeysMatchICU`, the restart and fuzz-pair tests).
+
+**Matrix** (Docs/21, 2026-10-21 afternoon run A; runs B and E at higher load
+agree in the ratios within 0.01–0.02): sortKey 0.89× ascii, 0.87× latin,
+0.96× cjk, 0.72× paths, 0.99× thai of ICU C — every sortKey row at or
+below ICU; compare unchanged (0.50–1.13×).
