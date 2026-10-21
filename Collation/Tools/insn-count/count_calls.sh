@@ -5,7 +5,9 @@
 #   breakpoint spec: what follows `breakpoint set`, e.g. "-r compareFastPath" or the mangled name of
 #   sortKey(for:into:options:): "-n \$s10CollEngine12RootCollatorV7sortKey3for4into7optionsySS_Says5UInt8VGzAA16CollationOptionsVtKF"
 #   (regexes do not match names with argument types, and `-a` addresses miss because of ASLR).
-#   skip: calls to ignore first (EngineBench: 3 × (lines − 1) skips the warm-up and two timed passes).
+#   skip: calls to ignore first. EngineBench runs a warm-up pass and timed passes; skipping 3 passes needs
+#   3 × (calls per pass): compare makes (lines − 1) calls per pass (597 for the 200-line corpora, 1314 for paths),
+#   sortKey makes lines calls per pass (600; 1317 for paths). For thai, 200 (inside the warm-up pass) is fine.
 # Counts from the stop to the function's return (count_insns). Build the binary with `-Xswiftc -g` first.
 SCRIPT_DIR=${0:A:h}
 REPO=${SCRIPT_DIR:h:h:h}

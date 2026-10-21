@@ -194,9 +194,9 @@ New 2026-10-20. ns per element; sorts structs by a String key path.
 
 ### The sort rows
 
-One op is one ELEMENT of a sort: a sort of n lines makes about n·log2(n)
-comparisons, so ns per element ≈ log2(n) × (ns per comparison) plus the
-sort's own work. Each pass sorts max(1, reps / 50) times (6 sorts of 200
+One op is one ELEMENT of a sort. Swift's sort makes about 14 comparisons
+per element on these 200-line corpora (counted; not n·log2(n) ≈ 7.6), so ns
+per element ≈ 14 × (ns per comparison) plus the sort's own work. Each pass sorts max(1, reps / 50) times (6 sorts of 200
 lines on ascii; 1 sort of ~33k lines on thai). The paths and thai corpora
 are SORTED files, so their sorts make far fewer comparisons per element:
 compare the two sides within a corpus, never one corpus with another.
@@ -303,7 +303,7 @@ ICU_BUILD=$ICU_SRC/icu4c/source \
   caffeinate -i Collation/Tools/run_benchmarks.sh 3
 ```
 
-K=3 takes about 4–7 minutes. Check the machine first — load average, memory,
+K=3 takes about 6–8 minutes (14 Table 2 APIs). Check the machine first — load average, memory,
 and the time since the last wake (Docs/27):
 
 ```sh
@@ -316,8 +316,8 @@ Sanity gates before you record a run:
 - **The load control:** system ICU in Table 2 should read about
   194/365/369/300/494 for `localizedCompare`. If it drifts by more than
   ~3%, the box is too busy to record.
-- **ICU C** in Table 1 should read about 9.3/10.1/40.5/29.7/173.8 compare
-  and 104.5/120.9/119.0/370.3/155.5 sortKey. First check which ICU the
+- **ICU C** in Table 1 should read about 9.3/10.1/40.8/29.7/170.7 compare
+  and 104.6/121.6/117.8/366.5/154.6 sortKey (2026-10-20 14:35). First check which ICU the
   checkout holds (`git -C $ICU_SRC branch --show-current`); a different ICU
   build can change this column for reasons that have nothing to do with load.
 - **Run the matrix twice;** the two runs must agree.

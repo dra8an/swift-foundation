@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-19): C1–C3, C7 committed (`6d6cc1f6`), C4 committed (`3442256f`); C5 + C6 committed (`af2bec52`); item 2 committed (`32292a45`); baseline recorded 2026-10-19 18:03; writer W1 + W2 (j) committed and pushed (`b6f8ea52`); (k) committed and pushed (`cfd2ab9d`); baseline recorded 2026-10-20 14:35 with 14 Table 2 APIs; (l) committed (`ed52658e`); (o) identical-strength byte pass done, not committed. Suite 1542/129.**
+**Status (2026-10-20): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); baselines recorded 2026-10-19 18:03 and 2026-10-20 14:35 (the latter before (l) and (o)). Suite 1542/129. Next: START HERE NEXT TASK.**
 
 #### (a) The audit
 
@@ -3668,3 +3668,18 @@ goes through `LocaleNotifications.reset()`, which clears the locale cache
 before it bumps the generation, so the CollatorCache stays correct. Fix: the
 new test runs on the preferences actor (`usingCurrentInternationalizationPreferences`);
 12 of 12 runs then passed.
+
+#### (p) Next: the generic String conversion in the localized* methods (not started)
+
+The same instruction profile of one `localizedStandardCompare` call
+(BenchFoundation `-no-WMO -g`, ascii, before (o) — (o) left this path
+unchanged) put ~240 of its ~1054 instructions outside collation: 116 in the
+unspecialized generic body of `localizedStandardCompare<T: StringProtocol>`,
+100 in the generic `String.init` from a `Sequence` of `Character`, 24 in the
+`Character` value witnesses, and ~30 in `___chkstk_darwin`. The methods in
+StringProtocol+Locale.swift are generic over `StringProtocol` and not
+`@inlinable`, so callers in other modules run the unspecialized code, and
+`String(self)` / `String(aString)` take the generic initializer. Measure it
+again in both build modes (HANDOFF START HERE, "Two build modes") before any
+change; the risky tests are the Substring index-space cases of §39
+(SubstringReceiverTests).

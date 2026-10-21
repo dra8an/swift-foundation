@@ -15,15 +15,35 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** HEAD `a92f217d` plus the handoff commit that adds this section
-and the helper scripts under `Collation/Tools/insn-count/` and
-`Collation/Tools/ab/`; tree clean; about 6 commits ahead of `origin` (not
-pushed: `d3c9eed9` … `a92f217d` and the handoff). The A/B worktree
-`../collation-baseline` is detached at `a421d2c2`; it holds an EngineBench
-build (`.build/engine-bench/...`) and a WMO BenchFoundation build in
-`.build-bf/` (its `.build/` release state for swift-syntax is broken — see
-"How to measure"). Move it with `git -C ../collation-baseline checkout
---detach <commit>`; remove it with `git worktree remove ../collation-baseline`.
+paragraph).** Expected: HEAD = a second docs commit on top of `56148b55`
+(the first handoff commit, which added this section and the helper scripts
+under `Collation/Tools/insn-count/` and `Collation/Tools/ab/`); the second
+one adds the measuring recipes and the quiz fixes to this section, Docs/21,
+Docs/27, §51's status line and the `count_calls.sh` header. No Sources
+change since `a92f217d`. Tree clean; about 7 commits ahead of `origin` (not
+pushed: `d3c9eed9` … `a92f217d` and the two docs commits). If the second
+docs commit is missing, those five files are modified — say so and give the
+add/commit lines. The A/B worktree
+`../collation-baseline` is detached at `a421d2c2` (before §51 (o)); it holds
+an EngineBench build (`.build/engine-bench/...`) and a WMO BenchFoundation
+build in `.build-bf/`; its `.build/` release state for swift-syntax is broken
+(see "How to measure"). **For the next task, the A/B baseline is HEAD (the
+docs commits — the same code as `a92f217d`):** move the worktree there with
+`git -C ../collation-baseline checkout --detach <commit>` and rebuild its
+EngineBench and `.build-bf` BenchFoundation (about 1 and 5 minutes; routine).
+Remove it with `git worktree remove ../collation-baseline` when the A/B work
+ends.
+
+**What is routine and needs no question:** builds and A/Bs of up to about 10
+minutes; the full test suite (`swift test`, about 1–2 minutes; the Thread
+Sanitizer run of the concurrency tests about 5 minutes the first time);
+moving the worktree and rebuilding there; temporary probe rows in
+`Collation/Sources/BenchFoundation/main.swift` — in BOTH trees when an A/B
+needs them (keep a copy of the original in `.build/`, restore it after,
+restore the worktree's copy before its next checkout, never commit them;
+row names may contain only letters, spaces and `().:_`, no digits, or the
+A/B parser skips them); `git fetch`. Ask before anything longer or with
+wider effect.
 Suite gate: **1542 tests in 129 suites** — `swift test` prints three summary
 lines (45/5, 556/84, 941/40); add them up.
 
@@ -87,8 +107,15 @@ consolation for a Table 1 gap.**
 - **Never sit in a polling loop** (for example `sleep` until the load drops).
   Check the load ONCE; if acceptable, run — the system-ICU control decides
   whether a matrix run is valid, and interleaved A/Bs are valid for direction
-  under load. If the machine is clearly too busy, say so in one line and do
-  useful work meanwhile; run unavoidable waits in the background.
+  under load. Guideline: for an A/B, run at any load and give the load in
+  one line (direction is what it measures). For a matrix, up to a 1-minute
+  load of about 25, just run; between about 25 and 50, run only if the
+  5-minute value is not far above the 1-minute one, and let the system-ICU
+  control decide afterwards (more than ~3% drift: do not record); above
+  about 50, or during a burst (the 5-minute value far above the 1-minute
+  one), say so in one line, do load-independent work (instruction counts,
+  code reading) and re-check ONCE before you start it. Run unavoidable waits
+  in the background.
 - **Work solo** (no Workflow tool, no multi-agent fan-out) unless the user
   asks for it.
 - **Scope: the collation port only.** Never propose changes to
@@ -117,9 +144,13 @@ consolation for a Table 1 gap.**
 **How to measure:**
 - **Full matrix:** `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
   ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i Collation/Tools/run_benchmarks.sh 3`
-  (about 6–8 minutes now). Gates: system-ICU `localizedCompare` about
-  194/365/369/300/494; ICU C about 9.3/10.1/40.8/29.7/171 compare. Record
-  run B in Docs/21 (and START HERE, the runbook ratio line, §51).
+  (about 6–8 minutes with the 14 Table 2 APIs). Run it in the MAIN tree: it
+  builds BenchFoundation with `-no-whole-module-optimization`, which works
+  there only because the swift-syntax objects are cached (see below). Gates
+  (2026-10-20 14:35, run B): system-ICU `localizedCompare` about
+  194/365/369/300/494; ICU C compare about 9.3/10.1/40.8/29.7/170.7 and
+  sortKey about 104.6/121.6/117.8/366.5/154.6. Record run B in Docs/21 (and
+  START HERE, the runbook ratio line, §51).
 - **Engine A/B:** `Collation/Tools/build_engine_bench.sh` in each tree, then
   `Collation/Tools/ab/engine_ab.sh <base> <variant> <out> 5` and
   `python3 Collation/Tools/ab/engine_ab_report.py <out>` (min, mean of
@@ -128,11 +159,40 @@ consolation for a Table 1 gap.**
   -align-all-functions=6 --scratch-path .build-al` and A/B again: if the
   difference goes away, it is code placement.
 - **Foundation (Table 2) A/B:** `python3 Collation/Tools/ab/foundation_ab.py
-  <base BenchFoundation> <variant> 5`. A FRESH release build with
-  `-no-whole-module-optimization` fails in swift-syntax ("unable to open
-  dependencies file") — build both sides with normal WMO into fresh scratch
-  paths (`--scratch-path .build-wmo` here, `.build-bf` in the worktree); the
-  runbook allows WMO on this machine.
+  <base BenchFoundation> <variant> 5` (edit its `rows` list for the rows you
+  need). A FRESH release build with `-no-whole-module-optimization` fails in
+  swift-syntax ("unable to open dependencies file") — so for an A/B, build
+  BOTH sides with normal WMO into fresh scratch paths (`swift build -c release
+  --product BenchFoundation --scratch-path .build-wmo` here, `--scratch-path
+  .build-bf` in the worktree; the runbook allows WMO on this machine). For a
+  placement check, add `-Xswiftc -Xllvm -Xswiftc -align-all-functions=6` and
+  other fresh scratch paths on both sides (a full build, ~5 minutes each).
+- **Two build modes, and why both matter for Table 2 work:** the matrix and
+  the instruction counts of §51 (o) used the `-no-WMO` BenchFoundation (main
+  tree, `.build/out/Products/Release/BenchFoundation`); the A/Bs use WMO
+  builds. With WMO and SwiftPM's cross-module optimization, a generic
+  non-`@inlinable` function MAY be specialized for the bench's types, so a
+  cost seen in the `-no-WMO` count may be smaller or absent in the WMO A/B.
+  Real clients of the shipping framework (library evolution) do NOT get such
+  specialization, so the `-no-WMO` build is the closer model of them. Count
+  in both builds; report both; A/B in the WMO pair and say which mode it is.
+- **Instruction count of a Table 2 call (the §51 (o) recipe):** add a
+  temporary `@inline(never)` wrapper row to `Collation/Sources/BenchFoundation/main.swift`
+  (for example `@inline(never) func tmpLocStd(_ a: String, _ b: String) -> Int
+  { a.localizedStandardCompare(b).rawValue }` and a `measure(...)` loop that
+  calls it; for the Substring case, pass `Substring`s); build in the MAIN tree
+  with `swift build -c release -Xswiftc -no-whole-module-optimization
+  -Xswiftc -g --product BenchFoundation` (~2.5 minutes); then
+  `Collation/Tools/insn-count/count_calls.sh .build/out/Products/Release/BenchFoundation
+  ascii "-r '^tmpLocStd'" 1000 <out.jsonl> 5` (skip 1000 warm-up calls; the
+  script passes "<corpus> 1", which runs every row once — enough calls).
+  Restore main.swift afterwards. **The WMO count of the same rows:** build
+  with `swift build -c release -Xswiftc -g --product BenchFoundation
+  --scratch-path .build-wmo` (the binary is
+  `.build-wmo/out/Products/Release/BenchFoundation`) and run `count_calls.sh`
+  on it with the same spec and skip. The `-no-WMO -g` build in the main tree
+  worked four times on 2026-10-20 (about 2.5 minutes each; it rebuilds part
+  of the package but keeps swift-syntax usable for the matrix).
 - **Instruction counts** (exact, load-independent — the main tool of this
   round): Xcode's lldb, a `-g` build (`build_engine_bench.sh`, then
   `(cd .build/engine-bench && swift build -c release -Xswiftc -g)`).
@@ -140,7 +200,8 @@ consolation for a Table 1 gap.**
   <out> [n]` counts whole `compare(_:_:options:)` calls from the first
   instruction (skip 597 for ascii/latin/cjk, 1314 for paths, 200 for thai);
   `count_calls.sh` counts any function (sortKey: the mangled-name spec in its
-  header; skip 600; drop the first 2 calls — the bench grows its key array);
+  header; skip 600 for ascii/latin/cjk, 1317 for paths, 200 for thai; drop
+  the first 2 calls — the bench grows its key array);
   `summarize.py` splits by function or line; `trace_lines.py` traces one call
   with source lines; `icu_count.c` counts ICU (`ucol_strcollUTF8`) on the same
   pairs. lldb pitfalls: `-r` regexes do not match names with argument types;
@@ -205,6 +266,23 @@ Start with counts (both String and Substring arguments), find a conversion
 that is cheap for `String` and correct for every StringProtocol type, keep
 the public signatures unchanged, then A/B with `foundation_ab.py`. Stay
 inside FoundationInternationalization.
+
+How, concretely: (0) the methods in scope are the collation wrappers in that
+file — `localizedCompare`, `localizedCaseInsensitiveCompare`,
+`localizedStandardCompare`, `compare(_:options:range:locale:)`,
+`localizedStandardContains`, `localizedCaseInsensitiveContains`,
+`localizedStandardRange(of:)` and `range(of:options:range:locale:)`. NOT the
+case-mapping methods at the top of the file (`capitalized`, `lowercased`,
+`uppercased` with a locale): the audit list in optimization-targets.md says
+"do not patch from here"; (1) count one call per method with the Table 2 recipe in
+"How to measure" — temporary wrapper rows for String AND for Substring
+arguments (BenchFoundation has no Substring row; add it temporarily);
+(2) count the same rows in a WMO build too (see "Two build modes": with
+cross-module optimization the cost may already be gone there — then say so,
+because shipping-framework clients still pay it); (3) after a change, the
+existing tests that cover these wrappers must pass (the suite gate; the
+Substring index-space cases of §39 / SubstringReceiverTests are the risky
+ones), and the A/B runs on the WMO pair against HEAD.
 
 **Open items after that:**
 1. Run the full matrix to record (l), (o) and the next change.

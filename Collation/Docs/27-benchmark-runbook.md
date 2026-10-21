@@ -10,7 +10,7 @@ From the repo root (the dir containing `Collation/`):
 
 ```sh
 Collation/Tools/run_benchmarks.sh          # K=7 repeats per metric (a few minutes)
-Collation/Tools/run_benchmarks.sh 3        # faster, K=3, for a quick read
+Collation/Tools/run_benchmarks.sh 3        # faster, K=3, for a quick read (about 6–8 minutes)
 ```
 
 It builds all three harnesses and prints two tables (Table 2 has 14 API families since 2026-10-20: the nine String methods, an options compare, and four sort APIs whose ns/op is per sorted ELEMENT). That's the whole procedure.
@@ -24,7 +24,12 @@ env for machine 2):
 2. Builds **`BenchFoundation`** release **with `-Xswiftc -no-whole-module-optimization`**.
    This flag is **mandatory on machine 1** — a normal release WMO executable
    SIGILLs at startup (the `_localeICUClass` `@_dynamicReplacement` miscompile;
-   full root cause in `Docs/25`). Harmless on machine 2.
+   full root cause in `Docs/25`). Harmless on machine 2 IN THE MAIN TREE,
+   where the swift-syntax objects are already built: a FRESH release
+   `-no-whole-module-optimization` build (an empty scratch path, a new
+   worktree) fails in swift-syntax with "unable to open dependencies file"
+   (2026-10-20). For A/Bs in a fresh scratch path, build both sides with
+   normal WMO instead (HANDOFF START HERE, "How to measure").
 3. Builds **EngineBench** (`build_engine_bench.sh`): the engine sources
    copied into a scratch package and built FULL-WMO — no Locale, so machine
    1's WMO SIGILL never trips. Table 1 reads from it (the shipping
@@ -37,7 +42,12 @@ env for machine 2):
      (`compare(locale:)`, `localizedCompare`, `localizedStandardCompare`,
      `localizedCaseInsensitiveCompare`, `localizedStandardContains`,
      `localizedCaseInsensitiveContains`, `localizedStandardRange`,
-     `range(of:options:locale:)`, `range(of:.backwards,locale:)`).
+     `range(of:options:locale:)`, `range(of:.backwards,locale:)`, and since
+     2026-10-20 `compare(_:options:range:locale:)` with
+     `[.caseInsensitive, .diacriticInsensitive]` and four sort APIs —
+     `sorted(using:)` with `.localizedStandard`, `String.Comparator(locale:)`,
+     `KeyPathComparator` and `SortDescriptor`, whose ns/op is per sorted
+     ELEMENT, about 14 comparisons each: 14 API families in all).
    - `bench_system` — the same Foundation APIs through system Foundation
      (NSString → ICU). Compiled once by the script (`swiftc -O` from
      `bench_system_foundation.swift`); the old per-run `swift -O` recompiles
@@ -173,15 +183,15 @@ checkout, so it is NOT a fixed binary: it changes when that checkout changes
 branch or rebuilds. On 2026-10-15 the checkout held ICU 79.1 with Unicode 18
 data (the CLDR 49 integration branch), and its speed matched the old 79.0.1
 build. Check the branch first (`git -C $ICU_SRC branch --show-current`).
-Then expect roughly (one decimal, 2026-10-16 17:29):
+Then expect roughly (one decimal, 2026-10-20 14:35, run B):
 
 | corpus | ICU compare | ICU sortKey |
 |---|---:|---:|
-| ascii | 9.3 | 104.5 |
-| latin | 10.1 | 120.9 |
-| cjk | 40.5 | 119.0 |
-| paths | 29.7 | 370.3 |
-| thai | 173.8 | 155.5 |
+| ascii | 9.3 | 104.6 |
+| latin | 10.1 | 121.6 |
+| cjk | 40.8 | 117.8 |
+| paths | 29.7 | 366.5 |
+| thai | 170.7 | 154.6 |
 
 If a control has drifted, so has everything else: do not record the run.
 
