@@ -295,7 +295,7 @@ public struct CollationData: @unchecked Sendable {
     private static let bundledRootICU4X = Result { try bundled("ucadata-icu4x") }
 
     private static func bundled(_ name: String) throws -> CollationData {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "icu") else {
+        guard let url = collationResourceURL(name, "icu") else {
             throw ParseError.missingPart("bundled \(name).icu")
         }
         return try CollationData(contentsOf: url)
@@ -365,13 +365,21 @@ public struct CollationData: @unchecked Sendable {
     }
 
     public static func tailoring(named name: String) throws -> [UInt8] {
-        guard let url = Bundle.module.url(
-            forResource: name, withExtension: "bin", subdirectory: "tailorings")
-        else {
+        guard let url = collationResourceURL(name, "bin", subdirectory: "tailorings") else {
             throw ParseError.missingPart("bundled tailoring \(name)")
         }
         return [UInt8](try Data(contentsOf: url))
     }
+}
+
+/// The URL of a bundled collation resource: the file in the bundle's resource folder, found by path. The first `url(forResource:)` of a process resolves the preferred localizations (~3.4 ms when it is a tool's first lookup) and every lookup on a new bundle reads its index (~0.4 ms); the resources are not localized, so the path is the same answer. The lookup stays as the fallback for other bundle layouts.
+func collationResourceURL(_ name: String, _ ext: String, subdirectory: String? = nil) -> URL? {
+    if var url = Bundle.module.resourceURL {
+        if let subdirectory { url.appendPathComponent(subdirectory, isDirectory: true) }
+        url.appendPathComponent("\(name).\(ext)", isDirectory: false)
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+    }
+    return Bundle.module.url(forResource: name, withExtension: ext, subdirectory: subdirectory)
 }
 
 /// Trivial (ARC-free) view of the CollationData fields the CE iterator's per-scalar dispatch needs. Copying CollationData retains its storage, and passing a data field alongside the iterator's inout self forces such a copy on every lookup; the view is plain pointers and ints, so those copies are free. The iterator's strong `data`/`base` keep the memory alive for as long as any view of it exists.

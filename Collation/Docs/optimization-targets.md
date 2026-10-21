@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-21): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); (p) done, not yet committed at the time of writing; baselines recorded 2026-10-19 18:03, 2026-10-20 14:35 and 2026-10-21 (the last one includes (l), (o) and (p)). Suite 1544/129. Next: START HERE.**
+**Status (2026-10-21): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); (p) committed `0528e55e`; (q) done, not yet committed at the time of writing; baselines recorded 2026-10-19 18:03, 2026-10-20 14:35 and 2026-10-21 (the last one includes (l), (o) and (p)). Suite 1544/129. Next: START HERE.**
 
 #### (a) The audit
 
@@ -3775,3 +3775,45 @@ wrapper a different body (an `&+ 1`, an `&* 3`) and check the symbols with
 `swift build --package-path <tree> --scratch-path <rel>` resolves `<rel>`
 from the CURRENT directory, not from the package: build a worktree from
 inside it.
+
+#### (q) The first RootCollator() of a process, split
+
+**The split.** A probe package (the EngineBench scratch package with its own
+`main.swift`, in `.build/first-collator/`, not committed) times each step in
+a fresh process; medians of 20 processes, 2026-10-21, load ~20:
+
+| step | cold process (a command-line tool) | after a `Bundle.main` lookup (an app after launch) |
+|---|---:|---:|
+| `Bundle.main` and the first CFBundle use | 1.65 ms | (paid by the process) |
+| `Bundle(url:)` for our resource bundle | 1.03 ms | 0.82 ms |
+| first `url(forResource:)` (the process resolves its preferred localizations) | 3.91 ms | 0.44 ms |
+| read + parse `ucadata.icu` | 0.58 ms | 0.57 ms |
+| `nfd.bin` lookup + read + parse | 0.18 ms | 0.17 ms |
+| storage build (C3b table included) | 0.18 ms | 0.18 ms |
+| **`RootCollator()`, all of it** | **7.0 ms** (min 5.5) | **2.4 ms** |
+
+So of the cold 7 ms, about 4.5 ms is the process's one-time CFBundle and
+localization setup (an app pays it at launch, before any collator), about
+1.3 ms is opening our bundle and looking the file up, and about 0.9 ms is
+our own data work. The 22 ms peaks of (e) were the same steps under load.
+The `Bundle.module` accessor is SwiftPM's generated code (it also builds a
+`Bundle(for:)` candidate it does not need); the framework build finds its
+resources another way, so these numbers describe SwiftPM builds.
+
+**Change.** `collationResourceURL(_:_:subdirectory:)` (CollationData.swift)
+builds the URL from `Bundle.module.resourceURL` and the file name and
+checks it with `FileManager.fileExists` (16 µs); `url(forResource:)` stays
+the fallback for other bundle layouts. The resources have no localized
+variants, so both give the same file. Used for `ucadata*.icu`, `nfd.bin`
+and the tailorings.
+
+**Result** (base = the worktree's engine sources, new = HEAD + the change;
+30 fresh processes each, interleaved, medians): cold `RootCollator()`
+**6.84 → 3.69 ms (−46%)**; after a `Bundle.main` lookup 2.27 → 2.17 ms
+(−0.1 ms: `resourceURL` itself costs ~0.23 ms, which the lookup also paid).
+The first compare stays 2–3 µs. Suite 1544/129.
+
+**Left, by size:** the bundle open (0.8–1.0 ms, inside SwiftPM's accessor),
+the data read and parse (~0.75 ms; `Data(contentsOf:)` then a copy into
+`[UInt8]`, then the parts copied again — mapping the file as ICU does is the
+next candidate), the storage build (0.18 ms).

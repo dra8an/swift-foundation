@@ -15,13 +15,14 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the §51 (p) commit (the localized* wrappers
-without the generic String conversion, and the 2026-10-21 matrix baseline:
-StringProtocol+Locale.swift, SubstringReceiverTests.swift, this file,
-optimization-targets.md, Docs/21 and Docs/27) on top of `4c24d059`. If it
-is missing, those six files are modified — say so and give the add/commit
-lines. Tree clean otherwise; about 8 commits ahead of
-`origin` (not pushed: `d3c9eed9` … and the (p) commit). The A/B worktree
+paragraph).** Expected: HEAD = the §51 (q) commit (the bundled resources
+found by path: CollationData.swift, NormalizationData.swift, this file and
+optimization-targets.md) on top of `0528e55e` (§51 (p) and the 2026-10-21
+matrix baseline). If it is missing, those four files are modified — say so
+and give the add/commit lines. Tree clean otherwise; about 9 commits ahead
+of `origin` (not pushed: `d3c9eed9` … and the (p) and (q) commits). The
+first-collator probe packages are `.build/first-collator/` (base engine
+sources, all probe modes) and `.build/first-collator-new/`. The A/B worktree
 `../collation-baseline` is detached at `4c24d059` (before (p)); it holds an
 EngineBench build (`.build/engine-bench/...`), a WMO BenchFoundation in
 `.build-bf/` and a WMO `-g` one in `.build-bfg/`, both built from the
@@ -277,8 +278,14 @@ sort controls flat. Suite 1544/129.
 **Open items, in order:**
 1. ~~Run the full matrix to record (l), (o) and (p).~~ DONE 2026-10-21
    (Docs/21, run B; runs A and B agree).
-2. The FIRST `RootCollator()` in a process takes 7–22 ms (one-time; the first
-   resource lookup and file reads) — split it.
+2. ~~The FIRST `RootCollator()` in a process takes 7–22 ms — split it.~~
+   DONE 2026-10-21, §51 (q): ~4.5 ms of it is the process's one-time
+   CFBundle and localization setup (an app pays it at launch), ~1.3 ms our
+   bundle open and lookup, ~0.9 ms our data work. The resources are now
+   found by path (`collationResourceURL`): cold 6.8 → 3.7 ms, after an
+   app's launch 2.3 → 2.2 ms. Left: the bundle open (~0.9 ms, SwiftPM's
+   accessor) and the data read and parse (~0.75 ms; mapping the file is
+   the next candidate).
 3. §51 (o) left about +1 ns on two Table 2 rows (`localizedStandardCompare`
    latin, the options compare) whose code did not change. (p) changed the
    code of both rows, so check this only if the new matrix shows those two

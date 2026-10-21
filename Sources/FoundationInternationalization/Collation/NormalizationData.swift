@@ -71,7 +71,7 @@ public struct NormalizationData: @unchecked Sendable {
     }
 
     private static let bundled = Result { () throws -> NormalizationData in
-        guard let url = Bundle.module.url(forResource: "nfd", withExtension: "bin") else {
+        guard let url = collationResourceURL("nfd", "bin") else {
             throw ParseError.tooShort
         }
         return try NormalizationData(contentsOf: url)
