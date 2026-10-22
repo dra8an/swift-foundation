@@ -293,10 +293,10 @@ struct CEIterator: ~Copyable {
     /// True once the NO_CE terminator has been appended.
     private(set) var terminated = false
 
-    /// Produces all CEs of the string into `ces`, terminated by NO_CE. `bulkASCII`: take runs of simple ASCII scalars in one loop (`collectSimpleASCIIRun`). It pays on whole strings (sortKey); a short search pattern passes false, because a run of one or two scalars costs more than it saves.
+    /// Produces all CEs of the string into `ces`, terminated by NO_CE. `wholeString` turns on the paths that pay only when the whole string is produced at once (sortKey): the run of simple ASCII scalars (`collectSimpleASCIIRun`) and the combining-mark table. A short search pattern passes false, because a run of one or two scalars costs more than it saves.
     @inline(__always)
-    mutating func collectAll(bulkASCII: Bool = true) throws {
-        while try appendMoreBody(bulkASCII: bulkASCII) {}
+    mutating func collectAll(wholeString: Bool = true) throws {
+        while try appendMoreBody(wholeString: wholeString) {}
     }
 
     /// Appends the CEs of the simple ASCII scalars that follow, pulled straight from the NFD front end's source, with the iterator's counters in locals. Per scalar it does exactly what the ASCII fast path of `appendMore()` does (an ASCII scalar is inert, so NFD passes it through unchanged); the per-scalar path kept every counter in memory, because the CE store through a raw pointer may alias any of them. The first scalar it cannot use goes back to the front end, which yields it next. Only `collectAll` uses it: `appendMore()` keeps its one-character-per-call contract for the lazy compare.
@@ -364,12 +364,12 @@ struct CEIterator: ~Copyable {
     /// Appends the CEs of the next character, or the NO_CE terminator at the end of input. Returns false once terminated. Enables lazy comparison: the primary level usually decides without generating all CEs.
     @inline(__always)
     mutating func appendMore() throws -> Bool {
-        try appendMoreBody(bulkASCII: false)
+        try appendMoreBody(wholeString: false)
     }
 
-    /// The body of `appendMore()`. `bulkASCII` (collectAll only): after a simple ASCII scalar, also take the run of simple ASCII scalars that follows (`collectSimpleASCIIRun`). Only the ASCII branch tests it, so other scripts pay nothing. `appendMore()` passes false, so every other caller — the lazy compare, the search loops — compiles the code it had before, also in a build that does not inline across files.
+    /// The body of `appendMore()`. `wholeString` (collectAll only): after a simple ASCII scalar, also take the run of simple ASCII scalars that follows (`collectSimpleASCIIRun`), and take combining marks from the mark table. Only those two branches test it. `appendMore()` passes false, so every other caller — the lazy compare, the search loops — compiles the code it had before, also in a build that does not inline across files.
     @inline(__always)
-    private mutating func appendMoreBody(bulkASCII: Bool) throws -> Bool {
+    private mutating func appendMoreBody(wholeString: Bool) throws -> Bool {
         guard !terminated else { return false }
         guard let c = popScalar() else {
             ces.append(CollationConstants.noCE)
@@ -382,7 +382,7 @@ struct CEIterator: ~Copyable {
             if ce != 0 {
                 ces.append(ce)
                 pushHistory(c)
-                if bulkASCII { collectSimpleASCIIRun() }
+                if wholeString { collectSimpleASCIIRun() }
                 return true
             }
         }
@@ -396,7 +396,8 @@ struct CEIterator: ~Copyable {
             }
         }
         // Fast path: a combining mark (U+0300–037F) with one simple CE — the second half of a decomposed accented letter. A mark that reaches this point on its own was not consumed by a contraction of its starter, so the full path would give exactly this CE. Tailored or contracting marks are 0 in the table.
-        if (c &- 0x0300) < 128, !markCEs.isEmpty {
+        // Whole-string production only (sortKey): in the lazy compare, the extra test cost Thai — our weakest compare row — +0.5..+0.8% (technique log §51 (w)).
+        if wholeString, (c &- 0x0300) < 128, !markCEs.isEmpty {
             let ce = markCEs[Int(c &- 0x0300)]
             if ce != 0 {
                 ces.append(ce)

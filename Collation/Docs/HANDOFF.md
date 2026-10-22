@@ -298,7 +298,8 @@ sort controls flat. Suite 1544/129.
    one loop; sortKey ascii −14%, paths −26%, others within ±1–2%). Thai in
    the same run was REJECTED (§51 (u)). CJK: a fast path for computed Han
    primaries (§51 (v), sortKey cjk −8%). Combining marks: a fast-path
-   table (§51 (w), sortKey latin −5%; thai compare +0.5..+0.8%). Left: NFD's
+   table (§51 (w), sortKey latin −5%, whole strings only; thai compare
+   +0.5..+0.7% with identical instructions — a layout effect, kept). Left: NFD's
    decomposition of precomposed letters (~119 per accented letter), and
    the run-time writer path for non-default options. A/B every variant; the
    counts pointed the wrong way in (r).

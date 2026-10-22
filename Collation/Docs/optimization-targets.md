@@ -4133,3 +4133,15 @@ prefix rule has a combining mark before it (the push stays: it keeps the
 state the same as the full path). Suite 1549/132; the sk-ladder identity
 checks (whose clones have no mark table) 0 mismatched lines on all five
 corpora; the four ladder tools build.
+
+**CE3b: the mark table only for whole strings.** Thai compare is our
+weakest Table 1 row, so the mark test was taken out of the lazy compare:
+`appendMoreBody(wholeString:)` (renamed from `bulkASCII`; `collectAll`
+passes true, `appendMore()` and the search pattern false) now gates both
+the ASCII run and the mark table. A/B against HEAD (5 rounds, load 16–19;
+plain / aligned): sortKey latin −4.6% / −5.0% (5/5), the other sortKey rows
+within ±1.3%; compare thai STILL +0.5% / +0.7% (5/5). But an instruction
+count of 10 thai compares is identical on both sides, call for call (mean
+2320.9): the compare executes the same code, and the ~1–1.5 ns is a layout
+effect of the extra table (code or data placement; the aligned builds align
+only function starts). Kept (user decision, 2026-10-22).
