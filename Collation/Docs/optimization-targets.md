@@ -4145,3 +4145,67 @@ count of 10 thai compares is identical on both sides, call for call (mean
 2320.9): the compare executes the same code, and the ~1–1.5 ns is a layout
 effect of the extra table (code or data placement; the aligned builds align
 only function starts). Kept (user decision, 2026-10-22).
+
+#### (x) Thai compare, split against ICU (analysis only, no code change)
+
+**Counts** (EngineBench `-g`, thai pairs 201–210 — the pairs after 200
+skipped compares; ICU with `icu_count.c` on the same pairs, 2026-10-22):
+ours 2320.9 per compare, ICU 2118.8 (1.10×, matching ~1.11× in time).
+
+| pair | ours | ICU | ratio | note |
+|---|---:|---:|---:|---|
+| 201 | 1856 | 1541 | 1.20× | prefix pair (`กรมธรรม์` / `กรมธรรม์ประกันภัย`) |
+| 202–204 | 2224–2270 | 2090–2096 | 1.06–1.08× | |
+| 205 | 1853 | 1606 | 1.15× | |
+| 206–208 | 2042–2496 | 2129–2577 | 0.96–0.97× | |
+| 209 | 2950 | 2647 | 1.11× | prefix vowel after the restart |
+| 210 | 2779 | 1835 | 1.51× | `กรรเกด` / `กรรไกร`: mismatch at the prefix vowels |
+
+**Where the gap is — per compare, not per character:**
+
+| part (mean of the 10 pairs) | ours | ICU |
+|---|---:|---:|
+| the two `CEIterator.reset` calls | ~214 (178 on most pairs) | iterator setup ~80 |
+| reference counting on the two strings | ~172 (90–254) | 0 |
+| contraction lookahead and trie (pairs 209, 210 only) | ~100 | ~48 |
+
+The per-compare setup alone (~300 above ICU's setup) is larger than the
+whole gap (+202); the compare work itself is at or below ICU on most
+pairs.
+
+**Causes.**
+1. The CE iterator reads its input through `String.UnicodeScalarView.Iterator`,
+   which holds a strong reference to the string: `compareBody` retains and
+   releases both strings (for their scalar views), and each `reset` retains
+   the new string and releases the previous compare's — ~8 atomic
+   reference-count operations per slow-path compare. Most Thai words are
+   heap strings (more than 15 bytes), and every Thai compare takes the slow
+   path; ascii, latin, cjk and paths mostly decide in the byte fast paths.
+2. `reset` itself is lean (~89: register saves, the table selection, the new
+   String iterator, ~15 stores, five `isEmpty` checks), but it walks the
+   restart prefix again, one scalar at a time through the String iterator's
+   decoder (~16 instructions per scalar; ~256 on the prefix pair 201). ICU
+   restarts at the byte position. A String iterator cannot start in the
+   middle of a string.
+3. The lookahead (`[UInt64]` + `lookaheadStart`) is Array work: after a
+   compare that used a contraction, the next `reset` clears it with
+   `removeAll(keepingCapacity: true)` — the general `replaceSubrange` path,
+   a `memmove` and a uniqueness check, ~200 instructions — and
+   `scalarAhead` + `consumeAhead` took ~350 in pair 210 against ~50 for the
+   same job in ICU. Thai prefix vowels (U+0E40–0E44) contract with the
+   following consonant, so this is common in Thai text.
+
+**Options, not yet tried:**
+- **L1: the lookahead as a noncopyable buffer with an explicit count**
+  (like `CEBuffer`, §51 (h), which gave thai compare −8.3%): a cheap clear
+  and appends without uniqueness checks. Contained in
+  CollationElements.swift; estimated −3..−8% on thai compare.
+- **S1: a UTF-8 source for the NFD front end** — the pinned bytes (pointer
+  and length) of a native contiguous string instead of the String
+  iterator, with the String iterator as the fallback for bridged strings.
+  It would remove the reference counting AND the restart re-walk (start at
+  the byte offset that `restartScalarCount` already knows). Estimated ~−250
+  instructions per Thai compare (~−10%); a real refactor (compare, sortKey,
+  search, the ASCII run all use the source), and §51 warns that instance
+  methods inside the pinned-buffer closures once cost +17–22% in code
+  generation — the shape matters.

@@ -15,11 +15,12 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = a docs commit (the late-evening matrix:
-Docs/21, Docs/27, this file, optimization-targets.md) on top of `6d0d26f9`
-(§51 (t)). If it is missing, those four files are modified — say so and
-give the add/commit lines. Tree clean otherwise; about 13 commits ahead of
-`origin` (not pushed: `d3c9eed9` … through §51 (t) and this docs commit). The A/B worktree is now at `c84d0ca1` (before (t)) with its own
+paragraph).** Expected: HEAD = a docs commit (§51 (x), the Thai compare
+analysis) on top of `8adc677c` (§51 (w) and its `wholeString` gate). If it is
+missing, HANDOFF.md and optimization-targets.md are modified — say so and
+give the add/commit lines. Tree clean otherwise; pushed through this docs
+commit if the user pushed on 2026-10-22 (check `git rev-list --left-right
+--count HEAD...origin/port/collation`). The A/B worktree is now at `d8e6cd3b` (before (w)) with its own
 `main.swift` (the probe copy was restored). The
 first-collator probe packages are `.build/first-collator/` (base engine
 sources, all probe modes) and `.build/first-collator-new/`. The worktree holds EngineBench builds in `.build/engine-bench/` (plain
@@ -303,6 +304,14 @@ sort controls flat. Suite 1544/129.
    decomposition of precomposed letters (~119 per accented letter), and
    the run-time writer path for non-default options. A/B every variant; the
    counts pointed the wrong way in (r).
+4b. **Thai compare (our weakest Table 1 row, ~1.11×) — analysed 2026-10-22,
+   §51 (x), not changed yet.** The gap is per-compare setup, not the
+   contractions: the two `reset` calls (~214 against ICU's ~80), reference
+   counting on both strings (~172 against 0), and the lookahead `Array`
+   after contractions (prefix vowels). Next, in this order: L1 the lookahead
+   as a noncopyable buffer (small, like `CEBuffer`); then S1 a UTF-8 source
+   for the NFD front end (removes the reference counting and the restart
+   re-walk; a real refactor — report after each stage).
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
 6. A Substring argument still pays its copy into a String (~293
