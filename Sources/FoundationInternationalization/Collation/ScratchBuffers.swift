@@ -100,6 +100,32 @@ final class ScratchBuffers {
             terminate: terminate, into: &key)
     }
 
+    /// The same on the pinned UTF-8 bytes of the string (see ScalarSource): no String iterator is stored, so the string is not retained. Call only inside the string's `withContiguousStorageIfAvailable` scope.
+    func resetCollectAndWriteKey(
+        numeric: Bool, utf8: UnsafeBufferPointer<UInt8>, compressibleBytes: UnsafeBufferPointer<Bool>,
+        options: Int32, variableTopValue: UInt32,
+        reordering: Reordering?, terminate: Bool, into key: inout [UInt8]
+    ) throws {
+        try ScratchBuffers.resetCollectAndWriteKey(
+            &left.pointee, numeric: numeric, utf8: utf8, compressibleBytes: compressibleBytes,
+            options: options, variableTopValue: variableTopValue, reordering: reordering,
+            terminate: terminate, into: &key)
+    }
+
+    @inline(__always)
+    private static func resetCollectAndWriteKey(
+        _ iter: inout CEIterator, numeric: Bool, utf8: UnsafeBufferPointer<UInt8>,
+        compressibleBytes: UnsafeBufferPointer<Bool>, options: Int32, variableTopValue: UInt32,
+        reordering: Reordering?, terminate: Bool, into key: inout [UInt8]
+    ) throws {
+        iter.reset(numeric: numeric, utf8: utf8)
+        try iter.collectAll()
+        CollationKeys.writeSortKeyUpToQuaternarySingle(
+            ces: iter.ces, compressibleBytes: compressibleBytes,
+            options: options, variableTopValue: variableTopValue,
+            reordering: reordering, terminate: terminate, into: &key)
+    }
+
     @inline(__always)
     private static func resetCollectAndWriteKey(
         _ iter: inout CEIterator, numeric: Bool, scalars: String.UnicodeScalarView,
@@ -141,6 +167,23 @@ final class ScratchBuffers {
         ) { l, r in
             l.reset(numeric: numeric, scalars: leftScalars, skippingFirst: skippingFirst)
             r.reset(numeric: numeric, scalars: rightScalars, skippingFirst: skippingFirst)
+        }
+    }
+
+    /// The same on the pinned UTF-8 bytes of both strings (see ScalarSource): no String iterator is stored, so neither string is retained. Call only inside both strings' `withContiguousStorageIfAvailable` scopes.
+    @inline(__always)
+    func resetBothAndCompare(
+        numeric: Bool,
+        leftUTF8: UnsafeBufferPointer<UInt8>, rightUTF8: UnsafeBufferPointer<UInt8>,
+        skippingFirst: Int,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering?
+    ) throws -> Int {
+        try ScratchBuffers.resetBothAndCompare(
+            &left.pointee, &right.pointee, options: options, variableTopValue: variableTopValue,
+            reordering: reordering
+        ) { l, r in
+            l.reset(numeric: numeric, utf8: leftUTF8, skippingFirst: skippingFirst)
+            r.reset(numeric: numeric, utf8: rightUTF8, skippingFirst: skippingFirst)
         }
     }
 

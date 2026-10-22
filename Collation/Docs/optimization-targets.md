@@ -4209,3 +4209,68 @@ pairs.
   search, the ASCII run all use the source), and §51 warns that instance
   methods inside the pinned-buffer closures once cost +17–22% in code
   generation — the shape matters.
+
+#### (y) S1: a UTF-8 source for the NFD front end (stages 1–2; search wired, open)
+
+**Change.** `NFDIterator` reads its input through `ScalarSource`: the
+pinned UTF-8 bytes of a contiguous string (a trivial struct — pointer,
+position, end — so a reset assigns it with plain stores), or, as the
+fallback, an optional String iterator kept in a separate field
+(`NFDIterator.fallback`; bridged, non-contiguous strings). A bytes source
+skips its first n scalars by their lead bytes, without decoding. It is
+valid only while the string's storage is pinned: callers reset inside
+`withContiguousStorageIfAvailable` and do not read the iterator after.
+- **compare:** `compareBody` starts with `compareFromRestart` when the byte
+  scan placed the restart (the default-options path): both strings
+  pinned, both iterators on bytes, no skip walk; the old restart branches
+  inside `compareBody` were removed.
+- **sortKey:** `sortKey` pins the string and calls a static
+  `@inline(never)` body with plain parameters (inside the closure,
+  `collectAll` did not inline: ~30 instructions per key).
+- **search:** the three entries pin pattern and text together
+  (`withPinnedUTF8`) and pass the bytes to the four resets.
+- The ASCII run of (t) runs on bytes only (`isAtSource` requires them);
+  a String-iterator input takes the per-scalar path.
+
+**Stage 1 lessons.** As one struct with an optional String iterator inside,
+`ScalarSource` was not trivial: every reset went through out-of-line
+value witnesses (~40 instructions), and sortKey, still on the String
+path, was +8..+17%. Splitting the fallback out and the static sortKey body
+fixed both.
+
+**Counts** (HEAD `80f9b5a8` → stage 2b): thai compare 2320.9 → 2095.5
+(−9.7%; ICU 2118.8): reference counting ~172 → ~42, the two resets ~214 →
+~148 (the prefix pair 201: 416 → 148, no re-walk). sortKey ascii −5.4%,
+latin −3.5%, cjk +0.5%, paths −11.6%, thai −1.7%.
+
+**A/B against HEAD** (EngineBench, 5 rounds; plain / aligned): compare
+thai 195.3 → 164.9 (−15.6%) / −15.6% (5/5); sortKey ascii −5.3% / −4.3%,
+latin −3.7% / −3.6%, paths −9.5% / −8.5%, thai −1.5% / +0.2%, cjk +0.9% /
++0.3%; the other compare rows −3.6..0%.
+
+**One matrix run** (2026-10-22, control within 2.1%; against the
+2026-10-21 late-evening baseline, which predates (v) and (w)): Table 1
+compare thai 194.7 → 163.8 (1.11× → **0.94×**); sortKey 0.72× ascii,
+0.79× latin, 0.89× cjk, 0.50× paths, 0.97× thai — eight of the ten rows at
+or below ICU C. Table 2: compare(_:locale:) thai −7%, localizedCompare
+thai −6%; the search rows −1..−8% on every corpus.
+
+**Known costs, open:**
+1. Thai compares with NON-default options (localizedStandardCompare,
+   localizedCaseInsensitiveCompare, the options compare) +3..+4% in Table 2:
+   they take `compareBody`'s skip walk, whose iterators are String
+   iterators (`reset(source:first:)`) — the fallback branch per scalar and
+   no saving. Next step (a): run that walk on the bytes too.
+2. Search: the WMO A/B (Foundation rows) gave ascii and latin +2..+7%
+   (5/5) and cjk −3%, while the `-no-WMO` matrix gave −1..−8% everywhere.
+   Pinning a small string (≤ 15 bytes, stored in the String value, no
+   reference count to save) costs a copy and two closures per call.
+   Candidate: pin only texts longer than 15 bytes. Decision (b), after (a).
+
+**Tests.** `ScalarSourceTests` (new): compare results, sort keys and search
+results (contains, search, searchBackwards as scalar offsets) of lazily
+bridged `NSString` inputs — checked to be non-contiguous — against native
+strings, on root, th, ja, sv and fr_CA, numeric off and on. The mutation
+"skip one scalar too many after the restart" fails the suites with 123
+issues ("too few" is sound — an earlier restart — and passes). Suite
+1551/133.

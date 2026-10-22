@@ -147,6 +147,14 @@ struct CEIterator: ~Copyable {
         clearState()
     }
 
+    /// Rewinds onto the pinned UTF-8 bytes of a string (see ScalarSource: valid only while they stay pinned), positioned after `skippingFirst` scalars.
+    mutating func reset(numeric: Bool, utf8: UnsafeBufferPointer<UInt8>, skippingFirst: Int = 0) {
+        self.numeric = numeric
+        selectTables(numeric: numeric)
+        scalars.reset(utf8: utf8, skippingFirst: skippingFirst)
+        clearState()
+    }
+
     /// Resets onto an already-positioned scalar iterator plus one scalar the caller has already pulled from it — see NFDIterator.reset(source:first:). Avoids rebuilding a String iterator and re-walking the skipped prefix.
     mutating func reset(numeric: Bool, source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
         self.numeric = numeric
@@ -305,15 +313,13 @@ struct CEIterator: ~Copyable {
         // Called from the ASCII fast path only: not terminated, and the table is not empty.
         guard lookaheadStart >= lookahead.count, scalars.isAtSource else { return }
         let table = simpleCEs
-        // Swapped out, not copied: a copy retains the string's storage and releases it again.
-        var source = "".unicodeScalars.makeIterator()
-        swap(&source, &scalars.source)
+        // A trivial copy (the bytes source, see NFDIterator.isAtSource): the run keeps it in registers.
+        var source = scalars.source
         var count = 0
         var last1 = prev1
         var last2 = prev2
         var handBack: UInt32? = nil
-        while let u = source.next() {
-            let c = u.value
+        while let c = source.next() {
             if c < 128 {
                 let ce = table[Int(c)]
                 if ce != 0 {

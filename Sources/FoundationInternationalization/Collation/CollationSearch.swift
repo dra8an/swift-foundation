@@ -65,9 +65,12 @@ struct CollationSearch {
         }
 
         // Two access scopes for the whole body — one for the iterator, one for the buffer bundle — instead of one per buffer touched. See ScratchBuffers.SearchBuffers.
-        return searchFused(
-            for: pattern, in: text, mask: strengthMask(for: options.strength),
-            iter: &scratch.left.pointee, buffers: &scratch.search)
+        let mask = strengthMask(for: options.strength)
+        return Self.withPinnedUTF8(pattern, text) { patternBytes, textBytes in
+            searchFused(
+                for: pattern, in: text, mask: mask, patternBytes: patternBytes, textBytes: textBytes,
+                iter: &scratch.left.pointee, buffers: &scratch.search)
+        }
     }
 
     /// The byte-scan fast paths are sound only when every clean-ASCII byte is guaranteed a nonzero collation element: strength at least tertiary (case differences stay significant), numeric off (digit runs would collapse into single elements), and alternate=nonIgnorable (shifted drops spaces/punctuation below the mask).
@@ -97,9 +100,12 @@ struct CollationSearch {
             }
         }
 
-        return searchBackwardsFused(
-            for: pattern, in: text, mask: strengthMask(for: options.strength),
-            iter: &scratch.left.pointee, buffers: &scratch.search)
+        let mask = strengthMask(for: options.strength)
+        return Self.withPinnedUTF8(pattern, text) { patternBytes, textBytes in
+            searchBackwardsFused(
+                for: pattern, in: text, mask: mask, patternBytes: patternBytes, textBytes: textBytes,
+                iter: &scratch.left.pointee, buffers: &scratch.search)
+        }
     }
 
     /// Returns true if `pattern` appears anywhere in `text`. Fast path: no position tracking, no array allocations for index/NFD maps.
@@ -118,18 +124,45 @@ struct CollationSearch {
         if pattern.isEmpty { return true }
         if text.isEmpty { return false }
 
-        return containsFused(
-            pattern: pattern, in: text, mask: strengthMask(for: options.strength),
-            iter: &scratch.left.pointee, buffers: &scratch.search)
+        let mask = strengthMask(for: options.strength)
+        return Self.withPinnedUTF8(pattern, text) { patternBytes, textBytes in
+            containsFused(
+                pattern: pattern, in: text, mask: mask, patternBytes: patternBytes, textBytes: textBytes,
+                iter: &scratch.left.pointee, buffers: &scratch.search)
+        }
+    }
+
+    /// Runs `body` with the pinned UTF-8 bytes of both strings when both are contiguous, else with (nil, nil): the scans then read their input through a bytes ScalarSource instead of a String iterator, which retains its string and costs a branch per scalar in the fallback (technique log §51 (y)).
+    @inline(__always)
+    private static func withPinnedUTF8<R>(
+        _ a: String, _ b: String,
+        _ body: (UnsafeBufferPointer<UInt8>?, UnsafeBufferPointer<UInt8>?) -> R
+    ) -> R {
+        if let outer = a.utf8.withContiguousStorageIfAvailable({ pa in
+            b.utf8.withContiguousStorageIfAvailable { pb in body(pa, pb) }
+        }), let result = outer {
+            return result
+        }
+        return body(nil, nil)
+    }
+
+    /// Resets `iter` onto `string`: its pinned bytes when given, else its String iterator.
+    @inline(__always)
+    private func reset(_ iter: inout CEIterator, _ string: String, bytes: UnsafeBufferPointer<UInt8>?) {
+        if let bytes {
+            iter.reset(numeric: numeric, utf8: bytes)
+        } else {
+            iter.reset(numeric: numeric, scalars: string.unicodeScalars)
+        }
     }
 
     private func containsScan(
-        pattern: String, in text: String, mask: Int64, patternCEs: [Int64],
+        pattern: String, in text: String, textBytes: UnsafeBufferPointer<UInt8>?, mask: Int64, patternCEs: [Int64],
         iter: inout CEIterator, textCEs buffer: inout [Int64]
     ) -> Bool {
         let patCount = patternCEs.count
 
-        iter.reset(numeric: numeric, scalars: text.unicodeScalars)
+        reset(&iter, text, bytes: textBytes)
         let textUTF8Count = text.utf8.count
         if textUTF8Count <= 32 {
             iter.ces.reserveCapacity(textUTF8Count + 1)
@@ -275,13 +308,13 @@ struct CollationSearch {
 
     /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match (profiling showed the upfront index table and NFD map were most of `localizedStandardRange`, and the window's per-call malloc/free most of CJK searches).
     private func searchForward(
-        patternCEs: [Int64], in text: String, mask: Int64,
+        patternCEs: [Int64], in text: String, textBytes: UnsafeBufferPointer<UInt8>?, mask: Int64,
         iter: inout CEIterator, window buffer: inout [AnnotatedCE],
         nfdMap: inout [Int]
     ) -> Range<String.Index>? {
         let patCount = patternCEs.count
 
-        iter.reset(numeric: numeric, scalars: text.unicodeScalars)
+        reset(&iter, text, bytes: textBytes)
         // Reserve for the whole text (capped so huge inputs don't over- allocate): growth reallocs of the 24-byte AnnotatedCE elements were measurable on long lines (paths corpus), where the old <=32 gate never fired. reserveCapacity on the retained-capacity buffer is a no-op once warm.
         let textUTF8Count = text.utf8.count
         let reserve = min(textUTF8Count, 1024)
@@ -459,25 +492,27 @@ struct CollationSearch {
     /// The forward search body. Reaching `buffers.patternCEs` / `.annotatedCEs` / `.nfdSourceMap` from here is free: `buffers` is already an `inout` parameter, so field accesses are statically enforced and emit no runtime check. Only the two arguments at the entry open scopes.
     private func searchFused(
         for pattern: String, in text: String, mask: Int64,
+        patternBytes: UnsafeBufferPointer<UInt8>?, textBytes: UnsafeBufferPointer<UInt8>?,
         iter: inout CEIterator, buffers: inout ScratchBuffers.SearchBuffers
     ) -> Range<String.Index>? {
-        produceMaskedCEs(for: pattern, mask: mask, iter: &iter, into: &buffers.patternCEs)
+        produceMaskedCEs(for: pattern, bytes: patternBytes, mask: mask, iter: &iter, into: &buffers.patternCEs)
         if buffers.patternCEs.isEmpty { return nil }
 
         return searchForward(
-            patternCEs: buffers.patternCEs, in: text, mask: mask,
+            patternCEs: buffers.patternCEs, in: text, textBytes: textBytes, mask: mask,
             iter: &iter, window: &buffers.annotatedCEs, nfdMap: &buffers.nfdSourceMap)
     }
 
     /// The backward search body; same scope accounting as searchFused.
     private func searchBackwardsFused(
         for pattern: String, in text: String, mask: Int64,
+        patternBytes: UnsafeBufferPointer<UInt8>?, textBytes: UnsafeBufferPointer<UInt8>?,
         iter: inout CEIterator, buffers: inout ScratchBuffers.SearchBuffers
     ) -> Range<String.Index>? {
-        produceMaskedCEs(for: pattern, mask: mask, iter: &iter, into: &buffers.patternCEs)
+        produceMaskedCEs(for: pattern, bytes: patternBytes, mask: mask, iter: &iter, into: &buffers.patternCEs)
         if buffers.patternCEs.isEmpty { return nil }
 
-        produceAnnotatedCEs(for: text, mask: mask, iter: &iter, into: &buffers.annotatedCEs)
+        produceAnnotatedCEs(for: text, bytes: textBytes, mask: mask, iter: &iter, into: &buffers.annotatedCEs)
         if buffers.annotatedCEs.isEmpty { return nil }
 
         return searchBackwardMatch(
@@ -489,23 +524,24 @@ struct CollationSearch {
     /// The contains body; same scope accounting. Pattern CEs first, reusing the iterator, which is then reset onto the text inside containsScan.
     private func containsFused(
         pattern: String, in text: String, mask: Int64,
+        patternBytes: UnsafeBufferPointer<UInt8>?, textBytes: UnsafeBufferPointer<UInt8>?,
         iter: inout CEIterator, buffers: inout ScratchBuffers.SearchBuffers
     ) -> Bool {
-        produceMaskedCEs(for: pattern, mask: mask, iter: &iter, into: &buffers.patternCEs)
+        produceMaskedCEs(for: pattern, bytes: patternBytes, mask: mask, iter: &iter, into: &buffers.patternCEs)
         if buffers.patternCEs.isEmpty { return false }
 
         return containsScan(
-            pattern: pattern, in: text, mask: mask,
+            pattern: pattern, in: text, textBytes: textBytes, mask: mask,
             patternCEs: buffers.patternCEs,
             iter: &iter, textCEs: &buffers.maskedTextCEs)
     }
 
     /// Produces the masked CEs of `string` into the caller-owned `result` (cleared first, capacity retained) — no per-call allocation. Empties `result` on pipeline errors; callers treat empty as no-match.
     private func produceMaskedCEs(
-        for string: String, mask: Int64, iter: inout CEIterator,
+        for string: String, bytes: UnsafeBufferPointer<UInt8>?, mask: Int64, iter: inout CEIterator,
         into result: inout [Int64]
     ) {
-        iter.reset(numeric: numeric, scalars: string.unicodeScalars)
+        reset(&iter, string, bytes: bytes)
         if !result.isEmpty { result.removeAll(keepingCapacity: true) }
         var afterVariable = false
         do {
@@ -526,10 +562,10 @@ struct CollationSearch {
     // MARK: - Annotated CE production (full, for backwards search)
 
     private func produceAnnotatedCEs(
-        for text: String, mask: Int64, iter: inout CEIterator,
+        for text: String, bytes: UnsafeBufferPointer<UInt8>?, mask: Int64, iter: inout CEIterator,
         into result: inout [AnnotatedCE]
     ) {
-        iter.reset(numeric: numeric, scalars: text.unicodeScalars)
+        reset(&iter, text, bytes: bytes)
         let textUTF8Count = text.utf8.count
         let reserve = min(textUTF8Count, 1024)
         iter.ces.reserveCapacity(reserve + 1)

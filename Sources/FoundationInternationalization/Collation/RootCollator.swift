@@ -503,31 +503,27 @@ public struct RootCollator: @unchecked Sendable {
     ) throws -> Order {
         // No `if left == right` shortcut here. Swift's String == is canonical equivalence, which for non-binary-equal strings runs NFC normalization to prove (in)equality — measured at ~250–400 ns per call on text with combining marks (Thai, etc.), on *every* non-equal compare. Canonical equivalence is already handled correctly by the CE pipeline below (the NFD front end yields equal CEs for equivalent strings), so the shortcut was pure cost on the non-Latin path. The byte fast path above still settles binary equality cheaply for non-identical strengths.
 
-        // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar prefixes produce identical CEs, so iteration can start at the first difference — when restarting there is provably equivalent to full iteration (see unsafeStart). When the byte scan already placed the restart (ICU's backup rule, restartScalarCount), the walk is skipped. Otherwise (non-default options, bridged strings) the walk finds the difference, and an unsafe boundary restarts at 0 — skipping less is always sound.
+        if restart >= 0 {
+            return try compareFromRestart(left, right, options: options, word: word, restart: restart)
+        }
+
+        // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar prefixes produce identical CEs, so iteration can start at the first difference — when restarting there is provably equivalent to full iteration (see unsafeStart). When the byte scan already placed the restart (ICU's backup rule, restartScalarCount), compareFromRestart above runs instead. Here (non-default options, bridged strings) the walk finds the difference, and an unsafe boundary restarts at 0 — skipping less is always sound.
         var lIter = left.unicodeScalars.makeIterator()
         var rIter = right.unicodeScalars.makeIterator()
         var shared = 0
-        var lNext: Unicode.Scalar? = nil
-        var rNext: Unicode.Scalar? = nil
+        var lNext: Unicode.Scalar? = lIter.next()
+        var rNext: Unicode.Scalar? = rIter.next()
         var fellBack = false
-        let restartKnown = restart >= 0
-        if restartKnown {
-            // The byte scan located the difference and backed up to a safe scalar: restart there, with no walk.
-            shared = restart
-        } else {
+        while let a = lNext, let b = rNext, a == b {
+            shared += 1
             lNext = lIter.next()
             rNext = rIter.next()
-            while let a = lNext, let b = rNext, a == b {
-                shared += 1
-                lNext = lIter.next()
-                rNext = rIter.next()
-            }
-            if shared > 0,
-               (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
-                || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
-                shared = 0
-                fellBack = true
-            }
+        }
+        if shared > 0,
+           (lNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false)
+            || (rNext.map { unsafeStart($0.value, numeric: options.numeric) } ?? false) {
+            shared = 0
+            fellBack = true
         }
 
         // Quick primary comparison: if both first-differing scalars are in the CJK Unified Ideographs range and map to OFFSET/IMPLICIT CEs, the comparison is decided here without the CE pipeline.
@@ -541,7 +537,7 @@ public struct RootCollator: @unchecked Sendable {
         // Fast Latin (CollationFastLatin): when both remainders start within the mini-CE table's range, compare on the precompiled table with no iterator pipeline (and no scratch buffers); any unsupported character or mapping bails out to the regular path. The skip walk's iterators are reusable unless an unsafe boundary forced the comparison back to the start.
         var fastResult = CollationFastLatin.bailOutResult
         let table = fastLatinTable
-        if !table.isEmpty, !triedFastLatin, !restartKnown {
+        if !table.isEmpty, !triedFastLatin {
             var lSide: CollationFastLatin.Side
             var rSide: CollationFastLatin.Side
             if shared > 0 || !fellBack {
@@ -573,15 +569,7 @@ public struct RootCollator: @unchecked Sendable {
             let s = takeScratch()
             scratch = s
             // Resets + comparison under one call; see resetBothAndCompare.
-            if restartKnown {
-                // Restart after the byte scan's restart count (ICU's backup rule); the resets skip that many scalars.
-                result = try s.resetBothAndCompare(
-                    numeric: options.numeric,
-                    leftScalars: left.unicodeScalars, rightScalars: right.unicodeScalars,
-                    skippingFirst: shared,
-                    options: word,
-                    variableTopValue: variableTopValue(options), reordering: reordering)
-            } else if fellBack {
+            if fellBack {
                 // The skip was abandoned (unsafe boundary): iterate from start.
                 result = try s.resetBothAndCompare(
                     numeric: options.numeric,
@@ -607,6 +595,42 @@ public struct RootCollator: @unchecked Sendable {
             scratch = s
             return s.compareIdenticalLevel(
                 left: left.unicodeScalars, right: right.unicodeScalars, skippingFirst: shared)
+        }
+        return .same
+    }
+
+    /// compareBody for a restart that the byte scan already placed (ICU's backup rule, `restartScalarCount`): no skip walk, and no fast Latin (the byte scan tried it). The pipeline reads both strings' pinned UTF-8 bytes (ScalarSource), so neither string is retained or walked again through a String iterator; a non-contiguous (bridged) string takes the String iterators as before.
+    private func compareFromRestart(
+        _ left: String, _ right: String, options: CollationOptions, word: Int32, restart: Int
+    ) throws -> Order {
+        let s = takeScratch()
+        defer { giveScratch(s) }
+        let numeric = options.numeric
+        let vt = variableTopValue(options)
+        let reordering = self.reordering
+        let pinned = try left.utf8.withContiguousStorageIfAvailable { lb in
+            try right.utf8.withContiguousStorageIfAvailable { rb in
+                try s.resetBothAndCompare(
+                    numeric: numeric, leftUTF8: lb, rightUTF8: rb, skippingFirst: restart,
+                    options: word, variableTopValue: vt, reordering: reordering)
+            }
+        }
+        let result: Int
+        if let r = pinned ?? nil {
+            result = r
+        } else {
+            result = try s.resetBothAndCompare(
+                numeric: numeric,
+                leftScalars: left.unicodeScalars, rightScalars: right.unicodeScalars,
+                skippingFirst: restart,
+                options: word, variableTopValue: vt, reordering: reordering)
+        }
+        if result != 0 {
+            return result < 0 ? .ascending : .descending
+        }
+        if options.strength == .identical {
+            return s.compareIdenticalLevel(
+                left: left.unicodeScalars, right: right.unicodeScalars, skippingFirst: restart)
         }
         return .same
     }
@@ -696,11 +720,25 @@ public struct RootCollator: @unchecked Sendable {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
         // One access scope for reset + CE production + the writer; see resetCollectAndWriteKey. The writer is single-pass: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. Two reference writers in Collation/Tools/sk-ladder/ReferenceWriters.swift do not ship; the sk-ladder probe checks byte identity against them across the option matrix.
-        try scratch.resetCollectAndWriteKey(
-            numeric: options.numeric, scalars: s.unicodeScalars,
-            compressibleBytes: storage.compressibleBytes,
-            options: options.icuOptions, variableTopValue: variableTopValue(options),
-            reordering: reordering, terminate: options.strength != .identical, into: &key)
+        let numeric = options.numeric
+        let word = options.icuOptions
+        let vt = variableTopValue(options)
+        let reordering = self.reordering
+        let terminate = options.strength != .identical
+        let compressible = storage.compressibleBytes
+        // The pinned UTF-8 bytes when the string is contiguous (ScalarSource: no reference counting); the String iterator otherwise.
+        let pinned: Void? = try s.utf8.withContiguousStorageIfAvailable { bytes in
+            try Self.sortKey(
+                scratch, utf8: bytes, numeric: numeric, compressibleBytes: compressible,
+                options: word, variableTopValue: vt,
+                reordering: reordering, terminate: terminate, into: &key)
+        }
+        if pinned == nil {
+            try scratch.resetCollectAndWriteKey(
+                numeric: numeric, scalars: s.unicodeScalars, compressibleBytes: compressible,
+                options: word, variableTopValue: vt,
+                reordering: reordering, terminate: terminate, into: &key)
+        }
         if options.strength == .identical {
             key.append(1)  // level separator
             // Two access scopes for the whole drain, not two per scalar; see collectNFDScalars.
@@ -708,6 +746,19 @@ public struct RootCollator: @unchecked Sendable {
             CollationKeys.writeIdenticalLevelRun(scalars: scratch.nfdScalars, into: &key)
             key.append(0)  // terminator (the writer adds it for the other strengths)
         }
+    }
+
+    /// The body of `sortKey` on pinned bytes, out of line with plain parameters: inside the `withContiguousStorageIfAvailable` closure, the CE loop (`collectAll`) did not inline and the call cost ~30 instructions per key (technique log §51).
+    @inline(never)
+    private static func sortKey(
+        _ scratch: ScratchBuffers, utf8: UnsafeBufferPointer<UInt8>, numeric: Bool,
+        compressibleBytes: UnsafeBufferPointer<Bool>, options: Int32, variableTopValue: UInt32,
+        reordering: Reordering?, terminate: Bool, into key: inout [UInt8]
+    ) throws {
+        try scratch.resetCollectAndWriteKey(
+            numeric: numeric, utf8: utf8, compressibleBytes: compressibleBytes,
+            options: options, variableTopValue: variableTopValue,
+            reordering: reordering, terminate: terminate, into: &key)
     }
 
     private func takeScratch() -> ScratchBuffers {

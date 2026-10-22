@@ -2,9 +2,66 @@
 //
 // Each refill produces one reorderable unit: a starter (or the string-initial run of non-starters) plus all following combining marks, with the marks stably sorted by canonical combining class (the Canonical Ordering Algorithm, UAX #15).
 
+/// The NFD front end's UTF-8 input: the bytes of a pinned contiguous string through a pointer. A trivial struct (no reference), so a reset assigns it with plain stores. A String iterator holds a strong reference to its string, so storing one in the scratch iterators retained and released both strings of every slow-path compare (~8 atomic operations; technique log §51); the bytes need none. Valid only while the string's storage is pinned (`withContiguousStorageIfAvailable`): the caller resets the iterator inside that scope and does not read it after. `bytes == nil` means "read the String iterator instead" (NFDIterator.fallback).
+struct ScalarSource {
+    private(set) var bytes: UnsafePointer<UInt8>? = nil
+    private var position = 0
+    private var end = 0
+
+    /// No bytes: the NFD front end reads its fallback String iterator.
+    init() {}
+
+    /// The bytes of a pinned, valid UTF-8 string, positioned after its first `skipping` scalars — found by their lead bytes, without decoding.
+    init(utf8: UnsafeBufferPointer<UInt8>, skipping: Int = 0) {
+        bytes = utf8.baseAddress
+        end = utf8.count
+        var p = 0
+        var n = skipping
+        while n > 0, p < end {
+            p &+= Self.length(utf8[p])
+            n &-= 1
+        }
+        position = p
+    }
+
+    /// The length of the UTF-8 sequence that `lead` starts (valid UTF-8 only).
+    @inline(__always)
+    private static func length(_ lead: UInt8) -> Int {
+        lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4
+    }
+
+    /// The next scalar of a bytes source (call only when `bytes != nil`).
+    @inline(__always)
+    mutating func next() -> UInt32? {
+        let b = bytes.unsafelyUnwrapped
+        guard position < end else { return nil }
+        let b0 = UInt32(b[position])
+        if b0 < 0x80 {
+            position &+= 1
+            return b0
+        }
+        if b0 < 0xE0 {
+            let c = ((b0 & 0x1F) << 6) | (UInt32(b[position &+ 1]) & 0x3F)
+            position &+= 2
+            return c
+        }
+        if b0 < 0xF0 {
+            let c = ((b0 & 0x0F) << 12) | ((UInt32(b[position &+ 1]) & 0x3F) << 6) | (UInt32(b[position &+ 2]) & 0x3F)
+            position &+= 3
+            return c
+        }
+        let c = ((b0 & 0x07) << 18) | ((UInt32(b[position &+ 1]) & 0x3F) << 12)
+            | ((UInt32(b[position &+ 2]) & 0x3F) << 6) | (UInt32(b[position &+ 3]) & 0x3F)
+        position &+= 4
+        return c
+    }
+}
+
 struct NFDIterator {
     let norm: NormalizationData
-    var source: String.UnicodeScalarView.Iterator
+    var source = ScalarSource()
+    /// The input when it is not a bytes source: a String iterator (bridged strings, and the entries that still pass String views). Kept apart from `source` so that `source` stays trivial.
+    var fallback: String.UnicodeScalarView.Iterator?
     /// A scalar already pulled from the input (by the caller's identical-prefix skip walk) to be yielded before `source`. Lets a compare reuse the skip walk's iterator — already positioned past the shared prefix — instead of building a fresh String iterator and re-walking that prefix.
     var pendingFirst: UInt32? = nil
     /// A combining mark stashed by the Latin fast path — returned on the next call to next() before resuming normal source reading.
@@ -21,14 +78,16 @@ struct NFDIterator {
 
     init(norm: NormalizationData, scalars: String.UnicodeScalarView) {
         self.norm = norm
-        self.source = scalars.makeIterator()
+        self.fallback = scalars.makeIterator()
     }
 
     /// Rewinds onto a new input, keeping the buffers' storage so that reuse across compares runs allocation-free. `skippingFirst` positions the iterator after the first `n` scalars (for the identical-prefix skip; the caller guarantees that position is a clean restart boundary).
     @inline(__always)  // fell out of line after the skip-walk restructure
     mutating func reset(scalars: String.UnicodeScalarView, skippingFirst n: Int = 0) {
-        source = scalars.makeIterator()
-        for _ in 0..<n { _ = source.next() }
+        var iterator = scalars.makeIterator()
+        for _ in 0..<n { _ = iterator.next() }
+        source = ScalarSource()
+        fallback = iterator
         pendingFirst = nil
         pendingMark = nil
         sawDecomposition = false
@@ -38,8 +97,20 @@ struct NFDIterator {
     /// Rewinds onto an already-positioned scalar iterator plus one scalar the caller has already pulled from it (`first`). Equivalent to resetting onto the suffix `first` followed by the rest of `iter`, but without building a new String iterator or re-walking the skipped prefix.
     @inline(__always)
     mutating func reset(source iter: String.UnicodeScalarView.Iterator, first: UInt32?) {
-        source = iter
+        source = ScalarSource()
+        fallback = iter
         pendingFirst = first
+        pendingMark = nil
+        sawDecomposition = false
+        clearBuffers()
+    }
+
+    /// Rewinds onto the pinned UTF-8 bytes of a string, positioned after its first `n` scalars (see ScalarSource: valid only while the bytes stay pinned).
+    @inline(__always)
+    mutating func reset(utf8: UnsafeBufferPointer<UInt8>, skippingFirst n: Int = 0) {
+        source = ScalarSource(utf8: utf8, skipping: n)
+        if fallback != nil { fallback = nil }
+        pendingFirst = nil
         pendingMark = nil
         sawDecomposition = false
         clearBuffers()
@@ -61,13 +132,14 @@ struct NFDIterator {
             pendingFirst = nil
             return p
         }
-        return source.next()?.value
+        if source.bytes != nil { return source.next() }
+        return fallback?.next()?.value
     }
 
-    /// True when the next scalar comes straight from `source`: nothing pending, buffered or carried. CEIterator.collectAll pulls runs of simple ASCII scalars from `source` directly in that state, and puts a scalar it cannot use back into `pendingFirst`, where `next()` takes it first.
+    /// True when the next scalar comes straight from a bytes `source`: nothing pending, buffered or carried (a String-iterator input never takes the run). CEIterator.collectAll pulls runs of simple ASCII scalars from `source` directly in that state, and puts a scalar it cannot use back into `pendingFirst`, where `next()` takes it first.
     @inline(__always)
     var isAtSource: Bool {
-        pendingFirst == nil && pendingMark == nil && unitNext >= unit.count && carried.isEmpty
+        source.bytes != nil && pendingFirst == nil && pendingMark == nil && unitNext >= unit.count && carried.isEmpty
     }
 
     /// Scratch buffer for one scalar's decomposition, reused across refills.

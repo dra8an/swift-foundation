@@ -15,12 +15,11 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = a docs commit (§51 (x), the Thai compare
-analysis) on top of `8adc677c` (§51 (w) and its `wholeString` gate). If it is
-missing, HANDOFF.md and optimization-targets.md are modified — say so and
-give the add/commit lines. Tree clean otherwise; pushed through this docs
-commit if the user pushed on 2026-10-22 (check `git rev-list --left-right
---count HEAD...origin/port/collation`). The A/B worktree is now at `d8e6cd3b` (before (w)) with its own
+paragraph).** Expected: HEAD = the §51 (y) commit (the UTF-8 source:
+NFDIterator.swift, CollationElements.swift, RootCollator.swift,
+ScratchBuffers.swift, CollationSearch.swift, ScalarSourceTests.swift, this
+file and optimization-targets.md) on top of `80f9b5a8`. If it is missing,
+those files are modified — say so and give the add/commit lines. The A/B worktree is now at `80f9b5a8` (before (y)) with its own
 `main.swift` (the probe copy was restored). The
 first-collator probe packages are `.build/first-collator/` (base engine
 sources, all probe modes) and `.build/first-collator-new/`. The worktree holds EngineBench builds in `.build/engine-bench/` (plain
@@ -43,8 +42,8 @@ restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); `git fetch`. Ask before anything longer or with
 wider effect.
-Suite gate: **1549 tests in 132 suites** — `swift test` prints three summary
-lines (45/5, 563/87, 941/40); add them up.
+Suite gate: **1551 tests in 133 suites** — `swift test` prints three summary
+lines (45/5, 565/88, 941/40); add them up.
 
 **Read next, in this order:**
 1. The memory index (loaded automatically) and ALL its feedback files — the
@@ -304,14 +303,15 @@ sort controls flat. Suite 1544/129.
    decomposition of precomposed letters (~119 per accented letter), and
    the run-time writer path for non-default options. A/B every variant; the
    counts pointed the wrong way in (r).
-4b. **Thai compare (our weakest Table 1 row, ~1.11×) — analysed 2026-10-22,
-   §51 (x), not changed yet.** The gap is per-compare setup, not the
-   contractions: the two `reset` calls (~214 against ICU's ~80), reference
-   counting on both strings (~172 against 0), and the lookahead `Array`
-   after contractions (prefix vowels). Next, in this order: L1 the lookahead
-   as a noncopyable buffer (small, like `CEBuffer`); then S1 a UTF-8 source
-   for the NFD front end (removes the reference counting and the restart
-   re-walk; a real refactor — report after each stage).
+4b. **Thai compare — S1 stages 1–2 DONE 2026-10-22, §51 (y):** the NFD
+   front end reads pinned UTF-8 bytes (`ScalarSource`); compare thai
+   1.11× → ~0.94× of ICU (one matrix run), sortKey −4..−9%. Open: (a) the
+   skip walk of `compareBody` (non-default options) still uses String
+   iterators — Thai compares with options +3..+4%; run it on the bytes
+   next. (b) Search: WMO A/B +2..+7% on ascii/latin vs `-no-WMO` matrix
+   −1..−8% — candidate: pin only texts longer than 15 bytes. L1 (the
+   lookahead as a noncopyable buffer) was skipped (user decision: too
+   small).
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
 6. A Substring argument still pays its copy into a String (~293
