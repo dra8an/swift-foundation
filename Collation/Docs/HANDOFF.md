@@ -75,10 +75,10 @@ evening run A at `6d0d26f9`, ns per call, ours / ICU):**
 
 At the start of the round (2026-10-16) the ranges were compare 0.63–1.62×
 and sortKey 1.03–1.50×; now compare 0.49–1.13×, sortKey 0.54–0.98×. Runs A
-and B agree within 1.8%. Open: in this `-no-WMO` matrix the `range(of:)`
-rows read 1–9% above the morning baseline (ascii 108 → 116, backwards
-109 → 119), while a WMO A/B of the same code against HEAD showed ascii
-`range(of:)` −5% — not explained yet (§51 (t)).
+and B agree within 1.8%. In this `-no-WMO` matrix the `range(of:)` rows
+read 1–9% above the morning baseline (ascii 108 → 116, backwards 109 →
+119): code placement — one call executes exactly the same instructions as
+in the morning (§51 (t)), and the WMO A/B showed ascii −5%.
 
 Table 2 (Foundation APIs vs system ICU, now 14 API families including an
 options compare and four sort APIs, floor 1.58×) is ahead everywhere, but

@@ -243,8 +243,11 @@ Reproducibility, run A vs run B of the same matrix:
 **Table 2 against the morning:** the compare and sort rows within 1–3%
 (session drift; the control also read +0.5..+2.4% higher). The search rows
 read 1–9% higher on `range(of:)` (ascii 108 → 116, backwards 109 → 119)
-in this `-no-WMO` build, while a WMO A/B of the same code against HEAD
-showed ascii `range(of:)` −5% — not explained yet (§51 (t)).
+in this `-no-WMO` build. It is code placement: a count of one call
+(BenchFoundation `-no-WMO -g`, ascii) gives exactly the same instructions as
+the morning code — 1260.2 for a String, 1725.2 for a Substring, call for
+call — and a WMO A/B of the same code against HEAD showed ascii
+`range(of:)` −5% (§51 (t)).
 
 ## Analysis
 

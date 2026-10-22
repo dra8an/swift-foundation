@@ -4019,4 +4019,14 @@ agree within 1.8%): sortKey 0.76× ascii, 0.86× latin, 0.96× cjk, 0.54×
 paths, 0.98× thai of ICU C; compare 0.49–1.13× (unchanged). Table 2: the
 compare, contains and sort rows match the morning baseline within 1–3%;
 `range(of:)` reads 1–9% higher in this `-no-WMO` build (ascii 108 → 116,
-backwards 109 → 119) while the WMO A/B showed ascii −5%: open.
+backwards 109 → 119) while the WMO A/B showed ascii −5%.
+
+**That difference is code placement** (2026-10-22). The jump was already
+in the first matrix after (r) and (s), before (t) (ascii 108 → 115); in a
+`-no-WMO` build those changes cannot alter `CollationSearch.swift`'s code.
+One call, counted with the §51 (p) probe rows (BenchFoundation `-no-WMO
+-g`, ascii, 5 calls after 1000): `range(of:)` 1260.2 instructions for a
+String and 1725.2 for a Substring — identical to the morning code, call
+for call; `localizedStandardRange` +10 per call (5279.2 → 5289.2), the
+out-of-line `collectAll(bulkASCII: false)` of its pattern in a build that
+does not inline across files.
