@@ -509,7 +509,8 @@ struct CollationSearch {
         if !result.isEmpty { result.removeAll(keepingCapacity: true) }
         var afterVariable = false
         do {
-            try iter.collectAll()
+            // A pattern is short: one character at a time is cheaper than the ASCII run (technique log §51 (t)).
+            try iter.collectAll(bulkASCII: false)
             for i in 0..<iter.ces.count {
                 let ce = iter.ces[i]
                 if ce == CollationConstants.noCE { break }

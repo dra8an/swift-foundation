@@ -3917,3 +3917,99 @@ fails with 57 issues (`fuzzKeysMatchICU`, the restart and fuzz-pair tests).
 agree in the ratios within 0.01–0.02): sortKey 0.89× ascii, 0.87× latin,
 0.96× cjk, 0.72× paths, 0.99× thai of ICU C — every sortKey row at or
 below ICU; compare unchanged (0.50–1.13×).
+
+#### (t) CE production: a bulk run for simple ASCII scalars (START HERE item 4)
+
+**Where.** After (s), one ascii sortKey: 1523.6 instructions, CE production
+741 of them (inlined into `sortKey`, ~70 per character). Per simple ASCII
+character the path is `appendMore` → `popScalar` (lookahead check) →
+`NFDIterator.next` (pending mark, unit, carry, pending first scalar, the
+source decode, `isInert`) → four position stores → the `simpleCEs` load →
+`ces.append` → `pushHistory`. All of that state lives in the iterator
+behind `scratch.left`, and the CE store goes through a raw pointer that may
+alias any of it, so every field is reloaded and stored again per character.
+
+**Change.** `collectSimpleASCIIRun()` (`@inline(never)`, one call per run):
+when nothing is pending, buffered or carried (`NFDIterator.isAtSource`, an
+empty lookahead), it pulls scalars straight from the source iterator
+(swapped out, not copied — a copy retains the string's storage), appends
+the CE of each simple ASCII scalar with the counters and the history in
+locals, and puts the first scalar it cannot use into `pendingFirst`, where
+`NFDIterator.next()` takes it first. Per scalar it does exactly what the
+ASCII fast path of `appendMore()` does (ASCII is inert, NFD passes it
+through). `appendMore(bulkASCII:)` calls it only from its ASCII fast path,
+after the character it just appended, and `collectAll(bulkASCII:)` passes
+it through (true by default; search patterns pass false, below): other
+scripts pay nothing, and the lazy compare and the search loops keep one
+character per call (they use the default `false` of `appendMore`). The
+guard skips `terminated` and the empty-table test, which the ASCII fast
+path has already established.
+
+**Variants** (sortKey instructions; HEAD ascii 1523.6, latin 1393.9, cjk
+1580.8, paths 3733.5, thai 1416.6):
+
+| variant | ascii | latin | cjk | paths | time |
+|---|---:|---:|---:|---:|---|
+| CE1: the run inlined, tried before every `appendMore` | 1335.1 | 1523.8 | 1736.0 | 2874.6 | — (`appendMore` fell out of line) |
+| CE1b: the run `@inline(never)`, tried at the start and after each ASCII scalar | 1347.9 | 1501.1 | 1693.5 | 2898.0 | ascii −12.5%, paths −21.6%; latin +1.6%, cjk +5.7%, thai +4.8% |
+| CE1c: no try at the start; the source swapped, not copied | 1340.4 | 1469.5 | 1598.8 | 2801.9 | latin −1.1%, cjk −0.3%, thai +0.2%; aligned: +1.9..+2.8% |
+| CE1d: only from the ASCII fast path | 1331.4 | 1450.9 | 1580.8 | 2792.9 | below; search patterns slower on latin |
+| CE1e: only after two ASCII scalars in a row | 1376.4 | 1472.9 | 1580.8 | 2838.9 | — (worse: even a one-scalar run is cheaper than the per-scalar path) |
+| **CE1f: CE1d with a cheaper guard (shipped)** | **1327.4** | **1441.4** | 1580.8 | **2788.9** | below |
+| CE1g: CE1f reading the source in place (no swap) | 1329.8 | 1435.0 | — | 2810.2 | — (no clear gain) |
+
+Thai CE1d: 1421.9 (+5, a layout change; the new branch never runs on Thai).
+
+Where latin's remaining +47 instructions go (CE1f against HEAD): the run costs ~250 per latin key and saves ~200 in the inlined path; half the ASCII runs in the latin corpus are one or two scalars long, and each call pays its guard, prologue and epilogue (~60).
+
+**A/B against HEAD `c84d0ca1`** (EngineBench, 5 interleaved rounds,
+2026-10-21 evening, load 8–15; min ns; CE1d, and CE1f where marked):
+
+| sortKey | plain builds | every function aligned to 64 bytes |
+|---|---|---|
+| ascii | 92.2 → 78.4 (−15.0%), 5/5 | −12.3%, 5/5 |
+| latin | −3.1%, 5/5 | +0.6%, 4/5 |
+| cjk | −1.3%, 5/5 | −0.6%, 5/5 |
+| paths | 266.6 → 196.3 (−26.4%), 5/5 | −22.7%, 5/5 |
+| thai | −0.3%, 5/5 | +0.9% (mean +1.5%), 5/5 |
+| skRet | ascii −8.4%, paths −22.5%, others −0.6..−1.8% | ascii −5.7%, paths −18.7%, others −0.5..+1.8% |
+| compare (unchanged code) | ±1% except paths +2.7% | ±1% (paths +0.0%) |
+
+CE1f, sortKey: ascii −14.3% / −12.7% (plain / aligned), latin −2.2% / −0.4%,
+cjk +0.1% / +0.5%, paths −25.8% / −23.0%, thai +0.1% / +0.8% (aligned 5/5).
+So: a large gain on ASCII-heavy text (ascii, paths), and latin, cjk and thai
+within about ±1%, with signs that change with code placement.
+
+**Search patterns stay on the per-character path.** Search builds its
+PATTERN with `collectAll` (`produceMaskedCEs`; the text is scanned lazily
+with `appendMore`). With the run, the Foundation search rows on latin were
++0.9..+3.7% (WMO A/B, 5/5): the 4-character bench pattern starts with an
+accented letter, so every search call paid one run call for one scalar.
+`collectAll(bulkASCII:)` (default true) gets `false` there. Then (WMO A/B
+against HEAD, 5 rounds): contains, `localizedStandardRange` and
+`range(of:)` −0.5..−2.8%, mostly 5/5; `range(of:)` backwards latin +2.3%
+(5/5) although its code did not change (it builds the text with
+`appendMore`; the compare rows of the same pair moved up to ±2.6%) —
+recorded as placement, not verified with aligned BenchFoundation builds.
+
+**`appendMore()` keeps its old shape.** The first form gave `appendMore` a
+`bulkASCII` parameter. In the `-no-WMO` matrix build, which does not inline
+across files, `CollationSearch.swift` then called an out-of-line
+`appendMore` that carried the new branch, and the search rows read 2–7%
+above the morning baseline (a WMO A/B of the morning commit `0528e55e`
+against the same code showed the search rows −3..+1%: the cost was
+specific to that build). Now `appendMore()` is again a function without a
+parameter that calls an `@inline(__always)` `appendMoreBody(bulkASCII:
+false)`, and `collectAll` calls the body directly, so every other caller
+compiles the code it had before in both build modes. sortKey counts are
+unchanged by the split (ascii 1327.4, latin 1441.4, paths 2788.9). WMO A/B
+of the search rows against HEAD after the split: −5.2..+1.8%, most rows
+within ±1.6%.
+
+**Tests.** `ASCIIRunTests` (new): `collectAll()` against a plain
+`appendMore()` loop — the same CEs, scalar count and decomposition flag —
+for the golden and fuzz corpora on root and 48 built boundary strings on
+all 98 tailorings, numeric off and on. Mutations — the hand-back dropped,
+the history not updated, the scalar count not updated — fail the suites
+with 503, 216 and 113 issues. Suite 1546/130; the sk-ladder identity checks
+0 mismatched lines on all five corpora; the four ladder tools build.

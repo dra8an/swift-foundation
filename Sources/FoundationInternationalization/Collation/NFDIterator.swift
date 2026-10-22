@@ -64,6 +64,12 @@ struct NFDIterator {
         return source.next()?.value
     }
 
+    /// True when the next scalar comes straight from `source`: nothing pending, buffered or carried. CEIterator.collectAll pulls runs of simple ASCII scalars from `source` directly in that state, and puts a scalar it cannot use back into `pendingFirst`, where `next()` takes it first.
+    @inline(__always)
+    var isAtSource: Bool {
+        pendingFirst == nil && pendingMark == nil && unitNext >= unit.count && carried.isEmpty
+    }
+
     /// Scratch buffer for one scalar's decomposition, reused across refills.
     private var decomposed: [UInt32] = []
 
