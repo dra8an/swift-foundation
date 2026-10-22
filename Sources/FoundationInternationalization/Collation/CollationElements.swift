@@ -85,6 +85,8 @@ struct CEIterator: ~Copyable {
     private let thaiCEsNumeric: UnsafeBufferPointer<Int64>
     private let simpleCEsWithDigits: UnsafeBufferPointer<Int64>
     private let thaiCEsWithDigits: UnsafeBufferPointer<Int64>
+    /// Combining marks and Greek (U+0300–037F), one simple CE per entry, 0 for the full path (RootCollator.Storage.markCEs). The same in both numeric modes: no mark is a digit.
+    private let markCEs: UnsafeBufferPointer<Int64>
     var ces = CEBuffer()
 
     /// Number of NFD scalars consumed so far. Every scalar is counted exactly once, including the ones a discontiguous contraction consumes out of order, so this always equals the number of scalars the NFD front end has yielded (PositionInvariantTests gates that).
@@ -118,7 +120,8 @@ struct CEIterator: ~Copyable {
          simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
          thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
          simpleCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
-         thaiCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
+         thaiCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         markCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         self.data = data
         self.base = base
         self.norm = norm
@@ -133,6 +136,7 @@ struct CEIterator: ~Copyable {
         self.thaiCEsWithDigits = thaiCEsWithDigits.isEmpty ? thaiCEs : thaiCEsWithDigits
         self.simpleCEs = numeric ? simpleCEs : self.simpleCEsWithDigits
         self.thaiCEs = numeric ? thaiCEs : self.thaiCEsWithDigits
+        self.markCEs = markCEs
     }
 
     /// Rewinds onto a new input, keeping all buffer storage so that reuse across compares runs allocation-free. Equivalent to a fresh iterator over the same collation data, positioned after `skippingFirst` scalars.
@@ -385,6 +389,15 @@ struct CEIterator: ~Copyable {
         // Fast path: pre-computed CE for simple Thai-block scalars — consonants, sara aa, tone/vowel marks (profiling attributed ~200 ns of Thai compares to CE production). Prefix-vowel contractions and digits are 0 sentinels and take the full path, identical to the ASCII table's exclusion rules. ASCII returns above and never reaches this; other scripts pay one wrapped-subtract compare.
         if (c &- 0x0E00) < 128, !thaiCEs.isEmpty {
             let ce = thaiCEs[Int(c &- 0x0E00)]
+            if ce != 0 {
+                ces.append(ce)
+                pushHistory(c)
+                return true
+            }
+        }
+        // Fast path: a combining mark (U+0300–037F) with one simple CE — the second half of a decomposed accented letter. A mark that reaches this point on its own was not consumed by a contraction of its starter, so the full path would give exactly this CE. Tailored or contracting marks are 0 in the table.
+        if (c &- 0x0300) < 128, !markCEs.isEmpty {
+            let ce = markCEs[Int(c &- 0x0300)]
             if ce != 0 {
                 ces.append(ce)
                 pushHistory(c)

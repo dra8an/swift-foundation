@@ -68,6 +68,8 @@ public struct RootCollator: @unchecked Sendable {
         /// The same two tables with DIGIT-tag characters resolved to the CE they produce when numeric collation is off. Only valid for numeric=off, so the CE iterator selects between the variants per reset; digit-bearing text (paths, filenames, version strings) then takes the table instead of the full pipeline.
         let simpleCEsWithDigits: UnsafeBufferPointer<Int64>
         let thaiCEsWithDigits: UnsafeBufferPointer<Int64>
+        /// Combining marks and Greek (U+0300–037F): the one simple CE of a mark, else 0. A mark that reaches the CE iterator on its own (no contraction consumed it with its starter) takes this instead of the full pipeline — the second half of every decomposed accented letter (technique log §51).
+        let markCEs: UnsafeBufferPointer<Int64>
         let simpleCEsStorage: DataStorage
         /// The fast Latin table: the tailoring's own, or the base's when the tailoring has none (CollationDataReader aliases the same way). Stored: rebuilding it per compare would retain `base` each time.
         let fastLatinTable: UnsafeBufferPointer<UInt16>
@@ -130,6 +132,7 @@ public struct RootCollator: @unchecked Sendable {
                 data: data, base: base, storage: ceStorage, resolvingDigits: true)
             self.thaiCEsWithDigits = RootCollator.buildSimpleCEs(
                 data: data, base: base, storage: ceStorage, from: 0x0E00, resolvingDigits: true)
+            self.markCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage, from: 0x0300)
             self.simpleCEsStorage = ceStorage
             // Quick-CJK dispatch setup: bare primary comparison is unsound under script reordering or a shifted default, so gate it off for those collators (compareBody handles them).
             let setup = QuickCJKSetup(
@@ -179,6 +182,7 @@ public struct RootCollator: @unchecked Sendable {
     var thaiCEs: UnsafeBufferPointer<Int64> { storage.thaiCEs }
     var simpleCEsWithDigits: UnsafeBufferPointer<Int64> { storage.simpleCEsWithDigits }
     var thaiCEsWithDigits: UnsafeBufferPointer<Int64> { storage.thaiCEsWithDigits }
+    var markCEs: UnsafeBufferPointer<Int64> { storage.markCEs }
     var fastLatinTable: UnsafeBufferPointer<UInt16> { storage.fastLatinTable }
     var restartSafety: RestartSafety { storage.restartSafety }
     private var restartSafetyPtr: UnsafePointer<RestartSafety> { UnsafePointer(storage.restartSafetyPtr) }
@@ -707,7 +711,7 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     private func takeScratch() -> ScratchBuffers {
-        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits)
+        threadLocal.take() ?? ScratchBuffers(data: data, base: base, norm: norm, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits, markCEs: markCEs)
     }
 
     private func giveScratch(_ buffers: ScratchBuffers) {

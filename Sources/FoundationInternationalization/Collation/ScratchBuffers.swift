@@ -59,12 +59,13 @@ final class ScratchBuffers {
          simpleCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
          thaiCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
          simpleCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
-         thaiCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
+         thaiCEsWithDigits: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0),
+         markCEs: UnsafeBufferPointer<Int64> = .init(start: nil, count: 0)) {
         let empty = "".unicodeScalars
         left = .allocate(capacity: 1)
-        left.initialize(to: CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits))
+        left.initialize(to: CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits, markCEs: markCEs))
         right = .allocate(capacity: 1)
-        right.initialize(to: CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits))
+        right.initialize(to: CEIterator(data: data, base: base, norm: norm, numeric: false, scalars: empty, simpleCEs: simpleCEs, thaiCEs: thaiCEs, simpleCEsWithDigits: simpleCEsWithDigits, thaiCEsWithDigits: thaiCEsWithDigits, markCEs: markCEs))
     }
 
     deinit {

@@ -4093,3 +4093,43 @@ zh-stroke, ja and ko. The mutation "after the fallback, read the
 tailoring's CE table" fails it on the four tailorings. Suite 1547/131; the
 sk-ladder identity checks 0 mismatched lines on all five corpora; the four
 ladder tools build.
+
+#### (w) CE production: a fast-path table for combining marks
+
+**Where** (latin trace, one accented letter `ą`): ~119 instructions for
+NFD's `quickDecomp` plus the base letter through the ASCII fast path, ~25
+for a run attempt that stops at the pending mark, and ~150 for the mark
+U+0328 through the FULL path (`lookup`, the trie, `appendCEs` with its tag
+switch) — against ~45 for an ASCII letter inside a run.
+
+**Change.** `RootCollator.Storage.markCEs`: `buildSimpleCEs(from: 0x0300)`
+(U+0300–037F; one simple CE per entry — a non-special CE32, a long primary
+or a long secondary — else 0), passed like the Thai table into
+`ScratchBuffers` and `CEIterator` (the parameter defaults to empty, so
+iterators without it keep the full path). `appendMoreBody` takes it after
+the Thai path: a mark that reaches the iterator on its own was not consumed
+by a contraction of its starter, so the full path would give exactly that
+one CE. Tailored, contracting, expanding and prefix-tagged marks are 0. The
+same table in both numeric modes (no mark is a digit). Creation cost: one
+more 128-entry table per collator.
+
+**Counts** (sortKey, HEAD `d8e6cd3b` → CE3): latin 1444.4 → 1371.1 (−5.1%,
+~−73 per accented letter); cjk 1426.2 → 1436.5 (+0.7%: the mark test before
+the CJK path); ascii, paths, thai within ±1 instruction.
+
+**A/B against HEAD** (EngineBench, 5 rounds, 2026-10-22, load 20–31;
+plain / aligned): sortKey latin 106.0 → 100.4 (−5.3%) / −5.1% (5/5); the
+other sortKey rows −0.1..−1.1%; skRet latin −3.0%. Compare thai +0.8% /
++0.5% (5/5, ~1 ns of 195): the lazy compare uses the same path, and Thai
+scalars that miss the Thai table now also pay the mark test.
+
+**Tests.** `MarkFastPathTests` (new): every code point U+0300–037F after 12
+base letters, alone, followed by U+0323 (reordered before ccc-230 marks by
+NFD) and followed by `x` — an iterator with the mark table against one
+without tables — on root (plus the golden and fuzz corpora) and on all 98
+tailorings. The mutation "table index off by one" fails it with 255
+issues; the mutation "no history push" passes every suite, because no CLDR
+prefix rule has a combining mark before it (the push stays: it keeps the
+state the same as the full path). Suite 1549/132; the sk-ladder identity
+checks (whose clones have no mark table) 0 mismatched lines on all five
+corpora; the four ladder tools build.
