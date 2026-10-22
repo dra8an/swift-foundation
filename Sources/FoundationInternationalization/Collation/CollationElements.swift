@@ -184,6 +184,39 @@ struct CEIterator: ~Copyable {
         return (dataView, ce32)
     }
 
+    /// CJK Unified Ideographs and Extensions A and B+ (the compatibility ideographs decompose and are not included) — the same ranges as RootCollator.isCJKUnified.
+    @inline(__always)
+    private static func isCJKUnified(_ c: UInt32) -> Bool {
+        (0x4E00...0x9FFF).contains(c) || (0x3400...0x4DBF).contains(c) || (0x20000...0x2A6DF).contains(c)
+    }
+
+    /// The one primary of a CJK ideograph whose CE is computed from it — a long primary, or the OFFSET or IMPLICIT tag — or 0 when it needs the full path. The same cases as RootCollator.quickCJKPrimary (compare's fast path), and the same CE as `appendCEs` gives them: `makeCE(p)`.
+    ///
+    /// `mutating` only so that it gets the iterator's address: as a plain method, out of line, it received a copy of the data views per call (~220 bytes per CJK character, technique log §51 (v)).
+    @inline(__always)
+    private mutating func quickCJKPrimary(_ c: UInt32) -> UInt32 {
+        var ce32 = dataView.trie.get(c)
+        var ces = dataView.ces
+        if ce32 == CollationConstants.fallbackCE32 {
+            guard let b = baseView else { return 0 }
+            ce32 = b.trie.get(c)
+            ces = b.ces
+        }
+        guard CollationConstants.isSpecialCE32(ce32) else { return 0 }
+        switch CollationConstants.tagFromCE32(ce32) {
+        case .longPrimary:
+            return ce32 & 0xffff_ff00
+        case .offset:
+            let idx = CollationConstants.indexFromCE32(ce32)
+            guard idx < ces.count else { return 0 }
+            return CollationConstants.threeBytePrimaryForOffsetData(c, ces[idx])
+        case .implicit:
+            return CollationConstants.unassignedPrimaryFromCodePoint(c)
+        default:
+            return 0
+        }
+    }
+
     // MARK: Lookahead buffer
 
     @inline(__always)
@@ -354,6 +387,15 @@ struct CEIterator: ~Copyable {
             let ce = thaiCEs[Int(c &- 0x0E00)]
             if ce != 0 {
                 ces.append(ce)
+                pushHistory(c)
+                return true
+            }
+        }
+        // Fast path: a CJK unified ideograph whose CE is one computed primary (root's Han: the OFFSET or IMPLICIT tag, or a long primary). Tailored, contracting and expanding ideographs get 0 and take the full path. Only with the fast tables, like the paths above, so that an iterator without tables is the reference for the tests. Other scripts pay one compare.
+        if c >= 0x3400, !simpleCEs.isEmpty, Self.isCJKUnified(c) {
+            let p = quickCJKPrimary(c)
+            if p != 0 {
+                ces.append(CollationConstants.makeCE(p))
                 pushHistory(c)
                 return true
             }

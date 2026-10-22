@@ -4057,3 +4057,39 @@ plain / aligned): sortKey thai +0.7% / +0.3%, ascii +1.7% / +3.1%, latin
 thai and a loss on the others: not shipped. A Thai run would need its own
 loop (no ASCII cost) and a way to keep the marks in the run; the remaining
 Thai cost is mostly in the marks' NFD units.
+
+#### (v) CE production: a CJK fast path for computed Han primaries
+
+**Change.** `appendMoreBody` gets a third fast path after the ASCII and
+Thai ones: a CJK unified ideograph (U+3400–4DBF, U+4E00–9FFF,
+U+20000–2A6DF; the compatibility ideographs decompose) whose CE is one
+computed primary — a long primary, or the OFFSET or IMPLICIT tag, after the
+fallback to the base data — appends `makeCE(p)` and pushes its history.
+The same three cases as compare's `RootCollator.quickCJKPrimary`, and the
+same CE `appendCEs` gives them; tailored, contracting and expanding
+ideographs get 0 and take the full path. It runs only with the fast tables
+(like the ASCII and Thai paths), so an iterator without tables is the
+reference for the test. Other scripts pay one compare (`c >= 0x3400`).
+
+**A copy first.** As a plain method, `quickCJKPrimary` stayed out of line
+and received a copy of the iterator's data views per call: cjk 1580.8 →
+2258.8 instructions (+43%), 842 of them in `_platform_memmove` (~220 bytes
+per CJK character). As a `mutating` method it gets the iterator's address
+and reads the fields in place (the §51 C1 lesson again).
+
+**Counts** (sortKey, HEAD → CJK1b): cjk 1580.8 → 1426.2 (−9.8%; `appendCEs`
+202.5 → 0, `quickCJKPrimary` 134.2, `sortKey` 666.8 → 580.5); latin 1441.4
+→ 1444.4; ascii, paths, thai unchanged.
+
+**A/B against HEAD `ef4de20b`** (EngineBench, 5 rounds, 2026-10-22, load
+18–21; plain / aligned): sortKey cjk 115.1 → 105.8 (−8.1%) / −7.9% (5/5);
+ascii, latin, thai within ±0.9%; paths +2.9% (5/5) / +0.1% — its count did
+not change, so placement. skRet cjk −6.1%. Compare within ±1.5%.
+
+**Tests.** `CJKFastPathTests` (new): for every code point of the three CJK
+ranges, alone and followed by its two successors, the CEs and scalar count
+with tables (fast path) equal those without (full path), on root, zh,
+zh-stroke, ja and ko. The mutation "after the fallback, read the
+tailoring's CE table" fails it on the four tailorings. Suite 1547/131; the
+sk-ladder identity checks 0 mismatched lines on all five corpora; the four
+ladder tools build.

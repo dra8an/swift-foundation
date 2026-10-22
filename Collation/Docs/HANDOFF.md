@@ -42,8 +42,8 @@ restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); `git fetch`. Ask before anything longer or with
 wider effect.
-Suite gate: **1544 tests in 129 suites** — `swift test` prints three summary
-lines (45/5, 558/84, 941/40); add them up.
+Suite gate: **1547 tests in 131 suites** — `swift test` prints three summary
+lines (45/5, 561/86, 941/40); add them up.
 
 **Read next, in this order:**
 1. The memory index (loaded automatically) and ALL its feedback files — the
@@ -296,11 +296,10 @@ sort controls flat. Suite 1544/129.
    (§51 (r) level cursors, (s) a specialization for the default options)
    and for ASCII in CE production (§51 (t): runs of simple ASCII scalars in
    one loop; sortKey ascii −14%, paths −26%, others within ±1–2%). Thai in
-   the same run was REJECTED (§51 (u)). Left: CE production for non-ASCII
-   text — next candidate the implicit Han primary on a fast path for CJK
-   (~35 of ~260 instructions per scalar; compare already has
-   `quickCJKPrimary`), then latin accented letters — and the run-time
-   writer path for non-default options. A/B every variant; the
+   the same run was REJECTED (§51 (u)). CJK: a fast path for computed Han
+   primaries (§51 (v), sortKey cjk −8%). Left: CE production for latin
+   accented letters, and the run-time writer path for non-default
+   options. A/B every variant; the
    counts pointed the wrong way in (r).
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
