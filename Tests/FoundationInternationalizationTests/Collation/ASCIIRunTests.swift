@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import FoundationInternationalization
 
-/// The bulk ASCII run of `CEIterator.collectAll` (technique log §51 (t)) against the one-character-per-call path it shortcuts: for every input, collator and numeric mode, both must produce the same CEs and leave the same scalar count and decomposition flag. The run reads the source directly and hands the first scalar it cannot use back to the NFD front end, so the risky inputs are the boundaries: an ASCII run followed by combining marks, contraction starters, digits, prefix contexts, other scripts, and the end of the string.
+/// The bulk ASCII run of `CEIterator.collectAll` (technique log §51 (t); the Thai strings also cover the rejected Thai run of §51 (u)) against the one-character-per-call path it shortcuts: for every input, collator and numeric mode, both must produce the same CEs and leave the same scalar count and decomposition flag. The run reads the source directly and hands the first scalar it cannot use back to the NFD front end, so the risky inputs are the boundaries: an ASCII run followed by combining marks, contraction starters, digits, prefix contexts, other scripts, and the end of the string.
 @Suite struct ASCIIRunTests {
     static let built: [String] = [
         "", "a", "abc", "hello world", "a\u{0301}", "abc\u{0301}def", "e\u{0301}\u{0300}x",
@@ -11,6 +11,11 @@ import Testing
         "aー", "カー", "ab\u{30FC}", "abc\u{0E40}\u{0E01}", "\u{0E40}\u{0E01}abc", "abc中文def",
         "a\u{00B7}l", "l\u{00B7}l", "o\u{0308}", "abc\u{0308}", "aa", "aaa", "AaAa", "/usr/lib/libc.dylib",
         "x\u{1F600}y", "tab\there", "line\nbreak", "end ", " lead", "a\u{200B}b", "a\u{00AD}b",
+        // Thai: inert consonants and vowels go through the run; tone marks, sara u/uu and phinthu have a
+        // non-zero ccc and go back (NFD may reorder them); prefix vowels and digits are 0 in the table.
+        "กรมวัง", "กรมศักดิ์", "ก่า", "กุ", "กู", "กฺ", "เก", "แกะ", "ไก่", "โก๋", "๑๒๓", "ก๑", "กั้น", "นํ้า",
+        "น้ำ", "ฤๅ", "ๆ", "ก\u{0E48}\u{0E38}", "ก\u{0E38}\u{0E48}", "abcก่", "ก่abc", "กabcข", "ab\u{0E48}",
+        "\u{0E48}ก", "กข\u{0301}", "ภาษาไทย", "ข้าวผัด", "สวัสดี",
     ]
 
     static func strings() throws -> [String] {

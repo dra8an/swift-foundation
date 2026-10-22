@@ -295,9 +295,12 @@ sort controls flat. Suite 1544/129.
 4. Writer and CE-production instructions. DONE 2026-10-21 for the writer
    (§51 (r) level cursors, (s) a specialization for the default options)
    and for ASCII in CE production (§51 (t): runs of simple ASCII scalars in
-   one loop; sortKey ascii −14%, paths −26%, others within ±1–2%). Left:
-   CE production for non-ASCII text (latin accents, CJK, Thai), and the
-   run-time writer path for non-default options. A/B every variant; the
+   one loop; sortKey ascii −14%, paths −26%, others within ±1–2%). Thai in
+   the same run was REJECTED (§51 (u)). Left: CE production for non-ASCII
+   text — next candidate the implicit Han primary on a fast path for CJK
+   (~35 of ~260 instructions per scalar; compare already has
+   `quickCJKPrimary`), then latin accented letters — and the run-time
+   writer path for non-default options. A/B every variant; the
    counts pointed the wrong way in (r).
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
@@ -314,8 +317,9 @@ the ICU harness; the writer specialized for default options (W3a, worse);
 inlining `compareUTF8` into the entry (worse); a forward single-pass restart
 count (worse); Fix B (dropped); a one-slot or locked `FastLatinCache`; a cache
 key of the whole options word (fills up); merging the identical-strength pass
-into the options byte pass (+1–3% on common rows); any FoundationEssentials
-change.
+into the options byte pass (+1–3% on common rows); Thai scalars in the
+ASCII bulk run (§51 (u): no thai gain, ascii/latin/paths +2–5%); any
+FoundationEssentials change.
 
 **Machine notes (Apple Silicon, 10 cores):** the 1-minute load rests around
 8–15 (`suggestd`, `WindowServer` …) and often rises to 20–70 during the

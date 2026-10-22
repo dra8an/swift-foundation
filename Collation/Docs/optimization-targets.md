@@ -4030,3 +4030,30 @@ String and 1725.2 for a Substring — identical to the morning code, call
 for call; `localizedStandardRange` +10 per call (5279.2 → 5289.2), the
 out-of-line `collectAll(bulkASCII: false)` of its pattern in a build that
 does not inline across files.
+
+#### (u) Thai scalars in the bulk run — REJECTED
+
+**Split first** (2026-10-22; counts of 8 keys and one trace per corpus, no
+code change): CE production per scalar ~260 instructions on cjk (dispatch
+~73, field reloads ~47, `appendCEs` ~42, the implicit Han primary ~35,
+NFD ~23), ~135 on thai (dispatch ~49, reloads ~34, NFD ~21: Thai vowels and
+tone marks are not inert), ~150 on latin on average; ~220 per key are
+fixed (`reset` 89, the key copy ~95, `takeScratch` 37).
+
+**Variant CE2.** `collectSimpleRun`: the (t) run also takes inert
+Thai-block scalars from the Thai table (an inert scalar leaves NFD at once,
+so taking it straight from the source is the same; tone marks, sara u/uu
+and phinthu have a non-zero ccc and go back), entered from both fast paths.
+`ASCIIRunTests` got 28 Thai boundary strings (they stay: they also cover the
+ASCII run); the mutation "no inert check" failed it with 115 issues.
+
+**Counts:** thai 1421.9 → 1363.5 (−4.1%, only ~−10 per scalar: the
+non-inert marks end the runs), ascii +1.7%, latin +1.4%, paths +2.2% (the
+extra Thai test in the ASCII loop), cjk 0.
+
+**A/B against HEAD `ef4de20b`** (EngineBench, 5 rounds, load 30–43;
+plain / aligned): sortKey thai +0.7% / +0.3%, ascii +1.7% / +3.1%, latin
++1.7% / +2.2%, paths +5.1% / +2.6% (5/5), cjk −0.7% / +0.3%. No gain on
+thai and a loss on the others: not shipped. A Thai run would need its own
+loop (no ASCII cost) and a way to keep the marks in the run; the remaining
+Thai cost is mostly in the marks' NFD units.
