@@ -15,13 +15,11 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the §51 (s) commit (the writer
-specialized for the default options, and the afternoon Table 1: SortKey.swift,
-this file, optimization-targets.md, Docs/21 and Docs/27) on top of
-`15f74f4b` (§51 (r)). If it is missing, those five files are modified — say
-so and give the add/commit lines. Tree clean otherwise; about 11 commits
-ahead of `origin` (not pushed: `d3c9eed9` … and the (p), (q), (r) and (s)
-commits). The A/B worktree is now at `15f74f4b` with its own
+paragraph).** Expected: HEAD = a docs commit (the late-evening matrix:
+Docs/21, Docs/27, this file, optimization-targets.md) on top of `6d0d26f9`
+(§51 (t)). If it is missing, those four files are modified — say so and
+give the add/commit lines. Tree clean otherwise; about 13 commits ahead of
+`origin` (not pushed: `d3c9eed9` … through §51 (t) and this docs commit). The A/B worktree is now at `c84d0ca1` (before (t)) with its own
 `main.swift` (the probe copy was restored). The
 first-collator probe packages are `.build/first-collator/` (base engine
 sources, all probe modes) and `.build/first-collator-new/`. The worktree holds EngineBench builds in `.build/engine-bench/` (plain
@@ -58,29 +56,29 @@ lines (45/5, 558/84, 941/40); add them up.
    variant, every measurement). Then §50 (g) (the instruction-count method)
    and the ALLOCATION/RESOLUTION HUNT note at the top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the current baseline
-   (2026-10-21, run B), including "The sort rows, split".
+   (2026-10-21 late evening, run A), including "The sort rows, split".
 4. `Collation/Docs/27-benchmark-runbook.md` — how to measure, the harness
    cost, the gates.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-21
-afternoon run A after §51 (r) and (s), ns per call, ours / ICU):**
+**Current engine numbers (Table 1, EngineBench vs ICU C, 2026-10-21 late
+evening run A at `6d0d26f9`, ns per call, ours / ICU):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
-| ascii | 10.6 / 9.4 | 1.13× | 94.0 / 106.1 | 0.89× |
-| latin | 11.0 / 10.3 | 1.07× | 107.3 / 123.6 | 0.87× |
-| cjk | 20.3 / 40.9 | 0.50× | 114.0 / 118.8 | 0.96× |
-| paths | 18.4 / 29.8 | 0.62× | 265.9 / 369.6 | 0.72× |
-| thai | 194.8 / 173.0 | 1.13× | 153.3 / 154.7 | 0.99× |
+| ascii | 10.6 / 9.4 | 1.13× | 80.0 / 105.9 | 0.76× |
+| latin | 11.2 / 10.3 | 1.09× | 105.6 / 123.1 | 0.86× |
+| cjk | 20.1 / 40.8 | 0.49× | 114.8 / 119.4 | 0.96× |
+| paths | 18.8 / 29.8 | 0.63× | 200.4 / 371.8 | 0.54× |
+| thai | 194.7 / 174.7 | 1.11× | 153.0 / 156.5 | 0.98× |
 
 At the start of the round (2026-10-16) the ranges were compare 0.63–1.62×
-and sortKey 1.03–1.50×; now compare 0.50–1.13×, sortKey 0.72–0.99×. Runs B
-and E of the same afternoon ran at load 27–89 (control ~3% high) and gave
-the same ratios within 0.01–0.02 but 1–4% higher absolute values: confirm
-on a quiet machine before you quote absolutes to 1 ns. Table 2 keeps the
-morning baseline (it does not call sortKey).
+and sortKey 1.03–1.50×; now compare 0.49–1.13×, sortKey 0.54–0.98×. Runs A
+and B agree within 1.8%. Open: in this `-no-WMO` matrix the `range(of:)`
+rows read 1–9% above the morning baseline (ascii 108 → 116, backwards
+109 → 119), while a WMO A/B of the same code against HEAD showed ascii
+`range(of:)` −5% — not explained yet (§51 (t)).
 
 Table 2 (Foundation APIs vs system ICU, now 14 API families including an
 options compare and four sort APIs, floor 1.58×) is ahead everywhere, but
@@ -294,14 +292,13 @@ sort controls flat. Suite 1544/129.
    the new matrix `localizedStandardCompare` latin (65 ns) equals
    `localizedCaseInsensitiveCompare` latin (65), and the options compare
    latin (91) has the same latin/ascii step as the other rows.
-4. Writer and CE-production instructions. DONE for the writer 2026-10-21:
-   §51 (r) level cursors (sortKey −2.5..−10%, although the count went UP)
-   and §51 (s) the writer specialized for the default options by generics
-   (sortKey −10..−18% more, count −15..−20%). Every sortKey row is now at
-   or below ICU C. Left: CE production (~70 instructions per ASCII
-   character, inlined into `sortKey`, ~740 of the ~1520 per ascii key) and
-   the run-time writer path for non-default options (unchanged). A/B every
-   variant.
+4. Writer and CE-production instructions. DONE 2026-10-21 for the writer
+   (§51 (r) level cursors, (s) a specialization for the default options)
+   and for ASCII in CE production (§51 (t): runs of simple ASCII scalars in
+   one loop; sortKey ascii −14%, paths −26%, others within ±1–2%). Left:
+   CE production for non-ASCII text (latin accents, CJK, Thai), and the
+   run-time writer path for non-default options. A/B every variant; the
+   counts pointed the wrong way in (r).
 5. A non-throwing `compare` (~0.5 ns per call) changes the public API — the
    user's decision.
 6. A Substring argument still pays its copy into a String (~293

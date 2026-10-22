@@ -62,7 +62,7 @@ env for machine 2):
 
 - **Table 1 (pure engine)**: `ratio = ours / ICU`, so **below 1 means ours is
   faster**. The Swift implementation against hand-tuned C. Values as of
-  2026-10-21 (afternoon run A, after §51 (s)): compare 0.50–1.13×, sortKey 0.72–0.99× (current numbers:
+  2026-10-21 (late evening run A, after §51 (t)): compare 0.49–1.13×, sortKey 0.54–0.98× (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1

@@ -3057,7 +3057,7 @@ guard, and the instructions without source lines in `compareFastPath`.
 
 ### 51. The §50 (g) patterns elsewhere: a candidate audit by instruction count
 
-**Status (2026-10-21): (a)–(o) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`); (p) `0528e55e`, (q) `31475060`, (r) `15f74f4b`; (s) done, not yet committed at the time of writing. Baselines 2026-10-19 18:03, 2026-10-20 14:35, 2026-10-21 morning (with (l), (o), (p)) and 2026-10-21 afternoon (Table 1 only, with (r) and (s)). Suite 1544/129. Next: START HERE.**
+**Status (2026-10-21): (a)–(t) all committed (C1–C3 + C7 `6d6cc1f6`, C4 `3442256f`, C5 + C6 `af2bec52`, (i) `32292a45`, (j) `b6f8ea52`, (k) `cfd2ab9d`, (l) `ed52658e`, (o) `a92f217d`, (p) `0528e55e`, (q) `31475060`, (r) `15f74f4b`, (s) `c84d0ca1`, (t) `6d0d26f9`). Baselines 2026-10-19 18:03, 2026-10-20 14:35, 2026-10-21 morning (with (l), (o), (p)) and 2026-10-21 late evening (with (q)–(t); Docs/21). Suite 1546/130. Next: START HERE.**
 
 #### (a) The audit
 
@@ -4013,3 +4013,10 @@ all 98 tailorings, numeric off and on. Mutations — the hand-back dropped,
 the history not updated, the scalar count not updated — fail the suites
 with 503, 216 and 113 issues. Suite 1546/130; the sk-ladder identity checks
 0 mismatched lines on all five corpora; the four ladder tools build.
+
+**Matrix after (t)** (Docs/21, 2026-10-21 late evening, run A; runs A and B
+agree within 1.8%): sortKey 0.76× ascii, 0.86× latin, 0.96× cjk, 0.54×
+paths, 0.98× thai of ICU C; compare 0.49–1.13× (unchanged). Table 2: the
+compare, contains and sort rows match the morning baseline within 1–3%;
+`range(of:)` reads 1–9% higher in this `-no-WMO` build (ascii 108 → 116,
+backwards 109 → 119) while the WMO A/B showed ascii −5%: open.
