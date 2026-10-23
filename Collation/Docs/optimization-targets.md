@@ -4448,3 +4448,14 @@ with WMO, so the WMO A/B models the code shape inside the module. Suite
 1557/134. Lesson: `@inline(__always)` is not a guarantee once the caller is
 large; check the symbols in the dSYM (`nm -a … | swift-demangle`) when a
 change moves search or compare rows whose code did not change.
+
+**Matrix after (ab)** (Docs/21, 2026-10-23, run B; runs A and B agree
+within 1.9%, control within 1.0%): Table 1 compare 1.13× ascii, 1.09×
+latin, 0.50× cjk, 0.63× paths, 0.96× thai; sortKey 0.73×, 0.79×, 0.89×,
+0.51×, 0.98× — eight of the ten rows at or below ICU C. Table 2 floor
+1.72×; thai −4..−11% on the compare and search rows, cjk −3..−12%, search
+−1..−12% everywhere. **But in this `-no-WMO` build `localizedStandardCompare`
+and `localizedCaseInsensitiveCompare` on ascii / latin / paths are +5..+8%
+and the options compare +2..+3%** against 2026-10-21 and against the
+2026-10-22 matrix at (y): a cost of (z) in `-no-WMO` that its WMO A/B did
+not show (there −2.5..−7%). Open.

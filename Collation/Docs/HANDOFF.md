@@ -82,21 +82,23 @@ three summary lines (45/5, 565/88, 941/40); add them up.
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
 **Current numbers (Table 1, EngineBench vs ICU C, ns per call, ours / ICU) —
-ONE matrix run on 2026-10-22 at the (y) code, control within 2.1%; NOT yet
-recorded in Docs/21 (recording needs two runs that agree):**
+RECORDED in Docs/21 on 2026-10-23 (run B at `91237c5a`, after §51 (ab);
+control within 1.0%; runs A and B agree within 1.9%):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
-| ascii | 10.6 / 9.4 | 1.13× | 76.5 / 106.6 | 0.72× |
-| latin | 11.2 / 10.3 | 1.09× | 97.4 / 123.7 | 0.79× |
-| cjk | 20.5 / 41.1 | 0.50× | 107.0 / 120.4 | 0.89× |
-| paths | 18.5 / 30.0 | 0.62× | 187.5 / 371.6 | 0.50× |
-| thai | 163.8 / 174.6 | 0.94× | 152.6 / 157.1 | 0.97× |
+| ascii | 10.5 / 9.3 | 1.13× | 76.0 / 104.0 | 0.73× |
+| latin | 11.0 / 10.1 | 1.09× | 96.8 / 122.5 | 0.79× |
+| cjk | 20.1 / 40.5 | 0.50× | 105.6 / 118.2 | 0.89× |
+| paths | 18.5 / 29.5 | 0.63× | 185.7 / 366.2 | 0.51× |
+| thai | 164.7 / 172.3 | 0.96× | 152.0 / 154.9 | 0.98× |
 
 Eight of the ten rows are at or below ICU C. **The user's focus: the rows
-that are still behind** — compare ascii (1.13×) and latin (1.09×); thai
-compare WITH OPTIONS (Table 2: `localizedStandardCompare`,
-`localizedCaseInsensitiveCompare`, the options compare, +3..+4% since (y)).
+that are still behind** — compare ascii (1.13×) and latin (1.09×). Thai
+compare with options is done (§51 (z), −10..−11% in the matrix). OPEN from
+the 2026-10-23 matrix: in the `-no-WMO` build, `localizedStandardCompare`
+and `localizedCaseInsensitiveCompare` on ascii / latin / paths are +5..+8%
+since (z) (64 → 69, 66 → 71, 87 → 91; the WMO A/B of (z) had them −2.5..−7%).
 At the start of the round (2026-10-16): compare 0.63–1.62×, sortKey
 1.03–1.50×.
 
@@ -366,8 +368,8 @@ the control. Report after it — about 30–45 minutes.
    small string (≤ 15 bytes) saves no reference count and costs a copy
    and two closures. Candidate: pin only texts longer than 15 bytes. Decide
    with both build modes.
-2. **Record a matrix** (two runs that agree) for (v), (w), (y) and (a) in
-   Docs/21, START HERE, the runbook ratio line and §51.
+2. **Record a matrix: DONE 2026-10-23** (Docs/21, run B at `91237c5a`;
+   §51 (ab) has the line). It found the `-no-WMO` cost of (z) above.
 3. **compare ascii (1.13×) / latin (1.09×):** ~1 ns of each is the API's
    call shape (`throws`, two `String` arguments; Docs/27). A non-throwing
    `compare` (~0.5 ns per call) changes the public API — **the user's
