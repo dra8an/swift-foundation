@@ -4400,3 +4400,51 @@ small string (the fallback branch per scalar and the iterator's decode
 cost more than the copy and the closure). Not shipped. So the +2..+7% of
 the (y) WMO A/B on ascii and latin search is NOT the pinning; its cause is
 open (candidates: the NFDIterator source change itself, or code placement).
+The cause was found next, in (ab).
+
+#### (ab) Search: the scan functions out of line again, so that `appendMore` inlines
+
+**Count first** (one `localizedStandardContains` call, WMO `-g`
+BenchFoundation, a temporary `@inline(never)` wrapper row in both trees, 10
+calls after 1000; `80f9b5a8` before (y) against HEAD `11e13ae8`):
+
+| part | ascii | latin |
+|---|---|---|
+| whole call | 3017 → 3162 (+4.8%) | 2904 → 2978 (+2.6%) |
+| text scan (`containsScan` + `contains`) | ~1376 → 830 | ~1155 → 639 |
+| `CEIterator.appendMore`, out of line | 0 → 733 | 0 → 639 |
+| scan + `appendMore` | +186 | +123 |
+| pattern CEs, `reset` | −19, −32 | −27, −32 |
+
+**Cause.** Before (y), `containsScan`, `searchForward` and
+`produceAnnotatedCEs` were functions of their own (symbols in the dSYM),
+and `appendMore` (`@inline(__always)`) was inlined into their loops. After
+(y) the WMO build inlined the three scans into their callers (`contains`,
+`search`, `searchBackwards`); the callers grew so large that `appendMore`
+became ONE shared out-of-line function in spite of `@inline(__always)` —
+a call per character, with the iterator state loaded and stored again
+(~19 instructions per ascii character). In `-no-WMO`, `appendMore` (another
+file) is a call in both versions, which is why the (y) matrix showed only
+gains there.
+
+**Change (V2).** The three scans are `@inline(never)`. The dSYM then shows
+them again as functions, and no `appendMore` symbol (inlined).
+
+**A/B against HEAD `11e13ae8`** (5 interleaved rounds, 2026-10-23, load
+13–21; min; WMO: `-g` BenchFoundation, base in the worktree; `-no-WMO`: the
+base copied from the main tree's cached build of the same code, as in (aa)):
+
+| rows | WMO | `-no-WMO` |
+|---|---|---|
+| both contains | ascii −6.0%, latin −4.3..−4.9%, cjk / paths / thai −0.5..−2.2% (mostly 5/5) | +0.8..+3.1% (mostly 5/5) |
+| `localizedStandardRange` | −3.6..−7.8%, all 5/5 | +1.8..+3.1% (mostly 5/5) |
+| `range(of:)` | latin / cjk / thai −5.0..−7.2% (5/5), ascii 0, paths +2.2% (5/5) | ascii / paths −1.8..−3.0% (5/5), latin / cjk / thai +1.1..+1.7% |
+| `range(of:)` backwards | −1.4..−6.2% (5/5), paths 0 | −0.6..−3.6% (mostly 5/5) |
+| compare rows (unchanged code) | `localizedCompare` ascii +3.2% mean, others within ±2% | within ±2.8% |
+
+In `-no-WMO` the change adds one call per search and nothing else. Kept
+(user decision, 2026-10-23): the shipping framework builds its own module
+with WMO, so the WMO A/B models the code shape inside the module. Suite
+1557/134. Lesson: `@inline(__always)` is not a guarantee once the caller is
+large; check the symbols in the dSYM (`nm -a … | swift-demangle`) when a
+change moves search or compare rows whose code did not change.

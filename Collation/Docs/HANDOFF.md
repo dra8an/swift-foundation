@@ -356,7 +356,11 @@ the control. Report after it — about 30–45 minutes.
 1. **(b) Search: DONE 2026-10-23 — the candidate was REJECTED (§51 (aa)).**
    Pinning only strings longer than 15 bytes made every search row worse
    in both build modes (+2..+10%), ascii and latin too. The (y) pinning
-   stays. The cause of the (y) WMO +2..+7% on ascii/latin search is open.
+   stays. **The cause of the (y) WMO +2..+7% on ascii/latin search was
+   found and fixed (§51 (ab)):** the WMO build inlined the scans into their
+   callers, and `appendMore` became an out-of-line call per character. The
+   scans are `@inline(never)` now: WMO search −1..−8%, `-no-WMO` +1..+3% on
+   contains and `localizedStandardRange` (kept, user decision).
    Original note: the (y) search wiring gave +2..+7% on ascii/latin in the
    WMO A/B but −1..−8% on every corpus in the `-no-WMO` matrix. Pinning a
    small string (≤ 15 bytes) saves no reference count and costs a copy

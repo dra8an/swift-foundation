@@ -156,6 +156,8 @@ struct CollationSearch {
         }
     }
 
+    /// Out of line on purpose: inlined into its caller (as the WMO build did after §51 (y)), the caller grew so large that `CEIterator.appendMore` — `@inline(__always)` — stayed an out-of-line call per character in the scan loop (+4.8% instructions per ascii contains). Technique log §51 (ab).
+    @inline(never)
     private func containsScan(
         pattern: String, in text: String, textBytes: UnsafeBufferPointer<UInt8>?, mask: Int64, patternCEs: [Int64],
         iter: inout CEIterator, textCEs buffer: inout [Int64]
@@ -307,6 +309,8 @@ struct CollationSearch {
     // MARK: - Forward search (lazy CE production)
 
     /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match (profiling showed the upfront index table and NFD map were most of `localizedStandardRange`, and the window's per-call malloc/free most of CJK searches).
+    /// Out of line on purpose: inlined into its caller (as the WMO build did after §51 (y)), the caller grew so large that `CEIterator.appendMore` — `@inline(__always)` — stayed an out-of-line call per character in the scan loop (+4.8% instructions per ascii contains). Technique log §51 (ab).
+    @inline(never)
     private func searchForward(
         patternCEs: [Int64], in text: String, textBytes: UnsafeBufferPointer<UInt8>?, mask: Int64,
         iter: inout CEIterator, window buffer: inout [AnnotatedCE],
@@ -561,6 +565,8 @@ struct CollationSearch {
 
     // MARK: - Annotated CE production (full, for backwards search)
 
+    /// Out of line on purpose: inlined into its caller (as the WMO build did after §51 (y)), the caller grew so large that `CEIterator.appendMore` — `@inline(__always)` — stayed an out-of-line call per character in the scan loop (+4.8% instructions per ascii contains). Technique log §51 (ab).
+    @inline(never)
     private func produceAnnotatedCEs(
         for text: String, bytes: UnsafeBufferPointer<UInt8>?, mask: Int64, iter: inout CEIterator,
         into result: inout [AnnotatedCE]
