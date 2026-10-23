@@ -353,7 +353,11 @@ thai to a `.build/` copy of `foundation_ab.py`), plus an EngineBench A/B as
 the control. Report after it — about 30–45 minutes.
 
 **Open items after (a), in order:**
-1. **(b) Search:** the (y) search wiring gave +2..+7% on ascii/latin in the
+1. **(b) Search: DONE 2026-10-23 — the candidate was REJECTED (§51 (aa)).**
+   Pinning only strings longer than 15 bytes made every search row worse
+   in both build modes (+2..+10%), ascii and latin too. The (y) pinning
+   stays. The cause of the (y) WMO +2..+7% on ascii/latin search is open.
+   Original note: the (y) search wiring gave +2..+7% on ascii/latin in the
    WMO A/B but −1..−8% on every corpus in the `-no-WMO` matrix. Pinning a
    small string (≤ 15 bytes) saves no reference count and costs a copy
    and two closures. Candidate: pin only texts longer than 15 bytes. Decide

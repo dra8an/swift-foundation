@@ -4368,3 +4368,35 @@ restart path; sortKey and skRet within ±2.5% (unchanged code). The engine
 shows no latin loss, so the `compare(_:locale:)` latin +4.2% is specific to
 the Foundation build — probably code placement, NOT verified (aligned
 BenchFoundation builds, ~5 minutes each, would tell).
+
+#### (aa) Search: pin only strings longer than 15 bytes — REJECTED
+
+**Hypothesis (from (y), open item 2).** A string of up to 15 UTF-8 bytes is
+a small string: its bytes are inside the String value, so its String
+iterator retains nothing, and pinning it costs a copy and a closure. The
+(y) WMO A/B had the search rows on ascii and latin +2..+7%.
+
+**Variant V1.** `withPinnedUTF8` pins each string only if it is contiguous
+and longer than 15 bytes, each side on its own. In the bench, no ascii or
+latin line is longer than 15 bytes, cjk 19%, paths 100%, thai 63%; every
+needle is 4–12 bytes. So ascii and latin go back to the String-iterator
+input, and paths and thai pin the text only.
+
+**A/B against `a4c3d709`, both build modes** (5 interleaved rounds,
+2026-10-23, load 39 → 16). WMO: `-g` BenchFoundation, base in the worktree.
+`-no-WMO`: the main tree's cached scratch (a fresh `-no-WMO` build fails in
+swift-syntax): the base built from the clean tree at HEAD and copied with
+its resource bundle to `.build/nowmo-base/`, then the variant built in place.
+
+| rows | WMO | `-no-WMO` |
+|---|---|---|
+| both contains, `localizedStandardRange` | +2.5..+7.8% on every corpus, 5/5 | +3.8..+10.3% min on every corpus, mostly 5/5 |
+| `range(of:)`, forward and backward | +0.6..+7.4%, mostly 5/5 | ascii and paths −0.8..−1.8% min (mixed signs), latin, cjk, thai +2.2..+4.9% |
+| compare rows (unchanged code) | within ±1.6% except one cjk cell | within ±2.5% except one latin cell |
+
+Worse in both modes, also on ascii and latin, the rows it was meant to
+help: the bytes input is cheaper than the String-iterator input even for a
+small string (the fallback branch per scalar and the iterator's decode
+cost more than the copy and the closure). Not shipped. So the +2..+7% of
+the (y) WMO A/B on ascii and latin search is NOT the pinning; its cause is
+open (candidates: the NFDIterator source change itself, or code placement).
