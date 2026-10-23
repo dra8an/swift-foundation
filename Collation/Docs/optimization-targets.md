@@ -4260,7 +4260,9 @@ thai −6%; the search rows −1..−8% on every corpus.
    localizedCaseInsensitiveCompare, the options compare) +3..+4% in Table 2:
    they take `compareBody`'s skip walk, whose iterators are String
    iterators (`reset(source:first:)`) — the fallback branch per scalar and
-   no saving. Next step (a): run that walk on the bytes too.
+   no saving. Next step (a) — the plan in HANDOFF START HERE: compute the
+   restart in `compareSlowPath`'s options byte pass (`restartScalarCount`
+   on its `mismatch`) so that these compares take `compareFromRestart`.
 2. Search: the WMO A/B (Foundation rows) gave ascii and latin +2..+7%
    (5/5) and cjk −3%, while the `-no-WMO` matrix gave −1..−8% everywhere.
    Pinning a small string (≤ 15 bytes, stored in the String value, no
