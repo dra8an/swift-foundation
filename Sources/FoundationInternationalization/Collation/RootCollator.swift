@@ -433,6 +433,7 @@ public struct RootCollator: @unchecked Sendable {
         // The options word, computed once for the whole slow path (22 instructions; compareBody used to compute it again — technique log §51).
         let word = options.icuOptions
         var triedFastLatin = false
+        var restart = restart
         // The gate is checked here, before the call: computing the setup and pinning the strings first cost CJK sorts +2–4% for a pass that always bails on them.
         if options.strength == .identical,
            (left.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
@@ -446,15 +447,30 @@ public struct RootCollator: @unchecked Sendable {
                 triedFastLatin = left.isContiguousUTF8 && right.isContiguousUTF8
             } else {
                 if let setup = resolveFastLatinSetup(word), setup.packedOptions >= 0 {
-                    let safety = restartSafetyPtr
+                    let safety = UnsafePointer(restartSafetyPtr)
                     let numeric = options.numeric
+                    // The quick CJK primary compare decides at the primary level, which comes first for any options; its setup is off under reordering and for a shifted default, and it is skipped for shifted options here.
+                    let cjkSetup = storage.quickCJKSetupPtr
+                    let tryCJK = options.alternate != .shifted
+                    var restartScalars = -1
                     let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
                         right.utf8.withContiguousStorageIfAvailable { rBytes in
                             var mismatch = -1
-                            return RootCollator.fastLatinUTF8(
+                            let f = RootCollator.fastLatinUTF8(
                                 lBytes, rBytes, table: table, primaries: setup.primaries,
                                 options: setup.packedOptions, numeric: numeric, safety: safety,
                                 mismatch: &mismatch)
+                            if f != CollationFastLatin.bailOutResult { return f }
+                            if tryCJK {
+                                let q = RootCollator.quickCJKDispatch(
+                                    lBytes, rBytes, at: mismatch, setup: cjkSetup,
+                                    numeric: numeric, safety: safety)
+                                if q != CollationFastLatin.bailOutResult { return q }
+                            }
+                            // As in compareFastPath: place the restart while the bytes are pinned, so that compareBody takes compareFromRestart (the bytes path), not its String-iterator walk. Sound for every non-identical option set: the restart scalar is safe, and the CE compare reports the two settings where the skipped prefix still matters (CollationCompare.prefixDependent; technique log §51 (z)).
+                            restartScalars = RootCollator.restartScalarCount(
+                                lBytes, rBytes, at: mismatch, safety: safety, numeric: numeric)
+                            return f
                         } ?? nil
                     } ?? nil
                     if let fast {
@@ -462,6 +478,7 @@ public struct RootCollator: @unchecked Sendable {
                             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
                         }
                         triedFastLatin = true
+                        restart = restartScalars
                     }
                 }
             }
@@ -561,7 +578,7 @@ public struct RootCollator: @unchecked Sendable {
 
         var scratch: ScratchBuffers?
         defer { if let scratch { giveScratch(scratch) } }
-        let result: Int
+        var result: Int
         if fastResult != CollationFastLatin.bailOutResult {
             result = Int(fastResult)
         } else {
@@ -582,8 +599,17 @@ public struct RootCollator: @unchecked Sendable {
                     numeric: options.numeric,
                     leftSource: lIter, leftFirst: lNext?.value,
                     rightSource: rIter, rightFirst: rNext?.value,
+                    prefixSkipped: shared > 0,
                     options: word,
                     variableTopValue: variableTopValue(options), reordering: reordering)
+                if result == CollationCompare.prefixDependent {
+                    // The skipped prefix can change the result (shifted, backward secondary): compare from the start.
+                    result = try s.resetBothAndCompare(
+                        numeric: options.numeric,
+                        leftScalars: left.unicodeScalars, rightScalars: right.unicodeScalars,
+                        options: word,
+                        variableTopValue: variableTopValue(options), reordering: reordering)
+                }
             }
         }
         if result != 0 {
@@ -615,7 +641,7 @@ public struct RootCollator: @unchecked Sendable {
                     options: word, variableTopValue: vt, reordering: reordering)
             }
         }
-        let result: Int
+        var result: Int
         if let r = pinned ?? nil {
             result = r
         } else {
@@ -623,6 +649,13 @@ public struct RootCollator: @unchecked Sendable {
                 numeric: numeric,
                 leftScalars: left.unicodeScalars, rightScalars: right.unicodeScalars,
                 skippingFirst: restart,
+                options: word, variableTopValue: vt, reordering: reordering)
+        }
+        if result == CollationCompare.prefixDependent {
+            // The skipped prefix can change the result (shifted, backward secondary; rare): compare from the start, outside the pinned scope.
+            result = try s.resetBothAndCompare(
+                numeric: numeric,
+                leftScalars: left.unicodeScalars, rightScalars: right.unicodeScalars,
                 options: word, variableTopValue: vt, reordering: reordering)
         }
         if result != 0 {

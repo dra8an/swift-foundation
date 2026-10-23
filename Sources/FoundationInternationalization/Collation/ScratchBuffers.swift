@@ -163,7 +163,7 @@ final class ScratchBuffers {
     ) throws -> Int {
         try ScratchBuffers.resetBothAndCompare(
             &left.pointee, &right.pointee, options: options, variableTopValue: variableTopValue,
-            reordering: reordering
+            reordering: reordering, prefixSkipped: skippingFirst > 0
         ) { l, r in
             l.reset(numeric: numeric, scalars: leftScalars, skippingFirst: skippingFirst)
             r.reset(numeric: numeric, scalars: rightScalars, skippingFirst: skippingFirst)
@@ -180,40 +180,42 @@ final class ScratchBuffers {
     ) throws -> Int {
         try ScratchBuffers.resetBothAndCompare(
             &left.pointee, &right.pointee, options: options, variableTopValue: variableTopValue,
-            reordering: reordering
+            reordering: reordering, prefixSkipped: skippingFirst > 0
         ) { l, r in
             l.reset(numeric: numeric, utf8: leftUTF8, skippingFirst: skippingFirst)
             r.reset(numeric: numeric, utf8: rightUTF8, skippingFirst: skippingFirst)
         }
     }
 
+    /// `prefixSkipped`: the two sources start after a shared prefix (the skip walk).
     @inline(__always)
     func resetBothAndCompare(
         numeric: Bool,
         leftSource: String.UnicodeScalarView.Iterator, leftFirst: UInt32?,
         rightSource: String.UnicodeScalarView.Iterator, rightFirst: UInt32?,
+        prefixSkipped: Bool,
         options: Int32, variableTopValue: UInt32, reordering: Reordering?
     ) throws -> Int {
         try ScratchBuffers.resetBothAndCompare(
             &left.pointee, &right.pointee, options: options, variableTopValue: variableTopValue,
-            reordering: reordering
+            reordering: reordering, prefixSkipped: prefixSkipped
         ) { l, r in
             l.reset(numeric: numeric, source: leftSource, first: leftFirst)
             r.reset(numeric: numeric, source: rightSource, first: rightFirst)
         }
     }
 
-    /// The scopes are opened at `l`/`r` here and cover both the reset and the comparison. `reset` is a non-escaping closure that is always inlined into the caller, so no closure survives at the call site.
+    /// The scopes are opened at `l`/`r` here and cover both the reset and the comparison. `reset` is a non-escaping closure that is always inlined into the caller, so no closure survives at the call site. A result of `CollationCompare.prefixDependent` (only with `prefixSkipped`) tells the caller to compare again from the start.
     @inline(__always)
     private static func resetBothAndCompare(
         _ l: inout CEIterator, _ r: inout CEIterator,
-        options: Int32, variableTopValue: UInt32, reordering: Reordering?,
+        options: Int32, variableTopValue: UInt32, reordering: Reordering?, prefixSkipped: Bool,
         reset: (inout CEIterator, inout CEIterator) -> Void
     ) throws -> Int {
         reset(&l, &r)
         return try CollationCompare.compareUpToQuaternary(
             &l, &r, options: options, variableTopValue: variableTopValue,
-            reordering: reordering)
+            reordering: reordering, prefixSkipped: prefixSkipped)
     }
 
     /// Runs the whole identical level under two access scopes instead of two PER SCALAR.

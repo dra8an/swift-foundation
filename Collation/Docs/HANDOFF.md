@@ -314,7 +314,17 @@ checkout, build and test in-source only, never `build/icuhost` (see
   Tests that read the current locale heavily must run on the preferences
   actor (`usingCurrentInternationalizationPreferences`, §51 (o)).
 
-**NEXT TASK — (a): give compares with NON-default options the restart and
+**NEXT TASK — (a): DONE on 2026-10-23 (technique log §51 (z)).** The
+options byte pass now places the restart; thai options rows −14..−15%
+(Foundation A/B, 5/5). It also fixed two prefix-skip bugs that ICU 79.1
+has too (shifted after a variable CE; backward secondary in prefix pairs;
+`th` defaults to shifted). New suite `OptionsRestartTests`; suite gate now
+**1557 tests in 134 suites**. Open from (a): identical strength still walks;
+`compare(_:locale:)` latin +4.2% in the WMO Foundation A/B (not in
+EngineBench; placement not verified). Next: open item 1 below. The original
+plan, for the record:
+
+**(a): give compares with NON-default options the restart and
 the bytes path.** Thai `localizedStandardCompare`,
 `localizedCaseInsensitiveCompare` and the options compare are +3..+4% since
 (y) (Table 2), because they take `compareBody`'s String-iterator walk.

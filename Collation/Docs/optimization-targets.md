@@ -4263,6 +4263,7 @@ thai −6%; the search rows −1..−8% on every corpus.
    no saving. Next step (a) — the plan in HANDOFF START HERE: compute the
    restart in `compareSlowPath`'s options byte pass (`restartScalarCount`
    on its `mismatch`) so that these compares take `compareFromRestart`.
+   **Done in (z)** (thai −14..−15%).
 2. Search: the WMO A/B (Foundation rows) gave ascii and latin +2..+7%
    (5/5) and cjk −3%, while the `-no-WMO` matrix gave −1..−8% everywhere.
    Pinning a small string (≤ 15 bytes, stored in the String value, no
@@ -4276,3 +4277,94 @@ strings, on root, th, ja, sv and fr_CA, numeric off and on. The mutation
 "skip one scalar too many after the restart" fails the suites with 123
 issues ("too few" is sound — an earlier restart — and passes). Suite
 1551/133.
+
+#### (z) The restart for non-default options — and two prefix-skip bugs that ICU has too
+
+**Two bugs found first (they were in the code before this step).** A probe
+compared compare() with sort-key order for every safe BMP starter whose CEs
+start with primary 0 (233 in root data: U+00AD, U+0900, U+0B55, the Thai
+U+0E47, U+0E4C, U+0E4D, U+0E4E, ...), right after a skipped prefix:
+1. **alternate=shifted:** UCA ignores primary-ignorable CEs after a variable
+   CE. A skip that ends after the variable CE loses that state:
+   `compare("a b", "a \u{0900}b")` (shifted, quaternary) gave `ascending`;
+   the keys are equal. 240 mismatches. **`th` is the only tailoring with a
+   shifted default**, so its default path had the bug too.
+2. **Backward secondary:** the secondary weights are compared from the end.
+   In a prefix pair whose longer side ends in such a starter, the shorter
+   side runs out, and the next weight is in the skipped prefix:
+   `e\u{0305}` / `e\u{0305}\u{0B55}` gave `ascending`, the keys
+   `descending`. 2,744 of 78,288 built pairs, on root with backward secondary
+   and on fr_CA with its defaults.
+
+**ICU 79.1 has both bugs** (`ucol_strcollUTF8` against `ucol_getSortKey`, a
+probe in `.build/shifted-probe/`): −1 against 0 for the shifted pairs, −1
+against +1 for the fr_CA pairs. Its doCompare skips the prefix for every
+option set and checks only the unsafe-backward set. Fixed here (user
+decision, 2026-10-23): our compare now agrees with the sort keys and UCA, and
+differs from ICU's compare on these pairs.
+
+**The fix: an exact check where the CEs are known.** A table of "starts
+with primary 0" scalars is not exact for contraction starters (the trie has
+no iteration). Instead, `CollationCompare.compareUpToQuaternary(prefixSkipped:)`
+returns `prefixDependent` (2) when (1) shifted, and a side's first CE that is
+not zero has primary 0; or (2) backward secondary, and in the first segment
+one side runs out while the other has a weight. The callers (compareFromRestart,
+compareBody's walk) then compare again from the start, outside the pinned
+scope. The hot loops did not change; a flag test before the primary loop and
+one in the backward loop's difference branch. Fast Latin needs no check: it
+bails on any secondary difference under backward secondary, and in its
+coverage no starter has a first CE with primary 0 that is not zero.
+
+**Soundness of the restart per option (the argument for (a)).** A restart at
+a safe scalar gives each string CE(prefix) + CE(suffix), with the same
+CE(prefix) on both sides. Strength (primary to quaternary): each level is a
+lexicographic compare, and a common prefix of CEs is a common prefix of each
+level's weights. caseFirst, caseLevel: weights per CE, no state between CEs.
+numeric: digits are unsafe when numeric is on. Shifted and backward
+secondary: the two cases above, now detected. maxVariable only matters with
+shifted. Identical strength is NOT covered: it keeps compareBody's walk
+(follow-up).
+
+**The change (a).** compareSlowPath's options byte pass, after
+`fastLatinUTF8` bails: `quickCJKDispatch` (not for shifted options; its setup
+is off under reordering and for a shifted default), then
+`restartScalarCount` on the pinned bytes; the count goes to compareBody,
+which takes compareFromRestart (the bytes path) instead of its
+String-iterator walk. The walk stays for bridged strings, identical strength
+and options without a fast-Latin setup. The CJK dispatch replaces the quick
+CJK primary compare that the walk did.
+
+**Tests.** `OptionsRestartTests` (new): compare() against sort-key order for
+10 option sets on each collator's defaults (defaults; secondary; secondary +
+numeric; primary; upper first; primary + case level; backward secondary
+toggled; shifted at quaternary; shifted, maxVariable symbol, secondary;
+shifted + backward), on root, th, ja, sv and fr_CA: every 4th adjacent
+riwords pair (root, th), the adjacent fuzz pairs, built pairs around the
+restart (the RestartBackupTests continuations plus space, hyphen, U+0E4C,
+U+0B55, U+00AD U+0301, space U+0900, hyphen U+0E47), the same built pairs as
+bridged strings (the walk), and the 233 starters in the shapes above.
+Mutations: no shifted check — fails (built, bridged, starters); no backward
+check — 45 issues; the options restart one scalar too far — 78 issues; the
+options restart without the backup — 45 issues. Suite 1557/134.
+
+**Foundation A/B against `20dd478e`** (WMO `-g` BenchFoundation on both
+sides, 5 interleaved rounds, 2026-10-23, load 19 → 13; min ns, ascii / latin
+/ cjk / thai; all target rows 5/5):
+
+| row | change |
+|---|---|
+| `localizedStandardCompare` | 39 → 38, 40 → 39, 63 → 57, **239 → 203 (−15.1%)** |
+| `localizedCaseInsensitiveCompare` | 43 → 40, 44 → 41, 66 → 59, **240 → 204 (−15.0%)** |
+| `compare(_:options:range:locale:)` | 57 → 55, 59 → 57, 81 → 75, **258 → 221 (−14.3%)** |
+| `localizedCompare` (default options) | 38 → 38, 39 → 39, 48 → 47, 196 → 198 (+1.3% mean, 5/5) |
+| `compare(_:locale:)` (default options) | +1.2%, **+4.2% mean (50 → 54, 5/5)**, 0, +1.2% |
+| `.localizedStandard` sort (identical, walk) | −1.1%, −1.6%, −0.6%, +0.8% |
+| `String.Comparator` sort (default options) | +0.8..+1.6% |
+
+**EngineBench A/B** (the control, default options, 5 rounds, load ~12):
+compare ascii / latin / cjk / paths −0.8 / −0.7 / −1.3 / −0.1% mean; **thai
++0.5% mean (+0.9% min, 4/5)** — the cost of the new check on the default
+restart path; sortKey and skRet within ±2.5% (unchanged code). The engine
+shows no latin loss, so the `compare(_:locale:)` latin +4.2% is specific to
+the Foundation build — probably code placement, NOT verified (aligned
+BenchFoundation builds, ~5 minutes each, would tell).

@@ -3,10 +3,16 @@
 // Operates on lazily-filled CE buffers terminated by NO_CE (like ICU's CollationIterator/CEBuffer): the primary loop pulls CEs on demand and usually decides without generating the rest; the deeper levels run only when all primaries were equal, i.e. when the buffers are already complete. The primary loop may rewrite variable CEs in place (shifting them to the quaternary level). Script reordering is not yet supported (milestone 7); the corresponding hooks are omitted.
 
 enum CollationCompare {
+    /// The result of compareUpToQuaternary when `prefixSkipped` is true and the skipped prefix can change the result: the caller must compare again from the start of both strings.
+    static let prefixDependent = 2
+
     /// Returns -1 / 0 / +1. `variableTopValue` is the highest variable primary (used only when options has alternate=shifted).
+    ///
+    /// `prefixSkipped`: the iterators start after an identical prefix at a safe scalar (the restart of RuleBasedCollator::doCompare). Two settings carry state from the prefix into the rest of the string, and ICU's doCompare does not check them (ICU 79.1: its compare then disagrees with its own sort keys). (1) alternate=shifted ignores primary-ignorable CEs after a variable CE: if a side starts with a primary-ignorable CE, the result depends on the last CEs of the prefix. (2) A backward secondary level compares from the end: if one side has no more secondary weights in the first segment while the other side has, the next weight is in the prefix. In these two cases the function returns `prefixDependent`. Technique log §51 (z).
     static func compareUpToQuaternary(
         _ left: inout CEIterator, _ right: inout CEIterator,
-        options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil
+        options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
+        prefixSkipped: Bool = false
     ) throws -> Int {
         let variableTop: UInt32
         if (options & CollationOptions.Bits.alternateMask) == 0 {
@@ -14,6 +20,11 @@ enum CollationCompare {
         } else {
             // +1 so that we can use "<" and primary ignorables test out early.
             variableTop = variableTopValue + 1
+        }
+        if prefixSkipped && variableTop != 0 {
+            if try startsWithPrimaryIgnorable(&left) || startsWithPrimaryIgnorable(&right) {
+                return prefixDependent
+            }
         }
         var anyVariable = false
 
@@ -123,6 +134,10 @@ enum CollationCompare {
                         }
 
                         if leftSecondary != rightSecondary {
+                            // One side ran out in the first segment: the other side's weight meets the last secondary weight of the skipped prefix (see prefixSkipped).
+                            if prefixSkipped && leftStart == 0 && (leftSecondary == 0 || rightSecondary == 0) {
+                                return prefixDependent
+                            }
                             return leftSecondary < rightSecondary ? -1 : 1
                         }
                         if leftSecondary == 0 { break }
@@ -285,5 +300,15 @@ enum CollationCompare {
             if leftQuaternary == CollationConstants.noCEPrimary { break }
         }
         return 0
+    }
+
+    /// True if the first CE that is not completely ignorable has primary 0. The end of the string (NO_CE, primary 1) gives false.
+    private static func startsWithPrimaryIgnorable(_ ces: inout CEIterator) throws -> Bool {
+        var i = 0
+        while true {
+            let ce = try ces.ce(at: i)
+            if ce != 0 { return ce >> 32 == 0 }
+            i += 1
+        }
     }
 }
