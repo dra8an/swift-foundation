@@ -4459,3 +4459,77 @@ and `localizedCaseInsensitiveCompare` on ascii / latin / paths are +5..+8%
 and the options compare +2..+3%** against 2026-10-21 and against the
 2026-10-22 matrix at (y): a cost of (z) in `-no-WMO` that its WMO A/B did
 not show (there −2.5..−7%). Open.
+
+#### (ac) The options compares in `-no-WMO`: the (z) work moved behind the bail
+
+**Problem** (the matrix after (ab)): in the `-no-WMO` build,
+`localizedStandardCompare` and `localizedCaseInsensitiveCompare` on ascii /
+latin / paths were +5..+8%, the options compare +2..+3%, since (z). A
+`-no-WMO` A/B of (z) confirmed it (+4..+8%, 5/5; thai −11..−13%, cjk
+−3..−7%). The `-no-WMO` base was built in the main tree (a fresh `-no-WMO`
+build fails in swift-syntax): the three (z) files written back from
+`3bfa81bd` for 23 seconds with `git show`, built, the products copied to
+`.build/count-z/`, then restored (user decision, 2026-10-26).
+
+**Count** (one ascii `localizedStandardCompare` call, `-no-WMO -g`, a
+temporary wrapper row, 10 calls after 1000): before (z) 909.4, HEAD 985.4
+(+76). (1) The work that (z) put into the options pass's pinned closure
+(the CJK dispatch, the restart count, more captured values) made
+`compareSlowPath` too large to inline into `compare`: +55, the frame of a
+second call. (2) `options.alternate != .shifted` called the generic
+`Equatable` witness, because the enum is declared in another file: +13.
+
+**Variants** (the same count):
+
+| variant | ascii count | `compareSlowPath` inlined (`-no-WMO`) |
+|---|---:|---|
+| HEAD (z) | 985.4 | no |
+| V3: the options word for shifted; the CJK dispatch and the restart in one `@inline(never)` helper | 954.4 | no |
+| V3b: V3 + `@inline(__always)` on `compareSlowPath` | 954.4 | no — ignored, in WMO too |
+| V3c: V3, the closure returns a tuple (no captured variable) | 968.4 | no |
+| **V4: the options pass as before (z); the bail sets a marker, `compareBody` calls `compareAfterOptionsPass`** | **903.4** | **yes** |
+
+V3 A/B against HEAD: `-no-WMO` ascii / latin −2..−3%, but WMO ascii /
+latin +2.4..+3.8%: rejected (the user's rule: no loss on ascii or latin).
+
+**V4.** `compareSlowPath`'s options pass is the closure from before (z);
+after a bail it sets `restart` to the marker `optionsPassBailed` (−2).
+`compareBody` then calls `compareAfterOptionsPass` (`@inline(never)`): it
+pins both strings again, scans the identical prefix (`optionsPassRestart`,
+the scan of `fastLatinUTF8` with the mismatch backed up to a scalar
+start), tries the quick CJK compare (not for shifted; read from the
+options word), and takes `compareFromRestart` with `restartScalarCount`'s
+restart. The bailed compares (thai, cjk) pay a second pinning and a short
+prefix scan; the Latin compares run the code from before (z).
+
+**A/B, 5 interleaved rounds each** (2026-10-26, load 52 → 7; mean change,
+ascii / latin options rows):
+
+| V4 against | `-no-WMO` | WMO |
+|---|---|---|
+| before (z) | −0.9..−2.4%; options compare +0.7% | 0..+1.0%; options compare +1.0..+1.4% |
+| HEAD (z) | −5.8..−7.1% (5/5) | +2.6..+6.4% (5/5) |
+
+Against before (z), thai −10..−13% and cjk −3..−7% in both modes: the (z)
+gains stay. Against HEAD in WMO: paths −9..−18%, thai and cjk +2.6..+4.6%.
+Aligned builds (`-align-all-functions=6`, WMO) give the same as the plain
+ones, so it is not the placement of function starts.
+
+**Why HEAD is faster in WMO — investigated, not found.** In WMO
+`compareSlowPath` is out of line in both versions, and V4 executes FEWER
+instructions (617.0 against 630.4 per ascii call). A trace diff showed a
+register choice: HEAD keeps the left string in a register and puts
+`restart` on the stack; V4 keeps `restart` and puts the left string on the
+stack, then reloads it just before it copies the string's bytes for
+pinning (a store, a load and a store more before the first byte compare).
+V5 (the options branch ends with its own `compareBody` calls, so `restart`
+is not live there) removed that chain (614 instructions) but not the WMO
+difference (A/B against HEAD: ascii / latin +1..+9%, load 37–57;
+`-no-WMO` as V4). Not shipped; the cause of HEAD's WMO advantage is open.
+
+**Kept: V4** (user decision, 2026-10-27): on ascii and latin it is never
+slower than the code before (z), in either build mode, and it keeps the
+thai and cjk gains of (z). Table 1 is not affected (the default options do
+not take `compareSlowPath`). Tests: suite 1557/134; the mutation "the
+restart in `compareAfterOptionsPass` one scalar too far" fails
+`OptionsRestartTests` with 78 issues.

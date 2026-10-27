@@ -447,30 +447,15 @@ public struct RootCollator: @unchecked Sendable {
                 triedFastLatin = left.isContiguousUTF8 && right.isContiguousUTF8
             } else {
                 if let setup = resolveFastLatinSetup(word), setup.packedOptions >= 0 {
-                    let safety = UnsafePointer(restartSafetyPtr)
+                    let safety = restartSafetyPtr
                     let numeric = options.numeric
-                    // The quick CJK primary compare decides at the primary level, which comes first for any options; its setup is off under reordering and for a shifted default, and it is skipped for shifted options here.
-                    let cjkSetup = storage.quickCJKSetupPtr
-                    let tryCJK = options.alternate != .shifted
-                    var restartScalars = -1
                     let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
                         right.utf8.withContiguousStorageIfAvailable { rBytes in
                             var mismatch = -1
-                            let f = RootCollator.fastLatinUTF8(
+                            return RootCollator.fastLatinUTF8(
                                 lBytes, rBytes, table: table, primaries: setup.primaries,
                                 options: setup.packedOptions, numeric: numeric, safety: safety,
                                 mismatch: &mismatch)
-                            if f != CollationFastLatin.bailOutResult { return f }
-                            if tryCJK {
-                                let q = RootCollator.quickCJKDispatch(
-                                    lBytes, rBytes, at: mismatch, setup: cjkSetup,
-                                    numeric: numeric, safety: safety)
-                                if q != CollationFastLatin.bailOutResult { return q }
-                            }
-                            // As in compareFastPath: place the restart while the bytes are pinned, so that compareBody takes compareFromRestart (the bytes path), not its String-iterator walk. Sound for every non-identical option set: the restart scalar is safe, and the CE compare reports the two settings where the skipped prefix still matters (CollationCompare.prefixDependent; technique log §51 (z)).
-                            restartScalars = RootCollator.restartScalarCount(
-                                lBytes, rBytes, at: mismatch, safety: safety, numeric: numeric)
-                            return f
                         } ?? nil
                     } ?? nil
                     if let fast {
@@ -478,7 +463,8 @@ public struct RootCollator: @unchecked Sendable {
                             return fast < 0 ? .ascending : fast == 0 ? .same : .descending
                         }
                         triedFastLatin = true
-                        restart = restartScalars
+                        // The restart is placed later, in compareAfterOptionsPass: this pass decides the Latin compares, and any more code here made compareSlowPath too large to inline into `compare` (+76 instructions per ascii options compare in the `-no-WMO` build; technique log §51 (ac)).
+                        restart = Self.optionsPassBailed
                     }
                 }
             }
@@ -522,6 +508,9 @@ public struct RootCollator: @unchecked Sendable {
 
         if restart >= 0 {
             return try compareFromRestart(left, right, options: options, word: word, restart: restart)
+        }
+        if restart == Self.optionsPassBailed, let decided = try compareAfterOptionsPass(left, right, options: options, word: word) {
+            return decided
         }
 
         // Identical-prefix skip (RuleBasedCollator::doCompare): equal scalar prefixes produce identical CEs, so iteration can start at the first difference — when restarting there is provably equivalent to full iteration (see unsafeStart). When the byte scan already placed the restart (ICU's backup rule, restartScalarCount), compareFromRestart above runs instead. Here (non-default options, bridged strings) the walk finds the difference, and an unsafe boundary restarts at 0 — skipping less is always sound.
@@ -623,6 +612,53 @@ public struct RootCollator: @unchecked Sendable {
                 left: left.unicodeScalars, right: right.unicodeScalars, skippingFirst: shared)
         }
         return .same
+    }
+
+    /// The `restart` marker from compareSlowPath: its options byte pass ran on both strings' contiguous bytes and bailed (non-Latin text). compareBody then calls compareAfterOptionsPass.
+    static var optionsPassBailed: Int { -2 }
+
+    /// The rest of compareSlowPath's options byte pass after a bail, as compareFastPath does it for the default options: the quick CJK primary compare (not for shifted options), else the restart (ICU's backup rule, `restartScalarCount`) and compareFromRestart (the bytes path), not compareBody's String-iterator walk. Sound for every non-identical option set: the restart scalar is safe, and the CE compare reports the two settings where the skipped prefix still matters (CollationCompare.prefixDependent; technique log §51 (z)). nil only if the strings are not contiguous (compareBody then walks).
+    ///
+    /// Apart from the options pass on purpose: the pass decides the Latin compares, and this work inside it made compareSlowPath too large to inline into `compare` (+76 instructions per ascii options compare in the `-no-WMO` build, ascii / latin / paths +4..+8%). Here the bailed compares pay a second pinning and a scan of the identical prefix instead (technique log §51 (ac)).
+    @inline(never)
+    private func compareAfterOptionsPass(
+        _ left: String, _ right: String, options: CollationOptions, word: Int32
+    ) throws -> Order? {
+        let safety = UnsafePointer(restartSafetyPtr)
+        let numeric = options.numeric
+        // The quick CJK primary compare decides at the primary level, which comes first for any options; its setup is off under reordering and for a shifted default, and nil skips it for shifted options. Read from the options word: in the `-no-WMO` build, `options.alternate != .shifted` called the generic Equatable witness.
+        let cjkSetup: UnsafePointer<QuickCJKSetup>? =
+            word & CollationOptions.Bits.alternateMask == 0 ? UnsafePointer(storage.quickCJKSetupPtr) : nil
+        let scanned = left.utf8.withContiguousStorageIfAvailable { lBytes in
+            right.utf8.withContiguousStorageIfAvailable { rBytes in
+                RootCollator.optionsPassRestart(lBytes, rBytes, cjkSetup: cjkSetup, safety: safety, numeric: numeric)
+            }
+        }
+        guard let inner = scanned, let (decided, restart) = inner else { return nil }
+        if decided != CollationFastLatin.bailOutResult {
+            return decided < 0 ? .ascending : .descending
+        }
+        guard restart >= 0 else { return nil }
+        return try compareFromRestart(left, right, options: options, word: word, restart: restart)
+    }
+
+    /// The identical-prefix scan of fastLatinUTF8 (the mismatch backed up to a scalar start), then the quick CJK primary compare (skipped when `cjkSetup` is nil) and `restartScalarCount`. Returns the CJK result with -1, or bailOutResult with the restart. Static with trivial parameters, like every helper called from the pinned-buffer closures.
+    private static func optionsPassRestart(
+        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
+        cjkSetup: UnsafePointer<QuickCJKSetup>?, safety: UnsafePointer<RestartSafety>, numeric: Bool
+    ) -> (Int32, Int) {
+        let minLength = min(lBytes.count, rBytes.count)
+        var i = 0
+        while i < minLength, lBytes[i] == rBytes[i] { i += 1 }
+        if i > 0,
+           (i != lBytes.count && lBytes[i] & 0xc0 == 0x80) || (i != rBytes.count && rBytes[i] & 0xc0 == 0x80) {
+            repeat { i -= 1 } while i > 0 && lBytes[i] & 0xc0 == 0x80
+        }
+        if let cjkSetup {
+            let q = quickCJKDispatch(lBytes, rBytes, at: i, setup: cjkSetup, numeric: numeric, safety: safety)
+            if q != CollationFastLatin.bailOutResult { return (q, -1) }
+        }
+        return (CollationFastLatin.bailOutResult, restartScalarCount(lBytes, rBytes, at: i, safety: safety, numeric: numeric))
     }
 
     /// compareBody for a restart that the byte scan already placed (ICU's backup rule, `restartScalarCount`): no skip walk, and no fast Latin (the byte scan tried it). The pipeline reads both strings' pinned UTF-8 bytes (ScalarSource), so neither string is retained or walked again through a String iterator; a non-contiguous (bridged) string takes the String iterators as before.

@@ -257,7 +257,8 @@ Reproducibility, run A vs run B of the same matrix:
   compare +2..+3%.** The 2026-10-22 matrix at (y) (not recorded) still
   read 64 / 66 / 87, and (ab) cannot change `RootCollator.swift` in this
   `-no-WMO` build: the cost comes with (z) in the `-no-WMO` build. The WMO
-  A/B of (z) had these rows −2.5..−7%. Open (§51 (z)).
+  A/B of (z) had these rows −2.5..−7%. Fixed in §51 (ac) (2026-10-27,
+  A/B only: back at the speed from before (z) in both build modes).
 
 ## Analysis
 

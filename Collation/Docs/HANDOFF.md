@@ -95,10 +95,13 @@ control within 1.0%; runs A and B agree within 1.9%):**
 
 Eight of the ten rows are at or below ICU C. **The user's focus: the rows
 that are still behind** — compare ascii (1.13×) and latin (1.09×). Thai
-compare with options is done (§51 (z), −10..−11% in the matrix). OPEN from
-the 2026-10-23 matrix: in the `-no-WMO` build, `localizedStandardCompare`
-and `localizedCaseInsensitiveCompare` on ascii / latin / paths are +5..+8%
-since (z) (64 → 69, 66 → 71, 87 → 91; the WMO A/B of (z) had them −2.5..−7%).
+compare with options is done (§51 (z), −10..−11% in the matrix). The
+`-no-WMO` cost of (z) on the ascii / latin / paths options rows (+5..+8% in
+the 2026-10-23 matrix) is fixed in §51 (ac) (2026-10-27): the (z) work runs
+after the bail, so the Latin compares run the code from before (z) in both
+build modes. Not yet in a recorded matrix. Open: why HEAD (z) was 1–3 ns
+faster on those rows in WMO (not instruction count, not function
+placement, not the one register spill found; §51 (ac)).
 At the start of the round (2026-10-16): compare 0.63–1.62×, sortKey
 1.03–1.50×.
 
