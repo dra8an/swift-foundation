@@ -373,20 +373,22 @@ the control. Report after it — about 30–45 minutes.
    with both build modes.
 2. **Record a matrix: DONE 2026-10-23** (Docs/21, run B at `91237c5a`;
    §51 (ab) has the line). It found the `-no-WMO` cost of (z) above.
-3. **compare ascii (1.13×) / latin (1.09×):** ~1 ns of each is the API's
-   call shape (`throws`, two `String` arguments; Docs/27). A non-throwing
-   `compare` (~0.5 ns per call) changes the public API — **the user's
-   decision**. Otherwise count and trace one ascii compare against ICU's
-   `icu_count` before any change.
+3. **compare ascii (1.13×) / latin (1.09×): DONE 2026-10-27 (§51 (ad)),
+   no change shipped.** The instruction trace against ICU: +20 per compare
+   (195 against 175), all of it the call shape (two `String` arguments, the
+   options guard, checked arithmetic). Every variant behind the API was
+   worse or lost ascii / latin in one build mode. **Public API changes (a
+   non-throwing `compare`, Substring / UTF-8 entries) are a non-starter
+   (user decision, 2026-10-27)** — do not propose them.
 4. CE production for precomposed Latin letters (NFD decomposition, ~119
    instructions per accented letter); the run-time writer path for
    non-default options; L1 (the lookahead as a noncopyable buffer — skipped
    by the user as too small for its win, but it is still a measured cost:
    ~350 instructions on Thai prefix-vowel pairs).
 5. A Substring argument still pays its copy into a String (in an A/B a
-   Substring compare took 76–81 ns against 40 ns for Strings, ascii);
-   engine entries for Substring or UTF-8 buffers — **the user's decision**
-   (§51 (p)).
+   Substring compare took 76–81 ns against 40 ns for Strings, ascii).
+   Engine entries for Substring or UTF-8 buffers change the public API:
+   **not an option** (user decision, 2026-10-27; §51 (p), (ad)).
 6. Creation: the bundle open (~0.9 ms, SwiftPM's accessor) and the data
    read and parse (~0.75 ms; mapping the file is the candidate; §51 (q)).
 

@@ -4533,3 +4533,45 @@ thai and cjk gains of (z). Table 1 is not affected (the default options do
 not take `compareSlowPath`). Tests: suite 1557/134; the mutation "the
 restart in `compareAfterOptionsPass` one scalar too far" fails
 `OptionsRestartTests` with 78 issues.
+
+#### (ad) compare ascii / latin against ICU, instruction by instruction (START HERE item 3) — no lever behind the API
+
+**Count** (EngineBench `-g` at `2acd580f`, pairs 1–10 of a pass; ICU with
+`icu_count.c` on the same pairs, ICU 79.1 libraries): ascii 195 against 175
+on 9 of 10 pairs (the shared-prefix pair 295 against 283), latin 195 / 207
+against 175 / 188 — **+20 per compare (+11%)**, which matches the 1.13× and
+1.09× in time.
+
+| part of one ascii compare | ours | ICU |
+|---|---:|---:|
+| before the fast-Latin core (entry, options guard, pinning, prefix scan) | 95 | 90 (35 of them in three wrapper layers) |
+| `CollationFastLatin.compareUTF8` | 74 | 65 |
+| after the core (result, return) | 26 | 20 |
+
+**Where the +20 is** (a trace of one pair on each side): in the core, an
+overflow check per index increment (`adds` + `b.vs`) and a bounds and nil
+check of the table slice (`UnsafeBufferPointer(rebasing:)` keeps its
+precondition in release builds); in the entry, the small-string copies to
+the stack (`withContiguousStorageIfAvailable`), the options guard, four
+stores of values that only the bail path needs, and two reloads and a
+second bail test after the core.
+
+**Variants** (count of a typical ascii pair; HEAD 195):
+
+| variant | count | outcome |
+|---|---:|---|
+| C1: wrapping index increments (`&+= 1`, `&-`/`&<<`/`&+` in the two-byte step) + the table without the slice | 197 | worse: with the checks gone, LLVM reads each byte with `ldrsb` and two masks (+2 per byte read) |
+| C1b: the wrapping increments only | 198 | worse |
+| C1c: C1a + wrapping increments + a bit test on the byte (`b & 0x80 == 0`) | 196 | worse |
+| **C1a: the table from its base address, no slice** | **194** | EngineBench A/B: compare ascii −2.1% (5/5), latin −0.5%; aligned: ascii −1.3% (4/5), latin −0.5%, cjk +0.6%; thai and sortKey move only in the plain builds (placement). `-no-WMO` Foundation A/B: the options rows −0.3..−2.7%, but `compare(_:locale:)` ascii +2.3% and latin +1.7% (mostly +), `localizedCompare` latin +2.3%, thai +1.4..+2.5% (5/5, code not run there). **Dropped** — the rule: no ascii / latin loss in either build mode (the `-no-WMO` placement cannot be checked: aligned builds need a fresh `-no-WMO` build, which fails in swift-syntax). |
+| E1: the bail work (quick CJK, restart) after the pinned scope, the mismatch packed into the pass result | 195 | no gain: the compiler still restores both `String` arguments into the argument registers before the result test (the bail branch needs them); the shared-prefix pair +6 |
+
+**Conclusion.** The remaining +20 is the call shape: two `String`
+arguments of two words each (copied to the stack for pinning when they are
+small strings, and kept alive across the core call for the slow path), the
+options guard, and Swift's checked arithmetic, which the compiler's byte
+loads depend on. Docs/27 measured the time side of the same thing (~1 ns
+of each gap). The two levers left — a non-throwing `compare`, entries for
+UTF-8 buffers — change the public API: **not an option** (user decision,
+2026-10-27). compare ascii 1.13× and latin 1.09× stay as they are unless a
+new idea comes up behind the existing API.
