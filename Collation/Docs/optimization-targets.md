@@ -4674,9 +4674,15 @@ ascii and latin almost never (the first-byte test of (ae)). With the scan
 inline the spills move into the loop (P2, +46). **Kept** (user decision,
 2026-10-28: "the small path regression is worth it"): ascii ~1.06×, latin
 ~1.02× of ICU C, paths ~0.68×. Suite 1557/134 (FastLatinTests calls the new
-`compareUTF8` signature). Not yet in a recorded matrix. Still open from the
-(ad) trace: P3, the `i == 0` eligibility check (21 instructions against
-ICU's 10).
+`compareUTF8` signature). Still open from the (ad) trace: P3, the `i == 0`
+eligibility check (21 instructions against ICU's 10) — see (ag).
+
+**Matrix after (af)** (Docs/21, 2026-10-28, run B; control within 1.0%,
+runs A and B agree within 1.1% in our cells): Table 1 compare **1.06×
+ascii, 1.02× latin**, 0.45× cjk, 0.66× paths, 0.95× thai; sortKey 0.73×,
+0.79×, 0.88×, 0.50×, 0.99×. Table 2 floor 1.70×; `localizedStandardCompare`
+and `localizedCaseInsensitiveCompare` ascii / latin −11..−13% against
+2026-10-23.
 
 #### (ag) P3: the `i == 0` path on its own — REJECTED
 

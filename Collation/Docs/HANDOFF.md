@@ -82,19 +82,21 @@ three summary lines (45/5, 565/88, 941/40); add them up.
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
 **Current numbers (Table 1, EngineBench vs ICU C, ns per call, ours / ICU) —
-RECORDED in Docs/21 on 2026-10-23 (run B at `91237c5a`, after §51 (ab);
-control within 1.0%; runs A and B agree within 1.9%):**
+RECORDED in Docs/21 on 2026-10-28 (run B at `853492cc`, after §51 (af);
+control within 1.0%; runs A and B agree within 1.1% in our cells):**
 
 | corpus | compare | ratio | sortKey | ratio |
 |---|---|---|---|---|
-| ascii | 10.5 / 9.3 | 1.13× | 76.0 / 104.0 | 0.73× |
-| latin | 11.0 / 10.1 | 1.09× | 96.8 / 122.5 | 0.79× |
-| cjk | 20.1 / 40.5 | 0.50× | 105.6 / 118.2 | 0.89× |
-| paths | 18.5 / 29.5 | 0.63× | 185.7 / 366.2 | 0.51× |
-| thai | 164.7 / 172.3 | 0.96× | 152.0 / 154.9 | 0.98× |
+| ascii | 9.9 / 9.3 | 1.06× | 75.6 / 104.0 | 0.73× |
+| latin | 10.3 / 10.1 | 1.02× | 96.0 / 121.2 | 0.79× |
+| cjk | 18.6 / 40.9 | 0.45× | 104.9 / 118.8 | 0.88× |
+| paths | 19.4 / 29.4 | 0.66× | 184.3 / 366.0 | 0.50× |
+| thai | 163.2 / 172.1 | 0.95× | 152.5 / 154.1 | 0.99× |
 
 Eight of the ten rows are at or below ICU C. **The user's focus: the rows
-that are still behind** — compare ascii (1.13×) and latin (1.09×). Thai
+that are still behind** — compare ascii (1.06×) and latin (1.02×), down
+from 1.13× / 1.09× (§51 (ae), (af)); our count there is at ICU's level, and
+§51 (ag) showed that time no longer follows the count. Thai
 compare with options is done (§51 (z), −10..−11% in the matrix). The
 `-no-WMO` cost of (z) on the ascii / latin / paths options rows (+5..+8% in
 the 2026-10-23 matrix) is fixed in §51 (ac) (2026-10-27): the (z) work runs
@@ -377,10 +379,9 @@ the control. Report after it — about 30–45 minutes.
    The instruction trace against ICU: +20 per compare (195 against 175).
    **P1 + P2c shipped** (§51 (ae), (af)): a first-byte test before the
    prefix scan, an 8-word call into `compareUTF8`, the scan in its own
-   function. Count 195 → 174 (ICU 175); one interleaved session: ascii
-   10.5 → 9.9 ns (1.13× → 1.06×), latin 11.0 → 10.3 (1.09× → 1.02×), cjk
-   0.46×; paths 18.5 → 20.0 (0.63× → 0.68×, accepted by the user). Not yet
-   in a recorded matrix. **P3 / P3b (the `i == 0` path on its own) REJECTED**
+   function. Count 195 → 174 (ICU 175). **Recorded matrix 2026-10-28:**
+   ascii 9.9 ns (1.06×), latin 10.3 (1.02×), cjk 0.45×; paths 19.4 (0.66×,
+   accepted by the user). **P3 / P3b (the `i == 0` path on its own) REJECTED**
    (§51 (ag)): fewer instructions (161) but default compare ascii / latin
    +12% — below ICU's count, time no longer follows the count. The user's rule:
    no ascii / latin loss in WMO or `-no-WMO`. **Public API changes (a
