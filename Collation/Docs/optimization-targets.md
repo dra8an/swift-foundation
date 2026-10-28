@@ -4677,3 +4677,29 @@ inline the spills move into the loop (P2, +46). **Kept** (user decision,
 `compareUTF8` signature). Not yet in a recorded matrix. Still open from the
 (ad) trace: P3, the `i == 0` eligibility check (21 instructions against
 ICU's 10).
+
+#### (ag) P3: the `i == 0` path on its own — REJECTED
+
+**Where** (the P2c trace of a typical ascii pair, 174 instructions against
+ICU's 175): between the prefix scan and the `compareUTF8` call, the
+eligibility test took 16 instructions against ICU's 10; about 6 were
+moves of `i` and `mismatch` between the first-byte path and the
+shared-prefix path, where both paths meet.
+
+| variant | ascii | latin | cjk | paths | time (EngineBench, against P2c `cdac770a`, 5 rounds, plain / aligned) |
+|---|---:|---:|---:|---:|---|
+| P2c (HEAD) | 174 | 174 / 186 | 291.4 | 305.8 | — |
+| P3: an early `if i == 0` path (eligibility on byte 0, `mismatch = 0`, its own `compareUTF8` call) | 162 | 162 / 174 | 291.2 | **356.8** | not timed (paths: the spills of (af) P2 again) |
+| P3b: P3 + the whole shared-prefix part (scan, binary-equal test, backup, restart safety, eligibility) in one `@inline(never)` `sharedPrefixRestart` returning `(restart, mismatch)` | 160–162 | 160–162 / 172–174 | 298.2 | 324.8 | **ascii 9.9 → 11.1 (+12%), latin 10.3 → 11.5 (+12%), cjk +13..+16%** (5/5 both builds); paths, thai flat |
+
+P3b executes fewer instructions on ascii and latin than P2c and still runs
+12% slower, in the aligned builds too. Its traced ascii path to the core is
+short and has no extra stack traffic or call, and the core is unchanged
+(74). So the cost is in how the core runs the new code layout (branch
+prediction or the alignment of branch targets inside `compare`; aligned
+builds align only function starts) — not visible with counts or traces.
+WMO Foundation A/B (load 10–18): the options rows −2..−5% (5/5), but
+`localizedCompare` and `compare(_:locale:)` ascii / latin +4..+9% (5/5).
+Not shipped. Lesson: below ICU's count, the entry's time no longer follows
+its instruction count; the next gains need a measurement of branch and
+fetch behavior (for example hardware counters), not only counts.

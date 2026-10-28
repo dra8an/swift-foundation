@@ -380,8 +380,9 @@ the control. Report after it — about 30–45 minutes.
    function. Count 195 → 174 (ICU 175); one interleaved session: ascii
    10.5 → 9.9 ns (1.13× → 1.06×), latin 11.0 → 10.3 (1.09× → 1.02×), cjk
    0.46×; paths 18.5 → 20.0 (0.63× → 0.68×, accepted by the user). Not yet
-   in a recorded matrix. Next from the same trace: **P3** (the `i == 0`
-   eligibility check, 21 instructions against ICU's 10). The user's rule:
+   in a recorded matrix. **P3 / P3b (the `i == 0` path on its own) REJECTED**
+   (§51 (ag)): fewer instructions (161) but default compare ascii / latin
+   +12% — below ICU's count, time no longer follows the count. The user's rule:
    no ascii / latin loss in WMO or `-no-WMO`. **Public API changes (a
    non-throwing `compare`, Substring / UTF-8 entries) are a non-starter
    (user decision, 2026-10-27)** — do not propose them.
