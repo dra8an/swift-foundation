@@ -4573,5 +4573,107 @@ options guard, and Swift's checked arithmetic, which the compiler's byte
 loads depend on. Docs/27 measured the time side of the same thing (~1 ns
 of each gap). The two levers left — a non-throwing `compare`, entries for
 UTF-8 buffers — change the public API: **not an option** (user decision,
-2026-10-27). compare ascii 1.13× and latin 1.09× stay as they are unless a
-new idea comes up behind the existing API.
+2026-10-27). **Correction (same day): "no lever behind the API" was wrong —
+a second look at the same trace found the prefix scan (P1, (ae)), which
+moved both rows.**
+
+#### (ae) P1: one byte compare before the prefix scan (compare ascii / latin)
+
+**Where** (the (ad) trace, again): when two strings differ in their first
+byte, `fastLatinUTF8`'s prefix scan still set up the word scan (an
+unaligned 8-byte compare, `rbit` + `clz`, two `csel`) and then confirmed
+with the byte loop: ~19 instructions, where ICU's doCompare needs 4 (one
+byte compare). The first byte differs for ~96% of the ascii pairs and ~99%
+of the latin pairs (§50 (g)); paths pairs always share a prefix.
+
+**Change.** The word scan and the byte loop run only when the first bytes
+are equal (`if minLength != 0, lBytes[0] == rBytes[0] { … }`); otherwise
+`i` stays 0 — the result the scan gave anyway.
+
+**Counts** (EngineBench `-g`, pairs 1–10; HEAD → P1): ascii 195 → 188 on
+the typical pairs, latin 195 / 207 → 188 / 200, cjk 311.8 → 306.4, paths
+305.2 → 308.2 (+3, the extra test). The ascii pair with a 1-byte shared
+prefix got 295 → 325: around the two out-of-line `scalarAt` calls of the
+restart-safety check, the compiler now saves and restores ~10 values (4%
+of the ascii pairs, 1% of the latin pairs). sortKey executes exactly the
+same instructions, call for call (ascii 1254.2, latin 1322.8).
+
+**A/B against `2acd580f`** (5 interleaved rounds each, 2026-10-27/28, load
+12–29):
+
+| rows | ascii | latin | cjk | paths | thai |
+|---|---|---|---|---|---|
+| EngineBench compare, plain (min) | 10.5 → **10.2** (mean −1.7%) | 11.0 → **10.7** (−3.3%, 5/5) | −2.2% | −0.3% | +0.6% |
+| EngineBench compare, aligned | −2.3% | −2.4% | −0.8% | −1.6% (5/5) | +0.5% |
+| EngineBench sortKey, plain / aligned | +1.3 / +1.9% | +1.3 / +1.2% | +1.2 / +1.5% | +0.3 / +0.4% | +2.1 / −0.7% |
+| WMO Foundation: `localizedStandardCompare`, `localizedCaseInsensitiveCompare` | −3.1..−5.6% (5/5) | −4.5..−5.0% (5/5) | −3.7..−3.9% | −0.3..+0.7% | −0.7..−0.8% |
+| WMO Foundation: `localizedCompare`, `compare(_:locale:)` | −2.1%, −0.8% | 0, +0.8% | ±0.4% | ±1.2% | −0.5..−1.5% |
+| `-no-WMO` Foundation, options rows | −2.6..−5.6% (5/5) | −2.6..−5.2% (5/5) | −3.5..−4.9% | −1.2..+2.3% | 0..+1% |
+| `-no-WMO`: `localizedCompare`, `compare(_:locale:)` (two binary pairs) | +5.2 / −3.1%, +1.4 / +0.9% | +0.7 / −5.1%, +0.6 / −1.4% | ±2% | ±3% | ±1% |
+
+The sortKey rows execute the same instructions, so their +1..+2% is a
+layout effect inside the code (as in (w) CE3b). The `-no-WMO` default rows
+changed sign between two binary pairs that differ only in a probe row of
+`main.swift`; a count of one `localizedCompare` call there gives 749 → 738
+instructions (−11, all in `RootCollator.compare`): layout, not work.
+
+**Kept**, with P2c on top ((af)). Suite 1557/134.
+
+#### (af) P2c: an 8-word call into `compareUTF8`, and the prefix scan as its own function
+
+**Where.** `compareUTF8` took 11 machine words of arguments (the table and
+the primaries as buffers, the options, each string as buffer + start); arm64
+passes 8 in registers, so 3 went through the stack. ICU passes 7, all in
+registers.
+
+**Variants** (instructions; ascii typical pair / latin / cjk mean / paths
+mean; HEAD 195 / 195–207 / 311.8 / 305.2, P1 188 / 188–200 / 306.4 /
+308.2):
+
+| variant | ascii | latin | cjk | paths |
+|---|---:|---:|---:|---:|
+| P2: 8 words (primaries as a pointer; each string as a buffer that starts at the restart) | 183 | 183–195 | 300.6 | **354.8** |
+| P2b: 9 words (primaries as a pointer, one shared `start`) | 192 | 192–204 | 309.4 | 310.2 |
+| **P2c: P2 + the word / byte scan in `sharedPrefixLength` (`@inline(never)`)** | **174** | **174–186** | **291.4** | **305.8** |
+
+P2 lost on paths because the register allocation of the whole `compare`
+changed: 23 more stack accesses, 9 of them reloads inside the scan loop,
+which runs over the long shared prefix of every paths pair. With the scan in
+its own function, the loop has its own registers. After P1 only pairs whose
+first bytes are equal call it (ascii 4%, latin 1%, paths 100%). P2c's ascii
+count (174) equals ICU's (175).
+
+**One session, all interleaved** (`.build/item3/fourway.py`, 5 rounds, min
+ns per compare, 2026-10-28, load 55 → 42; ICU C as in the recorded gates):
+
+| corpus | ICU C | HEAD | P1 | P2c | ratio HEAD / P1 / P2c |
+|---|---:|---:|---:|---:|---|
+| ascii | 9.3 | 10.5 | 10.2 | **9.9** | 1.13× / 1.10× / **1.06×** |
+| latin | 10.1 | 11.0 | 11.0 | **10.3** | 1.09× / 1.09× / **1.02×** |
+| cjk | 40.8 | 20.3 | 19.8 | 18.7 | 0.50× / 0.49× / 0.46× |
+| paths | 29.5 | 18.5 | 18.3 | **20.0** | 0.63× / 0.62× / **0.68×** |
+| thai | 174.5 | 164.9 | 165.7 | 165.9 | 0.94× / 0.95× / 0.95× |
+
+EngineBench A/B against HEAD (5 rounds, load 37–65; plain / aligned):
+compare ascii −5.4% / −4.8% (min), latin −6.9% / −6.0%, cjk −8.7% / −7.8%,
+paths **+4.2% / +6.7%** (5/5), thai +0.6% / +0.3%; sortKey +0.2..+1.8%
+(unchanged code, layout). Foundation `-no-WMO`: the options rows ascii /
+latin −3.8..−6.2% (5/5), `localizedCompare` ascii +2.7% / latin −1.1%,
+`compare(_:locale:)` ascii −1.4% / latin +1.1% (both mixed signs; (ae)
+showed these two rows follow the binary layout). Foundation WMO (load
+55–65): options rows ascii / latin −0..−3%, paths +2..+7% (5/5).
+
+**Why paths pays ~1.5 ns although its count did not change** (a trace of
+one paths pair, HEAD 301 against P2c 302 instructions; stack accesses 48
+against 43): the scan loops are identical instruction for instruction; P2c
+stores 5 values to the stack before the call to `sharedPrefixLength` and
+loads them back right after its `ret`. The scan result decides everything
+after it, so those reloads (store-to-load forwarding) and the call and
+return sit on the critical path — ~5 cycles. Every paths pair takes it;
+ascii and latin almost never (the first-byte test of (ae)). With the scan
+inline the spills move into the loop (P2, +46). **Kept** (user decision,
+2026-10-28: "the small path regression is worth it"): ascii ~1.06×, latin
+~1.02× of ICU C, paths ~0.68×. Suite 1557/134 (FastLatinTests calls the new
+`compareUTF8` signature). Not yet in a recorded matrix. Still open from the
+(ad) trace: P3, the `i == 0` eligibility check (21 instructions against
+ICU's 10).

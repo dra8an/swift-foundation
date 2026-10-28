@@ -373,11 +373,16 @@ the control. Report after it — about 30–45 minutes.
    with both build modes.
 2. **Record a matrix: DONE 2026-10-23** (Docs/21, run B at `91237c5a`;
    §51 (ab) has the line). It found the `-no-WMO` cost of (z) above.
-3. **compare ascii (1.13×) / latin (1.09×): DONE 2026-10-27 (§51 (ad)),
-   no change shipped.** The instruction trace against ICU: +20 per compare
-   (195 against 175), all of it the call shape (two `String` arguments, the
-   options guard, checked arithmetic). Every variant behind the API was
-   worse or lost ascii / latin in one build mode. **Public API changes (a
+3. **compare ascii (1.13×) / latin (1.09×) — IN PROGRESS (§51 (ad), (ae)).**
+   The instruction trace against ICU: +20 per compare (195 against 175).
+   **P1 + P2c shipped** (§51 (ae), (af)): a first-byte test before the
+   prefix scan, an 8-word call into `compareUTF8`, the scan in its own
+   function. Count 195 → 174 (ICU 175); one interleaved session: ascii
+   10.5 → 9.9 ns (1.13× → 1.06×), latin 11.0 → 10.3 (1.09× → 1.02×), cjk
+   0.46×; paths 18.5 → 20.0 (0.63× → 0.68×, accepted by the user). Not yet
+   in a recorded matrix. Next from the same trace: **P3** (the `i == 0`
+   eligibility check, 21 instructions against ICU's 10). The user's rule:
+   no ascii / latin loss in WMO or `-no-WMO`. **Public API changes (a
    non-throwing `compare`, Substring / UTF-8 entries) are a non-starter
    (user decision, 2026-10-27)** — do not propose them.
 4. CE production for precomposed Latin letters (NFD decomposition, ~119

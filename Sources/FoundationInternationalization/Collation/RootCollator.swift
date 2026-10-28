@@ -963,18 +963,11 @@ public struct RootCollator: @unchecked Sendable {
         return FastLatinSetup(word: word, packedOptions: packed, primaries: entry.primaries)
     }
 
-    /// The byte fast path: identical-prefix scan on raw UTF-8, safety check, then CollationFastLatin.compareUTF8 from the restart offset. Returns -1/0/1, or bailOutResult when the regular path must run. Static with trivial parameters: it runs inside the contiguous-storage closures. (RuleBasedCollator::doCompare, UTF-8 variant.)
-    private static func fastLatinUTF8(
-        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
-        table: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>,
-        options packedOptions: Int32,
-        numeric: Bool, safety: UnsafePointer<RestartSafety>,
-        mismatch: inout Int
-    ) -> Int32 {
-        // Identical-prefix scan on bytes: 8 at a time through unaligned UInt64 loads (XOR, then a zero count from the low or high end depending on byte order, finds the first differing byte), byte-wise tail. Long shared prefixes (paths, thai) scan at word speed; a first-byte difference costs the same one comparison as the byte loop did.
-        let lLength = lBytes.count
-        let rLength = rBytes.count
-        let minLength = min(lLength, rLength)
+    /// The length of the identical prefix of two UTF-8 buffers whose first bytes are equal, up to `minLength`: 8 bytes at a time, then byte-wise. Out of line on purpose: inlined into `compare`, the loop's pointers and counters raised the register pressure of the whole entry, and the call arguments of `compareUTF8` went to the stack (technique log §51 (af)). After the first-byte test (§51 (ae)) only pairs with a shared prefix call it.
+    @inline(never)
+    private static func sharedPrefixLength(
+        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>, _ minLength: Int
+    ) -> Int {
         var i = 0
         if minLength >= 8, let lBase = lBytes.baseAddress, let rBase = rBytes.baseAddress {
             let lRaw = UnsafeRawPointer(lBase)
@@ -996,6 +989,26 @@ public struct RootCollator: @unchecked Sendable {
             }
         }
         while i < minLength, lBytes[i] == rBytes[i] { i += 1 }
+        return i
+    }
+
+    /// The byte fast path: identical-prefix scan on raw UTF-8, safety check, then CollationFastLatin.compareUTF8 from the restart offset. Returns -1/0/1, or bailOutResult when the regular path must run. Static with trivial parameters: it runs inside the contiguous-storage closures. (RuleBasedCollator::doCompare, UTF-8 variant.)
+    private static func fastLatinUTF8(
+        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
+        table: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>,
+        options packedOptions: Int32,
+        numeric: Bool, safety: UnsafePointer<RestartSafety>,
+        mismatch: inout Int
+    ) -> Int32 {
+        // Identical-prefix scan on bytes: 8 at a time through unaligned UInt64 loads (XOR, then a zero count from the low or high end depending on byte order, finds the first differing byte), byte-wise tail. Long shared prefixes (paths, thai) scan at word speed; a first-byte difference costs the same one comparison as the byte loop did.
+        let lLength = lBytes.count
+        let rLength = rBytes.count
+        let minLength = min(lLength, rLength)
+        var i = 0
+        // Most adjacent pairs of words differ in their first byte (ascii 96%, latin 99% in the bench corpora): one byte compare settles the prefix, as in ICU's doCompare, without the word scan's setup (~15 instructions; technique log §51 (ae)).
+        if minLength != 0, lBytes[0] == rBytes[0] {
+            i = sharedPrefixLength(lBytes, rBytes, minLength)
+        }
         if i == lLength && i == rLength { return 0 }  // binary equal
         // The restart offset for the caller's quick-CJK dispatch: valid whenever restarting at `i` is not known to be unsafe (-1 otherwise). Back up to the start of a partially-equal code point (trail bytes are 0x80..0xBF).
         if i > 0,
@@ -1025,8 +1038,9 @@ public struct RootCollator: @unchecked Sendable {
         else { return CollationFastLatin.bailOutResult }
 
         return CollationFastLatin.compareUTF8(
-            table: table, primaries: primaries, options: packedOptions,
-            left: lBytes, leftStart: i, right: rBytes, rightStart: i)
+            table: table, primaries: primaries.baseAddress.unsafelyUnwrapped, options: packedOptions,
+            left: UnsafeBufferPointer(start: lBytes.baseAddress.map { $0 + i }, count: lLength &- i),
+            right: UnsafeBufferPointer(start: rBytes.baseAddress.map { $0 + i }, count: rLength &- i))
     }
 
     /// scalarAt, force-inlined, for restartScalarCount's out-of-line body (scalarAt itself stays out of line: the hot fast path calls it).

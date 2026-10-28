@@ -510,11 +510,14 @@ enum CollationFastLatin {
     }
 
     /// Compares two well-formed UTF-8 byte streams on the mini-CE table. Returns -1/0/1, or bailOutResult if the regular comparison must be used. The byte variant reads characters as raw bytes — ASCII is one load, U+0080..U+017F assemble from a 0xC2..0xC5 lead + trail — which is what makes this the fastest path. (CollationFastLatin::compareUTF8; kept in sync with compare() above, like ICU keeps compareUTF16 and compareUTF8 in sync.)
+    ///
+    /// The strings start at the caller's restart offset (the bytes before it are equal). Eight machine words of arguments, all in registers on arm64: with `primaries` as a buffer and a separate start for each string it was eleven, three of them passed through the stack (technique log §51 (af)).
     static func compareUTF8(
-        table fullTable: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>, options optionsIn: Int32,
-        left: UnsafeBufferPointer<UInt8>, leftStart: Int,
-        right: UnsafeBufferPointer<UInt8>, rightStart: Int
+        table fullTable: UnsafeBufferPointer<UInt16>, primaries: UnsafePointer<UInt16>, options optionsIn: Int32,
+        left: UnsafeBufferPointer<UInt8>, right: UnsafeBufferPointer<UInt8>
     ) -> Int32 {
+        let leftStart = 0
+        let rightStart = 0
         assert((fullTable[0] >> 8) == version)
         let table = UnsafeBufferPointer(rebasing: fullTable[Int(fullTable[0] & 0xff)...])
         let variableTop = UInt32(bitPattern: optionsIn) >> 16  // see getOptions()

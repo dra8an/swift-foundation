@@ -126,8 +126,8 @@ import Testing
             bb.withUTF8 { rBytes in
                 primaries.withUnsafeBufferPointer { pBuf in
                     CollationFastLatin.compareUTF8(
-                        table: table, primaries: pBuf, options: packed,
-                        left: lBytes, leftStart: 0, right: rBytes, rightStart: 0)
+                        table: table, primaries: pBuf.baseAddress!, options: packed,
+                        left: lBytes, right: rBytes)
                 }
             }
         }
