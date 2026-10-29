@@ -375,15 +375,21 @@ the control. Report after it — about 30–45 minutes.
    with both build modes.
 2. **Record a matrix: DONE 2026-10-23** (Docs/21, run B at `91237c5a`;
    §51 (ab) has the line). It found the `-no-WMO` cost of (z) above.
-3. **compare ascii (1.13×) / latin (1.09×) — IN PROGRESS (§51 (ad), (ae)).**
+3. **compare ascii / latin — from 1.13× / 1.09× to ≈1.00× / 0.96× (§51 (ad)–(ah)).**
    The instruction trace against ICU: +20 per compare (195 against 175).
    **P1 + P2c shipped** (§51 (ae), (af)): a first-byte test before the
    prefix scan, an 8-word call into `compareUTF8`, the scan in its own
    function. Count 195 → 174 (ICU 175). **Recorded matrix 2026-10-28:**
    ascii 9.9 ns (1.06×), latin 10.3 (1.02×), cjk 0.45×; paths 19.4 (0.66×,
-   accepted by the user). **P3 / P3b (the `i == 0` path on its own) REJECTED**
-   (§51 (ag)): fewer instructions (161) but default compare ascii / latin
-   +12% — below ICU's count, time no longer follows the count. The user's rule:
+   accepted by the user). P3 / P3b (the `i == 0` path on its own) lost +12%
+   (§51 (ag)); **CPU Counters found the cause** — a branch on the result's
+   sign, 13% of the cycles mispredicted — and **P3c** (a branch-free Order
+   conversion) ships: count 158, EngineBench ascii 9.9 → 9.3 ns (≈ ICU C's
+   9.3), latin 10.3 → 9.7 (below ICU C's 10.1), cjk 18.5 → 19.3, paths
+   19.5 → 18.8 (§51 (ah); A/B, not yet in a matrix). **CPU Counters is now a
+   tool of this project:** `xctrace record --template 'CPU Counters'`,
+   shares exported with `.build/counters/shares.py` (order: useful,
+   processing, delivery, discarded). The user's rule:
    no ascii / latin loss in WMO or `-no-WMO`. **Public API changes (a
    non-throwing `compare`, Substring / UTF-8 entries) are a non-starter
    (user decision, 2026-10-27)** — do not propose them.

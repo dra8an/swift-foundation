@@ -4709,3 +4709,68 @@ WMO Foundation A/B (load 10–18): the options rows −2..−5% (5/5), but
 Not shipped. Lesson: below ICU's count, the entry's time no longer follows
 its instruction count; the next gains need a measurement of branch and
 fetch behavior (for example hardware counters), not only counts.
+
+#### (ah) CPU Counters: why P3b lost — and P3c, ascii compare at ICU C's speed
+
+**The tool.** `xcrun xctrace record --template 'CPU Counters' --launch -- …`
+works on this machine (Apple M1 Max; Processor Trace needs an M4-class
+chip). Its default mode splits the cycles of the process into four shares
+per millisecond; `xctrace export` of the `CounterMetricAggregatedForProcess`
+table gives them as text (`.build/counters/shares.py` sums a time window).
+The order of the four values, fixed with control loops
+(`.build/counters/control.c`, `fetch.c`):
+
+| position | share | control that fills it |
+|---|---|---|
+| 0 | useful | predictable arithmetic (51%) |
+| 1 | instruction processing (back end) | pointer chasing through 64 MB (99.6%) |
+| 2 | instruction delivery (front end) | a 2.3 MB straight-line function (74%) |
+| 3 | discarded (wrong-path work) | random branches (34%, plus 59% delivery for the refills) |
+
+**P3b, measured** (EngineBench compare phase, 300,000 repetitions, 3.5 s of
+1-ms samples): HEAD ascii useful 91.0 / processing 0.1 / delivery 8.8 /
+**discarded 0.0%**; P3b 76.1 / 0.3 / 10.5 / **13.1%**; latin HEAD 86.7 /
+0.1 / 10.9 / 2.2%, P3b 73.4 / 0.0 / 10.8 / 15.7%. The trace showed the
+branch: the conversion `fast < 0 ? .ascending : fast == 0 ? .same :
+.descending` at the end of compareFastPath, a branch-free `cinc` + `csel` in
+HEAD, became `tbz w9, #31` in P3b — a branch on the sign of the result,
+which is random for adjacent pairs.
+
+**P3c = P3b + `RootCollator.order(fromFastResult:)`**: `Order` is a simple
+enum (tags 0, 1, 2 in declaration order), so the Order is
+`unsafeBitCast(UInt8(r &+ 1))` — one `add`; used at both fast-path
+conversions. `FastResultOrderTests` checks the mapping and the size.
+
+| | ascii | latin | cjk | paths |
+|---|---:|---:|---:|---:|
+| count, HEAD (P2c) → P3c | 174 → **158** | 174 / 186 → **158 / 170** | 291.4 → 294.8 | 305.8 → 318.8 |
+| CPU Counters, P3c (useful / processing / delivery / discarded) | 90.4 / 0.1 / 9.4 / **0.0** | 86.0 / 0.1 / 10.8 / 3.1 | | |
+
+**A/B against HEAD `cdac770a`** (5 interleaved rounds, 2026-10-28, load
+12–27; plain and aligned builds agree):
+
+| rows | ascii | latin | cjk | paths | thai |
+|---|---|---|---|---|---|
+| EngineBench compare (min ns) | 9.9 → **9.3** (−5.5%, 5/5) | 10.3 → **9.7** (−5.2..−6.2%, 5/5) | 18.5 → 19.3 (+4.1..+4.9%, 5/5) | 19.5 → 18.8 (−3.0..−4.1%, 5/5) | ±0.5% |
+| EngineBench sortKey, plain / aligned | −0.8 / +0.6% | −0.7 / +1.4% | −1.1 / 0.0% | −4.5 / +0.6% | −0.9 / −0.5% |
+| WMO Foundation: `localizedStandardCompare`, `localizedCaseInsensitiveCompare`, options compare | −8.7..−10.3% (5/5) | −8.2..−10.0% (5/5) | −2.4..+1.3% | −1.8..−4.0% | −0.4..−2.8% |
+| WMO: `localizedCompare`, `compare(_:locale:)` | +4.3% (5/5), −4.7% | +0.5%, +0.4% | +9.8%, +2.8% | −4.4%, −1.7% | −1.3%, −0.4% |
+| `-no-WMO`: options rows | −1.3..−2.9% | −0.9..−2.2% | −0.2..−1.9% | −0.5..−3.1% | ±1.6% |
+| `-no-WMO`: `localizedCompare`, `compare(_:locale:)` | −1.2%, +1.2% | −1.5%, −0.3% | +2.2%, −1.9% | ±0.3% | −1.1%, −0.3% |
+
+The sortKey rows execute the same instructions in both builds, call for
+call (ascii 1254.2, latin 1322.8, paths 2465.8): layout. The WMO
+`localizedCompare` ascii +4.3% (5/5) was checked: one call executes 532 →
+516 instructions (−16, all in `RootCollator.compare`), and CPU Counters on
+a long probe phase give HEAD 66.3 / 0.4 / 33.3 / 0.0% against P3c 67.4 /
+0.2 / 32.4 / 0.0% — fewer instructions, no mispredictions: layout or the
+load (78–117 during the check). Side finding: the `localizedCompare`
+wrapper spends ~33% of its cycles on instruction delivery (the engine
+compare ~9%).
+
+**Kept** (pending the user's commit): Table 1 compare ascii ~1.00×, latin
+~0.96× of ICU C (A/B against the recorded ICU column 9.3 / 10.1; not yet
+in a matrix); cjk ~0.47×, paths ~0.64×. Suite 1558/135; the four ladder
+tools build. Lesson: at ICU's instruction count, check CPU Counters before
+trusting a count — a single data-dependent branch cost more than 16
+instructions saved.

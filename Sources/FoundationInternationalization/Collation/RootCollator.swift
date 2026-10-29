@@ -278,6 +278,13 @@ public struct RootCollator: @unchecked Sendable {
         return try compareSlowPath(left, right, options: options, restart: restart)
     }
 
+    /// The Order of a fast-path result (-1, 0 or 1), without a branch. `Order` is a simple enum, so its cases are stored as the tags 0, 1 and 2 in declaration order (ascending, same, descending): the tag is the result plus 1. Written as `fast < 0 ? .ascending : fast == 0 ? .same : .descending`, the compiler sometimes made it a branch on the result's sign — random for adjacent pairs, so it mispredicted on about every second compare (13% of the cycles in CPU Counters; technique log §51 (ah)). `FastResultOrderTests` checks the mapping.
+    @inline(__always)
+    static func order(fromFastResult r: Int32) -> Order {
+        assert(r >= -1 && r <= 1, "not a fast-path result")
+        return unsafeBitCast(UInt8(truncatingIfNeeded: r &+ 1), to: Order.self)
+    }
+
     /// The bytes of `options`, padded with a zero byte to 64 bits. Two option values are equal exactly when their patterns are equal: all seven fields are one byte (enum tags and Bools, which the compiler keeps canonical), so the 7-byte struct has no padding. A field-by-field `==` compiled to 13 more instructions than the options word, because the compiler rebuilt the stored value byte by byte. `CollationOptionsBitsTests` checks the claim over all 960 option combinations.
     @inline(__always)
     static func bits(of options: CollationOptions) -> UInt64 {
@@ -332,7 +339,7 @@ public struct RootCollator: @unchecked Sendable {
             } ?? CollationFastLatin.bailOutResult
         } ?? CollationFastLatin.bailOutResult
         if fast != CollationFastLatin.bailOutResult {
-            return fast < 0 ? .ascending : fast == 0 ? .same : .descending
+            return Self.order(fromFastResult: fast)
         }
         restart = restartScalars
         return nil
@@ -460,7 +467,7 @@ public struct RootCollator: @unchecked Sendable {
                     } ?? nil
                     if let fast {
                         if fast != CollationFastLatin.bailOutResult {
-                            return fast < 0 ? .ascending : fast == 0 ? .same : .descending
+                            return Self.order(fromFastResult: fast)
                         }
                         triedFastLatin = true
                         // The restart is placed later, in compareAfterOptionsPass: this pass decides the Latin compares, and any more code here made compareSlowPath too large to inline into `compare` (+76 instructions per ascii options compare in the `-no-WMO` build; technique log §51 (ac)).
@@ -963,8 +970,50 @@ public struct RootCollator: @unchecked Sendable {
         return FastLatinSetup(word: word, packedOptions: packed, primaries: entry.primaries)
     }
 
-    /// The length of the identical prefix of two UTF-8 buffers whose first bytes are equal, up to `minLength`: 8 bytes at a time, then byte-wise. Out of line on purpose: inlined into `compare`, the loop's pointers and counters raised the register pressure of the whole entry, and the call arguments of `compareUTF8` went to the stack (technique log §51 (af)). After the first-byte test (§51 (ae)) only pairs with a shared prefix call it.
+    /// `restart` result of sharedPrefixRestart: the strings are equal byte for byte.
+    static var prefixBinaryEqual: Int { -2 }
+
+    /// fastLatinUTF8 for two strings whose first bytes are equal: the identical-prefix scan, then the restart for the fast-Latin core. Returns `(restart, mismatch)`: `restart` is the byte offset where compareUTF8 starts, -1 to bail out (the caller's regular path must run), or `prefixBinaryEqual`; `mismatch` is the scan's offset for the caller's quick-CJK dispatch and restart count, or -1 when restarting there is known to be unsafe. Out of line on purpose (technique log §51 (ag)).
     @inline(never)
+    private static func sharedPrefixRestart(
+        _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
+        numeric: Bool, safety: UnsafePointer<RestartSafety>
+    ) -> (Int, Int) {
+        let lLength = lBytes.count
+        let rLength = rBytes.count
+        var i = sharedPrefixLength(lBytes, rBytes, min(lLength, rLength))
+        if i == lLength && i == rLength { return (prefixBinaryEqual, -1) }
+        // The restart offset for the caller's quick-CJK dispatch: valid whenever restarting at `i` is not known to be unsafe (-1 otherwise). Back up to the start of a partially-equal code point (trail bytes are 0x80..0xBF).
+        if i > 0,
+           (i != lLength && lBytes[i] & 0xc0 == 0x80) || (i != rLength && rBytes[i] & 0xc0 == 0x80) {
+            repeat { i -= 1 } while i > 0 && lBytes[i] & 0xc0 == 0x80
+        }
+        var mismatch = i
+        if i > 0 {
+            // The safety check below only decides whether to restart at `i` or at 0. If the bytes at `i` are not fast-path eligible AND the bytes at 0 are not either, both restart points bail — skip the isUnsafe binary searches entirely (every all-Thai/CJK compare with a shared prefix lands here).
+            let lEligibleAtI = i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+            let rEligibleAtI = i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+            if !(lEligibleAtI && rEligibleAtI),
+               lBytes[0] > CollationFastLatin.latinMaxUTF8Lead
+                || rBytes[0] > CollationFastLatin.latinMaxUTF8Lead {
+                return (-1, mismatch)
+            }
+            // Restarting at an unsafe scalar is not equivalent to full iteration: compare from the start instead (ICU backs up partially; skipping less is always sound).
+            if (i != lLength && RestartSafety.isUnsafe(safety, scalarAt(lBytes, i), numeric: numeric))
+                || (i != rLength && RestartSafety.isUnsafe(safety, scalarAt(rBytes, i), numeric: numeric)) {
+                i = 0
+                mismatch = -1
+            }
+        }
+        // Both sides must resume with fast-path-eligible lead bytes.
+        guard i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead,
+              i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+        else { return (-1, mismatch) }
+        return (i, mismatch)
+    }
+
+    /// The length of the identical prefix of two UTF-8 buffers whose first bytes are equal, up to `minLength`: 8 bytes at a time, then byte-wise. It runs inside sharedPrefixRestart, which is out of line: inlined into `compare`, the loop's pointers and counters raised the register pressure of the whole entry, and the call arguments of `compareUTF8` went to the stack (technique log §51 (af), (ag)).
+    @inline(__always)
     private static func sharedPrefixLength(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>, _ minLength: Int
     ) -> Int {
@@ -1000,47 +1049,29 @@ public struct RootCollator: @unchecked Sendable {
         numeric: Bool, safety: UnsafePointer<RestartSafety>,
         mismatch: inout Int
     ) -> Int32 {
-        // Identical-prefix scan on bytes: 8 at a time through unaligned UInt64 loads (XOR, then a zero count from the low or high end depending on byte order, finds the first differing byte), byte-wise tail. Long shared prefixes (paths, thai) scan at word speed; a first-byte difference costs the same one comparison as the byte loop did.
+        // The identical-prefix scan (sharedPrefixLength: 8 bytes at a time, then byte-wise) runs only when the first bytes are equal, inside sharedPrefixRestart.
         let lLength = lBytes.count
         let rLength = rBytes.count
-        let minLength = min(lLength, rLength)
-        var i = 0
-        // Most adjacent pairs of words differ in their first byte (ascii 96%, latin 99% in the bench corpora): one byte compare settles the prefix, as in ICU's doCompare, without the word scan's setup (~15 instructions; technique log §51 (ae)).
-        if minLength != 0, lBytes[0] == rBytes[0] {
-            i = sharedPrefixLength(lBytes, rBytes, minLength)
+        // Most adjacent pairs of words differ in their first byte (ascii 96%, latin 99% in the bench corpora): one byte compare settles the prefix, as in ICU's doCompare (technique log §51 (ae)).
+        if lLength != 0, rLength != 0, lBytes[0] == rBytes[0] {
+            // A shared prefix: the scan, the backup and the restart-safety check run out of line, with their own registers. Inline, they raised the register pressure of the whole entry, and every change to the entry moved spills into this path (paths compare +46..+51 instructions; technique log §51 (af), (ag)).
+            let (restart, m) = sharedPrefixRestart(lBytes, rBytes, numeric: numeric, safety: safety)
+            mismatch = m
+            if restart < 0 { return restart == prefixBinaryEqual ? 0 : CollationFastLatin.bailOutResult }
+            return CollationFastLatin.compareUTF8(
+                table: table, primaries: primaries.baseAddress.unsafelyUnwrapped, options: packedOptions,
+                left: UnsafeBufferPointer(start: lBytes.baseAddress.map { $0 + restart }, count: lLength &- restart),
+                right: UnsafeBufferPointer(start: rBytes.baseAddress.map { $0 + restart }, count: rLength &- restart))
         }
-        if i == lLength && i == rLength { return 0 }  // binary equal
-        // The restart offset for the caller's quick-CJK dispatch: valid whenever restarting at `i` is not known to be unsafe (-1 otherwise). Back up to the start of a partially-equal code point (trail bytes are 0x80..0xBF).
-        if i > 0,
-           (i != lLength && lBytes[i] & 0xc0 == 0x80) || (i != rLength && rBytes[i] & 0xc0 == 0x80) {
-            repeat { i -= 1 } while i > 0 && lBytes[i] & 0xc0 == 0x80
-        }
-        mismatch = i
-        if i > 0 {
-            // The safety check below only decides whether to restart at `i` or at 0. If the bytes at `i` are not fast-path eligible AND the bytes at 0 are not either, both restart points bail — skip the isUnsafe binary searches entirely (every all-Thai/CJK compare with a shared prefix lands here).
-            let lEligibleAtI = i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
-            let rEligibleAtI = i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
-            if !(lEligibleAtI && rEligibleAtI),
-               lBytes[0] > CollationFastLatin.latinMaxUTF8Lead
-                || rBytes[0] > CollationFastLatin.latinMaxUTF8Lead {
-                return CollationFastLatin.bailOutResult
-            }
-            // Restarting at an unsafe scalar is not equivalent to full iteration: compare from the start instead (ICU backs up partially; skipping less is always sound).
-            if (i != lLength && RestartSafety.isUnsafe(safety, scalarAt(lBytes, i), numeric: numeric))
-                || (i != rLength && RestartSafety.isUnsafe(safety, scalarAt(rBytes, i), numeric: numeric)) {
-                i = 0
-                mismatch = -1
-            }
-        }
-        // Both sides must resume with fast-path-eligible lead bytes.
-        guard i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead,
-              i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+        if lLength == 0 && rLength == 0 { return 0 }  // binary equal: both empty
+        // The strings differ in their first byte, or one is empty: no shared prefix, so no backup and no restart question. On its own path: merged with the shared-prefix path, the moves of `i` and `mismatch` cost ~6 instructions per compare (technique log §51 (ag)).
+        mismatch = 0
+        guard lLength == 0 || lBytes[0] <= CollationFastLatin.latinMaxUTF8Lead,
+              rLength == 0 || rBytes[0] <= CollationFastLatin.latinMaxUTF8Lead
         else { return CollationFastLatin.bailOutResult }
-
         return CollationFastLatin.compareUTF8(
             table: table, primaries: primaries.baseAddress.unsafelyUnwrapped, options: packedOptions,
-            left: UnsafeBufferPointer(start: lBytes.baseAddress.map { $0 + i }, count: lLength &- i),
-            right: UnsafeBufferPointer(start: rBytes.baseAddress.map { $0 + i }, count: rLength &- i))
+            left: lBytes, right: rBytes)
     }
 
     /// scalarAt, force-inlined, for restartScalarCount's out-of-line body (scalarAt itself stays out of line: the hot fast path calls it).
