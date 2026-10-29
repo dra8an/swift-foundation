@@ -158,12 +158,11 @@ these candidates in this order, with the evidence, and let the user choose:
    and the internal `compareWithDefaultOptions` (no packed options, no
    second guard compare): one `localizedCompare` 436 → 353 instructions
    (WMO), compare rows on ascii / latin −14..−21% WMO, −2..−25% `-no-WMO`,
-   sorts −3..−16%. **OPEN, the agreed next step (user, 2026-10-29):** four
-   `-no-WMO` search cells lost a fixed 3–7 ns (`range(of:locale:)` latin
-   +0.9%, paths +2.9%, thai +1.0%; `localizedStandardContains` paths
-   +1.6%) — probably the extra call layer `RootCollator.search(at:)` → the
-   search in `CollationSearch.swift`; win it back with `624e0fa5`'s
-   successor (the W2c commit) as the A/B base. Still in the call: the
+   sorts −3..−16%. **Closed (§51 (al)):** the four `-no-WMO` search losses
+   of (ak) were code placement — HEAD executes fewer instructions on one
+   `range(of:locale:)` call (latin −24, paths −44, thai −4), and a new A/B
+   gives latin +0.1% (mixed), paths −7.5%; only thai stays ~+1% with the
+   same instruction count. Still in the call: the
    generic `localizedCompare<T>` layer (~75 + 20 for the string retains) and
    `LocaleNotifications.count()`'s own lock (FoundationEssentials,
    non-framework build only). Earlier text of this

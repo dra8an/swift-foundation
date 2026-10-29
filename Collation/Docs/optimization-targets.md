@@ -4982,3 +4982,26 @@ that back with W2c as the base.
 instance method on five locales; interned explicit-locale slots; a stable
 current-locale slot within one generation. Thread Sanitizer on it and
 `CollationConcurrencyTests`: no reports. Suite 1563/136.
+
+#### (al) The `-no-WMO` search losses of (ak): placement, not work — closed
+
+**Count** (one `range(of:options:locale:)` call, a temporary `tmp str range`
+probe row, `-no-WMO -g` BenchFoundation; base `624e0fa5` built in the main
+tree with its four files, HEAD `6dc65a05`; calls after 1000): latin 5383.6 →
+5359.2, paths 1585 → 1541, thai 6670.6 → 6666.9 instructions. HEAD does
+slightly less work on every corpus.
+
+**A/B of the same pair** (search rows only, 5 rounds, load 20 → 16; mean
+change): `range(of:locale:)` ascii −3.2% (5/5), latin +0.1% (++0+−), paths
+**−7.5% (5/5)**, thai +1.4% (5/5); `range(backwards)` −0.3..−5.2% except
+thai +0.4% (mixed); both contains and `localizedStandardRange` −0.2..−4.1%,
+thai within ±0.6%. The latin and paths losses of the (ak) A/B (+0.9%,
++2.9%, contains paths +1.6%) do not repeat with a new binary pair; only
+thai stays about +1% (+5 ns of ~409) with the same instruction count.
+
+**Conclusion.** No systematic search loss: the (ak) cells were code
+placement in that `-no-WMO` build (rows move ±2–5% between `-no-WMO`
+builds of the same code, (ae), (ah)). Not chased: a code change cannot
+steer placement, and a CPU Counters phase long enough for the thai row would
+need far more than 10 thai repetitions. In WMO the same rows are 1.7–6.4%
+faster ((ak)).
