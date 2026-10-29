@@ -1,5 +1,6 @@
 import Dispatch
 import Testing
+import FoundationEssentials
 @testable import FoundationInternationalization
 
 /// Collators are shared across threads: CollatorCache hands the same RootCollator to every thread. These tests run compare, sortKey and search on shared collators from many threads at once — with the threads using different option sets in different orders, so the single-slot fast-Latin cache for non-default options changes under them — and check every answer against one computed on a single thread first. They also create collators concurrently. Run them under Thread Sanitizer too: `swift test --sanitize=thread --filter CollationConcurrencyTests` (technique log §51).
@@ -96,6 +97,37 @@ import Testing
                 return
             }
             if got != expected[k] { failures.slots[it] += 1 }
+        }
+        #expect(failures.total == 0, "\(Array(failures.slots)) failures per thread")
+    }
+
+    /// The explicit-locale slot of CollatorCache is lock-free for readers and switches to another identifier's slot on a miss (technique log §51 (aj)). Threads ask for collators of different locales in different orders, so the published slot changes under them all the time; every compare must still use the collator of its own locale.
+    @Test func explicitLocaleCacheGivesEachLocaleItsOwnCollator() throws {
+        let identifiers = ["en_US", "sv_SE", "de_DE", "fr_CA", "th_TH", "ja_JP", "da_DK", "en_GB"]
+        // Pairs whose order depends on the tailoring: å/ä/ö after z (sv, da), backward secondary (fr_CA), Thai prefix vowels, kana.
+        let pairs: [(String, String)] = [
+            ("\u{E4}r", "zon"), ("\u{E5}r", "\u{E4}r"), ("\u{F6}l", "zon"), ("cot\u{E9}", "c\u{F4}te"),
+            ("c\u{F4}te", "cot\u{E9}"), ("เก", "กา"), ("แก", "เก"), ("カ", "か"), ("aa", "zz"), ("Ab", "ab"),
+        ]
+        func answers(_ id: String) throws -> [RootCollator.Order] {
+            let collator = try #require(CollatorCache.shared.collator(for: Locale(identifier: id)))
+            return try pairs.map { try collator.compare($0.0, $0.1) }
+        }
+        let expected = try identifiers.map { try answers($0) }
+        #expect(Set(expected.map { "\($0)" }).count > 2, "the pairs must tell the tailorings apart")
+
+        let iterations = 64
+        let failures = Counters(iterations)
+        DispatchQueue.concurrentPerform(iterations: iterations) { it in
+            for round in 0..<50 {
+                let k = (round * (it % 2 == 0 ? 1 : identifiers.count - 1) + it) % identifiers.count
+                guard let collator = CollatorCache.shared.collator(for: Locale(identifier: identifiers[k])),
+                      let got = try? pairs.map({ try collator.compare($0.0, $0.1) }) else {
+                    failures.slots[it] += 1
+                    continue
+                }
+                if got != expected[k] { failures.slots[it] += 1 }
+            }
         }
         #expect(failures.total == 0, "\(Array(failures.slots)) failures per thread")
     }

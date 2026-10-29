@@ -11,6 +11,7 @@
 #if canImport(FoundationEssentials)
 import FoundationEssentials
 #endif
+internal import Synchronization
 
 #if FOUNDATION_FRAMEWORK
 internal import _ForSwiftFoundation
@@ -32,23 +33,42 @@ struct CollatorCache: Sendable {
         var collator: RootCollator? = nil
         var generation: Int = 0
     }
-    private let currentCache = LockedState(initialState: CurrentSlot())
-
-    /// One-slot cache for the most recent explicit-locale resolution. Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes under a lock — profiled at ~2/3 of the whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in lock + compare + return.
-    private struct LastLocale {
-        var identifier: String? = nil
-        var collator: RootCollator? = nil
+    /// Readers take NO lock: one acquiring load of the published slot. Writers serialize on `currentWriteLock`, put a new slot in memory and publish it with a releasing store. A published slot is never freed — a reader may still read it — so each locale change keeps one slot (16 bytes); collators are kept for the process anyway. A lock per read cost about 100 instructions of a ~520-instruction `localizedCompare` (technique log §51 (aj)).
+    private final class PublishedSlots: @unchecked Sendable {
+        /// The current-locale slot, a `CurrentSlot`.
+        let current = Atomic<UnsafeRawPointer?>(nil)
+        /// The explicit-locale slot, a `LastLocale`.
+        let lastLocale = Atomic<UnsafeRawPointer?>(nil)
+        /// One `LastLocale` slot per identifier, the memory behind `lastLocale`; also the write lock of that slot.
+        let lastLocaleSlots = LockedState(initialState: [String: UnsafeMutablePointer<LastLocale>]())
     }
-    private let lastLocale = LockedState(initialState: LastLocale())
+    private let published = PublishedSlots()
+    private let currentWriteLock = LockedState(initialState: ())
+
+    /// One-slot cache for the most recent explicit-locale resolution. Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes — profiled at ~2/3 of the whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in one load + compare + return. Lock-free for readers, like the current-locale slot. Callers may switch between locales, so a new slot per miss would grow without limit: each identifier gets ONE slot, kept in `PublishedSlots.lastLocaleSlots` under its lock and published again when it comes back. The memory grows only with the number of distinct identifiers, like the collator dictionary.
+    private struct LastLocale {
+        let identifier: String
+        let collator: RootCollator
+    }
 
     func collatorForCurrentLocale() -> RootCollator? {
         // Generation first, resolution second: if a locale reset lands between the two, the fresh collator is stored under the OLD generation and the next call re-resolves — converging, never stale. The reverse order could pin a stale collator under the new generation.
         let generation = LocaleNotifications.cache.count()
-        return currentCache.withLock { slot in
-            if slot.generation == generation, let c = slot.collator { return c }
+        if let raw = published.current.load(ordering: .acquiring) {
+            let slot = raw.assumingMemoryBound(to: CurrentSlot.self)
+            if slot.pointee.generation == generation, let c = slot.pointee.collator { return c }
+        }
+        return currentWriteLock.withLock { _ in
+            // Another thread may have published this generation since this one missed.
+            if let raw = published.current.load(ordering: .acquiring) {
+                let slot = raw.assumingMemoryBound(to: CurrentSlot.self)
+                if slot.pointee.generation == generation, let c = slot.pointee.collator { return c }
+            }
             let lang = Self.resolveLanguage(for: Locale.current)
             let c = collator(forLanguage: lang)
-            slot = CurrentSlot(collator: c, generation: generation)
+            let slot = UnsafeMutablePointer<CurrentSlot>.allocate(capacity: 1)
+            slot.initialize(to: CurrentSlot(collator: c, generation: generation))
+            published.current.store(UnsafeRawPointer(slot), ordering: .releasing)
             return c
         }
     }
@@ -56,15 +76,22 @@ struct CollatorCache: Sendable {
     func collator(for locale: Locale?) -> RootCollator? {
         guard let locale else { return collator(forLanguage: nil) }
         let id = locale.identifier
-        if let hit = lastLocale.withLock({ slot in
-            slot.identifier == id ? slot.collator : RootCollator?.none
-        }) {
-            return hit
+        if let raw = published.lastLocale.load(ordering: .acquiring) {
+            let slot = raw.assumingMemoryBound(to: LastLocale.self)
+            if slot.pointee.identifier == id { return slot.pointee.collator }
         }
         let resolved = collator(forLanguage: Self.resolveLanguage(for: locale))
         if let resolved {
-            lastLocale.withLock { slot in
-                slot = LastLocale(identifier: id, collator: resolved)
+            published.lastLocaleSlots.withLock { slots in
+                let slot: UnsafeMutablePointer<LastLocale>
+                if let existing = slots[id] {
+                    slot = existing
+                } else {
+                    slot = .allocate(capacity: 1)
+                    slot.initialize(to: LastLocale(identifier: id, collator: resolved))
+                    slots[id] = slot
+                }
+                published.lastLocale.store(UnsafeRawPointer(slot), ordering: .releasing)
             }
         }
         return resolved

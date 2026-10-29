@@ -4786,3 +4786,124 @@ ICU C**. From here on Docs/21 and START HERE show Table 1 as a speedup (ICU
 floor 1.71×; every cell within −2..+3% of 2026-10-28 except
 `localizedCompare` ascii 47 → 51 (see Docs/21). At the start of the round
 (2026-10-16): compare 0.63–1.62×, sortKey 1.03–1.50×.
+
+#### (ai) Latin compare, the last mispredictions: a branch-free Latin decode — REJECTED
+
+From here on, Table 1 values are speedups (ICU C / ours, above 1 = ours
+faster), as in START HERE.
+
+**CPU Counters, compare phase** (EngineBench and `bench_icu`, 300,000
+repetitions, 1.0–4.5 s of 1-ms samples, 2026-10-29, load 8; useful / back end
+/ front end / discarded):
+
+| | ascii | latin |
+|---|---|---|
+| ours (HEAD `2185a906`) | 90.6 / 0.1 / 9.3 / 0.0% | 85.7 / 0.2 / 10.9 / **3.1%** |
+| ICU C | 86.3 / 0.0 / 13.1 / 0.6% | 79.2 / 0.1 / 13.8 / **6.9%** |
+
+ICU C has twice our mispredictions on latin: the cause is in the data, not in
+the port.
+
+**The branch** (a new lldb tool, `.build/counters/l1/branch_prof.py`: the
+taken / not-taken count of every conditional branch over one pass of 199
+latin compares). Only the ASCII test `c <= 0x7f` of `compareUTF8`'s primary
+loop goes both ways: on each side 32 of 203 lead bytes are two-byte letters
+(15.5% of the latin words start with one; 28% of the adjacent pairs have one
+ASCII and one non-ASCII first character). The other 50 branches have 4 or
+fewer in their minority direction. ICU's core has the same test. Estimated
+cost on latin: ~0.4 ns (3.1% discarded and ~1.6% more front-end stall than
+ascii).
+
+**Variants.** The input is well-formed UTF-8 (String bytes, restarts at
+scalar starts), so a lead byte up to 0xC5 is ASCII or 0xC2–0xC5 with a trail
+byte. Then ASCII and two-byte Latin share one index without a branch on the
+lead byte: `c`, or `((c − 0xC2) << 6) + trail`, the trail read at `i − 1 +
+(c >> 7)`. Primary loop only. V1: a mask select (compiled to and / and /
+orr, 11 instructions per side where HEAD has 4). V1b: `c < 0x80 ? c :
+twoByte` (`cmp` + `csel`).
+
+| EngineBench compare, 5 interleaved rounds, load 11–14 | HEAD | V1 | V1b | V1b against HEAD |
+|---|---:|---:|---:|---|
+| ascii (ns) | 9.3 | 9.6 | 9.6 | +4.5% (0/5 faster) |
+| latin | 9.7 | 9.4 | 9.4 | −4.5% (5/5) |
+| cjk | 19.2 | 19.5 | 19.1 | −0.9% (3/5) |
+| paths | 18.8 | 19.2 | 19.0 | +2.0% (0/5) |
+| instructions, ascii / latin pair | 158 / 158–170 | 177 | 171 | |
+
+Latin gains the predicted ~0.3 ns, and ascii loses the same: every ASCII
+character pays the decode (about 6 instructions per side), and ascii had no
+mispredictions to win back. A branch-free decode needs about 10 instructions
+more per compare in its smallest form, and a per-call test that selects it
+("both first bytes ASCII?") goes both ways on latin like the branch it
+replaces. **Rejected** (user decision, 2026-10-29: the rule "no ascii or
+latin loss"). Aligned builds, thai and the Foundation A/Bs were not run: the
+plain A/B already fails the rule. Lesson: the remaining latin mispredictions
+come from the data; ICU pays them twice over, and a removal costs ascii the
+same time.
+
+#### (aj) The collator cache: lock-free reads of the current-locale and explicit-locale slots
+
+**Where** (START HERE candidate 2; one `localizedCompare` call, WMO `-g`
+BenchFoundation, the `tmp str locCmp` probe row, 5 calls after 1000; the
+count of §51 (ah)): 516 instructions, of them the engine 158; our
+current-locale slot `currentCache.withLock` ~106 (`LockedState.withLock`,
+its closure and forwarders, two `os_unfair_lock` calls); the generic
+`localizedCompare<T>` 75; `_localizedCompare` 80; retain / release 60;
+`LocaleNotifications.count()` ~45 — in this non-framework build it reads the
+generation under a lock of its own (FoundationEssentials, not in scope; the
+framework build uses an atomic).
+
+**V1: the current-locale slot without a lock.** As `FastLatinCache` (§51):
+readers do one acquiring load of a published, immutable `CurrentSlot`;
+writers take `currentWriteLock`, check again, resolve, put a new slot in
+memory and publish it with a releasing store. A published slot is never
+freed (a reader may still read it): 16 bytes for each locale change. Count
+516 → 436. WMO A/B (5 rounds): `localizedCompare`,
+`localizedStandardCompare`, `localizedCaseInsensitiveCompare` −10..−15% on
+ascii / latin / cjk / paths, −2% thai (5/5). But `compare(_:locale:)`, whose
+code did not change, was +1.9% (latin, WMO) and +2.6 / +3.9% (ascii /
+latin, `-no-WMO`, mostly 5/5) — against the rule.
+
+**V2 (shipped): the explicit-locale slot without a lock too.**
+`collator(for:)` reads a published `LastLocale` (identifier, collator) with
+one acquiring load and compares the identifier. Callers can switch between
+locales, so a new slot per miss would grow without limit: each identifier
+gets ONE slot, kept in `PublishedSlots.lastLocaleSlots` (a dictionary under
+its lock), and a miss publishes that identifier's slot again. The memory
+grows only with the number of distinct identifiers, like the collator
+dictionary. The atomics and the dictionary live in one `@unchecked
+Sendable` class (`UnsafeMutablePointer` is not `Sendable`).
+
+**A/B against HEAD `2185a906`** (5 interleaved rounds each, 2026-10-29;
+WMO `-g` BenchFoundation, base in the worktree, load 53 → 15; `-no-WMO`, the
+base built in the main tree's cached scratch with the HEAD wrapper and
+copied to `.build/l2/nowmo-base`, load 15 → 15; min ns, base → V2):
+
+| row | WMO ascii / latin | WMO cjk / paths / thai | `-no-WMO` ascii / latin | `-no-WMO` cjk / paths / thai |
+|---|---|---|---|---|
+| `localizedCompare` | 36 → 28 / 38 → 33 | −8..−12% / −2.0% | 46 → 41 / 48 → 47 (mean −7%) | −8.5% / −7.5% / −1.9% |
+| `localizedStandardCompare` | 35 → 30 / 36 → 31 | −9..−14% / −4.3% | 61 → 55 / 63 → 57 | −6..−8% / −2.8% |
+| `localizedCaseInsensitiveCompare` | 38 → 33 / 39 → 33 | −10..−11% / −2.4% | 61 → 56 / 63 → 57 | −6..−7% / −2.8% |
+| `compare(_:locale:)` | 48 → 44 / 49 → 40 | −10..−11% / −4.6% | 68 → 61 / 69 → 61 | −9..−10% / −3.1% |
+| `compare(_:options:range:locale:)` | 52 → 45 / 53 → 46 | −8..−9% / −3.5% | 86 → 78 / 87 → 80 | −6..−8% / −2.2% |
+| `range(of:options:locale:)` | 70 → 62 / 207 → 201 | −3..−9% / −4.7% | 109 → 104 / 361 → 353 | −2..−6% / −1.7% |
+| `sorted(using: String.Comparator(…))`, ns per element | 1662 → 1565 / 1745 → 1602 | −4..−5% / −5.6% | 2101 → 2012 / 2184 → 2086 | −4..−5% / −3.0% |
+
+All cells faster; signs 5/5 except four cells at 4/5 (a 0 or a + in one
+round). About −5..−9 ns per call: the lock and its closure layers per
+call. Table 1 is not affected (the engine did not change).
+
+**Tests.** `CollationConcurrencyTests.explicitLocaleCacheGivesEachLocaleItsOwnCollator`
+(new): 64 threads ask the cache for collators of 8 locales in different
+orders (the published slot changes under them) and compare 10 pairs whose
+order depends on the tailoring (sv / da å ä ö, fr_CA backward secondary,
+Thai, kana) against single-thread answers. The mutation "the read path
+ignores the identifier" fails it. Thread Sanitizer
+(`--sanitize=thread --scratch-path .build/tsan`): no reports. Suite
+1559/135.
+
+**Still in the call** (V1 count, ascii): the generic `localizedCompare<T>`
+(75), `_localizedCompare` (61), `collatorForCurrentLocale` (30), one retain
+/ release pair of the collator's storage (40), the strings'
+`bridgeObjectRetain` / `Release` (20), and `LocaleNotifications.count()`
+with its lock (FoundationEssentials).

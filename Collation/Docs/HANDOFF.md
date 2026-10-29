@@ -23,15 +23,18 @@ paragraph).** Expected: HEAD = a docs commit (this handoff) on top of
 was at `d740579a`. If the handoff commit is missing, HANDOFF.md, Docs/21 and
 Docs/27 (the 2026-10-29 ICU C gates) are modified — say so and give the
 add/commit lines (the memory files are outside the repo). Tree
-clean otherwise. The A/B worktree `../collation-baseline` is detached at
-`cdac770a` (P2c, before P3c) with its own, unmodified `main.swift`; its
-builds there are at `cdac770a`: EngineBench `.build/engine-bench/.build`,
-`.build-al` (every function aligned to 64 bytes), `.build-g` (debug info),
-and a WMO `-g` BenchFoundation in `.build-bfg` (built WITH the temporary
-`tmp str locCmp` probe row of §51 (ah) — rebuild it before an A/B). **For
-the next A/B the base is HEAD** (`d740579a` or later, the same code as
-`32d3946a`): `git -C ../collation-baseline checkout --detach <HEAD>`, then
-rebuild there (each incremental, ~1 minute):
+clean otherwise. **Update 2026-10-29 (§51 (ai)):** the A/B worktree
+`../collation-baseline` is detached at `2185a906` (the handoff commit, the
+same engine code as `32d3946a`) with its own, unmodified `main.swift`; its
+EngineBench builds `.build/engine-bench/.build`, `.build-al` (every
+function aligned to 64 bytes) and `.build-g` (debug info) are at
+`2185a906`. Its WMO `-g` BenchFoundation in `.build-bfg` is still from
+`cdac770a`, built WITH the temporary `tmp str locCmp` probe row of §51 (ah)
+— rebuild it before a Foundation A/B. The tools of (ai) are in
+`.build/counters/l1/` (`branch_prof.py`, `multiway.py`, the traces). **For
+the next A/B the base is HEAD:** if HEAD moved,
+`git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
+(each incremental, ~1 minute):
 ```
 W=/Users/dragan/Projects/dra8an/collation-baseline
 cd $W && $W/Collation/Tools/build_engine_bench.sh            # plain EngineBench
@@ -68,8 +71,8 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1558 tests in 135
-suites** — `swift test` prints three summary lines (45/5, 572/90, 941/40);
+anything longer or with wider effect. Suite gate: **1559 tests in 135
+suites** — `swift test` prints three summary lines (45/5, 573/90, 941/40; since §51 (aj));
 add them up.
 
 **Read next, in this order:**
@@ -140,11 +143,20 @@ Table 2 cell: `localizedCompare` ascii 51 ns (47 in the matrix of
 behind ICU; there are none now. The user said "Others are already good
 enough" (2026-10-27) for the rows other than ascii / latin compare. Present
 these candidates in this order, with the evidence, and let the user choose:
-1. **Latin compare, the last mispredictions:** CPU Counters show 2.2–3.1%
-   discarded cycles on latin compare (ascii 0.0%; §51 (ah)). Find the branch
-   (a trace of a latin pair where the core or the entry branches on data),
-   then the same method as P3c. Small, but it is the user's focus row.
-2. **The `localizedCompare` wrapper is front-end bound:** ~33% of its cycles
+1. ~~Latin compare, the last mispredictions~~ — **DONE, rejected
+   (2026-10-29, §51 (ai)).** The branch is the ASCII test on the lead byte in
+   `compareUTF8`'s primary loop (the data: 15.5% of the latin words start
+   with a two-byte letter; ICU C has 6.9% discarded against our 3.1%). A
+   branch-free decode gave latin −4.5% but ascii +4.5%: not shipped.
+2. ~~The `localizedCompare` wrapper~~ — **DONE (2026-10-29, §51 (aj)):**
+   the current-locale and explicit-locale slots of `CollatorCache` are read
+   without a lock (one acquiring load of a published slot); every
+   current-locale and explicit-locale row −5..−9 ns per call in both build
+   modes (ascii / latin −10..−18% WMO, −7..−13% `-no-WMO`). Left in the
+   call (§51 (aj)): the generic `localizedCompare<T>` layer, one retain /
+   release of the collator, and `LocaleNotifications.count()`'s own lock
+   (FoundationEssentials, non-framework build only). Earlier text of this
+   item: **The `localizedCompare` wrapper is front-end bound:** ~33% of its cycles
    are instruction delivery (the engine compare ~9%; §51 (ah)). The wrapper
    code (the collator cache, `LockedState`, the generic layers in
    `StringProtocol+Locale.swift` / `String+Collation.swift`) is in scope;
@@ -431,7 +443,8 @@ compare 9.3/10.1/40.8/30.0/172.8, sortKey 104.4/121.0/117.7/373.3/155.5.
   current locale heavily must run on the preferences actor (§51 (o)).
 
 **Do not redo (measured and rejected; details in §51 and §49/§50):**
-pinning only strings longer than 15 bytes (§51 (aa)); in `compareUTF8`,
+a branch-free ASCII / two-byte Latin decode in `compareUTF8` (latin −4.5%,
+ascii +4.5%; §51 (ai)); pinning only strings longer than 15 bytes (§51 (aa)); in `compareUTF8`,
 wrapping index increments (`&+= 1`; LLVM then reads each byte with `ldrsb`
 and two masks) and the table without the slice check alone (C1a: ascii
 −1..−2% in WMO but `compare(_:locale:)` ascii / latin +1.7..+2.3% in
