@@ -195,15 +195,15 @@ checkout, so it is NOT a fixed binary: it changes when that checkout changes
 branch or rebuilds. On 2026-10-15 the checkout held ICU 79.1 with Unicode 18
 data (the CLDR 49 integration branch), and its speed matched the old 79.0.1
 build. Check the branch first (`git -C $ICU_SRC branch --show-current`).
-Then expect roughly (one decimal, 2026-10-21, run B):
+Then expect roughly (one decimal, 2026-10-29, run B):
 
 | corpus | ICU compare | ICU sortKey |
 |---|---:|---:|
-| ascii | 9.5 | 106.1 |
-| latin | 10.1 | 122.1 |
-| cjk | 40.8 | 119.3 |
-| paths | 29.7 | 369.6 |
-| thai | 172.0 | 154.7 |
+| ascii | 9.3 | 104.4 |
+| latin | 10.1 | 121.0 |
+| cjk | 40.8 | 117.7 |
+| paths | 30.0 | 373.3 |
+| thai | 172.8 | 155.5 |
 
 If a control has drifted, so has everything else: do not record the run.
 

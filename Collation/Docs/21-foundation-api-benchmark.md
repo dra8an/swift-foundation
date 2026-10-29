@@ -335,8 +335,8 @@ Sanity gates before you record a run:
 - **The load control:** system ICU in Table 2 should read about
   194/365/369/300/494 for `localizedCompare`. If it drifts by more than
   ~3%, the box is too busy to record.
-- **ICU C** in Table 1 should read about 9.5/10.1/40.8/29.7/172.0 compare
-  and 106.1/122.1/119.3/369.6/154.7 sortKey (2026-10-21, run B). First check which ICU the
+- **ICU C** in Table 1 should read about 9.3/10.1/40.8/30.0/172.8 compare
+  and 104.4/121.0/117.7/373.3/155.5 sortKey (2026-10-29, run B). First check which ICU the
   checkout holds (`git -C $ICU_SRC branch --show-current`); a different ICU
   build can change this column for reasons that have nothing to do with load.
 - **Run the matrix twice;** the two runs must agree.
