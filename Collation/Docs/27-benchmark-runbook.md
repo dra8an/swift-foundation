@@ -68,9 +68,13 @@ env for machine 2):
 
 ## Reading the output
 
-- **Table 1 (pure engine)**: `ratio = ours / ICU`, so **below 1 means ours is
-  faster**. The Swift implementation against hand-tuned C. Values as of
-  2026-10-28 (run B, after §51 (af)): compare 0.45–1.06×, sortKey 0.50–0.99× (current numbers:
+- **Table 1 (pure engine)**: `speedup = ICU C / ours`, so **above 1 means
+  ours is faster** — the same convention as Table 2 since 2026-10-29, when
+  every compare and sortKey row reached ICU C (before, Table 1 showed the
+  ratio `ours / ICU`, below 1 = faster; the history in the technique log
+  and in older Docs/21 text uses that ratio). The Swift implementation
+  against hand-tuned C. Values as of 2026-10-29 (run B, after §51 (ah)):
+  compare 1.00–2.11× faster, sortKey 1.04–2.08× faster (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1

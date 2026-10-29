@@ -4774,3 +4774,15 @@ in a matrix); cjk ~0.47×, paths ~0.64×. Suite 1558/135; the four ladder
 tools build. Lesson: at ICU's instruction count, check CPU Counters before
 trusting a count — a single data-dependent branch cost more than 16
 instructions saved.
+
+**Matrix after (ah)** (Docs/21, 2026-10-29, run B; control within 1.3%,
+runs A and B agree within 1.1% in our cells): Table 1 compare **1.00×
+ascii, 0.96× latin**, 0.47× cjk, 0.63× paths, 0.95× thai; sortKey 0.72×,
+0.79×, 0.89×, 0.48×, 0.96× (ratio ours / ICU) — **all ten rows at or below
+ICU C**. From here on Docs/21 and START HERE show Table 1 as a speedup (ICU
+/ ours, above 1 = faster), like Table 2: compare 1.00×, 1.04×, 2.11×,
+1.60×, 1.05× faster; sortKey 1.39×, 1.27×, 1.12×, 2.08×, 1.04× faster;
+`bench_matrix.py` prints it that way too. Table 2
+floor 1.71×; every cell within −2..+3% of 2026-10-28 except
+`localizedCompare` ascii 47 → 51 (see Docs/21). At the start of the round
+(2026-10-16): compare 0.63–1.62×, sortKey 1.03–1.50×.

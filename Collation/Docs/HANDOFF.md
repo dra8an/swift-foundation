@@ -81,22 +81,23 @@ three summary lines (45/5, 565/88, 941/40); add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers (Table 1, EngineBench vs ICU C, ns per call, ours / ICU) —
-RECORDED in Docs/21 on 2026-10-28 (run B at `853492cc`, after §51 (af);
-control within 1.0%; runs A and B agree within 1.1% in our cells):**
+**Current numbers (Table 1, EngineBench vs ICU C, ns per call, ours / ICU,
+and the speedup ICU / ours — above 1 = ours faster; Table 1 uses this
+convention since 2026-10-29, the history below uses the ratio ours / ICU) —
+RECORDED in Docs/21 on 2026-10-29 (run B at `32d3946a`, after §51 (ah);
+control within 1.3%; runs A and B agree within 1.1% in our cells):**
 
-| corpus | compare | ratio | sortKey | ratio |
+| corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 9.9 / 9.3 | 1.06× | 75.6 / 104.0 | 0.73× |
-| latin | 10.3 / 10.1 | 1.02× | 96.0 / 121.2 | 0.79× |
-| cjk | 18.6 / 40.9 | 0.45× | 104.9 / 118.8 | 0.88× |
-| paths | 19.4 / 29.4 | 0.66× | 184.3 / 366.0 | 0.50× |
-| thai | 163.2 / 172.1 | 0.95× | 152.5 / 154.1 | 0.99× |
+| ascii | 9.3 / 9.3 | 1.00× (equal) | 75.0 / 104.4 | 1.39× faster |
+| latin | 9.7 / 10.1 | 1.04× faster | 95.0 / 121.0 | 1.27× faster |
+| cjk | 19.3 / 40.8 | 2.11× faster | 105.2 / 117.7 | 1.12× faster |
+| paths | 18.8 / 30.0 | 1.60× faster | 179.8 / 373.3 | 2.08× faster |
+| thai | 164.9 / 172.8 | 1.05× faster | 149.3 / 155.5 | 1.04× faster |
 
-Eight of the ten rows are at or below ICU C. **The user's focus: the rows
-that are still behind** — compare ascii (1.06×) and latin (1.02×), down
-from 1.13× / 1.09× (§51 (ae), (af)); our count there is at ICU's level, and
-§51 (ag) showed that time no longer follows the count. Thai
+**All ten rows are at or faster than ICU C** (ascii compare equal). **The user's focus: the rows
+that were still behind** — compare ascii and latin — are now equal to ICU C
+(1.00×) and 1.04× faster (they were 1.13× and 1.09× slower; §51 (ad)–(ah)). Thai
 compare with options is done (§51 (z), −10..−11% in the matrix). The
 `-no-WMO` cost of (z) on the ascii / latin / paths options rows (+5..+8% in
 the 2026-10-23 matrix) is fixed in §51 (ac) (2026-10-27): the (z) work runs
@@ -386,7 +387,9 @@ the control. Report after it — about 30–45 minutes.
    sign, 13% of the cycles mispredicted — and **P3c** (a branch-free Order
    conversion) ships: count 158, EngineBench ascii 9.9 → 9.3 ns (≈ ICU C's
    9.3), latin 10.3 → 9.7 (below ICU C's 10.1), cjk 18.5 → 19.3, paths
-   19.5 → 18.8 (§51 (ah); A/B, not yet in a matrix). **CPU Counters is now a
+   19.5 → 18.8 (§51 (ah)). **Recorded matrix 2026-10-29** (speedup ICU /
+   ours): compare ascii 1.00×, latin 1.04×, cjk 2.11×, paths 1.60×, thai
+   1.05× faster. **CPU Counters is now a
    tool of this project:** `xctrace record --template 'CPU Counters'`,
    shares exported with `.build/counters/shares.py` (order: useful,
    processing, delivery, discarded). The user's rule:

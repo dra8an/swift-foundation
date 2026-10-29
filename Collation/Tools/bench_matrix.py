@@ -87,8 +87,9 @@ for label, corpus, loc, reps in CORPORA:
 
 eng = "engine rows FULL-WMO via EngineBench" if ENGINE_BIN else "engine rows -no-WMO (set ENGINE_BIN!)"
 print(f"\nK={K}  min ns/op over interleaved runs. {eng}; Foundation rows -no-WMO on machine 1 (Docs/27).")
-print("\n================ TABLE 1: PURE COLLATOR ENGINE (ours vs ICU C) ================")
-print(f"{'corpus':6} | {'cmp ICU':>7} {'ours':>5} {'ratio':>6} | {'sk ICU':>7} {'ours':>6} {'ratio':>6} | {'skRet':>6} {'ratio':>6}")
+# Since 2026-10-29 Table 1 shows the speedup ICU / ours, like Table 2 (>1 = ours faster); before, it showed the ratio ours / ICU.
+print("\n===== TABLE 1: PURE COLLATOR ENGINE (speedup = ICU C/ours; >1 = ours faster) =====")
+print(f"{'corpus':6} | {'cmp ICU':>7} {'ours':>5} {'speedup':>7} | {'sk ICU':>7} {'ours':>6} {'speedup':>7} | {'skRet':>6} {'speedup':>7}")
 print("-" * 80)
 for label, _, _, _ in CORPORA:
     r = results[label]
@@ -96,9 +97,9 @@ for label, _, _, _ in CORPORA:
     isk, osk = r["icu"].get("sortKey"), r["ours"].get("RootCollator.sk")
     # skRet = the allocating sortKey variant, vs the same ICU reference
     osr = r["ours"].get("RootCollator.skRet")
-    print(f"{label:6} | {fmt1(ic):>7} {fmt1(oc):>5} {ratio(oc,ic):>6} | "
-          f"{fmt1(isk):>7} {fmt1(osk):>6} {ratio(osk,isk):>6} | "
-          f"{fmt1(osr):>6} {ratio(osr,isk):>6}")
+    print(f"{label:6} | {fmt1(ic):>7} {fmt1(oc):>5} {ratio(ic,oc):>7} | "
+          f"{fmt1(isk):>7} {fmt1(osk):>6} {ratio(isk,osk):>7} | "
+          f"{fmt1(osr):>6} {ratio(isk,osr):>7}")
 
 print("\n===== TABLE 2: FOUNDATION APIs (speedup = sys/ours; >1 = ours faster) =====")
 APIS = ["compare(locale:)", "localizedCompare", "localizedStdCmp",
