@@ -166,6 +166,41 @@ public struct RootCollator: @unchecked Sendable {
 
     private let storage: Storage
 
+    private init(storage: Storage) { self.storage = storage }
+
+    /// Runs `body` on the collator at `collator` with no retain and release of its storage: a copy out of the pointer retained the storage, a reference count that every thread shares (technique log §51 (ak)). The collator must stay alive during the call — the CollatorCache slots, which are never freed. RootCollator is one class reference, so the reference is read as a raw word (a trivial load). Private: callers in other files use the non-generic entries below — in a `-no-WMO` build a generic with a closure, called from another file, runs unspecialized with a closure context (+3 retain / release pairs per options compare).
+    @inline(__always)
+    private static func withCollator<R>(at collator: UnsafePointer<RootCollator>, _ body: (RootCollator) throws -> R) rethrows -> R {
+        assert(MemoryLayout<RootCollator>.size == MemoryLayout<UnsafeRawPointer>.size)
+        let raw = UnsafeRawPointer(collator).load(as: UnsafeRawPointer.self)
+        return try Unmanaged<Storage>.fromOpaque(raw)._withUnsafeGuaranteedRef { try body(RootCollator(storage: $0)) }
+    }
+
+    // MARK: The collator at a pointer, in place (the CollatorCache slots; see withCollator)
+
+    static func defaultOptions(at collator: UnsafePointer<RootCollator>) -> CollationOptions {
+        withCollator(at: collator) { $0.defaultOptions }
+    }
+
+    static func compareWithDefaultOptions(at collator: UnsafePointer<RootCollator>, _ left: String, _ right: String) throws -> Order {
+        try withCollator(at: collator) { try $0.compareWithDefaultOptions(left, right) }
+    }
+
+    static func compare(at collator: UnsafePointer<RootCollator>, _ left: String, _ right: String, options: CollationOptions) throws -> Order {
+        try withCollator(at: collator) { try $0.compare(left, right, options: options) }
+    }
+
+    static func contains(at collator: UnsafePointer<RootCollator>, pattern: String, in text: String, options: CollationOptions) -> Bool {
+        withCollator(at: collator) { $0.contains(pattern: pattern, in: text, options: options) }
+    }
+
+    static func search(at collator: UnsafePointer<RootCollator>, for pattern: String, in text: String, options: CollationOptions, backwards: Bool) -> Range<String.Index>? {
+        withCollator(at: collator) {
+            backwards
+                ? $0.searchBackwards(for: pattern, in: text, options: options)
+                : $0.search(for: pattern, in: text, options: options)
+        }
+    }
     // Forwarders: same names the rest of the module already uses.
     var data: CollationData { storage.data }
     var base: CollationData? { storage.base }
@@ -272,10 +307,19 @@ public struct RootCollator: @unchecked Sendable {
         _ left: String, _ right: String, options: CollationOptions
     ) throws -> Order {
         var restart = -1
-        if let fast = compareFastPath(left, right, options: options, restart: &restart) {
+        if let fast = compareFastPath(left, right, options: options, optionsAreDefault: false, restart: &restart) {
             return fast
         }
         return try compareSlowPath(left, right, options: options, restart: restart)
+    }
+
+    /// `compare(_:_:)` for callers in this module that always use the collator's default options (the `localizedCompare` wrapper). The options are the defaults by construction, so the caller does not pack them into an argument (7 byte loads and selects) and the guard does not compare them again; the slow path reads them from the storage (technique log §51 (ak)).
+    func compareWithDefaultOptions(_ left: String, _ right: String) throws -> Order {
+        var restart = -1
+        if let fast = compareFastPath(left, right, options: storage.defaultOptions, optionsAreDefault: true, restart: &restart) {
+            return fast
+        }
+        return try compareSlowPath(left, right, options: storage.defaultOptions, restart: restart)
     }
 
     /// The Order of a fast-path result (-1, 0 or 1), without a branch. `Order` is a simple enum, so its cases are stored as the tags 0, 1 and 2 in declaration order (ascending, same, descending): the tag is the result plus 1. Written as `fast < 0 ? .ascending : fast == 0 ? .same : .descending`, the compiler sometimes made it a branch on the result's sign — random for adjacent pairs, so it mispredicted on about every second compare (13% of the cycles in CPU Counters; technique log §51 (ah)). `FastResultOrderTests` checks the mapping.
@@ -302,7 +346,7 @@ public struct RootCollator: @unchecked Sendable {
     /// When it returns nil after the byte scan, `restart` holds the number of leading scalars that the CE pipeline may skip (see restartScalarCount), or -1 when the scan gave no position.
     @inline(__always)
     private func compareFastPath(
-        _ left: String, _ right: String, options: CollationOptions,
+        _ left: String, _ right: String, options: CollationOptions, optionsAreDefault: Bool,
         restart: inout Int
     ) -> Order? {
         // One pointer for the default setup, loaded once (see DefaultFastLatinSetup); the CJK setup pointer and the storage object likewise, so the closures below capture plain values, not self.
@@ -310,7 +354,8 @@ public struct RootCollator: @unchecked Sendable {
         let st = storage
         let cjkSetup = st.quickCJKSetupPtr
         let safety = UnsafePointer(st.restartSafetyPtr)
-        guard setup.pointee.eligible, Self.bits(of: options) == setup.pointee.optionBits else { return nil }
+        // `optionsAreDefault` is a constant at each call site (this function is force-inlined): true skips the options compare.
+        guard setup.pointee.eligible, optionsAreDefault || Self.bits(of: options) == setup.pointee.optionBits else { return nil }
         // The setup values the core reads, taken out of the box once.
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries

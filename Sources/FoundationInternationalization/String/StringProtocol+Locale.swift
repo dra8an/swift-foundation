@@ -196,21 +196,21 @@ private func _rebase<UTF8: Collection>(_ range: Range<String.Index>, from source
     return start..<end
 }
 
-/// The collator work of the wrappers above, on concrete strings.
+/// The collator work of the wrappers above, on concrete strings. The collators are used in place in the cache's slots, through RootCollator's pointer entries (`compare(at:…)` …), with no retain and release per call (technique log §51 (ak)).
 extension String {
     fileprivate func _localizedCompare(_ other: String) -> ComparisonResult {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale(),
-           let result = try? collator.compare(self, other) {
+        if let collator = CollatorCache.shared.currentLocaleCollator(),
+           let result = try? RootCollator.compareWithDefaultOptions(at: collator, self, other) {
             return result.comparisonResult
         }
         return compare(other)
     }
 
     fileprivate func _localizedCaseInsensitiveCompare(_ other: String) -> ComparisonResult {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
+        if let collator = CollatorCache.shared.currentLocaleCollator() {
+            var opts = RootCollator.defaultOptions(at: collator)
             opts.strength = .secondary
-            if let result = try? collator.compare(self, other, options: opts) {
+            if let result = try? RootCollator.compare(at: collator, self, other, options: opts) {
                 return result.comparisonResult
             }
         }
@@ -218,11 +218,11 @@ extension String {
     }
 
     fileprivate func _localizedStandardCompare(_ other: String) -> ComparisonResult {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
+        if let collator = CollatorCache.shared.currentLocaleCollator() {
+            var opts = RootCollator.defaultOptions(at: collator)
             opts.strength = .secondary
             opts.numeric = true
-            if let result = try? collator.compare(self, other, options: opts) {
+            if let result = try? RootCollator.compare(at: collator, self, other, options: opts) {
                 return result.comparisonResult
             }
         }
@@ -231,44 +231,44 @@ extension String {
 
     /// nil if the locale has no collator or the compare throws; the caller then uses the literal comparison.
     fileprivate func _compare(_ other: String, options mask: String.CompareOptions, locale: Locale) -> ComparisonResult? {
-        guard let collator = CollatorCache.shared.collator(for: locale) else { return nil }
-        let opts = CollationOptions.from(foundationOptions: mask, base: collator.defaultOptions)
-        guard let result = try? collator.compare(self, other, options: opts) else { return nil }
-        return result.comparisonResult
+        guard let collator = CollatorCache.shared.collator(in: locale) else { return nil }
+        // No options: the collator's defaults, so the default-options entry (technique log §51 (ak)).
+        let result = mask.rawValue == 0
+            ? try? RootCollator.compareWithDefaultOptions(at: collator, self, other)
+            : try? RootCollator.compare(at: collator, self, other, options: CollationOptions.from(foundationOptions: mask, base: RootCollator.defaultOptions(at: collator)))
+        return result?.comparisonResult
     }
 
     fileprivate func _localizedStandardContains(_ pattern: String) -> Bool {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
+        if let collator = CollatorCache.shared.currentLocaleCollator() {
+            var opts = RootCollator.defaultOptions(at: collator)
             opts.strength = .primary
             opts.numeric = true
-            return collator.contains(pattern: pattern, in: self, options: opts)
+            return RootCollator.contains(at: collator, pattern: pattern, in: self, options: opts)
         }
         return _localizedCaseInsensitiveContains(pattern)
     }
 
     fileprivate func _localizedCaseInsensitiveContains(_ pattern: String) -> Bool {
-        if let collator = CollatorCache.shared.collatorForCurrentLocale() {
-            var opts = collator.defaultOptions
+        if let collator = CollatorCache.shared.currentLocaleCollator() {
+            var opts = RootCollator.defaultOptions(at: collator)
             opts.strength = .secondary
-            return collator.contains(pattern: pattern, in: self, options: opts)
+            return RootCollator.contains(at: collator, pattern: pattern, in: self, options: opts)
         }
         return contains(pattern)
     }
 
     fileprivate func _localizedStandardSearch(for pattern: String) -> Range<String.Index>? {
-        guard let collator = CollatorCache.shared.collatorForCurrentLocale() else { return nil }
-        var opts = collator.defaultOptions
+        guard let collator = CollatorCache.shared.currentLocaleCollator() else { return nil }
+        var opts = RootCollator.defaultOptions(at: collator)
         opts.strength = .primary
         opts.numeric = true
-        return collator.search(for: pattern, in: self, options: opts)
+        return RootCollator.search(at: collator, for: pattern, in: self, options: opts, backwards: false)
     }
 
     fileprivate func _search(for pattern: String, options mask: String.CompareOptions, locale: Locale) -> Range<String.Index>? {
-        guard let collator = CollatorCache.shared.collator(for: locale) else { return nil }
-        let opts = CollationOptions.from(foundationOptions: mask, base: collator.defaultOptions)
-        return mask.contains(.backwards)
-            ? collator.searchBackwards(for: pattern, in: self, options: opts)
-            : collator.search(for: pattern, in: self, options: opts)
+        guard let collator = CollatorCache.shared.collator(in: locale) else { return nil }
+        let opts = CollationOptions.from(foundationOptions: mask, base: RootCollator.defaultOptions(at: collator))
+        return RootCollator.search(at: collator, for: pattern, in: self, options: opts, backwards: mask.contains(.backwards))
     }
 }

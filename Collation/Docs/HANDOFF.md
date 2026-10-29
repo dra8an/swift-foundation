@@ -71,8 +71,8 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1559 tests in 135
-suites** — `swift test` prints three summary lines (45/5, 573/90, 941/40; since §51 (aj));
+anything longer or with wider effect. Suite gate: **1563 tests in 136
+suites** — `swift test` prints three summary lines (45/5, 577/91, 941/40; since §51 (ak));
 add them up.
 
 **Read next, in this order:**
@@ -152,10 +152,21 @@ these candidates in this order, with the evidence, and let the user choose:
    the current-locale and explicit-locale slots of `CollatorCache` are read
    without a lock (one acquiring load of a published slot); every
    current-locale and explicit-locale row −5..−9 ns per call in both build
-   modes (ascii / latin −10..−18% WMO, −7..−13% `-no-WMO`). Left in the
-   call (§51 (aj)): the generic `localizedCompare<T>` layer, one retain /
-   release of the collator, and `LocaleNotifications.count()`'s own lock
-   (FoundationEssentials, non-framework build only). Earlier text of this
+   modes (ascii / latin −10..−18% WMO, −7..−13% `-no-WMO`). **Then §51 (ak)
+   (W2c):** the wrappers use the cached collator in place through
+   non-generic pointer entries in `RootCollator.swift` (no retain / release)
+   and the internal `compareWithDefaultOptions` (no packed options, no
+   second guard compare): one `localizedCompare` 436 → 353 instructions
+   (WMO), compare rows on ascii / latin −14..−21% WMO, −2..−25% `-no-WMO`,
+   sorts −3..−16%. **OPEN, the agreed next step (user, 2026-10-29):** four
+   `-no-WMO` search cells lost a fixed 3–7 ns (`range(of:locale:)` latin
+   +0.9%, paths +2.9%, thai +1.0%; `localizedStandardContains` paths
+   +1.6%) — probably the extra call layer `RootCollator.search(at:)` → the
+   search in `CollationSearch.swift`; win it back with `624e0fa5`'s
+   successor (the W2c commit) as the A/B base. Still in the call: the
+   generic `localizedCompare<T>` layer (~75 + 20 for the string retains) and
+   `LocaleNotifications.count()`'s own lock (FoundationEssentials,
+   non-framework build only). Earlier text of this
    item: **The `localizedCompare` wrapper is front-end bound:** ~33% of its cycles
    are instruction delivery (the engine compare ~9%; §51 (ah)). The wrapper
    code (the collator cache, `LockedState`, the generic layers in

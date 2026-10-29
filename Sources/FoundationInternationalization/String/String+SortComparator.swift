@@ -167,10 +167,11 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
-                let collator = CollatorCache.shared.collatorForCurrentLocale()
-                let opts = CollationOptions.from(foundationOptions: options, base: collator?.defaultOptions ?? CollationOptions())
-                if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
+                // currentLocaleCollator, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
+                if let collator = CollatorCache.shared.currentLocaleCollator(),
+                   let result = options.rawValue == 0
+                    ? try? RootCollator.compareWithDefaultOptions(at: collator, lhs, rhs)
+                    : try? RootCollator.compare(at: collator, lhs, rhs, options: CollationOptions.from(foundationOptions: options, base: RootCollator.defaultOptions(at: collator))) {
                     return result.comparisonResult.withOrder(order)
                 }
             }
@@ -184,10 +185,11 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // collatorForCurrentLocale, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
-                let collator = CollatorCache.shared.collatorForCurrentLocale()
-                let opts = CollationOptions.from(foundationOptions: options, base: collator?.defaultOptions ?? CollationOptions())
-                if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
+                // currentLocaleCollator, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
+                if let collator = CollatorCache.shared.currentLocaleCollator(),
+                   let result = options.rawValue == 0
+                    ? try? RootCollator.compareWithDefaultOptions(at: collator, lhs, rhs)
+                    : try? RootCollator.compare(at: collator, lhs, rhs, options: CollationOptions.from(foundationOptions: options, base: RootCollator.defaultOptions(at: collator))) {
                     return result.comparisonResult.withOrder(order)
                 }
                 return lhs.compare(rhs, options: options).withOrder(order)
@@ -284,9 +286,10 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                let collator = CollatorCache.shared.collator(for: locale)
-                let opts = CollationOptions.from(foundationOptions: options, base: collator?.defaultOptions ?? CollationOptions())
-                if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
+                if let collator = CollatorCache.shared.collator(in: locale),
+                   let result = options.rawValue == 0
+                    ? try? RootCollator.compareWithDefaultOptions(at: collator, lhs, rhs)
+                    : try? RootCollator.compare(at: collator, lhs, rhs, options: CollationOptions.from(foundationOptions: options, base: RootCollator.defaultOptions(at: collator))) {
                     return result.comparisonResult.withOrder(order)
                 }
             }
@@ -296,9 +299,10 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                let collator = CollatorCache.shared.collator(for: locale)
-                let opts = CollationOptions.from(foundationOptions: options, base: collator?.defaultOptions ?? CollationOptions())
-                if let collator, let result = try? collator.compare(lhs, rhs, options: opts) {
+                if let collator = CollatorCache.shared.collator(in: locale),
+                   let result = options.rawValue == 0
+                    ? try? RootCollator.compareWithDefaultOptions(at: collator, lhs, rhs)
+                    : try? RootCollator.compare(at: collator, lhs, rhs, options: CollationOptions.from(foundationOptions: options, base: RootCollator.defaultOptions(at: collator))) {
                     return result.comparisonResult.withOrder(order)
                 }
             }

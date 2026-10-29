@@ -30,8 +30,8 @@ struct CollatorCache: Sendable {
 
     /// Fast path for Locale.current — caches the collator for the current locale, revalidated against Foundation's locale generation count (LocaleNotifications) so a mid-process system locale change re-resolves on the next call — the same documented mechanism Calendar and TimeZone use. RootCollator is immutable and Sendable so sharing is safe.
     private struct CurrentSlot {
-        var collator: RootCollator? = nil
-        var generation: Int = 0
+        let collator: RootCollator
+        let generation: Int
     }
     /// Readers take NO lock: one acquiring load of the published slot. Writers serialize on `currentWriteLock`, put a new slot in memory and publish it with a releasing store. A published slot is never freed — a reader may still read it — so each locale change keeps one slot (16 bytes); collators are kept for the process anyway. A lock per read cost about 100 instructions of a ~520-instruction `localizedCompare` (technique log §51 (aj)).
     private final class PublishedSlots: @unchecked Sendable {
@@ -51,50 +51,64 @@ struct CollatorCache: Sendable {
         let collator: RootCollator
     }
 
-    func collatorForCurrentLocale() -> RootCollator? {
+    /// The collator field of a published slot. Slots are never freed, so the pointer is valid for the whole process.
+    @inline(__always)
+    private static func collatorPointer<Slot>(in slot: UnsafeRawPointer, _ field: KeyPath<Slot, RootCollator>) -> UnsafePointer<RootCollator> {
+        (slot + MemoryLayout<Slot>.offset(of: field)!).assumingMemoryBound(to: RootCollator.self)
+    }
+
+    /// The collator for the current locale, in place in its published slot (valid for the whole process). Callers call it through `pointee`, so a call needs no retain and release of the collator's storage: they were ~40 instructions of a ~430-instruction `localizedCompare`, on a reference count that every thread shares (technique log §51 (ak)).
+    func currentLocaleCollator() -> UnsafePointer<RootCollator>? {
         // Generation first, resolution second: if a locale reset lands between the two, the fresh collator is stored under the OLD generation and the next call re-resolves — converging, never stale. The reverse order could pin a stale collator under the new generation.
         let generation = LocaleNotifications.cache.count()
-        if let raw = published.current.load(ordering: .acquiring) {
-            let slot = raw.assumingMemoryBound(to: CurrentSlot.self)
-            if slot.pointee.generation == generation, let c = slot.pointee.collator { return c }
+        if let raw = published.current.load(ordering: .acquiring),
+           raw.assumingMemoryBound(to: CurrentSlot.self).pointee.generation == generation {
+            return Self.collatorPointer(in: raw, \CurrentSlot.collator)
         }
         return currentWriteLock.withLock { _ in
             // Another thread may have published this generation since this one missed.
-            if let raw = published.current.load(ordering: .acquiring) {
-                let slot = raw.assumingMemoryBound(to: CurrentSlot.self)
-                if slot.pointee.generation == generation, let c = slot.pointee.collator { return c }
+            if let raw = published.current.load(ordering: .acquiring),
+               raw.assumingMemoryBound(to: CurrentSlot.self).pointee.generation == generation {
+                return Self.collatorPointer(in: raw, \CurrentSlot.collator)
             }
-            let lang = Self.resolveLanguage(for: Locale.current)
-            let c = collator(forLanguage: lang)
+            // A failed resolution publishes nothing: the next call tries again.
+            guard let c = collator(forLanguage: Self.resolveLanguage(for: Locale.current)) else { return nil }
             let slot = UnsafeMutablePointer<CurrentSlot>.allocate(capacity: 1)
             slot.initialize(to: CurrentSlot(collator: c, generation: generation))
             published.current.store(UnsafeRawPointer(slot), ordering: .releasing)
-            return c
+            return Self.collatorPointer(in: UnsafeRawPointer(slot), \CurrentSlot.collator)
+        }
+    }
+
+    func collatorForCurrentLocale() -> RootCollator? {
+        currentLocaleCollator()?.pointee
+    }
+
+    /// The collator for `locale`, in place in its published slot (valid for the whole process), like `currentLocaleCollator()`.
+    func collator(in locale: Locale) -> UnsafePointer<RootCollator>? {
+        let id = locale.identifier
+        if let raw = published.lastLocale.load(ordering: .acquiring),
+           raw.assumingMemoryBound(to: LastLocale.self).pointee.identifier == id {
+            return Self.collatorPointer(in: raw, \LastLocale.collator)
+        }
+        guard let resolved = collator(forLanguage: Self.resolveLanguage(for: locale)) else { return nil }
+        return published.lastLocaleSlots.withLock { slots in
+            let slot: UnsafeMutablePointer<LastLocale>
+            if let existing = slots[id] {
+                slot = existing
+            } else {
+                slot = .allocate(capacity: 1)
+                slot.initialize(to: LastLocale(identifier: id, collator: resolved))
+                slots[id] = slot
+            }
+            published.lastLocale.store(UnsafeRawPointer(slot), ordering: .releasing)
+            return Self.collatorPointer(in: UnsafeRawPointer(slot), \LastLocale.collator)
         }
     }
 
     func collator(for locale: Locale?) -> RootCollator? {
         guard let locale else { return collator(forLanguage: nil) }
-        let id = locale.identifier
-        if let raw = published.lastLocale.load(ordering: .acquiring) {
-            let slot = raw.assumingMemoryBound(to: LastLocale.self)
-            if slot.pointee.identifier == id { return slot.pointee.collator }
-        }
-        let resolved = collator(forLanguage: Self.resolveLanguage(for: locale))
-        if let resolved {
-            published.lastLocaleSlots.withLock { slots in
-                let slot: UnsafeMutablePointer<LastLocale>
-                if let existing = slots[id] {
-                    slot = existing
-                } else {
-                    slot = .allocate(capacity: 1)
-                    slot.initialize(to: LastLocale(identifier: id, collator: resolved))
-                    slots[id] = slot
-                }
-                published.lastLocale.store(UnsafeRawPointer(slot), ordering: .releasing)
-            }
-        }
-        return resolved
+        return collator(in: locale)?.pointee
     }
 
     private func collator(forLanguage lang: String?) -> RootCollator? {

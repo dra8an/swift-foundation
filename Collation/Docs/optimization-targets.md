@@ -4907,3 +4907,78 @@ ignores the identifier" fails it. Thread Sanitizer
 / release pair of the collator's storage (40), the strings'
 `bridgeObjectRetain` / `Release` (20), and `LocaleNotifications.count()`
 with its lock (FoundationEssentials).
+
+#### (ak) The wrappers use the cached collator in place: no retain, no packed options
+
+**Where** (a trace of one `localizedCompare` call after (aj), WMO, ascii,
+433 instructions): `_localizedCompare` loaded the 7 bytes of
+`defaultOptions` one by one and packed them into a register (~25
+instructions) for the out-of-line `compare(_:_:options:)`, whose guard then
+compared them with the default setup again; and copying the collator out of
+the slot cost a `swift_retain` / `swift_release` pair (40), on a reference
+count that every thread shares.
+
+**Steps** (count of one `localizedCompare` call, WMO, ascii; HEAD
+`624e0fa5` 436):
+
+| step | count |
+|---|---:|
+| W1a: `CollatorCache.currentLocaleCollator()` / `collator(in:)` return a pointer to the collator in its slot (slots are never freed) | 430 — the compiler still copied `pointee` (a retain) |
+| W1b: `RootCollator.withCollator(at:)`: the storage reference read as a raw word, the call inside `Unmanaged._withUnsafeGuaranteedRef` | 381 |
+| W1c: internal `compareWithDefaultOptions` — `compareFastPath(optionsAreDefault: true)` skips the options compare (a constant at each call site); the slow path reads the options from the storage | **353** |
+
+The engine's `compare(_:_:options:)` passes `optionsAreDefault: false`: its
+code is unchanged (EngineBench counts ascii 158, latin 158 / 170, paths mean
+318.8, as in (ah)).
+
+**W1 in `-no-WMO`: a generic across files.** With every wrapper on
+`withCollator`, the `-no-WMO` A/B had the options compare +2.0 / +3.0% (ascii
+/ latin, 5/5) and `range(of:locale:)` latin +1.5%. Count of one options
+compare, `-no-WMO -g` (a second probe row, `tmp str optCmp`): 988 → 1052.
+`withCollator` (generic, `@inline(__always)`, with a closure) was a real
+symbol: in `-no-WMO` each file compiles on its own, and `@inline(__always)`
+does not make a body visible to other files, so the wrappers called it
+unspecialized with a closure context (a forwarder of 53 instructions, three
+retain / release pairs).
+
+**W2c (shipped).** `withCollator` is private to `RootCollator.swift`; the
+other files call non-generic entries there: `defaultOptions(at:)`,
+`compareWithDefaultOptions(at:_:_:)`, `compare(at:_:_:options:)`,
+`contains(at:…)`, `search(at:…backwards:)`. The options compare, the
+`String.Comparator` and `String.StandardComparator` sorts take the
+default-options entry when the CompareOptions are empty (`mask.rawValue ==
+0`), else `CollationOptions.from` + `compare(at:)` at the call site — no
+helper layer (W2: a cross-file helper with `isDisjoint`, 1016; W2b: the
+helper with a raw AND, 1000). `-no-WMO` counts: `localizedCompare` 617 →
+527, the options compare 988 → **972**.
+
+**A/B against `624e0fa5`** (5 interleaved rounds each, 2026-10-29; WMO `-g`
+BenchFoundation, base in the worktree, load 13 → 12; `-no-WMO -g`, the base
+built in the main tree with the HEAD files and copied, load 12 → 11; min ns,
+mean change):
+
+| row | WMO ascii / latin | WMO cjk / paths / thai | `-no-WMO` ascii / latin | `-no-WMO` cjk / paths / thai |
+|---|---|---|---|---|
+| `localizedCompare` | 32 → 25 / 33 → 26 (−20 / −21%) | −13 / −15 / −1.6% | 41 → 42 / 42 → 38 (−5.8 / −6.6%, mostly −) | −4.6 / −8.0 / −0.5% |
+| `localizedStandardCompare` | 30 → 24 / 31 → 25 (−20 / −18%) | −15 / −15 / −2.5% | −4.0 / −4.9% | −4.2 / −3.1 / −0.3% |
+| `localizedCaseInsensitiveCompare` | −21 / −19% | −17 / −11 / −1.0% | −5.0 / −4.8% | −3.7 / −2.4 / 0.0% |
+| `compare(_:locale:)` | 39 → 34 / 39 → 35 (−21 / −16%) | −19 / −17 / −4.4% | **60 → 45 / 62 → 48 (−25 / −21%)** | −17 / −15 / −3.7% |
+| `compare(_:options:range:locale:)` | −14 / −14% | −9 / −10 / −1.8% | −7.2 / −1.5% | −2.3 / −0.2 / +0.1% |
+| `sorted(using: .localizedStandard)` | −7.1 / −5.6% | −3.0 / −2.6 / −4.2% | −5.6 / −5.4% | −2.7 / −3.8 / −2.2% |
+| `sorted(using: String.Comparator(…))` | −13 / −13% | −7.1 / −7.5 / −7.3% | −16 / −15% | −14 / −11 / −7.0% |
+| `localizedStandardContains` | −1.7 / −1.6% | +1.3 (mixed) / −1.8 / −1.4% | +0.2 (mixed) / −0.2% | −0.9 / **+1.6% (5/5)** / −0.1% |
+| `range(of:options:locale:)` | −6.4 / −1.7% | −3.2 / −5.9 / −1.9% | −1.3 (mixed) / **+0.9% (5/5)** | +0.1 / **+2.9% (5/5)** / **+1.0% (4/5)** |
+
+**Kept with four `-no-WMO` search losses** (user decision, 2026-10-29: "I
+am not ready to drop such a big gain"): `range(of:locale:)` latin +3 ns
+(355 → 358), paths +4, thai +7; `localizedStandardContains` paths +3 — a
+fixed cost per call (one more call layer, `RootCollator.search(at:)` →
+the search in `CollationSearch.swift`, another file), not a cost that
+grows with the work; the same rows are 1.7–6.4% faster in WMO. Next: win
+that back with W2c as the base.
+
+**Tests.** `CollatorCacheTests` (new): `compareWithDefaultOptions` against
+`compare(_:_:)` on root and five tailorings; every pointer entry against its
+instance method on five locales; interned explicit-locale slots; a stable
+current-locale slot within one generation. Thread Sanitizer on it and
+`CollationConcurrencyTests`: no reports. Suite 1563/136.
