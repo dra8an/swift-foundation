@@ -487,13 +487,17 @@ public struct RootCollator: @unchecked Sendable {
         var triedFastLatin = false
         var restart = restart
         // The gate is checked here, before the call: computing the setup and pinning the strings first cost CJK sorts +2–4% for a pass that always bails on them.
-        if options.strength == .identical,
-           (left.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
-           (right.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
-           let decided = identicalStrengthTertiaryPass(left, right, options: options) {
-            return decided
-        }
-        if options.strength != .identical, case let table = fastLatinTable, !table.isEmpty {
+        if options.strength == .identical {
+            if (left.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
+               (right.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
+               let decided = identicalStrengthTertiaryPass(left, right, options: options) {
+                return decided
+            }
+            // Not decided at tertiary (non-Latin text, a tie, a bail-out): the bytes path, as for a bailed options pass — compareAfterOptionsPass places the restart and compareFromRestart compares the CEs and then the identical level from that restart. compareBody's String-iterator walk cost CJK ~2× and Thai +21% in instructions (technique log §51 (ao)). A call of its own, not an assignment to `restart`: the assignment changed the register allocation of the whole function (+1 instruction on every Latin identical compare).
+            return try compareBody(
+                left, right, options: options, word: word, triedFastLatin: false,
+                restart: Self.optionsPassBailed)
+        } else if case let table = fastLatinTable, !table.isEmpty {
             if word == defaultFLWord, defaultFLPackedOptions >= 0 {
                 // The caller's fast path already ran for these options — but only if both strings had contiguous UTF-8 (bridged strings skip the byte path; compareBody's scalar fast-Latin should still get its chance on those).
                 triedFastLatin = left.isContiguousUTF8 && right.isContiguousUTF8
@@ -526,7 +530,7 @@ public struct RootCollator: @unchecked Sendable {
             restart: restart)
     }
 
-    /// Identical strength — `.forcedOrdering`, and so `String.StandardComparator.localizedStandard` — skips the byte fast-Latin path. The levels are compared in order and the first difference decides, so a non-zero result at tertiary strength IS the identical-strength result; only ties need the quaternary and identical levels. This byte fast-Latin pass at tertiary settles almost every compare of distinct Latin strings; nil (a tie, a bail-out, no contiguous UTF-8) sends the caller on to the full path, unchanged. (`.localizedStandard` compares were ~22 ns and ~220 instructions slower than `localizedStandardCompare`; technique log §51.)
+    /// Identical strength — `.forcedOrdering`, and so `String.StandardComparator.localizedStandard` — skips the byte fast-Latin path. The levels are compared in order and the first difference decides, so a non-zero result at tertiary strength IS the identical-strength result; only ties need the quaternary and identical levels. This byte fast-Latin pass at tertiary settles almost every compare of distinct Latin strings; nil (a tie, a bail-out, no contiguous UTF-8) sends the caller on to the bytes path (compareAfterOptionsPass). (`.localizedStandard` compares were ~22 ns and ~220 instructions slower than `localizedStandardCompare`; technique log §51.)
     ///
     /// Out of line, with its own fastLatinUTF8 call site: merged into compareSlowPath's byte pass, it changed the code of every non-default-options compare (+1–3% on `localizedStandardCompare` and the options compares). The caller runs it only when both strings start with a fast-Latin lead byte: CJK and Thai text always bailed here and paid for the attempt; a non-Latin start loses only this optimization.
     @inline(never)
@@ -669,7 +673,7 @@ public struct RootCollator: @unchecked Sendable {
     /// The `restart` marker from compareSlowPath: its options byte pass ran on both strings' contiguous bytes and bailed (non-Latin text). compareBody then calls compareAfterOptionsPass.
     static var optionsPassBailed: Int { -2 }
 
-    /// The rest of compareSlowPath's options byte pass after a bail, as compareFastPath does it for the default options: the quick CJK primary compare (not for shifted options), else the restart (ICU's backup rule, `restartScalarCount`) and compareFromRestart (the bytes path), not compareBody's String-iterator walk. Sound for every non-identical option set: the restart scalar is safe, and the CE compare reports the two settings where the skipped prefix still matters (CollationCompare.prefixDependent; technique log §51 (z)). nil only if the strings are not contiguous (compareBody then walks).
+    /// The rest of compareSlowPath's options byte pass after a bail, as compareFastPath does it for the default options: the quick CJK primary compare (not for shifted options), else the restart (ICU's backup rule, `restartScalarCount`) and compareFromRestart (the bytes path), not compareBody's String-iterator walk. Sound for every option set: the restart scalar is safe, the CE compare reports the two settings where the skipped prefix still matters (CollationCompare.prefixDependent; technique log §51 (z)), a primary difference (the quick CJK compare) decides at any strength, and at identical strength the identical level skips the same safe prefix, as compareBody's walk does with its own (technique log §51 (ao)). nil only if the strings are not contiguous (compareBody then walks).
     ///
     /// Apart from the options pass on purpose: the pass decides the Latin compares, and this work inside it made compareSlowPath too large to inline into `compare` (+76 instructions per ascii options compare in the `-no-WMO` build, ascii / latin / paths +4..+8%). Here the bailed compares pay a second pinning and a scan of the identical prefix instead (technique log §51 (ac)).
     @inline(never)

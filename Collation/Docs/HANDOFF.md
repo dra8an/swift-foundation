@@ -23,16 +23,16 @@ paragraph).** Expected: HEAD = a docs commit (this handoff) on top of
 was at `d740579a`. If the handoff commit is missing, HANDOFF.md, Docs/21 and
 Docs/27 (the 2026-10-29 ICU C gates) are modified — say so and give the
 add/commit lines (the memory files are outside the repo). Tree
-clean otherwise. **Update 2026-10-30 (after §51 (an)):** the A/B
-worktree `../collation-baseline` is detached at `0e6beb7b` (the docs commit
-after §51 (am); the same code as `22af5f68`) with its own, unmodified
-`main.swift`; its WMO `-g` BenchFoundation in `.build-bfg` is at `0e6beb7b`,
-built WITH the temporary `tmp str locCmp` probe row (rebuild before a
-Foundation A/B); its EngineBench builds `.build/engine-bench/.build` and
-`.build-al` are still at `624e0fa5` (rebuild before an engine A/B). Tools of the
+clean otherwise. **Update 2026-10-30 (after §51 (ao)):** the A/B
+worktree `../collation-baseline` is detached at `c541d0b4` (§51 (an)) with
+its own, unmodified `main.swift`; its WMO `-g` BenchFoundation in
+`.build-bfg` and the aligned one in `.build-bfg-al` are at `c541d0b4`, built
+WITH the temporary probe rows `tmp std comparator` and `tmp locstd`
+(rebuild before a Foundation A/B); its EngineBench builds are still at
+`624e0fa5` (rebuild before an engine A/B). Tools of the
 2026-10-29/30 work: `.build/counters/l1/` (`branch_prof.py`, `multiway.py`),
 `.build/l2/`, `.build/l3/` (`foundation_ab_*.py` with longer row lists,
-probe rows `probe-opt.swift`, `probe-range.swift`), `.build/l4/` (§51 (an)), `.build/matrix/2026-10-30-*.txt`.
+probe rows `probe-opt.swift`, `probe-range.swift`), `.build/l4/` (§51 (an)), `.build/l5/` (§51 (ao): `probe-stdcmpr.swift`, `probe-locstd.swift`, `foundation_ab_i1.py`), `.build/matrix/2026-10-30-*.txt`.
 **For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
 (each incremental, ~1 minute):
@@ -193,8 +193,16 @@ these candidates in this order, with the evidence, and let the user choose:
 3. **cjk compare +3.8% since P3c** (18.6 → 19.3 ns; still 2.11× faster than
    ICU): CJK pairs often share the first UTF-8 byte and take the helper
    path. Only if the user wants it.
-4. Identical strength still uses `compareBody`'s String-iterator walk (the
-   `.localizedStandard` comparator; open since (z)).
+4. ~~Identical strength still uses `compareBody`'s String-iterator walk~~ —
+   **DONE (2026-10-30, §51 (ao)):** an identical-strength compare that the
+   tertiary pre-pass does not decide takes the bytes path
+   (`compareAfterOptionsPass` → `compareFromRestart`); the `.localizedStandard`
+   comparator on cjk −51..−58%, thai −19..−20%, the `.localizedStandard` /
+   `KeyPathComparator` / `SortDescriptor` sorts on cjk −16..−32%, thai
+   −10..−17%, in both build modes. **Lesson (§51 (ao)):** keep a per-call
+   count of each API mode next to its cheapest sibling — the other modes no
+   table measures per call (case first, case level, shifted, tailorings)
+   are worth the same 5-minute check.
 5. CE production for precomposed Latin letters (NFD decomposition, ~119
    instructions per accented letter); the run-time writer path for
    non-default options; L1 (the Thai lookahead as a noncopyable buffer,

@@ -4,7 +4,7 @@ import Testing
 
 /// The identical-prefix restart under NON-default options (technique log §51 (z)). Two option settings carry state from the skipped prefix into the rest of the string: alternate=shifted (primary-ignorable CEs after a variable CE are ignored) and a backward secondary level (the secondary weights are compared from the end). The CE compare detects the cases where the prefix can change the result, and the caller compares again from the start (`CollationCompare.prefixDependent`). ICU 79.1's doCompare has no such check: its compare disagrees with its own sort keys on these pairs.
 ///
-/// The referee is byte-wise sort-key order (sortKey() never skips a prefix), as in RestartBackupTests, but for many option sets: the Foundation ones (secondary; secondary + numeric; primary), case first, case level, backward secondary and shifted. Inputs: native strings (the byte scan's restart and compareFromRestart) and bridged strings (compareBody's skip walk).
+/// The referee is byte-wise sort-key order (sortKey() never skips a prefix), as in RestartBackupTests, but for many option sets: the Foundation ones (secondary; secondary + numeric; primary), case first, case level, backward secondary, shifted, and identical strength (`.forcedOrdering`, `.localizedStandard`). Inputs: native strings (the byte scan's restart and compareFromRestart) and bridged strings (compareBody's skip walk).
 @Suite struct OptionsRestartTests {
     static let collatorNames = ["", "th", "ja", "sv", "fr_CA"]
 
@@ -21,12 +21,19 @@ import Testing
         o = d; o.alternate = .shifted; o.strength = .quaternary; sets.append(("shifted quaternary", o))
         o = d; o.alternate = .shifted; o.maxVariable = .symbol; o.strength = .secondary; sets.append(("shifted symbol secondary", o))
         o = d; o.alternate = .shifted; o.backwardSecondary = true; o.strength = .quaternary; sets.append(("shifted backward", o))
+        // Identical strength takes the bytes path too since §51 (ao): the CEs and the identical level from the same restart.
+        o = d; o.strength = .identical; sets.append(("identical", o))
+        o.numeric = true; sets.append(("identical numeric", o))
+        o = d; o.strength = .identical; o.alternate = .shifted; sets.append(("identical shifted", o))
+        o = d; o.strength = .identical; o.backwardSecondary = !d.backwardSecondary; sets.append(("identical backward toggled", o))
         return sets
     }
 
     /// Continuations around the restart point: the RestartBackupTests ones, plus variable scalars, primary-ignorable starters (safe to restart at) and the two together.
     static let continuations = RestartBackupTests.continuations + [
         " ", "-", "\u{0E4C}", "\u{0B55}", "\u{00AD}\u{0301}", " \u{0900}", "-\u{0E47}",
+        // Ties below the identical level: a completely ignorable scalar, and two canonically equivalent forms.
+        "\u{200B}", "\u{00E1}", "a\u{0301}",
     ]
 
     static func builtPairs(_ words: [String], every k: Int) -> [(String, String)] {
@@ -131,7 +138,7 @@ import Testing
             (root, shifted, shiftedPairs, "root shifted"), (th, th.defaultOptions, shiftedPairs, "th defaults"),
             (root, backward, backwardPairs, "root backward"), (fr, fr.defaultOptions, backwardPairs, "fr_CA defaults"),
         ] {
-            for strength in [CollationOptions.Strength.secondary, .tertiary, .quaternary] {
+            for strength in [CollationOptions.Strength.secondary, .tertiary, .quaternary, .identical] {
                 var o = options
                 o.strength = strength
                 for (a, b) in pairs {

@@ -5151,3 +5151,81 @@ atomic. Suite 1564/136 (the Substring paths are tested by
 The wrapper around the engine: ~360 → ~117 instructions; the largest part
 left is `LocaleNotifications.count()` with its own lock (~40,
 FoundationEssentials, non-framework build only).
+
+#### (ao) Identical strength takes the bytes path (`.localizedStandard` on CJK and Thai)
+
+**How it was found** (2026-10-30): one `.localizedStandard` comparator call
+(identical strength via `.forcedOrdering`, §51 (o)) counted next to its cheap
+sibling `localizedStandardCompare` (the same options at secondary strength;
+a temporary probe row each, WMO `-g`, calls after 1000): ascii 583 / 405,
+cjk **1315 / 683**, thai **4144 / 3412**. Since (z) every other option set
+takes the bytes path after a bailed options pass; identical strength still
+went from the tertiary pre-pass of (o) — whose gate skips non-Latin text on
+purpose — straight into `compareBody`'s String-iterator walk
+(`CEIterator.ce(at:)`, String-iterator resets, NFD refills,
+`swift_isUniquelyReferenced`, retains). The (z) entry had recorded it as a
+follow-up ("Identical strength is NOT covered").
+
+**Why it stayed:** Table 1 runs the default (tertiary) options; Table 2
+shows `.localizedStandard` only inside the sort rows, in ns per element
+(about 14 comparisons plus ~80 ns per comparison in FoundationEssentials'
+generic sort), and the cjk sort row already read 4.9× faster than system
+ICU (the NSString bridge). **Lesson:** keep a per-call count of each API
+mode (strength, options) next to its cheapest sibling; a 2× gap shows at
+once, whatever the Table 2 speedup says.
+
+**Change (I1b).** In `compareSlowPath`, an identical-strength compare that
+the tertiary pre-pass does not decide (non-Latin start, a tie, a bail-out)
+calls `compareBody(…, restart: optionsPassBailed)`: `compareAfterOptionsPass`
+(the quick CJK compare, then the restart by ICU's backup rule) and
+`compareFromRestart`, which already compared the identical level from the
+restart (`compareIdenticalLevel(skippingFirst: restart)`). Sound for the
+reasons of (z) — the restart scalar is safe, so the CEs and the NFD forms of
+the skipped prefix are the same on both sides (compareBody's walk relied on
+the same argument for its own skip), the CE compare reports
+`prefixDependent` — and a primary difference (the quick CJK compare)
+decides at any strength. I1 assigned the marker to `restart` instead; that
+changed the register allocation of `compareSlowPath` (one more `mov`, a
+store pair split; +1 instruction on every Latin identical compare) and the
+plain WMO A/B had the `KeyPathComparator` / `SortDescriptor` sorts on ascii /
+latin +1.1..+1.9% (5/5; aligned builds: −0.2..+0.9%). I1b's own call keeps
+the old allocation.
+
+**Counts** (one call, WMO `-g`, HEAD `c541d0b4` → I1b): the comparator ascii
+583 → 581, latin 593.8 → 591.8, cjk **1315.2 → 666.5**, thai **4144.3 →
+3330.8**; `localizedStandardCompare` ascii 405 → 404. EngineBench default
+compare unchanged (ascii 172.9 incl. one prefix pair, latin 168.1, cjk 294.8,
+paths 318.8).
+
+**A/B against HEAD** (5 interleaved rounds each, 2026-10-30; WMO `-g`
+BenchFoundation, base in the worktree, load 82 → 43; `-no-WMO -g`, the base
+built in the main tree with the HEAD file and copied, load 15 → 9; mean
+change):
+
+| row | WMO ascii / latin / cjk / paths / thai | `-no-WMO` ascii / latin / cjk / paths / thai |
+|---|---|---|
+| the comparator, one call | 0.0 / −0.7 / **−58** (88 → 37 ns) / −9.3 / **−19%** (219 → 177) | −1.7 / −1.4 / **−51** (149 → 74) / −7.8 / **−20%** (310 → 249) |
+| `sorted(using: .localizedStandard)` | −0.8 / −1.2 / **−28** / −4.7 / **−17%** | −1.1 / −0.6 / **−32** / −3.5 / **−16%** |
+| `KeyPathComparator` sort | +0.2 / +0.1 (mixed) / −16 / −2.6 / −9.6% | −0.3 / −0.2 (mixed) / −22 / −1.4 / −10% |
+| `SortDescriptor` sort | −0.1 / −0.5 (mixed) / −23 / −3.9 / −13% | −0.4 / −0.8 / −27 / −3.8 / −13% |
+| options compares, `localizedStandardCompare`, `localizedCaseInsensitiveCompare` | −0.2..−6% (mostly 0 or −) | −0.6..−8.2% (5/5) |
+| `localizedCompare`, `compare(_:locale:)`, `String.Comparator` sort (code executed unchanged) | latin `localizedCompare` +9.6% (+0+0+, min 18 → 19); `sortCmp(locale)` ascii +2.6% (5/5) | −0.6..−5.5%; `sortCmp(locale)` −0.5 / −1.2% |
+
+**Placement checks** for the ascii / latin cells (WMO, 7 rounds, load
+11–17): repeated plain A/B — `localizedCompare` ±0.7% (mixed),
+`compare(_:locale:)` 0.0%, `sortCmp(locale)` +0.7 / +0.9%, `KeyPathComparator`
++0.2%, `SortDescriptor` −0.5 / −0.4%; aligned builds (`-align-all-functions=6`,
+both sides) — `sortCmp(locale)` +0.6 / −0.1%, `KeyPathComparator` +0.9 / +0.7%,
+`SortDescriptor` +0.6 / +0.7%, `.localizedStandard` sort +0.2 / −0.8%. No
+row is slower in both layouts; the signs follow the layout, the size stays
+≤ 0.9%, and the instructions are the same or fewer: placement. Kept (user
+decision, 2026-10-30).
+
+**Tests.** `OptionsRestartTests` gets four identical-strength option sets on
+its five collators (identical; + numeric, as `.localizedStandard`; + shifted;
++ backward secondary toggled), three tie continuations in the built pairs
+(U+200B, `á`, `a` + U+0301) and identical strength in
+`primaryIgnorableStartersAfterTheRestart`; they pass on the old engine too.
+The mutation "the identical level in compareFromRestart skips one scalar
+more" fails `OptionsRestartTests` and `IdenticalStrengthTests` with 46
+issues. Suite 1564/136.
