@@ -89,7 +89,7 @@ extension StringProtocol {
     }
 }
 
-// The collation wrappers below are generic and not `@inlinable`, so a caller in another module runs their unspecialized code. Each one converts its arguments with `_collationString` and calls a non-generic `String` method, so the collator work runs as specialized code.
+// The collation wrappers below are generic and not `@inlinable`, so a caller in another module runs their unspecialized code. Each one converts its arguments with `_collationString` and calls a non-generic `String` method, so the collator work runs as specialized code. `@_specialize(where Self == String, T == String)` (as AttributedStringProtocol uses it in FoundationEssentials) adds a type check at the entry of the generic code that jumps to a specialized copy: two Strings then reach the worker in registers, with no copy (`_specialize` returned +1 copies — a retain and a release per string, atomic for heap strings) and no generic frame (technique log §51 (an)). It adds no public symbol.
 @available(macOS 10.10, iOS 8.0, watchOS 2.0, tvOS 9.0, *)
 extension StringProtocol {
     /// `String(self)` without the generic `String.init` in unspecialized code: a metatype compare finds a `String` (no copy) or a `Substring` first.
@@ -101,6 +101,7 @@ extension StringProtocol {
     }
 
     /// Compares the string with another using a localized comparison in the current locale.
+    @_specialize(where Self == String, T == String)
     public func localizedCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
             return string._localizedCompare(other)
@@ -108,6 +109,7 @@ extension StringProtocol {
         return _localizedCompareConverting(aString)
     }
 
+    @_specialize(where Self == String, T == String)
     public func localizedCaseInsensitiveCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
             return string._localizedCaseInsensitiveCompare(other)
@@ -115,6 +117,7 @@ extension StringProtocol {
         return _localizedCaseInsensitiveCompareConverting(aString)
     }
 
+    @_specialize(where Self == String, T == String)
     public func localizedStandardCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
             return string._localizedStandardCompare(other)
@@ -139,6 +142,7 @@ extension StringProtocol {
     }
 
     /// Compares the string using the specified options and locale.
+    @_specialize(where Self == String, T == String)
     public func compare<T: StringProtocol>(_ aString: T, options mask: String.CompareOptions = [], range: Range<Index>? = nil, locale: Locale?) -> ComparisonResult {
         if let locale, range == nil, !mask.contains(.literal),
            let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self),
@@ -167,6 +171,7 @@ extension StringProtocol {
     }
 
     /// Returns true if the string contains the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
+    @_specialize(where Self == String, T == String)
     public func localizedStandardContains<T: StringProtocol>(_ string: T) -> Bool {
         if let text = _specialize(self, for: String.self), let pattern = _specialize(string, for: String.self) {
             return text._localizedStandardContains(pattern)
@@ -174,6 +179,7 @@ extension StringProtocol {
         return _localizedStandardContainsConverting(string)
     }
 
+    @_specialize(where Self == String, T == String)
     public func localizedCaseInsensitiveContains<T: StringProtocol>(_ string: T) -> Bool {
         if let text = _specialize(self, for: String.self), let pattern = _specialize(string, for: String.self) {
             return text._localizedCaseInsensitiveContains(pattern)
@@ -192,6 +198,7 @@ extension StringProtocol {
     }
 
     /// Returns the range of the first occurrence of the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
+    @_specialize(where Self == String, T == String)
     public func localizedStandardRange<T: StringProtocol>(of string: T) -> Range<Index>? {
         // Two Strings: the search builds its indices on self, so the range needs no rebasing.
         if let text = _specialize(self, for: String.self), let pattern = _specialize(string, for: String.self) {
@@ -208,6 +215,7 @@ extension StringProtocol {
     }
 
     /// Returns the range of the first occurrence of the given string, searching with the specified options and locale.
+    @_specialize(where Self == String, T == String)
     public func range<T: StringProtocol>(of aString: T, options mask: String.CompareOptions = [], range searchRange: Range<Index>? = nil, locale: Locale?) -> Range<Index>? {
         // Two Strings and no search range: the search builds its indices on self, so the range needs no rebasing.
         if let locale, searchRange == nil, !mask.contains(.literal),

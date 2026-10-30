@@ -23,17 +23,16 @@ paragraph).** Expected: HEAD = a docs commit (this handoff) on top of
 was at `d740579a`. If the handoff commit is missing, HANDOFF.md, Docs/21 and
 Docs/27 (the 2026-10-29 ICU C gates) are modified — say so and give the
 add/commit lines (the memory files are outside the repo). Tree
-clean otherwise. **Update 2026-10-30 (after the matrix):** the A/B
-worktree `../collation-baseline` is detached at `624e0fa5` (before §51 (ak)
-changed `RootCollator.swift`; used for the engine placement check of the
-matrix) with its own, unmodified `main.swift`; its EngineBench builds
-`.build/engine-bench/.build` and `.build-al` (every function aligned to 64
-bytes) are at `624e0fa5`; `.build-g` and the WMO `-g` BenchFoundation in
-`.build-bfg` are from `6dc65a05` (`.build-bfg` built WITH the temporary
-`tmp str locCmp` probe row — rebuild before a Foundation A/B). Tools of the
+clean otherwise. **Update 2026-10-30 (after §51 (an)):** the A/B
+worktree `../collation-baseline` is detached at `0e6beb7b` (the docs commit
+after §51 (am); the same code as `22af5f68`) with its own, unmodified
+`main.swift`; its WMO `-g` BenchFoundation in `.build-bfg` is at `0e6beb7b`,
+built WITH the temporary `tmp str locCmp` probe row (rebuild before a
+Foundation A/B); its EngineBench builds `.build/engine-bench/.build` and
+`.build-al` are still at `624e0fa5` (rebuild before an engine A/B). Tools of the
 2026-10-29/30 work: `.build/counters/l1/` (`branch_prof.py`, `multiway.py`),
 `.build/l2/`, `.build/l3/` (`foundation_ab_*.py` with longer row lists,
-probe rows `probe-opt.swift`, `probe-range.swift`), `.build/matrix/2026-10-30-*.txt`.
+probe rows `probe-opt.swift`, `probe-range.swift`), `.build/l4/` (§51 (an)), `.build/matrix/2026-10-30-*.txt`.
 **For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
 (each incremental, ~1 minute):
@@ -175,11 +174,17 @@ these candidates in this order, with the evidence, and let the user choose:
    `currentLocaleCollator()` inlines (its locked path is out of line): one
    `localizedCompare` 353 → 306 instructions; `compare(_:locale:)` −25% WMO /
    −13% `-no-WMO`, the options compare −15% / −9%, `range(of:locale:)`
-   −3.5..−14% / −1.5..−9% (ascii / latin and paths). Day total for one
-   `localizedCompare`: 516 → 306 instructions (engine 148). Still in the
-   call: the strings' `bridgeObjectRetain` / `Release` (20; atomic for heap
-   strings) and `LocaleNotifications.count()`'s own lock (~40,
-   FoundationEssentials, non-framework build only). Earlier text of this
+   −3.5..−14% / −1.5..−9% (ascii / latin and paths). **Then §51 (an):**
+   `@_specialize(where Self == String, T == String)` on the eight wrappers
+   (user decision: accepted; it adds no public symbol, and
+   FoundationEssentials uses it the same way) removes the strings' copies
+   (`bridgeObjectRetain` / `Release`, atomic for heap strings) and the
+   generic frame: one `localizedCompare` 306 → 265 instructions (paths
+   566.7 → 443.7); `localizedCompare` ascii / latin / paths −22 / −20 /
+   −29% WMO, −20 / −16 / −20% `-no-WMO`, thai −7%; every wrapper row faster
+   in both modes. Day total for one `localizedCompare`: 516 → 265
+   instructions (engine 148). Still in the call: `LocaleNotifications.count()`'s
+   own lock (~40, FoundationEssentials, non-framework build only). Earlier text of this
    item: **The `localizedCompare` wrapper is front-end bound:** ~33% of its cycles
    are instruction delivery (the engine compare ~9%; §51 (ah)). The wrapper
    code (the collator cache, `LockedState`, the generic layers in
@@ -467,6 +472,12 @@ compare 9.3/10.1/40.8/30.0/172.8, sortKey 104.4/121.0/117.7/373.3/155.5.
   current locale heavily must run on the preferences actor (§51 (o)).
 
 **Do not redo (measured and rejected; details in §51 and §49/§50):**
+reading a `String` or a `RootCollator` through a pointer to avoid a copy —
+`pointee` copies (a retain), also into a `borrowing` parameter (§51 (ak)
+W1a, §51 (an) C1 / C2; use `_withUnsafeGuaranteedRef` for the collator and
+`@_specialize` for the generic wrappers); a generic `@inline(__always)`
+helper with a closure called from another file (unspecialized in
+`-no-WMO`, §51 (ak) W1);
 a branch-free ASCII / two-byte Latin decode in `compareUTF8` (latin −4.5%,
 ascii +4.5%; §51 (ai)); pinning only strings longer than 15 bytes (§51 (aa)); in `compareUTF8`,
 wrapping index increments (`&+= 1`; LLVM then reads each byte with `ldrsb`

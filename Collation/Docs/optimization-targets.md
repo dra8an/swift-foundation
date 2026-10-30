@@ -5089,3 +5089,65 @@ faster than 2026-10-29 — `localizedCompare` 51/50/70/69/264 →
 40/41/61/57/258, `compare(_:locale:)` 68/70/93/93/290 → 44/41/63/62/261, the
 options compare 85/86 → 69/71, `range(of:locale:)` 110/363/335/135/417 →
 95/354/320/111/399, `String.Comparator` sort −11..−18%; floor 1.71× → 1.81×.
+
+#### (an) The string copies in the generic wrappers: `@_specialize`
+
+**Where** (§51 (am), part C): in the unspecialized generic wrappers,
+`_specialize(self, for: String.self)` returns an owned copy, so each of the
+two strings got a `bridgeObjectRetain` before the worker call and a
+`bridgeObjectRelease` after it — 20 instructions for small strings, and
+atomic operations for heap strings (longer than 15 bytes: all paths lines,
+most thai lines).
+
+**Rejected variants** (one `localizedCompare` call, WMO, ascii; HEAD 306):
+
+| variant | count | why |
+|---|---:|---|
+| C1: `withUnsafePointer(to:)` on both borrowed values, a non-generic worker that reads them through `pointee` | 324 | the compiler copies at the `pointee` read (`load [copy]`); paths shows `swift_retain` / `swift_release` 34 + 34 |
+| C2: C1 with explicit `borrowing String` worker parameters | 324 | the same copy, at the same source line |
+
+**Shipped (C3): `@_specialize(where Self == String, T == String)`** on the
+eight public generic wrappers (the three `localized…Compare`,
+`compare(_:options:range:locale:)`, both contains,
+`localizedStandardRange`, `range(of:options:range:locale:)`). The compiler
+builds a specialized copy of each and puts a type check at the entry of the
+generic code; for two Strings it jumps there with the strings in registers:
+no copy, no retain or release, no generic frame (the generic entry costs 12
+instructions). Without `exported:` the attribute adds no public symbol;
+FoundationEssentials uses it the same way (`AttributedStringProtocol.swift`,
+`Decimal.swift`). User decision, 2026-10-30: accepted.
+
+**Counts** (one `localizedCompare` call, base HEAD `0e6beb7b`):
+
+| | WMO ascii | WMO paths | `-no-WMO` ascii | `-no-WMO` paths |
+|---|---:|---:|---:|---:|
+| HEAD | 306 | 566.7 | 503 | 774.7 |
+| C3 | **265** | **443.7** | **471** | **660.7** |
+
+**A/B against HEAD** (5 interleaved rounds each, 2026-10-30; WMO `-g`
+BenchFoundation, base in the worktree, load 41 → 34; `-no-WMO -g`, the base
+built in the main tree with the HEAD file and copied, load 13 → 10; min ns,
+mean change; all 5/5 unless noted):
+
+| row | WMO ascii / latin / cjk / paths / thai | `-no-WMO` ascii / latin / cjk / paths / thai |
+|---|---|---|
+| `localizedCompare` | **24 → 20 / 24 → 18** / 37 → 29 / **40 → 28** / 185 → 171 (−22 / −20 / −18 / −29 / −7%) | **39 → 32 / 37 → 33** / 59 → 46 / 57 → 46 / 257 → 239 (−20 / −16 / −16 / −20 / −7%) |
+| `compare(_:locale:)` | 25 → 21 / 25 → 21 / 39 → 33 / 43 → 32 / 190 → 176 | 43 → 39 / 45 → 35 / 62 → 57 / 61 → 48 / 261 → 245 |
+| `compare(_:options:range:locale:)` | −11 / −10 / −14 / −23 / −7% | −6.3 / −5.9 / −6.1 / −14 / −6.7% |
+| `localizedStandardCompare` | −11 (−+−−−) / −16 (−−−−0) / −12 / −23 / −7.6% | −16 / −15 / −11 / −20 / −6.4% |
+| `localizedCaseInsensitiveCompare` | −17 / −12 / −13 / −25 / −7.6% | −14 / −12 / −11 / −18 / −5.3% |
+| both contains | −4.3..−11% | −3.0..−8.0% |
+| `localizedStandardRange` | −3.9..−7.9% | −1.8 (−−−+−)..−7.2% |
+| `range(of:options:locale:)`, backwards | −3.4..−17% | −1.2..−22% (cjk backwards +−−−−) |
+| sorts (code not changed) | −0.9..+0.9%, mixed | −4.6..+0.3%, mixed |
+
+Every wrapper row is faster in both modes, on every corpus. Thai gains
+14–18 ns per call: most thai lines are heap strings, so their copies were
+atomic. Suite 1564/136 (the Substring paths are tested by
+`substringReceiversAndArgumentsMatchStrings`, §51 (am)).
+
+**Day total, one `localizedCompare` call (WMO, ascii):** 516 ((ah) state)
+→ 436 ((aj)) → 353 ((ak)) → 306 ((am)) → **265** ((an)); the engine 148.
+The wrapper around the engine: ~360 → ~117 instructions; the largest part
+left is `LocaleNotifications.count()` with its own lock (~40,
+FoundationEssentials, non-framework build only).
