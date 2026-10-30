@@ -5076,3 +5076,16 @@ existing Substring tests. Suite 1564/136.
 it. The wrapper around the engine: ~360 → ~160 instructions. The largest
 part left is `LocaleNotifications.count()` with its own lock (~40,
 FoundationEssentials, non-framework build only).
+
+**Matrix after (am)** (Docs/21, 2026-10-30, run B at `22af5f68`; load
+42–84 after a wake; system-ICU control +1.1..+2.8%, so every cell reads ~2%
+slow; runs A and B agree within 1.8%): Table 1 (speedup ICU / ours) compare
+1.00× ascii, 1.03× latin, 2.10× cjk, 1.59× paths, 1.05× thai; sortKey 1.38×,
+1.27×, 1.11×, 1.96×, 1.03× — the engine did not change; paths sortKey
+179.8 → 189.5 ns is code placement (2487.2 instructions per call against
+2465.8 in (ah); EngineBench A/B against `624e0fa5`: +3.9% plain, −0.2%
+aligned; latin sortKey +1.7% plain, −0.2% aligned). Table 2: every cell
+faster than 2026-10-29 — `localizedCompare` 51/50/70/69/264 →
+40/41/61/57/258, `compare(_:locale:)` 68/70/93/93/290 → 44/41/63/62/261, the
+options compare 85/86 → 69/71, `range(of:locale:)` 110/363/335/135/417 →
+95/354/320/111/399, `String.Comparator` sort −11..−18%; floor 1.71× → 1.81×.

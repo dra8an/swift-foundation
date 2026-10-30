@@ -23,16 +23,18 @@ paragraph).** Expected: HEAD = a docs commit (this handoff) on top of
 was at `d740579a`. If the handoff commit is missing, HANDOFF.md, Docs/21 and
 Docs/27 (the 2026-10-29 ICU C gates) are modified — say so and give the
 add/commit lines (the memory files are outside the repo). Tree
-clean otherwise. **Update 2026-10-29 (§51 (ai)):** the A/B worktree
-`../collation-baseline` is detached at `2185a906` (the handoff commit, the
-same engine code as `32d3946a`) with its own, unmodified `main.swift`; its
-EngineBench builds `.build/engine-bench/.build`, `.build-al` (every
-function aligned to 64 bytes) and `.build-g` (debug info) are at
-`2185a906`. Its WMO `-g` BenchFoundation in `.build-bfg` is still from
-`cdac770a`, built WITH the temporary `tmp str locCmp` probe row of §51 (ah)
-— rebuild it before a Foundation A/B. The tools of (ai) are in
-`.build/counters/l1/` (`branch_prof.py`, `multiway.py`, the traces). **For
-the next A/B the base is HEAD:** if HEAD moved,
+clean otherwise. **Update 2026-10-30 (after the matrix):** the A/B
+worktree `../collation-baseline` is detached at `624e0fa5` (before §51 (ak)
+changed `RootCollator.swift`; used for the engine placement check of the
+matrix) with its own, unmodified `main.swift`; its EngineBench builds
+`.build/engine-bench/.build` and `.build-al` (every function aligned to 64
+bytes) are at `624e0fa5`; `.build-g` and the WMO `-g` BenchFoundation in
+`.build-bfg` are from `6dc65a05` (`.build-bfg` built WITH the temporary
+`tmp str locCmp` probe row — rebuild before a Foundation A/B). Tools of the
+2026-10-29/30 work: `.build/counters/l1/` (`branch_prof.py`, `multiway.py`),
+`.build/l2/`, `.build/l3/` (`foundation_ab_*.py` with longer row lists,
+probe rows `probe-opt.swift`, `probe-range.swift`), `.build/matrix/2026-10-30-*.txt`.
+**For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
 (each incremental, ~1 minute):
 ```
@@ -92,30 +94,34 @@ add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-10-29 (run B at `32d3946a`,
-after §51 (ah); load 11–12; control within 1.3%; runs A and B agree within
-1.1% in our cells). Table 1, EngineBench vs ICU C, ns per call ours / ICU,
-speedup = ICU / ours:**
+**Current numbers — RECORDED in Docs/21 on 2026-10-30 (run B at `22af5f68`,
+after §51 (am); load 42–84 after a wake; system-ICU control +1.1..+2.8%, so
+every cell reads ~2% slow; runs A and B agree within 1.8%). Table 1,
+EngineBench vs ICU C, ns per call ours / ICU, speedup = ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 9.3 / 9.3 | 1.00× (equal) | 75.0 / 104.4 | 1.39× faster |
-| latin | 9.7 / 10.1 | 1.04× faster | 95.0 / 121.0 | 1.27× faster |
-| cjk | 19.3 / 40.8 | 2.11× faster | 105.2 / 117.7 | 1.12× faster |
-| paths | 18.8 / 30.0 | 1.60× faster | 179.8 / 373.3 | 2.08× faster |
-| thai | 164.9 / 172.8 | 1.05× faster | 149.3 / 155.5 | 1.04× faster |
+| ascii | 9.4 / 9.4 | 1.00× (equal) | 76.9 / 105.9 | 1.38× faster |
+| latin | 10.0 / 10.3 | 1.03× faster | 97.3 / 123.3 | 1.27× faster |
+| cjk | 19.7 / 41.3 | 2.10× faster | 107.3 / 119.6 | 1.11× faster |
+| paths | 18.9 / 30.0 | 1.59× faster | 189.5 / 371.6 | 1.96× faster |
+| thai | 167.5 / 176.1 | 1.05× faster | 152.3 / 157.6 | 1.03× faster |
 
-**All ten rows are at or faster than ICU C** (ascii compare equal). At the
-start of the round (2026-10-16) compare was 0.62–1.59× (ratio 0.63–1.62×)
-and sortKey 0.67–0.97× (ratio 1.03–1.50×). The allocating sortKey
-(`skRet`, a new `[UInt8]` per call by API contract) is 0.75–0.82× of ICU
-(1.64× faster on paths). Table 2 (14 Foundation APIs vs system ICU): every
-cell ahead, floor 1.71×, but mostly because it skips the system NSString →
-CoreFoundation → C++ bridge. **Never use Table 2 as evidence about the
-engine; never cite it as consolation for a Table 1 gap.** Docs/21 notes one
-Table 2 cell: `localizedCompare` ascii 51 ns (47 in the matrix of
-2026-10-28) — fewer instructions and no mispredictions in the checks of
-§51 (ah); this row moves between 47 and 51 across `-no-WMO` builds.
+**All ten rows are at or faster than ICU C** (ascii compare equal). The
+engine did not change since 2026-10-29 (1.00 / 1.04 / 2.11 / 1.60 / 1.05×
+compare then); paths sortKey 179.8 → 189.5 is code placement (aligned
+builds show −0.2%; Docs/21, §51 (am)). At the start of the round
+(2026-10-16) compare was 0.62–1.59× (ratio 0.63–1.62×) and sortKey
+0.67–0.97× (ratio 1.03–1.50×). The allocating sortKey (`skRet`, a new
+`[UInt8]` per call by API contract) is 0.76–0.81× of ICU (1.58× faster on
+paths). Table 2 (14 Foundation APIs vs system ICU): every cell ahead, floor
+1.81× (from 1.71× on 2026-10-29), and every cell faster than 2026-10-29
+after the wrapper steps §51 (aj), (ak), (am) — e.g. `localizedCompare`
+51/50/70/69/264 → 40/41/61/57/258 ns, `compare(_:locale:)` 68/70 → 44/41 on
+ascii / latin — but the lead over system ICU is mostly the skipped NSString
+→ CoreFoundation → C++ bridge. **Never use Table 2 as evidence about the
+engine; never cite it as consolation for a Table 1 gap.** The ICU C gates
+stay those of 2026-10-29 (this run was loaded).
 
 **What this round did (2026-10-23…29; details in §51 (z)–(ah)):**
 - (z) Non-default options get the restart and the bytes path (thai options

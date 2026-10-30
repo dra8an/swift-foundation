@@ -73,8 +73,8 @@ env for machine 2):
   every compare and sortKey row reached ICU C (before, Table 1 showed the
   ratio `ours / ICU`, below 1 = faster; the history in the technique log
   and in older Docs/21 text uses that ratio). The Swift implementation
-  against hand-tuned C. Values as of 2026-10-29 (run B, after §51 (ah)):
-  compare 1.00–2.11× faster, sortKey 1.04–2.08× faster (current numbers:
+  against hand-tuned C. Values as of 2026-10-30 (run B, after §51 (am)):
+  compare 1.00–2.10× faster, sortKey 1.03–1.96× faster (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1
