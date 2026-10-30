@@ -102,19 +102,54 @@ extension StringProtocol {
 
     /// Compares the string with another using a localized comparison in the current locale.
     public func localizedCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        _collationString._localizedCompare(aString._collationString)
+        if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
+            return string._localizedCompare(other)
+        }
+        return _localizedCompareConverting(aString)
     }
 
     public func localizedCaseInsensitiveCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
-        _collationString._localizedCaseInsensitiveCompare(aString._collationString)
+        if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
+            return string._localizedCaseInsensitiveCompare(other)
+        }
+        return _localizedCaseInsensitiveCompareConverting(aString)
     }
 
     public func localizedStandardCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
+        if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
+            return string._localizedStandardCompare(other)
+        }
+        return _localizedStandardCompareConverting(aString)
+    }
+
+    // The paths for arguments that are not both `String` (Substring and other StringProtocol types), out of line: inside the public functions, the `String(self)` fallback made every call reserve stack space for a `Self` and a `T` value and save more registers (technique log §51 (am)).
+    @inline(never)
+    fileprivate func _localizedCompareConverting<T: StringProtocol>(_ aString: T) -> ComparisonResult {
+        _collationString._localizedCompare(aString._collationString)
+    }
+
+    @inline(never)
+    fileprivate func _localizedCaseInsensitiveCompareConverting<T: StringProtocol>(_ aString: T) -> ComparisonResult {
+        _collationString._localizedCaseInsensitiveCompare(aString._collationString)
+    }
+
+    @inline(never)
+    fileprivate func _localizedStandardCompareConverting<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         _collationString._localizedStandardCompare(aString._collationString)
     }
 
     /// Compares the string using the specified options and locale.
     public func compare<T: StringProtocol>(_ aString: T, options mask: String.CompareOptions = [], range: Range<Index>? = nil, locale: Locale?) -> ComparisonResult {
+        if let locale, range == nil, !mask.contains(.literal),
+           let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self),
+           let result = string._compare(other, options: mask, locale: locale) {
+            return result
+        }
+        return _compareConverting(aString, options: mask, range: range, locale: locale)
+    }
+
+    @inline(never)
+    fileprivate func _compareConverting<T: StringProtocol>(_ aString: T, options mask: String.CompareOptions, range: Range<Index>?, locale: Locale?) -> ComparisonResult {
         if let locale, !mask.contains(.literal) {
             let lhs: String
             if let range {
@@ -133,15 +168,40 @@ extension StringProtocol {
 
     /// Returns true if the string contains the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
     public func localizedStandardContains<T: StringProtocol>(_ string: T) -> Bool {
-        _collationString._localizedStandardContains(string._collationString)
+        if let text = _specialize(self, for: String.self), let pattern = _specialize(string, for: String.self) {
+            return text._localizedStandardContains(pattern)
+        }
+        return _localizedStandardContainsConverting(string)
     }
 
     public func localizedCaseInsensitiveContains<T: StringProtocol>(_ string: T) -> Bool {
+        if let text = _specialize(self, for: String.self), let pattern = _specialize(string, for: String.self) {
+            return text._localizedCaseInsensitiveContains(pattern)
+        }
+        return _localizedCaseInsensitiveContainsConverting(string)
+    }
+
+    @inline(never)
+    fileprivate func _localizedStandardContainsConverting<T: StringProtocol>(_ string: T) -> Bool {
+        _collationString._localizedStandardContains(string._collationString)
+    }
+
+    @inline(never)
+    fileprivate func _localizedCaseInsensitiveContainsConverting<T: StringProtocol>(_ string: T) -> Bool {
         _collationString._localizedCaseInsensitiveContains(string._collationString)
     }
 
     /// Returns the range of the first occurrence of the given string using a case-insensitive, diacritic-insensitive, locale-aware search (Finder-style matching).
     public func localizedStandardRange<T: StringProtocol>(of string: T) -> Range<Index>? {
+        // Two Strings: the search builds its indices on self, so the range needs no rebasing.
+        if let text = _specialize(self, for: String.self), let pattern = _specialize(string, for: String.self) {
+            return text._localizedStandardSearch(for: pattern)
+        }
+        return _localizedStandardRangeConverting(of: string)
+    }
+
+    @inline(never)
+    fileprivate func _localizedStandardRangeConverting<T: StringProtocol>(of string: T) -> Range<Index>? {
         let text = _collationString  // once: search input AND rebase source
         guard let range = text._localizedStandardSearch(for: string._collationString) else { return nil }
         return rebaseRange(range, from: text)
@@ -149,6 +209,16 @@ extension StringProtocol {
 
     /// Returns the range of the first occurrence of the given string, searching with the specified options and locale.
     public func range<T: StringProtocol>(of aString: T, options mask: String.CompareOptions = [], range searchRange: Range<Index>? = nil, locale: Locale?) -> Range<Index>? {
+        // Two Strings and no search range: the search builds its indices on self, so the range needs no rebasing.
+        if let locale, searchRange == nil, !mask.contains(.literal),
+           let text = _specialize(self, for: String.self), let pattern = _specialize(aString, for: String.self) {
+            return text._search(for: pattern, options: mask, locale: locale)
+        }
+        return _rangeConverting(of: aString, options: mask, range: searchRange, locale: locale)
+    }
+
+    @inline(never)
+    fileprivate func _rangeConverting<T: StringProtocol>(of aString: T, options mask: String.CompareOptions, range searchRange: Range<Index>?, locale: Locale?) -> Range<Index>? {
         guard let locale else { return nil }
         if mask.contains(.literal) { return nil }
         let text: String

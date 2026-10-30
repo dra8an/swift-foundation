@@ -5005,3 +5005,74 @@ builds of the same code, (ae), (ah)). Not chased: a code change cannot
 steer placement, and a CPU Counters phase long enough for the thai row would
 need far more than 10 thai repetitions. In WMO the same rows are 1.7–6.4%
 faster ((ak)).
+
+#### (am) The generic wrappers: a fast path for two Strings; the cache read inlined
+
+**Where** (a trace of one `localizedCompare` call at `6dc65a05`, WMO, ascii,
+350 instructions, the engine 148): the public generic `localizedCompare<T>`
+(one merged body for the three `localized…Compare`, unspecialized for every
+caller outside the module) cost ~67 instructions: a prologue that saves 6
+register pairs, **stack space for a `Self` and a `T` value sized from the
+type metadata (14 instructions)** — needed only by the rare `String(self)`
+fallback of `_collationString` — the type tests, the epilogue; plus 20 for
+the strings' `bridgeObjectRetain` / `Release` (5-instruction no-ops for small
+strings, atomic operations for heap strings). `currentLocaleCollator()`
+did not inline: its locked slow path made it too large, so 5 instructions of
+work cost a frame (~13).
+
+**Change.**
+- **A.** Eight public generic wrappers test first for two `String`
+  arguments (`_specialize`) and then call the worker directly: the three
+  `localized…Compare`, `compare(_:options:range:locale:)` without a range,
+  both contains, `localizedStandardRange`, `range(of:options:range:locale:)`
+  without a search range (there the search builds its indices on self, so
+  no rebasing). The old body moves unchanged into an `@inline(never)`
+  `…Converting` function (Substring and other StringProtocol types). The
+  public functions then need no generic temporaries and fewer saved
+  registers.
+- **B.** `currentLocaleCollator()`: the lock-free read is `@inline(__always)`;
+  the locked path is `publishCurrentLocaleCollator(generation:)`,
+  `@inline(never)`.
+
+**Count** (one `localizedCompare` call, WMO `-g`): ascii 353 → **306**,
+latin 363.6 → 316.6. The generic layer 67 → 36; `_localizedCompare` with the
+inlined cache read 55 → 42.
+
+**A/B against `6dc65a05`** (5 interleaved rounds each, 2026-10-29; WMO `-g`
+BenchFoundation, base in the worktree, load 43 → 12; `-no-WMO`, the base
+built in the main tree with the two HEAD files and copied, load 12 → 8;
+min ns, mean change):
+
+| row | WMO ascii / latin | WMO cjk / paths / thai | `-no-WMO` ascii / latin | `-no-WMO` cjk / paths / thai |
+|---|---|---|---|---|
+| `localizedCompare` | −4.5 / −5.2% (mostly −) | −3.6 / −4.2 / −2.6% | −1.5 / −5.1% | −2.6 / −1.0 / −1.0% |
+| `compare(_:locale:)` | **33 → 25 / 34 → 25 (−26 / −25%)** | −18 / −12 / −5.2% | **49 → 43 / 49 → 45 (−14 / −13%)** | −10 / −14 / −3.5% |
+| `compare(_:options:range:locale:)` | **−16 / −15%** | −11 / −13 / −5.2% | **−9.3 / −9.1%** | −7.3 / −8.5 / −3.3% |
+| `localizedStandardCompare` | −7.3 / −2.9% | −4.1 / −3.6 / −1.7% | +0.7 (+00+0) / 0.0 (00000) | 0.0 / −0.3 / −1.1% |
+| `localizedCaseInsensitiveCompare` | −8.3 / −8.8% | −5.6 / −7.3 / −2.8% | +0.4 (00−+0) / −1.8% | +0.7 (0++0+) / −1.3 / −2.1% |
+| both contains | −1.4..−2.5% | −0.7..−2.3% | −0.7..+0.3% (mixed) | −1.5..+0.1% (mixed) |
+| `localizedStandardRange` | −1.1 / −1.0% | −1.6..−2.1% | −1.3 / −0.8% | −0.1..−1.1% |
+| `range(of:options:locale:)` | **58 → 52 / 195 → 188 (−9.6 / −3.5%)** | −4.5 / **−13.7** / −4.8% | **−6.3 / −1.5%** | −2.3 / **−9.4** / −1.9% |
+| `range(of:options:.backwards,locale:)` | −10.5 / −3.0% | −4.6 / −8.8 / −3.9% | −6.6 / −2.8% | −2.1 / −7.4 / −2.8% |
+| sorts (code not changed) | −1.1..+0.9% (mixed) | ±0.8%, thai −2.4..−3.1% | −1.7..+0.8% (mixed) | ±0.7% |
+
+No row is slower: the + cells are 0.0–0.9% with mixed signs, except
+`sortCmp(locale)` `-no-WMO` ascii +0.2% (−++++), whose code did not change
+(placement, as in (al)). The biggest gains are on the wrappers whose
+generic bodies were largest (`compare(_:options:range:locale:)` with its
+range, options and literal fallback; `range(of:)` with the rebasing): their
+whole body set the frame that every call paid. Measured in time; only
+`localizedCompare` was counted.
+
+**Tests.** `SubstringReceiverTests.substringReceiversAndArgumentsMatchStrings`
+(new): 12 × 12 word pairs as Substring receivers and arguments (offset
+indices) against the String answers, for the three `localized…Compare`,
+`compare(_:options:range:locale:)` with and without options, and both
+contains — the out-of-line `…Converting` paths. The range paths keep their
+existing Substring tests. Suite 1564/136.
+
+**The day's three steps, one `localizedCompare` call (WMO, ascii):** 516
+((ah) state) → 436 ((aj)) → 353 ((ak)) → **306** ((am)); the engine 148 of
+it. The wrapper around the engine: ~360 → ~160 instructions. The largest
+part left is `LocaleNotifications.count()` with its own lock (~40,
+FoundationEssentials, non-framework build only).

@@ -99,4 +99,24 @@ private struct SubstringReceiverTests {
             #expect(sub.range(of: pattern, options: options, range: searchRange, locale: en).map { String(sub[$0]) } == expected, "Substring search range: \(pattern)")
         }
     }
+
+    /// The compare and contains wrappers take a fast path only for two `String` arguments; Substring receivers and arguments take the out-of-line converting path (technique log §51 (am)). Both must give the String answers.
+    @Test func substringReceiversAndArgumentsMatchStrings() {
+        let en = Locale(identifier: "en")
+        let words = ["résumé", "resume", "Resume", "co-op", "coop", "item10", "item9", "straße", "strasse", "東京", "กา", ""]
+        for a in words {
+            for b in words {
+                let pa = "<" + a + ">", pb = "[" + b + "]"
+                let sa = pa.dropFirst().dropLast(), sb = pb.dropFirst().dropLast()  // Substrings with offset indices
+                #expect(sa.localizedCompare(sb) == a.localizedCompare(b), "\(a) / \(b)")
+                #expect(a.localizedCompare(sb) == a.localizedCompare(b), "\(a) / \(b)")
+                #expect(sa.localizedCaseInsensitiveCompare(b) == a.localizedCaseInsensitiveCompare(b), "\(a) / \(b)")
+                #expect(sa.localizedStandardCompare(sb) == a.localizedStandardCompare(b), "\(a) / \(b)")
+                #expect(sa.compare(sb, options: [.caseInsensitive], range: nil, locale: en) == a.compare(b, options: [.caseInsensitive], range: nil, locale: en), "\(a) / \(b)")
+                #expect(sa.compare(b, options: [], range: nil, locale: en) == a.compare(b, options: [], range: nil, locale: en), "\(a) / \(b)")
+                #expect(sa.localizedStandardContains(sb) == a.localizedStandardContains(b), "\(a) / \(b)")
+                #expect(a.localizedCaseInsensitiveContains(sb) == a.localizedCaseInsensitiveContains(b), "\(a) / \(b)")
+            }
+        }
+    }
 }

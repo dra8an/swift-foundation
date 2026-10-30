@@ -71,8 +71,8 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1563 tests in 136
-suites** — `swift test` prints three summary lines (45/5, 577/91, 941/40; since §51 (ak));
+anything longer or with wider effect. Suite gate: **1564 tests in 136
+suites** — `swift test` prints three summary lines (45/5, 578/91, 941/40; since §51 (am));
 add them up.
 
 **Read next, in this order:**
@@ -162,10 +162,18 @@ these candidates in this order, with the evidence, and let the user choose:
    of (ak) were code placement — HEAD executes fewer instructions on one
    `range(of:locale:)` call (latin −24, paths −44, thai −4), and a new A/B
    gives latin +0.1% (mixed), paths −7.5%; only thai stays ~+1% with the
-   same instruction count. Still in the call: the
-   generic `localizedCompare<T>` layer (~75 + 20 for the string retains) and
-   `LocaleNotifications.count()`'s own lock (FoundationEssentials,
-   non-framework build only). Earlier text of this
+   same instruction count. **Then §51 (am):** the eight public generic
+   wrappers test first for two `String` arguments and call the worker
+   directly (the old body, for Substring and other types, is an
+   `@inline(never)` `…Converting` function), and the cache read
+   `currentLocaleCollator()` inlines (its locked path is out of line): one
+   `localizedCompare` 353 → 306 instructions; `compare(_:locale:)` −25% WMO /
+   −13% `-no-WMO`, the options compare −15% / −9%, `range(of:locale:)`
+   −3.5..−14% / −1.5..−9% (ascii / latin and paths). Day total for one
+   `localizedCompare`: 516 → 306 instructions (engine 148). Still in the
+   call: the strings' `bridgeObjectRetain` / `Release` (20; atomic for heap
+   strings) and `LocaleNotifications.count()`'s own lock (~40,
+   FoundationEssentials, non-framework build only). Earlier text of this
    item: **The `localizedCompare` wrapper is front-end bound:** ~33% of its cycles
    are instruction delivery (the engine compare ~9%; §51 (ah)). The wrapper
    code (the collator cache, `LockedState`, the generic layers in

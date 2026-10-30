@@ -57,7 +57,8 @@ struct CollatorCache: Sendable {
         (slot + MemoryLayout<Slot>.offset(of: field)!).assumingMemoryBound(to: RootCollator.self)
     }
 
-    /// The collator for the current locale, in place in its published slot (valid for the whole process). Callers call it through `pointee`, so a call needs no retain and release of the collator's storage: they were ~40 instructions of a ~430-instruction `localizedCompare`, on a reference count that every thread shares (technique log §51 (ak)).
+    /// The collator for the current locale, in place in its published slot (valid for the whole process). Callers call it through `pointee`, so a call needs no retain and release of the collator's storage: they were ~40 instructions of a ~430-instruction `localizedCompare`, on a reference count that every thread shares (technique log §51 (ak)). The lock-free read is force-inlined; the locked path is out of line, so the read can inline into the callers (technique log §51 (am)).
+    @inline(__always)
     func currentLocaleCollator() -> UnsafePointer<RootCollator>? {
         // Generation first, resolution second: if a locale reset lands between the two, the fresh collator is stored under the OLD generation and the next call re-resolves — converging, never stale. The reverse order could pin a stale collator under the new generation.
         let generation = LocaleNotifications.cache.count()
@@ -65,7 +66,12 @@ struct CollatorCache: Sendable {
            raw.assumingMemoryBound(to: CurrentSlot.self).pointee.generation == generation {
             return Self.collatorPointer(in: raw, \CurrentSlot.collator)
         }
-        return currentWriteLock.withLock { _ in
+        return publishCurrentLocaleCollator(generation: generation)
+    }
+
+    @inline(never)
+    private func publishCurrentLocaleCollator(generation: Int) -> UnsafePointer<RootCollator>? {
+        currentWriteLock.withLock { _ in
             // Another thread may have published this generation since this one missed.
             if let raw = published.current.load(ordering: .acquiring),
                raw.assumingMemoryBound(to: CurrentSlot.self).pointee.generation == generation {
