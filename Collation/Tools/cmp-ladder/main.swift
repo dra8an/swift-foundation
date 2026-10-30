@@ -276,7 +276,7 @@ var bailL1 = 0, bailL2 = 0, wrong = 0
 for i in 1..<lines.count {
     let r0 = try! collator.compare(lines[i - 1], lines[i], options: opts)
     var skip = -1
-    if let r1 = collator.compareFastPath(lines[i - 1], lines[i], options: opts, restart: &skip) {
+    if let r1 = collator.compareFastPath(lines[i - 1], lines[i], options: opts, optionsAreDefault: false, restart: &skip) {
         if r1 != r0 { wrong += 1 }
     } else { bailL1 += 1 }
     var mismatch = -1
@@ -341,7 +341,7 @@ measure("L1  compareFastPath         ") {
     let c = collator
     for _ in 0..<reps { for i in 1..<lines.count {
         var skip = -1
-        sink &+= c.compareFastPath(lines[i - 1], lines[i], options: opts, restart: &skip)?.rawValue ?? 9
+        sink &+= c.compareFastPath(lines[i - 1], lines[i], options: opts, optionsAreDefault: false, restart: &skip)?.rawValue ?? 9
     } }
 }
 measure("R0  clone, exact (control)  ") {
