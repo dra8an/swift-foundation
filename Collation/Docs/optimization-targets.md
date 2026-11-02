@@ -5339,6 +5339,18 @@ primaries); and the variable-top check above. They pass on HEAD's engine
 too. Mutations: a wrong normal-CE32 primary (18 issues), the reordered order
 inverted (48). Suite 1568/137.
 
+**Open items of the sibling check** (the counts of this section; one engine
+call, WMO, calls after 1000):
+- Non-default options on CJK text cost 1.8× the default path: root secondary
+  534.2 against root defaults 296.2 instructions per cjk call (Q1d counts;
+  HEAD before (ap): 549.2 against 297.8). The options pass pins both strings,
+  bails, and `compareAfterOptionsPass` pins them again and scans the prefix
+  again (the trade-off of (ac)).
+- Thai options compares: root secondary 3661.8 against root defaults 3368.2
+  instructions per thai call (+9%; HEAD before (ap), the same cause).
+- ko tailors its hanja as expansions (7 476 of them): Korean Han text still
+  takes the pipeline.
+
 **Matrix after (ap)** (Docs/21, 2026-11-02, run B at `f8a9debb`; load
 20–22; runs A and B agree within 1.2%; ICU C on its gates): Table 1
 (speedup) compare 1.00× ascii, 1.05× latin, 2.15× cjk, 1.53× paths, 1.06×
