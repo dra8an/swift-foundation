@@ -5229,3 +5229,112 @@ its five collators (identical; + numeric, as `.localizedStandard`; + shifted;
 The mutation "the identical level in compareFromRestart skips one scalar
 more" fails `OptionsRestartTests` and `IdenticalStrengthTests` with 46
 issues. Suite 1564/136.
+
+#### (ap) The sibling check of all option modes — and the quick CJK compare for ja, zh, th (reordering, shifted)
+
+**The check** (the lesson of (ao); 2026-10-30): one engine compare per mode,
+`RootCollator.compare(_:_:options:)` called directly (17 temporary probe rows,
+WMO `-g` BenchFoundation, calls after 1000), on latin, cjk and thai. The
+sibling is secondary strength on the same collator. Upper first, case level,
+backward secondary, numeric, sv, da and fr_CA cost the same as their sibling.
+Outliers, all on cjk: root shifted 1213 (sibling 549), th defaults 1116, ja
+1095, zh 1165, their secondary siblings 1235–1306 — against root's default
+298.
+
+**Cause.** The quick CJK compare (two different CJK ideographs at the first
+difference, decided by their primaries; §51 (v), (z)) was off at init for
+any collator with script reordering or a shifted default (`eligible:
+reordering == nil && alternate != .shifted`), and `compareAfterOptionsPass`
+passed no setup for shifted options. And `quickCJKPrimary` bailed on a
+normal CE32 — the form of every ideograph that ja (6 355) and zh (21 005;
+zh-stroke 23 826) tailor (a temporary probe over U+4E00–9FFF, U+3400–4DBF,
+U+20000–2A6DF). ko tailors its hanja as expansions (7 476): still the
+pipeline. th has a reordering and a shifted default.
+
+**Why the gates are not needed.**
+- *Reordering:* CollationCompare applies `reordering.reorder` to the two
+  primaries at the first primary difference; the quick compare now does the
+  same (`compareReordered`). A lead-byte permutation that keeps the order
+  inside each group maps different primaries to different ones. In the
+  bundled data, the reordering changes no relative order of two ideographs
+  (a mutation that drops it passes the tests); it is applied anyway, so the
+  path stays exact for any reordering.
+- *Shifted:* only variable CEs (primary ≤ variable top) change under
+  shifted. Every quick primary is above the highest variable top
+  (maxVariable = currency): `QuickCJKTests.quickPrimariesAreNeverVariable`
+  checks every code point of the five CJK unified ranges for root and all 98
+  bundled tailorings; debug builds assert it. The release path does not test
+  it (the guard cost +13 instructions of spills).
+- *Normal CE32:* one CE, primary = the top 16 bits (ICU's
+  `ceFromSimpleCE32`). The path runs only for CJK unified ideographs and
+  decides only on different primaries, so non-common secondary / tertiary
+  weights do not matter. The instance twin `quickPrimary` (compareBody's
+  walk, bridged strings) accepts it too.
+
+**Variants** (one call, instructions; HEAD `7d62c51b`):
+
+| variant | root cjk | th thai | zh cjk | note |
+|---|---:|---:|---:|---|
+| HEAD | 265 | 3357 | 1149 | gates on |
+| Q1: gates off, an optional `ReorderingView` and a variable-top guard in the dispatch | +14 | — | ~291 | WMO / `-no-WMO` root, sv, da, fr_CA cjk +2..+7% |
+| Q1b: the view as an optional pointer | +13 | — | — | the guard's spills remain |
+| Q1c: the reordering inside `quickCJKPrimary`, no release guard | +22 | — | — | two calls pay it |
+| Q1d: HEAD's dispatch for no reordering, an out-of-line `quickCJKDispatchReordered` | −1 | **+51** | 291 | Thai text under th, ja, zh paid the call (A/B +1..+2%) |
+| Q1e: Q1d, lead-byte gate before the `eligible` test | +8 | +7 | 291 | |
+| Q1f: Q1d, a copy of the gate in the cold branch | +1 | +32 | — | root thai +25 |
+| **Q1g (shipped): one dispatch, the reordering only at the decision (`compareReordered`, `@inline(never)`)** | **+1** | **+7** | **275** | root thai 0; `-no-WMO` default entry ascii / latin +8 |
+| Q1h: Q1g with the reordering inline at the decision | +6 | +6 | 277 | `-no-WMO` default entry +5 |
+
+Q1g's counts on cjk (same 3 calls): ja 304, th 319, zh 275 (HEAD ~1095,
+~1116, 1149); thai under th / zh +7 (0.2%), under root 0. The dispatch is
+inlined into `compare`, so each edit moved the register allocation of the
+whole function, and a different group paid: compare variants by count of
+every group before timing them.
+
+**Time** (Q1d, which has Q1g's gains on cjk; A/B against HEAD, 5 rounds
+each, 2026-10-30; WMO load 49 → 28, `-no-WMO` 23 → 15; mean change): zh
+defaults cjk 59 → 19 ns (−68%) / 92 → 30 (−67%); ja 70 → 31 (−55%) / 104 →
+41 (−60%); th 67 → 28 (−57%) / 99 → 39 (−60%); their secondary siblings
+−45..−57%; root shifted −48 / −53%; root, sv, da, fr_CA defaults on cjk
+0.0..+1.5% / −0.6..+0.6%; the root options rows on cjk −0.5..−3.2%.
+EngineBench compare cjk +1.0% plain (5/5), +0.6% aligned (Q1d).
+
+**Q1g's own A/B** (5 rounds, WMO load 63 → 56, `-no-WMO` 22 → 18; mean
+change): zh defaults cjk 60 → 18 ns (−69%) / 91 → 28 (−69%); ja 70 → 31
+(−56%) / 102 → 40 (−60%); th 67 → 28 (−58%) / 96 → 38 (−60%); the secondary
+siblings −46..−58%; root shifted −48 / −52%. EngineBench compare (Table 1),
+plain / aligned: ascii −0.2 / 0.0%, latin −1.8 / −2.5%, cjk −1.3 / −3.0%,
+paths −1.8 / +0.8%, thai +1.6 / −0.2%. A repeat of the doubtful rows at load
+15–17 (7 rounds): WMO `compare(_:locale:)` ascii / latin −2.5 / −4.2% (7/7),
+`localizedCompare` −2.2 / +3.8% (min 17 → 17); `-no-WMO` `compare(_:locale:)`
+ascii / latin −4.5 / **+4.3%** (++++−++, min 35 → 35), `localizedCompare`
++0.4 / 0.0%, the options compare ascii **+1.7%** (7/7, min 60 → 61), the
+options rows on cjk / paths +1.9..+3.9% (7/7).
+
+**The `-no-WMO` cells, counted** (one call; base `7d62c51b` → Q1g): the
+options compare (`compare(at:…options:)`) ascii 317 → 317, paths 496 → 496,
+cjk 614.5 → 606.8 — the same work, so those cells are placement; **the
+default-options entry (`compareWithDefaultOptions(at:)`) ascii 156 → 164,
+latin 170.8 → 178.8: +8**, register shuffles (`mov x8, x24; mov x24, x25;
+mov x25, x28` and back around the calls) — in `-no-WMO` that entry inlines
+the fast path with the dispatch, and the new call site at the decision
+(`compareReordered`) changed the allocation of the whole entry, also on the
+ascii path that never reaches it. Q1h (the reordering inline at the
+decision, the split-byte case out of line) gave `-no-WMO` +5, but WMO root
+cjk +6 (271): not better. **Kept: Q1g** (user decision, 2026-11-02: "Accept
+Q1g"), with the +8 instructions on the `-no-WMO` default entry for ascii /
+latin; WMO, the framework's build mode, has no ascii / latin loss. Lesson:
+code inside a dispatch that is inlined into the hot entry costs every path
+of that entry, through the register allocation; count every group (root cjk,
+Thai under the reordering collators, the `-no-WMO` entries on ascii / latin)
+for each variant before timing it.
+
+**Tests.** `QuickCJKTests` (new): ideograph pairs by stride over the three
+ranges (with Han, kana, Latin, space and digit prefixes, prefix pairs) on
+root, ja, zh, zh-stroke, th and ko under five option sets (defaults —
+shifted for th —, secondary, shifted, identical, upper first), native and
+bridged, against sort-key order; the tailored ideographs of ja, zh and
+zh-stroke sorted by sort key and paired with their neighbours (consecutive
+primaries); and the variable-top check above. They pass on HEAD's engine
+too. Mutations: a wrong normal-CE32 primary (18 issues), the reordered order
+inverted (48). Suite 1568/137.

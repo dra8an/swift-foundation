@@ -72,8 +72,8 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1564 tests in 136
-suites** — `swift test` prints three summary lines (45/5, 578/91, 941/40; since §51 (am));
+anything longer or with wider effect. Suite gate: **1568 tests in 137
+suites** — `swift test` prints three summary lines (45/5, 582/92, 941/40; since §51 (ap));
 add them up.
 
 **Read next, in this order:**
@@ -190,7 +190,7 @@ these candidates in this order, with the evidence, and let the user choose:
    code (the collator cache, `LockedState`, the generic layers in
    `StringProtocol+Locale.swift` / `String+Collation.swift`) is in scope;
    FoundationEssentials is not.
-3. **cjk compare +3.8% since P3c** (18.6 → 19.3 ns; still 2.11× faster than
+3. **DONE (2026-11-02, §51 (ap)): the quick CJK compare for ja, zh, th and shifted.** The sibling check of all modes found it (ja / zh / th on cjk ~3.7× root's count): zh cjk −69%, ja / th −56..−60% in both build modes. Accepted cost (user decision): +8 instructions on the `-no-WMO` default entry for ascii / latin (register allocation; WMO has no ascii / latin loss). Open from the same check: ko's hanja are expansions (still the pipeline); every non-default options compare on CJK costs 1.8× the default path (the second pinning of §51 (ac)); Thai options compares +9%. Then the old item 3: **cjk compare +3.8% since P3c** (18.6 → 19.3 ns; still 2.11× faster than
    ICU): CJK pairs often share the first UTF-8 byte and take the helper
    path. Only if the user wants it.
 4. ~~Identical strength still uses `compareBody`'s String-iterator walk~~ —
@@ -485,7 +485,7 @@ reading a `String` or a `RootCollator` through a pointer to avoid a copy —
 W1a, §51 (an) C1 / C2; use `_withUnsafeGuaranteedRef` for the collator and
 `@_specialize` for the generic wrappers); a generic `@inline(__always)`
 helper with a closure called from another file (unspecialized in
-`-no-WMO`, §51 (ak) W1);
+`-no-WMO`, §51 (ak) W1); in the quick CJK dispatch, a variable-top guard, the reordering inside `quickCJKPrimary`, an out-of-line reordered dispatch, or the reordering inline at the decision (§51 (ap) Q1–Q1h: each cost some group 5–51 instructions);
 a branch-free ASCII / two-byte Latin decode in `compareUTF8` (latin −4.5%,
 ascii +4.5%; §51 (ai)); pinning only strings longer than 15 bytes (§51 (aa)); in `compareUTF8`,
 wrapping index increments (`&+= 1`; LLVM then reads each byte with `ldrsb`

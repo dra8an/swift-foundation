@@ -449,3 +449,30 @@ struct Reordering: Sendable {
         return p &+ (ranges[i] << 24)
     }
 }
+
+/// `Reordering` as plain data, for hot code that reads it through a pointer (the quick CJK compare): the table and the ranges are buffers owned by the collator's storage, so a read copies no array and retains nothing. The same mapping as `Reordering.reorder` (technique log §51 (ap)).
+struct ReorderingView {
+    let table: UnsafeBufferPointer<UInt8>
+    let ranges: UnsafeBufferPointer<UInt32>
+    let minHighNoReorder: UInt32
+
+    init(_ reordering: Reordering, storage: DataStorage) {
+        table = storage.store(reordering.table)
+        ranges = storage.store(reordering.ranges)
+        minHighNoReorder = reordering.minHighNoReorder
+    }
+
+    @inline(__always)
+    func reorder(_ p: UInt32) -> UInt32 {
+        let b = table[Int(p >> 24)]
+        if b != 0 || p <= CollationConstants.noCEPrimary {
+            return (UInt32(b) << 24) | (p & 0xff_ffff)
+        }
+        if p >= minHighNoReorder { return p }
+        let q = p | 0xffff
+        var i = 0
+        while i < ranges.count && q >= ranges[i] { i += 1 }
+        guard i < ranges.count else { return p }
+        return p &+ (ranges[i] << 24)
+    }
+}

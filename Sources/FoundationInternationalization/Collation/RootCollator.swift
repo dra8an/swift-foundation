@@ -21,12 +21,15 @@ public struct RootCollator: @unchecked Sendable {
 
     /// Trivial-field views for the static quick-CJK dispatch: everything `quickCJKPrimary` needs, resolved at init so the pinned-buffer closures can call a static function with plain parameters.
     struct QuickCJKSetup {
-        let eligible: Bool
         let dataTrie: UTrie2
         let dataCEs: UnsafeBufferPointer<Int64>
         let hasBase: Bool
         let baseTrie: UTrie2
         let baseCEs: UnsafeBufferPointer<Int64>
+        /// Script reordering, applied to both primaries at the decision (compareReordered), as CollationCompare applies it at the first primary difference; nil without reordering.
+        let reordering: UnsafePointer<ReorderingView>?
+        /// The last primary of the highest variable group (maxVariable = currency). Every primary that quickCJKPrimary returns is above it — ideographs are never variable, so a primary difference decides under alternate=shifted too; `QuickCJKTests` checks it for every ideograph of every bundled collator, and quickCJKPrimary asserts it in debug builds. Not tested in the release hot path: the guard cost root's CJK compare +13 instructions of spills.
+        let maxVariableTop: UInt32
     }
 
     /// The default-options fast-Latin setup, resolved at init and heap-boxed, so that compareFastPath reads its setup through ONE pointer instead of separate fields of the storage object. The compare ladder (technique log §50) put the entry's guard and those field loads at ~2.7 ns of a ~15 ns ascii compare, and the core it feeds at ~9 ns.
@@ -134,13 +137,15 @@ public struct RootCollator: @unchecked Sendable {
                 data: data, base: base, storage: ceStorage, from: 0x0E00, resolvingDigits: true)
             self.markCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage, from: 0x0300)
             self.simpleCEsStorage = ceStorage
-            // Quick-CJK dispatch setup: bare primary comparison is unsound under script reordering or a shifted default, so gate it off for those collators (compareBody handles them).
+            // Quick-CJK dispatch setup, for every collator: the reordering is applied to the two primaries, and both must be above every possible variable top (technique log §51 (ap); before, collators with reordering — ja, zh, ko, th … — or a shifted default had it off).
             let setup = QuickCJKSetup(
-                eligible: reordering == nil && defaultOptions.alternate != .shifted,
                 dataTrie: data.trie, dataCEs: data.ces,
                 hasBase: base != nil,
                 baseTrie: base?.trie ?? data.trie,
-                baseCEs: base?.ces ?? data.ces)
+                baseCEs: base?.ces ?? data.ces,
+                reordering: reordering.map { ceStorage.store([ReorderingView($0, storage: ceStorage)]).baseAddress! },
+                maxVariableTop: scriptsData.lastPrimaryForGroup(
+                    CollationData.reorderCodeFirst + CollationOptions.MaxVariable.currency.rawValue))
             let box = UnsafeMutablePointer<QuickCJKSetup>.allocate(capacity: 1)
             box.initialize(to: setup)
             self.quickCJKSetupPtr = box
@@ -428,26 +433,36 @@ public struct RootCollator: @unchecked Sendable {
         setup: UnsafePointer<QuickCJKSetup>,
         numeric: Bool, safety: UnsafePointer<RestartSafety>
     ) -> Int32 {
-        if setup.pointee.eligible, mismatch >= 0,
+        if mismatch >= 0,
            mismatch < lBytes.count, mismatch < rBytes.count,
            // Lead-byte gate: all CJK-unified blocks start at U+3400, whose UTF-8 lead is 0xE3 (ext B+ uses 0xF0). One byte compare rejects Thai (0xE0) and most other non-CJK bail-outs before any decode.
            lBytes[mismatch] >= 0xE3, rBytes[mismatch] >= 0xE3 {
             let lc = scalarAt(lBytes, mismatch)
             let rc = scalarAt(rBytes, mismatch)
             if lc != rc, isCJKUnified(lc), isCJKUnified(rc) {
+                // The primaries are above every variable top (see QuickCJKSetup.maxVariableTop): the first primary difference decides under any options.
                 let lp = quickCJKPrimary(lc, setup)
                 if lp != 0 {
                     let rp = quickCJKPrimary(rc, setup)
+                    assert(lp > setup.pointee.maxVariableTop && (rp == 0 || rp > setup.pointee.maxVariableTop), "a quick CJK primary must never be variable")
                     if rp != 0, lp != rp,
                        mismatch == 0
                         || (!RestartSafety.isUnsafe(safety, lc, numeric: numeric)
                             && !RestartSafety.isUnsafe(safety, rc, numeric: numeric)) {
+                        // Script reordering (ja, zh, ko, th …), as CollationCompare applies it at the first primary difference; out of line, so that the path without it keeps its registers.
+                        if let reordering = setup.pointee.reordering { return compareReordered(lp, rp, reordering) }
                         return lp < rp ? -1 : 1
                     }
                 }
             }
         }
         return CollationFastLatin.bailOutResult
+    }
+
+    /// The order of two different quick CJK primaries under script reordering: a lead-byte permutation that keeps the order inside each group, so different primaries stay different (technique log §51 (ap)).
+    @inline(never)
+    private static func compareReordered(_ lp: UInt32, _ rp: UInt32, _ reordering: UnsafePointer<ReorderingView>) -> Int32 {
+        reordering.pointee.reorder(lp) < reordering.pointee.reorder(rp) ? -1 : 1
     }
 
     /// quickPrimary against the trivial init-resolved views (the static twin of the instance method below; the differential suites keep them in agreement). Returns 0 when the full pipeline must decide.
@@ -461,7 +476,8 @@ public struct RootCollator: @unchecked Sendable {
             ce32 = q.pointee.baseTrie.get(c)
             ces = q.pointee.baseCEs
         }
-        guard CollationConstants.isSpecialCE32(ce32) else { return 0 }
+        // A normal CE32 is one CE whose primary is the top 16 bits (ICU's ceFromSimpleCE32): the form of the ideographs that ja and zh tailor (6355 and 21005 of them). The caller decides only for CJK unified ideographs with different primaries, so non-common secondary or tertiary weights do not matter (technique log §51 (ap)).
+        guard CollationConstants.isSpecialCE32(ce32) else { return ce32 & 0xffff_0000 }
         switch CollationConstants.tagFromCE32(ce32) {
         case .longPrimary:
             // long-primary form ppppppC1: the top three bytes are the primary.
@@ -682,9 +698,8 @@ public struct RootCollator: @unchecked Sendable {
     ) throws -> Order? {
         let safety = UnsafePointer(restartSafetyPtr)
         let numeric = options.numeric
-        // The quick CJK primary compare decides at the primary level, which comes first for any options; its setup is off under reordering and for a shifted default, and nil skips it for shifted options. Read from the options word: in the `-no-WMO` build, `options.alternate != .shifted` called the generic Equatable witness.
-        let cjkSetup: UnsafePointer<QuickCJKSetup>? =
-            word & CollationOptions.Bits.alternateMask == 0 ? UnsafePointer(storage.quickCJKSetupPtr) : nil
+        // The quick CJK primary compare decides at the primary level, which comes first for any options; it is exact under shifted options too (its primaries are above every variable top; technique log §51 (ap)).
+        let cjkSetup: UnsafePointer<QuickCJKSetup>? = UnsafePointer(storage.quickCJKSetupPtr)
         let scanned = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 RootCollator.optionsPassRestart(lBytes, rBytes, cjkSetup: cjkSetup, safety: safety, numeric: numeric)
@@ -759,6 +774,14 @@ public struct RootCollator: @unchecked Sendable {
         }
         return .same
     }
+
+    /// quickCJKPrimary of this collator, for `QuickCJKTests` (before reordering, in the space of the variable top; 0 = the full pipeline decides).
+    func quickCJKPrimaryForTesting(_ c: UInt32) -> UInt32 {
+        Self.quickCJKPrimary(c, UnsafePointer(storage.quickCJKSetupPtr))
+    }
+
+    /// QuickCJKSetup.maxVariableTop of this collator, for `QuickCJKTests`.
+    var quickCJKMaxVariableTopForTesting: UInt32 { storage.quickCJKSetupPtr.pointee.maxVariableTop }
 
     // MARK: Search
 
@@ -979,8 +1002,8 @@ public struct RootCollator: @unchecked Sendable {
             ce32 = b.trie.get(c)
             cesSource = b.ces
         }
-        // Only handle tags that produce exactly ONE CE with a unique primary and common secondary/tertiary (CJK characters). Bail on anything else — simple CE32s can be case variants, Latin expansions, etc.
-        guard CollationConstants.isSpecialCE32(ce32) else { return 0 }
+        // Only forms that produce exactly ONE CE. A normal CE32 is such a CE (primary = the top 16 bits): the tailored ideographs of ja and zh. The callers use this only for CJK unified ideographs and decide only on different primaries, so case variants or non-common secondary / tertiary weights do not matter (technique log §51 (ap)).
+        guard CollationConstants.isSpecialCE32(ce32) else { return ce32 & 0xffff_0000 }
         switch CollationConstants.tagFromCE32(ce32) {
         case .longPrimary:
             // long-primary form ppppppC1: the top three bytes are the primary. Single CE with common secondary/tertiary — safe to compare at the primary level (equal primaries fall through to the pipeline). This is the tag most REAL-WORLD Han carries; the offset/implicit tags below cover the rarer ideographs.
