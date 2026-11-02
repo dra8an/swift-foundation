@@ -1,27 +1,45 @@
 # Foundation API Benchmark: Swift Collator vs System ICU
 
-Measured 2026-10-30 at about 09:40 on Apple Silicon (macOS 26),
+Measured 2026-11-02 at about 12:05 on Apple Silicon (macOS 26.4, 25E190),
 `run_benchmarks.sh` K=3 (min over interleaved runs, each itself min-over-9),
-release builds, at `22af5f68`. Includes every optimization through §51 (am):
-new since the 2026-10-29 baseline are the Foundation wrapper steps — (aj)
-lock-free reads of the collator cache slots, (ak) the cached collator used in
-place with the default-options compare, (am) a fast path for two `String`
-arguments in the generic wrappers. The engine did not change (Table 1).
+release builds, at `f8a9debb`. Includes every optimization through §51 (ap):
+new since the 2026-10-30 baseline are (an) `@_specialize` on the generic
+wrappers, (ao) identical strength on the bytes path (`.localizedStandard`),
+(ap) the quick CJK compare for ja, zh, th and shifted options.
 
-**Machine state:** 1-minute load 62 at the start of run B, 49 at its end
-(run A: 42 → 62); on AC power, under `caffeinate -i`, 18 minutes after a
-wake (09:16), during the post-wake burst (15-minute load 115 → 93). **The
-tables show run B** (the convention). Recorded on these grounds (the control
-decides, not the load — Docs/27), with the drift stated:
+**Machine state:** 1-minute load 22 at the start of run B, 20 at its end
+(run A: 20 → 22); on AC power, under `caffeinate -i`, about 2 hours after a
+restart. **The tables show run B** (the second pair of the day; a first pair
+an hour earlier gave the same picture).
 
-1. **The system-ICU control (Table 2) is within 3% of the reference, but
-   near the limit: +1.1..+2.8% in run B** (`localizedCompare`
-   199/369/378/306/508 against 194/365/369/300/494; run A
-   198/369/376/306/509). ICU C: compare 0..+2.0%, sortKey −0.5..+1.9%
-   against the 2026-10-29 gates. So every cell of this run, ours included,
-   reads about 2% slow; the gains against 2026-10-29 are slightly larger
-   than shown.
-2. **Runs A and B agree:** Table 1 within 1.8% (ours and ICU C).
+**The macOS anomaly — read this before the Table 2 speedups.** From
+2026-11-02 the system-ICU side read **1–14% slower** than its reference, in
+four runs, with the same macOS build: `localizedCompare` 210/381/388/315/511
+against the long-term 194/365/369/300/494, `compare(_:locale:)` +6..+14%.
+The machine and the harness were checked and are not the cause:
+
+1. **ICU C** (plain C, independent of macOS's collation) read its gates
+   within 1–2% (compare 9.3/10.1/40.9/29.5/173.0, sortKey
+   103.9/120.9/117.8/369.6/154.9).
+2. **Our binary of 2026-10-30** (`22af5f68`, `-no-WMO`), run today next to
+   the system side, read its recorded numbers again (`localizedCompare`
+   40/37/59/57/258 against 40/41/61/57/258; `localizedStandardCompare`
+   54/56/83/75/276 against 54/55/83/75/273), while the system side read
+   +1..+14%.
+3. No harness file changed since 2026-10-29; the same swiftly toolchain
+   (`main-snapshot-2026-04-27`) and Xcode.
+
+**Decision (user, 2026-11-02): Table 2 compares against the long-term
+macOS reference, not against today's slower macOS** — a conservative
+speedup: our ns of today (real, by 1 and 2) against the fastest macOS
+measured on this machine. The reference is 194/365/369/300/494 for
+`localizedCompare` and the recorded system values of 2026-10-30 for the
+other 13 APIs; today's measured system values are in the last column.
+After the planned macOS update, the macOS side changes for real: a new
+reference then, from two runs on a quiet machine, checked with ICU C and the
+2026-10-30 binary (Docs/27).
+
+**Runs A and B agree:** Table 1 within 1.2% (ours and ICU C).
 
 **ICU note.** The ICU C reference (`bench_icu`) links against the local ICU
 checkout: ICU 79.1 with Unicode 18 data, not the 79.0.1 data that our
@@ -53,153 +71,153 @@ every run).
 
 ### localizedCompare(_:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |    40 |       199 | **4.97× faster** |
-| Latin  |    41 |       369 | **9.00× faster** |
-| CJK    |    61 |       378 | **6.20× faster** |
-| Paths  |    57 |       306 | **5.37× faster** |
-| Thai   |   258 |       508 | **1.97× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |    34 |       194 | **5.71× faster** | 210 |
+| Latin  |    35 |       365 | **10.43× faster** | 381 |
+| CJK    |    48 |       369 | **7.69× faster** | 388 |
+| Paths  |    40 |       300 | **7.50× faster** | 315 |
+| Thai   |   234 |       494 | **2.11× faster** | 511 |
 
 ### localizedStandardCompare(_:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |    54 |       200 | **3.70× faster** |
-| Latin  |    55 |       359 | **6.53× faster** |
-| CJK    |    83 |       369 | **4.45× faster** |
-| Paths  |    75 |       328 | **4.37× faster** |
-| Thai   |   273 |       495 | **1.81× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |    40 |       200 | **5.00× faster** | 211 |
+| Latin  |    42 |       359 | **8.55× faster** | 367 |
+| CJK    |    68 |       369 | **5.43× faster** | 379 |
+| Paths  |    56 |       328 | **5.86× faster** | 336 |
+| Thai   |   249 |       495 | **1.99× faster** | 498 |
 
 ### localizedCaseInsensitiveCompare(_:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |    53 |       201 | **3.79× faster** |
-| Latin  |    54 |       358 | **6.63× faster** |
-| CJK    |    83 |       371 | **4.47× faster** |
-| Paths  |    73 |       314 | **4.30× faster** |
-| Thai   |   271 |       495 | **1.83× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |    40 |       201 | **5.03× faster** | 214 |
+| Latin  |    42 |       358 | **8.52× faster** | 369 |
+| CJK    |    69 |       371 | **5.38× faster** | 381 |
+| Paths  |    55 |       314 | **5.71× faster** | 323 |
+| Thai   |   250 |       495 | **1.98× faster** | 497 |
 
 ### compare(_:locale:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |    44 |       317 | **7.20× faster** |
-| Latin  |    41 |       482 | **11.76× faster** |
-| CJK    |    63 |       489 | **7.76× faster** |
-| Paths  |    62 |       416 | **6.71× faster** |
-| Thai   |   261 |       640 | **2.45× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |    41 |       317 | **7.73× faster** | 362 |
+| Latin  |    43 |       482 | **11.21× faster** | 527 |
+| CJK    |    56 |       489 | **8.73× faster** | 539 |
+| Paths  |    48 |       416 | **8.67× faster** | 460 |
+| Thai   |   242 |       640 | **2.64× faster** | 675 |
 
 ### compare(_:options:range:locale:) — options [.caseInsensitive, .diacriticInsensitive]
 
 New 2026-10-20: the options-translation path.
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |    69 |       317 | **4.59× faster** |
-| Latin  |    71 |       472 | **6.65× faster** |
-| CJK    |   101 |       485 | **4.80× faster** |
-| Paths  |    92 |       425 | **4.62× faster** |
-| Thai   |   295 |       572 | **1.94× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |    61 |       317 | **5.20× faster** | 363 |
+| Latin  |    62 |       472 | **7.61× faster** | 514 |
+| CJK    |    91 |       485 | **5.33× faster** | 533 |
+| Paths  |    75 |       425 | **5.67× faster** | 468 |
+| Thai   |   270 |       572 | **2.12× faster** | 607 |
 
 ### localizedStandardContains(_:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |   234 |      1012 | **4.32× faster** |
-| Latin  |   260 |      1454 | **5.59× faster** |
-| CJK    |   273 |      1297 | **4.75× faster** |
-| Paths  |   234 |       990 | **4.23× faster** |
-| Thai   |   256 |      1411 | **5.51× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |   222 |      1012 | **4.56× faster** | 1066 |
+| Latin  |   252 |      1454 | **5.77× faster** | 1512 |
+| CJK    |   265 |      1297 | **4.89× faster** | 1355 |
+| Paths  |   217 |       990 | **4.56× faster** | 1056 |
+| Thai   |   241 |      1411 | **5.85× faster** | 1461 |
 
 ### localizedCaseInsensitiveContains(_:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |   233 |      1027 | **4.41× faster** |
-| Latin  |   261 |      1512 | **5.79× faster** |
-| CJK    |   275 |      1307 | **4.75× faster** |
-| Paths  |   192 |       998 | **5.20× faster** |
-| Thai   |   258 |      1462 | **5.67× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |   221 |      1027 | **4.65× faster** | 1077 |
+| Latin  |   251 |      1512 | **6.02× faster** | 1568 |
+| CJK    |   264 |      1307 | **4.95× faster** | 1360 |
+| Paths  |   175 |       998 | **5.70× faster** | 1060 |
+| Thai   |   240 |      1462 | **6.09× faster** | 1514 |
 
 ### localizedStandardRange(of:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |   299 |      1018 | **3.40× faster** |
-| Latin  |   325 |      1456 | **4.48× faster** |
-| CJK    |   294 |      1295 | **4.40× faster** |
-| Paths  |   289 |      1001 | **3.46× faster** |
-| Thai   |   390 |      1463 | **3.75× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |   286 |      1018 | **3.56× faster** | 1068 |
+| Latin  |   314 |      1456 | **4.64× faster** | 1511 |
+| CJK    |   287 |      1295 | **4.51× faster** | 1357 |
+| Paths  |   272 |      1001 | **3.68× faster** | 1067 |
+| Thai   |   370 |      1463 | **3.95× faster** | 1512 |
 
 ### range(of:options:locale:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |    95 |       329 | **3.46× faster** |
-| Latin  |   354 |       797 | **2.25× faster** |
-| CJK    |   320 |       593 | **1.85× faster** |
-| Paths  |   111 |       318 | **2.86× faster** |
-| Thai   |   399 |       729 | **1.83× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |    85 |       329 | **3.87× faster** | 357 |
+| Latin  |   342 |       797 | **2.33× faster** | 822 |
+| CJK    |   312 |       593 | **1.90× faster** | 625 |
+| Paths  |    96 |       318 | **3.31× faster** | 351 |
+| Thai   |   378 |       729 | **1.93× faster** | 753 |
 
 ### range(of:options:.backwards,locale:)
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |    96 |       332 | **3.46× faster** |
-| Latin  |   312 |       829 | **2.66× faster** |
-| CJK    |   316 |       598 | **1.89× faster** |
-| Paths  |   149 |       514 | **3.45× faster** |
-| Thai   |   335 |       780 | **2.33× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |    88 |       332 | **3.77× faster** | 361 |
+| Latin  |   303 |       829 | **2.74× faster** | 857 |
+| CJK    |   305 |       598 | **1.96× faster** | 630 |
+| Paths  |   135 |       514 | **3.81× faster** | 550 |
+| Thai   |   319 |       780 | **2.45× faster** | 802 |
 
 ### sorted(using: String.StandardComparator.localizedStandard)
 
 New 2026-10-20. ns per ELEMENT of a sort (see "The sort rows" below).
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |  2014 |     15144 | **7.52× faster** |
-| Latin  |  2092 |     17795 | **8.51× faster** |
-| CJK    |  3630 |     18812 | **5.18× faster** |
-| Paths  |   225 |      1299 | **5.77× faster** |
-| Thai   |  1196 |      5844 | **4.89× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |  2049 |     15144 | **7.39× faster** | 16244 |
+| Latin  |  2131 |     17795 | **8.35× faster** | 18780 |
+| CJK    |  2491 |     18812 | **7.55× faster** | 19966 |
+| Paths  |   218 |      1299 | **5.96× faster** | 1363 |
+| Thai   |   976 |      5844 | **5.99× faster** | 6176 |
 
 ### sorted(using: String.Comparator(options: [], locale:))
 
 New 2026-10-20. ns per element.
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |  1722 |      5197 | **3.02× faster** |
-| Latin  |  1790 |      7637 | **4.27× faster** |
-| CJK    |  2224 |      7939 | **3.57× faster** |
-| Paths  |   156 |       487 | **3.12× faster** |
-| Thai   |   977 |      2513 | **2.57× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |  1751 |      5197 | **2.97× faster** | 5760 |
+| Latin  |  1827 |      7637 | **4.18× faster** | 8085 |
+| CJK    |  2254 |      7939 | **3.52× faster** | 8589 |
+| Paths  |   156 |       487 | **3.12× faster** | 520 |
+| Thai   |   949 |      2513 | **2.65× faster** | 2701 |
 
 ### sorted(using: KeyPathComparator(\.name, comparator: .localizedStandard))
 
 New 2026-10-20. ns per element; sorts structs by a String key path.
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |  3488 |     16866 | **4.84× faster** |
-| Latin  |  3609 |     19376 | **5.37× faster** |
-| CJK    |  5257 |     20885 | **3.97× faster** |
-| Paths  |   312 |      1388 | **4.45× faster** |
-| Thai   |  1698 |      6451 | **3.80× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |  3539 |     16866 | **4.77× faster** | 17906 |
+| Latin  |  3661 |     19376 | **5.29× faster** | 20577 |
+| CJK    |  4155 |     20885 | **5.03× faster** | 21736 |
+| Paths  |   307 |      1388 | **4.52× faster** | 1463 |
+| Thai   |  1483 |      6451 | **4.35× faster** | 6648 |
 
 ### sorted(using: SortDescriptor(\.name, comparator: .localizedStandard))
 
 New 2026-10-20. ns per element; sorts structs by a String key path.
 
-| Corpus | Swift | System ICU | Speedup |
-|--------|-------|-----------|---------|
-| ASCII  |  2495 |     16702 | **6.69× faster** |
-| Latin  |  2591 |     19404 | **7.49× faster** |
-| CJK    |  4129 |     20537 | **4.97× faster** |
-| Paths  |   231 |      1347 | **5.83× faster** |
-| Thai   |  1340 |      6228 | **4.65× faster** |
+| Corpus | Swift | System ICU (reference) | Speedup | System ICU measured 2026-11-02 |
+|--------|-------|-----------|---------|---------|
+| ASCII  |  2538 |     16702 | **6.58× faster** | 17799 |
+| Latin  |  2639 |     19404 | **7.35× faster** | 20435 |
+| CJK    |  3038 |     20537 | **6.76× faster** | 21527 |
+| Paths  |   226 |      1347 | **5.96× faster** | 1438 |
+| Thai   |  1122 |      6228 | **5.55× faster** | 6629 |
 
 ### The sort rows
 
@@ -221,58 +239,58 @@ file's history and in the technique log uses that ratio.
 
 | Corpus | compare | ICU | speedup | sortKey (inout) | ICU | speedup | sortKey (alloc) | speedup |
 |--------|---------|-----|---------|---------|-----|---------|---------|---------|
-| ASCII  |     9.4 |   9.4 | **1.00× (equal)** |    76.9 | 105.9 | **1.38× faster** |   130.7 | 0.81× (slower) |
-| Latin  |    10.0 |  10.3 | **1.03× faster** |    97.3 | 123.3 | **1.27× faster** |   152.2 | 0.81× (slower) |
-| CJK    |    19.7 |  41.3 | **2.10× faster** |   107.3 | 119.6 | **1.11× faster** |   158.3 | 0.76× (slower) |
-| Paths  |    18.9 |  30.0 | **1.59× faster** |   189.5 | 371.6 | **1.96× faster** |   235.9 | 1.58× faster |
-| Thai   |   167.5 | 176.1 | **1.05× faster** |   152.3 | 157.6 | **1.03× faster** |   204.2 | 0.77× (slower) |
+| ASCII  |     9.3 |   9.3 | **1.00× (equal)** |    77.5 | 103.9 | **1.34× faster** |   133.8 | 0.78× (slower) |
+| Latin  |     9.6 |  10.1 | **1.05× faster** |    97.3 | 120.9 | **1.24× faster** |   155.8 | 0.78× (slower) |
+| CJK    |    19.0 |  40.9 | **2.15× faster** |   105.5 | 117.8 | **1.12× faster** |   159.2 | 0.74× (slower) |
+| Paths  |    19.3 |  29.5 | **1.53× faster** |   195.8 | 369.6 | **1.89× faster** |   248.1 | 1.49× faster |
+| Thai   |   162.9 | 173.0 | **1.06× faster** |   148.8 | 154.9 | **1.04× faster** |   206.2 | 0.75× (slower) |
 
-Change against the 2026-10-29 baseline (run B). The engine did not change;
-this run reads about 2% slow on every column (see the controls above):
+Change against the 2026-10-30 baseline (run B; that run read ~2% slow):
 
 | Corpus | compare | sortKey (inout) |
 |--------|---------|-----------------|
-| ASCII  | 9.3 → 9.4 (1.00× → 1.00×) | 75.0 → 76.9 (1.39× → 1.38×) |
-| Latin  | 9.7 → 10.0 (1.04× → 1.03×) | 95.0 → 97.3 (1.27× → 1.27×) |
-| CJK    | 19.3 → 19.7 (2.11× → 2.10×) | 105.2 → 107.3 (1.12× → 1.11×) |
-| Paths  | 18.8 → 18.9 (1.60× → 1.59×) | 179.8 → 189.5 (2.08× → 1.96×) |
-| Thai   | 164.9 → 167.5 (1.05× → 1.05×) | 149.3 → 152.3 (1.04× → 1.03×) |
+| ASCII  | 9.4 → 9.3 (1.00× → 1.00×) | 76.9 → 77.5 (1.38× → 1.34×) |
+| Latin  | 10.0 → 9.6 (1.03× → 1.05×) | 97.3 → 97.3 (1.27× → 1.24×) |
+| CJK    | 19.7 → 19.0 (2.10× → 2.15×) | 107.3 → 105.5 (1.11× → 1.12×) |
+| Paths  | 18.9 → 19.3 (1.59× → 1.53×) | 189.5 → 195.8 (1.96× → 1.89×) |
+| Thai   | 167.5 → 162.9 (1.05× → 1.06×) | 152.3 → 148.8 (1.03× → 1.04×) |
 
-**Paths sortKey +5.4% is code placement, not work** (checked 2026-10-30,
-§51 (am)): one call executes 2487.2 instructions against 2465.8 in §51
-(ah) (+0.9%; ascii 1235.4 against 1254.2); an EngineBench A/B of HEAD
-against `624e0fa5` (before §51 (ak) changed `RootCollator.swift`) gives paths
-sortKey +3.9% (5/5) in the plain build and −0.2% in the aligned build
-(every function start at 64 bytes), latin sortKey +1.7% plain and −0.2%
-aligned. With the ~2% load drift of this run, that covers the cell.
+The engine's compare changed only in §51 (ap) (the quick CJK dispatch; its
+A/B: cjk −1.3..−3.0%, paths −1.8 / +0.8%); sortKey did not change. Paths
+sortKey 189.5 → 195.8 (+3.3%): its code did not change; on 2026-10-30 one
+call executed 2487 instructions against 2466 in §51 (ah), and EngineBench
+A/Bs showed it moving with the layout (+3.9% plain, −0.2% aligned; §51 (am)).
+Not counted again after §51 (ap).
 
 Reproducibility, run A vs run B of the same matrix:
 
 | Corpus | compare A/B | sortKey A/B | ICU compare A/B | ICU sortKey A/B |
 |--------|-------------|-------------|-----------------|-----------------|
-| ASCII  | 9.5 / 9.4 | 77.2 / 76.9 | 9.4 / 9.4 | 105.9 / 105.9 |
-| Latin  | 9.9 / 10.0 | 97.4 / 97.3 | 10.4 / 10.3 | 125.6 / 123.3 |
-| CJK    | 19.6 / 19.7 | 107.1 / 107.3 | 41.3 / 41.3 | 120.4 / 119.6 |
-| Paths  | 19.2 / 18.9 | 188.9 / 189.5 | 30.0 / 30.0 | 371.8 / 371.6 |
-| Thai   | 166.5 / 167.5 | 151.4 / 152.3 | 174.8 / 176.1 | 156.5 / 157.6 |
+| ASCII  | 9.3 / 9.3 | 77.3 / 77.5 | 9.3 / 9.3 | 104.0 / 103.9 |
+| Latin  | 9.6 / 9.6 | 97.2 / 97.3 | 10.1 / 10.1 | 121.4 / 120.9 |
+| CJK    | 19.0 / 19.0 | 105.7 / 105.5 | 40.6 / 40.9 | 117.3 / 117.8 |
+| Paths  | 19.3 / 19.3 | 195.6 / 195.8 | 29.4 / 29.5 | 365.5 / 369.6 |
+| Thai   | 162.8 / 162.9 | 148.0 / 148.8 | 171.0 / 173.0 | 154.3 / 154.9 |
 
-**Table 2 against 2026-10-29: every cell is faster**, although this run
-reads about 2% slow. The wrapper steps of §51 (aj), (ak), (am):
+**Table 2 against 2026-10-30, our ns (the speedups also changed reference:
+see the anomaly above):**
 
 | API (ns, `-no-WMO`) | ascii | latin | cjk | paths | thai |
 |---|---|---|---|---|---|
-| `localizedCompare` | 51 → 40 | 50 → 41 | 70 → 61 | 69 → 57 | 264 → 258 |
-| `compare(_:locale:)` | 68 → 44 | 70 → 41 | 93 → 63 | 93 → 62 | 290 → 261 |
-| `compare(_:options:range:locale:)` | 85 → 69 | 86 → 71 | 116 → 101 | 110 → 92 | 310 → 295 |
-| `localizedStandardCompare` | 60 → 54 | 61 → 55 | 89 → 83 | 82 → 75 | 284 → 273 |
-| `localizedCaseInsensitiveCompare` | 60 → 53 | 62 → 54 | 90 → 83 | 80 → 73 | 277 → 271 |
-| `range(of:options:locale:)` | 110 → 95 | 363 → 354 | 335 → 320 | 135 → 111 | 417 → 399 |
-| `range(of:options:.backwards,locale:)` | 111 → 96 | 324 → 312 | 331 → 316 | 171 → 149 | 351 → 335 |
-| `sorted(using: String.Comparator(…))`, per element | 2098 → 1722 | 2174 → 1790 | 2608 → 2224 | 182 → 156 | 1093 → 977 |
+| `localizedCompare` | 40 → 34 | 41 → 35 | 61 → 48 | 57 → 40 | 258 → 234 |
+| `compare(_:locale:)` | 44 → 41 | 41 → 43 | 63 → 56 | 62 → 48 | 261 → 242 |
+| `compare(_:options:range:locale:)` | 69 → 61 | 71 → 62 | 101 → 91 | 92 → 75 | 295 → 270 |
+| `localizedStandardCompare` | 54 → 40 | 55 → 42 | 83 → 68 | 75 → 56 | 273 → 249 |
+| `localizedCaseInsensitiveCompare` | 53 → 40 | 54 → 42 | 83 → 69 | 73 → 55 | 271 → 250 |
+| `range(of:options:locale:)` | 95 → 85 | 354 → 342 | 320 → 312 | 111 → 96 | 399 → 378 |
+| `sorted(using: .localizedStandard)`, per element | 2014 → 2049 | 2092 → 2131 | **3630 → 2491** | 225 → 218 | **1196 → 976** |
+| `sorted(using: String.Comparator(…))`, per element | 1722 → 1751 | 1790 → 1827 | 2224 → 2254 | 156 → 156 | 977 → 949 |
 
-The contains rows, `localizedStandardRange` and the other three sorts are
-2–8% faster. The Table 2 floor rises from 1.71× to 1.81×
-(`localizedStandardCompare` thai).
+`compare(_:locale:)` latin 41 → 43 and the ascii / latin sorts +1.7..+2.1%
+include the accepted `-no-WMO` cost of §51 (ap) (+8 instructions on the
+default-options entry for ascii / latin); in WMO, the framework's build
+mode, those rows did not lose. The contains rows and `localizedStandardRange`
+are 2–8% faster; the thai and cjk sorts gain from §51 (ao).
 
 ## Analysis
 
@@ -281,22 +299,22 @@ comparison in this file:
 
 (speedup = ICU C / ours, above 1 = ours faster)
 
-- compare: ascii **1.00× (equal)**, latin **1.03× faster**, cjk **2.10×
-  faster**, paths **1.59× faster**, thai **1.05× faster** — ascii and latin
+- compare: ascii **1.00× (equal)**, latin **1.05× faster**, cjk **2.15×
+  faster**, paths **1.53× faster**, thai **1.06× faster** — ascii and latin
   since §51 (ae), (af), (ah)
-- sortKey (inout): ascii **1.38×**, latin **1.27×**, cjk **1.11×**, paths
-  **1.96×**, thai **1.03× faster**
+- sortKey (inout): ascii **1.34×**, latin **1.24×**, cjk **1.12×**, paths
+  **1.89×**, thai **1.04× faster**
 
-**All ten rows are at or ahead of ICU C**: ascii compare equals it (9.4
-against 9.4 ns), every other row is faster. The `throws` and the two
+**All ten rows are at or ahead of ICU C**: ascii compare equals it (9.3
+against 9.3 ns), every other row is faster. The `throws` and the two
 `String` arguments of our API (Docs/27, ~1 ns) are included in our
 numbers.
 
-The allocating sortKey (`skRet`) is 0.76–0.81× of ICU's speed (1.58× faster
+The allocating sortKey (`skRet`) is 0.74–0.78× of ICU's speed (1.49× faster
 on paths) because it allocates a fresh `[UInt8]` per call BY API CONTRACT;
 the inout twin is the one to compare against ICU.
 
-**Foundation APIs (Table 2):** every cell is ahead of system ICU, floor 1.81× (14 APIs).
+**Foundation APIs (Table 2):** every cell is ahead of system ICU, floor 1.90× against the long-term reference (14 APIs; `range(of:locale:)` cjk).
 Most of that lead comes from removing the system path's NSString →
 CoreFoundation → C++ bridge layers, not from the collation engine. Do not use
 Table 2 as evidence about engine quality; Table 1 is that evidence. Against

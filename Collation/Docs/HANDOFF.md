@@ -93,34 +93,30 @@ add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-10-30 (run B at `22af5f68`,
-after §51 (am); load 42–84 after a wake; system-ICU control +1.1..+2.8%, so
-every cell reads ~2% slow; runs A and B agree within 1.8%). Table 1,
+**Current numbers — RECORDED in Docs/21 on 2026-11-02 (run B at `f8a9debb`,
+after §51 (ap); load 20–22; runs A and B agree within 1.2%). Table 1,
 EngineBench vs ICU C, ns per call ours / ICU, speedup = ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 9.4 / 9.4 | 1.00× (equal) | 76.9 / 105.9 | 1.38× faster |
-| latin | 10.0 / 10.3 | 1.03× faster | 97.3 / 123.3 | 1.27× faster |
-| cjk | 19.7 / 41.3 | 2.10× faster | 107.3 / 119.6 | 1.11× faster |
-| paths | 18.9 / 30.0 | 1.59× faster | 189.5 / 371.6 | 1.96× faster |
-| thai | 167.5 / 176.1 | 1.05× faster | 152.3 / 157.6 | 1.03× faster |
+| ascii | 9.3 / 9.3 | 1.00× (equal) | 77.5 / 103.9 | 1.34× faster |
+| latin | 9.6 / 10.1 | 1.05× faster | 97.3 / 120.9 | 1.24× faster |
+| cjk | 19.0 / 40.9 | 2.15× faster | 105.5 / 117.8 | 1.12× faster |
+| paths | 19.3 / 29.5 | 1.53× faster | 195.8 / 369.6 | 1.89× faster |
+| thai | 162.9 / 173.0 | 1.06× faster | 148.8 / 154.9 | 1.04× faster |
 
-**All ten rows are at or faster than ICU C** (ascii compare equal). The
-engine did not change since 2026-10-29 (1.00 / 1.04 / 2.11 / 1.60 / 1.05×
-compare then); paths sortKey 179.8 → 189.5 is code placement (aligned
-builds show −0.2%; Docs/21, §51 (am)). At the start of the round
-(2026-10-16) compare was 0.62–1.59× (ratio 0.63–1.62×) and sortKey
-0.67–0.97× (ratio 1.03–1.50×). The allocating sortKey (`skRet`, a new
-`[UInt8]` per call by API contract) is 0.76–0.81× of ICU (1.58× faster on
-paths). Table 2 (14 Foundation APIs vs system ICU): every cell ahead, floor
-1.81× (from 1.71× on 2026-10-29), and every cell faster than 2026-10-29
-after the wrapper steps §51 (aj), (ak), (am) — e.g. `localizedCompare`
-51/50/70/69/264 → 40/41/61/57/258 ns, `compare(_:locale:)` 68/70 → 44/41 on
-ascii / latin — but the lead over system ICU is mostly the skipped NSString
-→ CoreFoundation → C++ bridge. **Never use Table 2 as evidence about the
-engine; never cite it as consolation for a Table 1 gap.** The ICU C gates
-stay those of 2026-10-29 (this run was loaded).
+**All ten rows are at or faster than ICU C.** The allocating sortKey
+(`skRet`) is 0.74–0.78× of ICU (1.49× faster on paths). **The macOS anomaly
+of 2026-11-02:** the system-ICU side read 1–14% slower than its reference,
+with the same macOS build, while ICU C and our binary of 2026-10-30 read
+their usual numbers. By the user's decision, Table 2 compares against the
+long-term macOS reference (conservative speedups; floor 1.90×), and lists
+today's macOS numbers in an extra column (Docs/21). **After the planned
+macOS update: a new macOS reference** from two runs on a quiet machine,
+checked with ICU C and the frozen binary (Docs/27). Table 2 is mostly the
+skipped NSString → CoreFoundation → C++ bridge. **Never use Table 2 as
+evidence about the engine; never cite it as consolation for a Table 1 gap.**
+The ICU C gates stay those of 2026-10-29.
 
 **What this round did (2026-10-23…29; details in §51 (z)–(ah)):**
 - (z) Non-default options get the restart and the bytes path (thai options

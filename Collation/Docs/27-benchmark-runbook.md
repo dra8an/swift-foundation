@@ -73,8 +73,8 @@ env for machine 2):
   every compare and sortKey row reached ICU C (before, Table 1 showed the
   ratio `ours / ICU`, below 1 = faster; the history in the technique log
   and in older Docs/21 text uses that ratio). The Swift implementation
-  against hand-tuned C. Values as of 2026-10-30 (run B, after §51 (am)):
-  compare 1.00–2.10× faster, sortKey 1.03–1.96× faster (current numbers:
+  against hand-tuned C. Values as of 2026-11-02 (run B, after §51 (ap)):
+  compare 1.00–2.15× faster, sortKey 1.04–1.89× faster (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1
@@ -206,6 +206,21 @@ Then expect roughly (one decimal, 2026-10-29, run B):
 | thai | 172.8 | 155.5 |
 
 If a control has drifted, so has everything else: do not record the run.
+
+**Third check (since 2026-11-02): a frozen binary of our own code.** On
+2026-11-02 the system-ICU control read 1–14% slow with no load and the same
+macOS build: macOS's own collation had changed, not the machine. ICU C read
+its gates, and our BenchFoundation binary of 2026-10-30 (`22af5f68`,
+`-no-WMO`; kept in `.build/l4/nowmo-base/`, with its bundle) read its
+recorded numbers. So when the system-ICU control drifts, run the frozen
+binary next to `bench_system` (three interleaved rounds of
+`localizedCompare`, `compare(_:locale:)`, `localizedStandardCompare`;
+Docs/21 has the expected values):
+- frozen binary and ICU C on target, the system side off: macOS changed —
+  record with the long-term reference for the speedups (Docs/21) and say so;
+- everything slow: the machine is slow — do not record.
+After a macOS update, set a new system-ICU reference from two quiet runs
+that pass the other two checks.
 
 And regardless of load: **run the matrix twice.** Two runs agreeing cell-for-cell
 is worth more than one run on a quiet machine.

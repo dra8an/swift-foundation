@@ -5338,3 +5338,19 @@ zh-stroke sorted by sort key and paired with their neighbours (consecutive
 primaries); and the variable-top check above. They pass on HEAD's engine
 too. Mutations: a wrong normal-CE32 primary (18 issues), the reordered order
 inverted (48). Suite 1568/137.
+
+**Matrix after (ap)** (Docs/21, 2026-11-02, run B at `f8a9debb`; load
+20–22; runs A and B agree within 1.2%; ICU C on its gates): Table 1
+(speedup) compare 1.00× ascii, 1.05× latin, 2.15× cjk, 1.53× paths, 1.06×
+thai; sortKey 1.34×, 1.24×, 1.12×, 1.89×, 1.04×. **The system-ICU control
+read 1–14% slow** in four runs with the same macOS build; ICU C and our
+binary of 2026-10-30 read their usual numbers, so macOS's collation changed,
+not the machine. By the user's decision, Table 2 uses the long-term macOS
+reference (conservative speedups, floor 1.90×) and lists the measured macOS
+values; Docs/27 adds the frozen binary as a third check. Our Table 2 ns
+against 2026-10-30: `localizedCompare` 40/41/61/57/258 → 34/35/48/40/234,
+`localizedStandardCompare` 54/55/83/75/273 → 40/42/68/56/249, the
+`.localizedStandard` sort cjk 3630 → 2491 and thai 1196 → 976 ns per
+element; `compare(_:locale:)` latin 41 → 43 and the ascii / latin sorts
++1.7..+2.1% (the accepted `-no-WMO` cost of (ap)).
+
