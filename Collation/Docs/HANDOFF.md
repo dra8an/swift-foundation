@@ -18,16 +18,19 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = a docs commit (this handoff) on top of
-`4b1487a5` (the matrix of 2026-11-02), and `origin/port/collation` at
-`4b1487a5` (pushed on 2026-11-02). If the handoff commit is missing,
-`HANDOFF.md` is modified — say so and give the add / commit lines (the
+paragraph).** Expected: HEAD = the commit of §51 (aq) (the options compares
+on CJK and Thai, `RootCollator.swift`, the technique log and this file) on
+top of `9c9eecda` (the handoff docs of 2026-11-02), on top of `4b1487a5`
+(the matrix of 2026-11-02); `origin/port/collation` at `4b1487a5` unless the
+user pushed since. If the §51 (aq) commit is missing, `RootCollator.swift`
+and the two docs are modified — say so and give the add / commit lines (the
 memory files are outside the repo). Tree clean otherwise. The A/B worktree
-`../collation-baseline` is detached at `7d62c51b` (§51 (ao)) with its own,
+`../collation-baseline` is detached at `9c9eecda` with its own,
 unmodified `main.swift`; its builds there: WMO `-g` BenchFoundation
-`.build-bfg` (built WITH the 17 temporary mode probe rows of §51 (ap) —
-rebuild before a Foundation A/B), EngineBench `.build/engine-bench/.build`
-and `.build-al` at `7d62c51b`. **For the next A/B the base is HEAD:**
+`.build-bfg` and the aligned WMO `-g` `.build-bfal` (both built WITH the
+temporary probe rows of §51 (aq) — rebuild before a Foundation A/B),
+EngineBench `.build/engine-bench/.build` and `.build-al` at `9c9eecda`.
+**For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
 (each incremental, ~1 minute):
 ```
@@ -49,7 +52,12 @@ sandbox_apply", say so and ask the user (an allowlist entry is the user's
 decision, never yours). **Keep `.build/l4/nowmo-base/`:** it holds the
 FROZEN BINARY of 2026-10-30 (BenchFoundation `-no-WMO -g` at `22af5f68`,
 with its bundle), the third matrix check of Docs/27. Main tree helpers in
-`.build/` (git-ignored): `.build/l6/` (§51 (ap): `probe-modes.swift` = the 17
+`.build/` (git-ignored): `.build/l7/` (§51 (aq): `probe-opts.swift` = the
+8 temporary probe rows, `count_groups.sh` = the instruction count of every
+group for one binary, 6 lldb jobs in parallel, `cmp_groups.py` = the counts
+side by side, `foundation_ab_aq.py` / `foundation_ab_check.py` = A/B copies
+with all five corpora / the ascii-latin layout check, the base and variant
+binaries with their bundles), `.build/l6/` (§51 (ap): `probe-modes.swift` = the 17
 engine mode probe rows, `foundation_ab_q1.py`, the Q1–Q1h copies and
 traces), `.build/l5/` (§51 (ao): `probe-stdcmpr.swift`, `probe-locstd.swift`),
 `.build/l4/` (§51 (an)), `.build/l3/`, `.build/l2/` (§51 (aj)–(am):
@@ -76,10 +84,10 @@ add them up.
 1. Your memory index from disk and ALL its feedback files — the user's
    working rules; then `project-next-steps-2026-11-02` (this round's
    decisions, including one accepted exception to the ascii / latin rule).
-2. `Collation/Docs/optimization-targets.md` **§51 (ai)–(ap)** — the technique
+2. `Collation/Docs/optimization-targets.md` **§51 (ai)–(aq)** — the technique
    log of the 2026-10-29…11-02 work (every change, every rejected variant,
-   every measurement), all of it; then the matrix line after (ap) at the end
-   of the file. For background: §51 (z)–(ah), §51 (l), (y), §50 (g) (the
+   every measurement), all of it; the matrix line after (ap) is the last
+   recorded matrix ((aq) came after it). For background: §51 (z)–(ah), §51 (l), (y), §50 (g) (the
    instruction-count method) and the ALLOCATION/RESOLUTION HUNT note at the
    top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
@@ -116,7 +124,7 @@ skipped NSString → CoreFoundation → C++ bridge. **Never use Table 2 as
 evidence about the engine; never cite it as consolation for a Table 1 gap.**
 The ICU C gates stay those of 2026-10-29.
 
-**What this round did (2026-10-29…11-02; details in §51 (ai)–(ap)):**
+**What this round did (2026-10-29…11-02; details in §51 (ai)–(aq)):**
 - (ai) Latin compare's last mispredictions: the lead-byte ASCII test of
   `compareUTF8`, from the data (ICU C has twice as many); a branch-free
   decode gave latin −4.5% but ascii +4.5%: REJECTED.
@@ -143,19 +151,32 @@ The ICU C gates stay those of 2026-10-29.
   2026-11-02** (the system side 1–14% slow, same build; ICU C and the frozen
   binary on target): Table 2 now uses the long-term macOS reference (user
   decision), and Docs/27 has the frozen-binary check.
+- (aq) **The options compares on CJK and Thai** (START HERE items 1 and 2 of
+  2026-11-02): a bail of the options pass at the end of a shared prefix
+  returns a marker with the mismatch in its result, and `compareSlowPath`
+  calls `compareAfterOptionsPass` directly — no second prefix scan, no
+  `compareBody` hop. WMO: `localizedStandardCompare` cjk −7.3%, thai −2.8%;
+  the options rows cjk −4.6..−5.2%, thai −2.8..−5.2%; ascii / latin 0..−4%.
+  Thai options now +5.9% in instructions over the default path (was +13%);
+  CJK options 534 against 333 (was 579). Accepted after a layout check
+  (user decision, 2026-11-02). No matrix run since.
 
 **NEXT TASK — not chosen yet. Ask the user.** Present these candidates in
-this order, with the evidence, and let the user choose:
-1. **Non-default options compares on CJK cost 1.8× the default path** (the
-   sibling check, §51 (ap): root secondary 534 against the default 296
-   instructions per cjk call): the options pass pins both strings, bails, and
-   `compareAfterOptionsPass` pins them again and scans the prefix again — the
-   trade-off of §51 (ac), which kept `compareSlowPath` small enough to inline
-   in `-no-WMO`. Affects `localizedStandardCompare`,
-   `localizedCaseInsensitiveCompare`, the options compare on CJK text. Watch
-   the ascii / latin options rows in BOTH modes (the reason for (ac)).
-2. **Thai options compares +9%** over the default path (3662 against 3368
-   instructions; the same second pinning).
+this order, with the evidence, and let the user choose. **Present each in
+plain words — what it changes and what it gives — never as variant labels
+("V2 vs V1c"; memory `feedback-no-variant-labels`).**
+1. **The rest of the options cost on CJK** (§51 (aq), "Still open"): one
+   root-secondary cjk call is 534 instructions against 333 for the default
+   path (WMO). Left: the setup lookup `resolveFastLatinSetup` +
+   `FastLatinCache.setup` (53 instructions, two calls, on EVERY
+   non-default options compare — the Latin ones too, so a cheaper lookup
+   would help ascii / latin options rows as well), the options word (~30),
+   and the first pinning whose pass always bails on CJK. A first-byte test
+   before the lookup would skip them for CJK / Thai but cost every ascii /
+   latin options compare (not tried; the user's rule).
+2. **Thai options compares +5.9%** over the default path (2004 against
+   1891 instructions per call, WMO; was +13% before §51 (aq)): the same
+   lookup and first pass as item 1.
 3. **ko's hanja are expansions** (7 476): Korean Han text still takes the
    pipeline; the quick path could use an expansion's first CE.
 4. cjk compare +3.8% since P3c (Table 1 cjk 19.0 ns, 2.15× faster than ICU;
@@ -422,13 +443,17 @@ compare 9.3/10.1/40.8/30.0/172.8, sortKey 104.4/121.0/117.7/373.3/155.5.
   internal twin `compareWithDefaultOptions` (§51 (ak)) skips the options
   compare of the guard (`optionsAreDefault: true`).
 - **compare, non-default options:** `compareSlowPath`'s options byte pass is
-  the closure from before (z); after a bail it passes the marker
-  `optionsPassBailed` (−2), and `compareBody` calls
-  `compareAfterOptionsPass` (re-pins, scans the prefix, quick CJK compare
-  for any options since §51 (ap), `restartScalarCount`, `compareFromRestart`;
-  §51 (z), (ac)). Identical strength: `identicalStrengthTertiaryPass` first
+  the closure from before (z), with `fastLatinUTF8(…, marksPrefixBail:
+  true)`: a bail at the end of a shared prefix returns
+  `optionsPassMarker(mismatch:)` (−3 − mismatch) instead of bailOutResult
+  (−2 = `optionsPassBailed`, "no mismatch"). After any bail,
+  `compareSlowPath` calls `compareAfterOptionsPass(…, mismatch:)` directly
+  (re-pins; scans the prefix only without a mismatch; quick CJK compare for
+  any options since §51 (ap), `restartScalarCount`, `compareFromRestart`;
+  §51 (z), (ac), (aq)). Identical strength: `identicalStrengthTertiaryPass` first
   (§51 (o)), then — since §51 (ao) — `compareBody(…, restart:
-  optionsPassBailed)`, the same bytes path. Bridged strings: the walk.
+  optionsPassBailed)`, which calls `compareAfterOptionsPass` with no
+  mismatch, the same bytes path. Bridged strings: the walk.
 - **The Foundation wrappers** (`StringProtocol+Locale.swift`,
   `String+Collation.swift`, `String+SortComparator.swift`): the eight public
   generic wrappers carry `@_specialize(where Self == String, T == String)`
@@ -485,6 +510,7 @@ W1a, §51 (an) C1 / C2; use `_withUnsafeGuaranteedRef` for the collator and
 `@_specialize` for the generic wrappers); a generic `@inline(__always)`
 helper with a closure called from another file (unspecialized in
 `-no-WMO`, §51 (ak) W1); in the quick CJK dispatch, a variable-top guard, the reordering inside `quickCJKPrimary`, an out-of-line reordered dispatch, or the reordering inline at the decision (§51 (ap) Q1–Q1h: each cost some group 5–51 instructions);
+in the options pass, any value that lives across the `compareUTF8` call — the mismatch in a variable outside the pinned closures (§51 (aq) V1 / V1b: ascii / latin options +1..+3 instructions; carry it in the result instead);
 a branch-free ASCII / two-byte Latin decode in `compareUTF8` (latin −4.5%,
 ascii +4.5%; §51 (ai)); pinning only strings longer than 15 bytes (§51 (aa)); in `compareUTF8`,
 wrapping index increments (`&+= 1`; LLVM then reads each byte with `ldrsb`

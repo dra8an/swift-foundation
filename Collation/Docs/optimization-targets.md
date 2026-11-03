@@ -5366,3 +5366,40 @@ against 2026-10-30: `localizedCompare` 40/41/61/57/258 → 34/35/48/40/234,
 element; `compare(_:locale:)` latin 41 → 43 and the ascii / latin sorts
 +1.7..+2.1% (the accepted `-no-WMO` cost of (ap)).
 
+#### (aq) The options compares on CJK and Thai: no second prefix scan, no compareBody hop (START HERE items 1 and 2)
+
+**Where** (one engine call, `RootCollator.compare(_:_:options:)` from temporary probe rows, WMO `-g` BenchFoundation, 5 calls after 1000 — after 200 on thai; HEAD `9c9eecda`): root defaults cjk 333.4, root secondary cjk 579.2; thai 1891.4 against 2140.2 (+13%); th defaults / secondary thai 2522.8 / 2765.6. (The call sample differs from the (ap) counts, so the absolute values differ from 296 / 534 there.) A trace of one root-secondary cjk call put the ~246 extra instructions in: the `compare` entry with the failed guard (31), `compareSlowPath` (the options word ~30, the first pinning and the fast-Latin bail ~35, its frame), `resolveFastLatinSetup` + `FastLatinCache.setup` (53), the `compareBody` frame that only tests the marker and calls on (39), and `compareAfterOptionsPass` (its frame ~30, the second pinning ~12, the prefix scan). On thai the largest part was `compareAfterOptionsPass` (187): thai neighbours share prefixes, and its byte loop scanned them again although the options pass had already found the mismatch. The lookup and the first pinning are paid by the Latin options compares too: not touched.
+
+**Variants** (counts of every group: root defaults / secondary / secondary + numeric / primary on ascii and latin, the options rows on cjk and paths, `localizedCompare` and `localizedStandardCompare` probe rows on ascii / latin / cjk, root and th on thai; both build modes):
+
+| variant | ascii / latin options (WMO / `-no-WMO`) | paths options | cjk options | thai options | default rows |
+|---|---|---|---|---|---|
+| V1: the pass's `mismatch` in a variable outside the pinned closures, passed on in the marker (`optionsPassBailed − 1 − mismatch`); `optionsPassRestart` skips its scan | +2 / +1 | +3 / +3 | −20 / −14 | −112 / −109 | 0 |
+| V1b: V1, but `fastLatinUTF8` sets the variable only for a bail at the end of a shared prefix | +3 / +1 | +3 / +2 | −9 / −7 | −110 / −109 | 0 |
+| V1c: the mismatch in the pass's RESULT: with `marksPrefixBail`, such a bail returns the marker (−2 or less) instead of bailOutResult (−2) | **0 / −3** | 0 / −3 | −12 / −13 | −107 / −116 | 0 |
+| **V2 (shipped): V1c + `compareSlowPath` calls `compareAfterOptionsPass` directly after the bail (no `compareBody` hop)** | **−2 / 0** | **+4** / −2 | **−45 / −46** | **−137 / −150** | 0; `-no-WMO` thai +2 |
+
+Why V1 / V1b lost: a value that lives across the `compareUTF8` call costs every Latin compare — V1 re-created `mismatch = 0` before and after the call (`mov x12, #0` twice), V1b shuffled registers to keep −1 alive. In V1c the value is the result register, which is live anyway. V2's paths +4 (WMO) is the register allocation of the whole `compareSlowPath` (three more stack accesses around the `sharedPrefixRestart` call); ascii / latin got −2 from the same change.
+
+**V2 counts** (HEAD → V2): WMO root secondary cjk 579.2 → 534.4, `localizedStandardCompare` cjk 667.2 → 622.4, root secondary thai 2140.2 → 2003.6 (now +5.9% over the default path, was +13%), th secondary 2765.6 → 2629.0; `-no-WMO` cjk 685.6 → 639.8, `localizedStandardCompare` cjk 981.6 → 935.8, thai 2667.6 → 2517.6, th secondary 3493.8 → 3343.8. `localizedCompare` unchanged in both modes (263 / 273.6 WMO, 479 / 490.8 `-no-WMO`).
+
+**A/B against HEAD** (base built in the worktree at `9c9eecda` with the same probe rows; `-no-WMO` base built in the main tree's cached scratch from the clean HEAD engine and copied with its bundle; 5 interleaved rounds; mean change):
+
+| row | WMO (load 21) ascii / latin / cjk / paths / thai | `-no-WMO` (load falling 47 → 10) |
+|---|---|---|
+| `localizedStandardCompare` | −0.9 / −4.2 / **−7.3** / +0.6 / **−2.8%** | 0.0 / −3.3 / −3.1 / −2.1 / −1.7% |
+| `localizedCaseInsensitiveCompare` | −1.0 / −4.4 / **−5.2** / +0.6 / **−3.7%** | −0.5 / 0.0 / −4.2 / −1.8 / −1.6% |
+| `compare(_:options:range:locale:)` | −1.4 / −2.1 / **−4.6** / −1.0 / **−3.8%** | −7.2 / −4.1 / −5.3 / −4.9 / −2.0% |
+| th secondary (probe) | cjk −4.0, thai **−5.2%** (5/5) | cjk −9.3, thai −2.5% |
+| `localizedCompare` (default options) | +1.0 (+0000) / +2.0 (000+0, min 18 → 20) / −0.7 / +1.4 / +0.2% | +1.2 / −2.3 / −5.8 / −4.7 / +0.6% (mixed) |
+| `compare(_:locale:)` | −3.5 / −2.5 / −1.1 / −1.2 / −1.0% | −2.8 / +3.8 (0++−−) / +0.3 / +1.2 / −0.3% |
+| `String.Comparator` sort | −0.3 / +1.5 (+−+++, min −0.1%) / +0.8 / +0.3 / −1.0% | +0.4 / −0.4 / +1.0 / +1.0 / 0.0% |
+
+A first WMO run at load 130–150 was discarded (mean changes of −45% and −68%). EngineBench (Table 1), plain / aligned, min: compare ascii 9.3 / 9.3 both sides (mean +4.4 / +4.1%, one round), latin 9.6 equal, cjk 19.0 / 18.9 equal, paths 19.2 equal / +0.5%, thai −0.1 / +1.0%; sortKey −0.3..−5% (code not changed: layout).
+
+**Layout check of the default-option ascii / latin rows** (7 rounds, load ~42; WMO both sides built with `-align-all-functions=6`, fresh scratch paths `.build-bfal` in the worktree and `.build-wmo-al` here; `-no-WMO` the same pair as above): `localizedCompare` ascii / latin −3.6 / −0.7% aligned (min equal), +0.4 / −0.8% `-no-WMO`; `compare(_:locale:)` +0.6 / 0.0% aligned (min equal), −5.1 / +0.3% `-no-WMO`; the options rows 0..−5.6%. Left: `String.Comparator` sort ascii +3.2% mean aligned (+++++−+, min +0.5%), but −0.3% plain WMO and −0.8% `-no-WMO`: the sign follows the layout; the sort uses the default-option entry, whose call executes the same instructions. **Kept** (user decision, 2026-11-02, after the layout check).
+
+**Tests.** No new test: OptionsRestartTests and QuickCJKTests already compare the options paths on CJK and Thai pairs with shared prefixes against sort-key order. The mutation "the carried mismatch one byte too far" fails them with 75 issues (then a trap). Suite 1568/137; the four ladder tools build.
+
+**Still open** (the counts above): the options compares on CJK still cost 1.6× the default path (534 against 333 in WMO). The rest is the options pass that the Latin compares need too: the setup lookup (`resolveFastLatinSetup` + `FastLatinCache.setup`, 53 instructions, two calls, on every non-default options compare — Latin included), the options word (~30), and a first pinning whose pass always bails on CJK. A test of the first bytes before the lookup would skip them for CJK / Thai but add instructions to every ascii / latin options compare (not tried).
+
