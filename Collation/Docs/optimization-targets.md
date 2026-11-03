@@ -5403,3 +5403,40 @@ A first WMO run at load 130–150 was discarded (mean changes of −45% and −6
 
 **Still open** (the counts above): the options compares on CJK still cost 1.6× the default path (534 against 333 in WMO). The rest is the options pass that the Latin compares need too: the setup lookup (`resolveFastLatinSetup` + `FastLatinCache.setup`, 53 instructions, two calls, on every non-default options compare — Latin included), the options word (~30), and a first pinning whose pass always bails on CJK. A test of the first bytes before the lookup would skip them for CJK / Thai but add instructions to every ascii / latin options compare (not tried).
 
+#### (ar) The fast-Latin setup for the Foundation option sets, resolved at init (START HERE item 1 of §51 (aq))
+
+**Where** (the §51 (aq) trace; one root-secondary call, WMO): every non-default options compare called `resolveFastLatinSetup`, which called `FastLatinCache.setup` (an acquiring load of the snapshot and a scan of its entries): 53 instructions with both frames, on every corpus — ascii and latin included. The ALLOCATION/RESOLUTION HUNT shape: the result is the same on every call for a given option set. The cache key (`CollationFastLatin.primariesKey`) holds only alternate, maxVariable (when shifted) and numeric, not the strength: so every option set that the Foundation wrappers build (`.caseInsensitive` → secondary, `.diacriticInsensitive` → primary, `.numeric`, on the collator's defaults) has the default key or the default key with numeric toggled.
+
+**Change.** `Storage` resolves the numeric twin at init too (`twinFLKey`, `twinFLPackedOptions`, `twinFLPrimaries`, beside the existing default setup and its new `defaultFLKey`; one more `getOptions` per collator creation). `resolveFastLatinSetup` compares the key with the two init-resolved keys first; only other keys call `resolveFastLatinSetupFromCache` (`@inline(never)`, the old cache path). The shared lock-free cache (§51 (e)) stays for those: the earlier one-slot and locked caches are not repeated.
+
+**Forms** (counts of every group, as in §51 (aq); HEAD `ccd8e2b1`):
+
+| form | options rows, WMO | options rows, `-no-WMO` | default rows |
+|---|---|---|---|
+| P1: the two keys first, the cache call out of line | −18..−27 | −1..−12 | 0 |
+| **P2: P1 + `@inline(__always)` on `resolveFastLatinSetup`** | **−35..−56** | **−19..−32** | 0; thai +2 WMO, −2 `-no-WMO` |
+
+P1 gained little in `-no-WMO`: there the old `resolveFastLatinSetup` had been inlined into `compareSlowPath`; with the new branches it no longer was, and its frame took the gain. P2 counts (WMO / `-no-WMO`): root secondary ascii 314 → 271 / 363 → 333, latin 324.6 → 281.6 / 374.8 → 344.8, cjk 534.4 → 478.0 / 639.8 → 607.8, paths 492.2 → 443.2 / 540.2 → 512.2, thai 2003.6 → 1951.8 / 2517.6 → 2485.8; `localizedStandardCompare` (secondary + numeric, the twin) ascii 402 → 367 / 659 → 638, cjk 622.4 → 574.0 / 935.8 → 912.8; th secondary thai 2629.0 → 2583.2 / 3343.8 → 3318.0. Root options on CJK now 1.43× the default path (478 against 333; was 1.60×), on Thai +3.1% (was +5.9%).
+
+**The fields in the middle of `Storage` — a layout cost.** P2 first declared the four new fields after `defaultFLWord`. The A/B (5 rounds, load 17–30) had `compare(_:locale:)` +8.1 / +6.1 / +2.9% (ascii / latin / cjk, WMO, 5/5) and `-no-WMO` latin +6.8% (5/5), while one call executed the same instructions (363 / 373.6 WMO, 556 / 567.8 `-no-WMO`, a temporary `tmpLocaleCmp` probe; the same in the base, P2 and the final form). The fields after the insertion moved, among them the pointers that the default path reads (`restartSafetyPtr`, `quickCJKSetupPtr`, `defaultFLSetupPtr`). Declared LAST (the final form; the same instructions as P2 in every group), the `-no-WMO` row was fixed (latin −2.3%, ascii +3.0% with +000+), but plain WMO stayed +7.1 / +5.1 / +3.4% (5/5, 4/5). **Aligned builds** (`-align-all-functions=6`, both sides; 7 rounds, load 18): `compare(_:locale:)` −0.6 / 0.0 (7/7 equal) / −2.3%, the probe row −0.7 / 0.0 / −1.9%, `localizedCompare` 0.0 / +1.4 (0000++0) / 0.0%, `String.Comparator` sort +0.6 (mixed) / −1.4 / −1.8%: code placement in that WMO binary, not work. CPU Counters were not needed (agreed order: aligned check first).
+
+**A/B of the final form against HEAD** (5 interleaved rounds; WMO `-g`, base in the worktree at `ccd8e2b1`, load 26 → 19; `-no-WMO -g`, base built in the main tree's cached scratch from the HEAD engine and copied, load 19 → 14; mean change):
+
+| row | WMO ascii / latin / cjk / paths / thai | `-no-WMO` ascii / latin / cjk / paths / thai |
+|---|---|---|
+| `localizedStandardCompare` | **−7.4 / −12.5** / −4.5 / −0.6 / −0.4% | −2.0 / −2.0 / −2.7 / 0.0 / −0.9% |
+| `localizedCaseInsensitiveCompare` | **−7.0 / −5.8** / −5.5 / −7.4 / −1.2% | −3.4 / −4.3 / −2.4 / −1.5 / −1.2% |
+| `compare(_:options:range:locale:)` | **−8.0 / −7.1** / −6.6 / −11.7 / −0.9% | −2.7 / −2.0 / −2.7 / −2.2 / −0.5% |
+| root secondary (probe) | −14.7 / −11.4 / −3.3 / −9.7 / −1.4% | −7.1 / −8.5 / −3.9 / −3.0 / −0.8% |
+| `localizedCompare` | −1.0 / −2.1 / +1.4 / +2.9 / +0.1% (mixed) | −1.1 / −0.6 / −3.7 / 0.0 / −0.4% |
+| `compare(_:locale:)` | +7.1 / +5.1 / +3.4 / +0.6 / +0.7% (layout: see above) | +3.0 (+000+) / −2.3 / −3.0 / +4.8 (+−0−+) / +0.1% |
+| `String.Comparator` sort | −0.5 / −0.1 / +0.3 / −0.7 / +0.2% | −1.6 / −0.4 / −0.9 / −0.4 / −1.0% |
+
+EngineBench (Table 1), plain / aligned, min: compare ascii 9.4 / 9.3 equal on both sides, latin 9.8 / 9.7 equal (mean +1.4% plain, +++00), cjk +0.5% / equal, paths equal / −1.5%, thai −0.1 / −0.2%. **Kept** (user decision, 2026-11-03: "great wins").
+
+**Tests.** No new test: the options suites (OptionsRestartTests on five collators × 10 option sets, the numeric suites) run every option set through the init-resolved setups. The mutation "the numeric twin uses the default primaries" fails them with 37 issues (`digitRunsInContext`, `leadingZerosAreEqual`, `fuzzAdjacentPairs` …). Suite 1568/137; the four ladder tools build.
+
+**Lessons.** (1) Add new `Storage` fields at the END: a field inserted in the middle moves the hot pointers after it (`-no-WMO` +6.8% on a row whose code did not change). (2) A force-inlined helper whose slow path is a separate `@inline(never)` function keeps the caller's inlining in `-no-WMO`.
+
+**Still open** (`-no-WMO` split of one secondary + numeric ascii call): the options word `icuOptions` (27 instructions, a getter in another file), `primariesKey` (19, another file, with two `static let` addressors), an `==` on `Strength` through the generic `Equatable` witness (12; `options.strength == .identical`), the `latinMaxUTF8Lead` addressor (6) — all costs of calls across files in the `-no-WMO` build only; in WMO they inline.
+

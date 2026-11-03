@@ -18,18 +18,19 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the commit of §51 (aq) (the options compares
-on CJK and Thai, `RootCollator.swift`, the technique log and this file) on
-top of `9c9eecda` (the handoff docs of 2026-11-02), on top of `4b1487a5`
-(the matrix of 2026-11-02); `origin/port/collation` at `4b1487a5` unless the
-user pushed since. If the §51 (aq) commit is missing, `RootCollator.swift`
-and the two docs are modified — say so and give the add / commit lines (the
-memory files are outside the repo). Tree clean otherwise. The A/B worktree
-`../collation-baseline` is detached at `9c9eecda` with its own,
+paragraph).** Expected: HEAD = the commit of §51 (ar) (the fast-Latin
+setups resolved at init, `RootCollator.swift`, the technique log and this
+file) on top of `ccd8e2b1` (§51 (aq)), `9c9eecda` (the handoff docs of
+2026-11-02) and `4b1487a5` (the matrix of 2026-11-02);
+`origin/port/collation` at `4b1487a5` unless the user pushed since. If the
+§51 (ar) commit is missing, `RootCollator.swift` and the two docs are
+modified — say so and give the add / commit lines (the memory files are
+outside the repo). Tree clean otherwise. The A/B worktree
+`../collation-baseline` is detached at `ccd8e2b1` with its own,
 unmodified `main.swift`; its builds there: WMO `-g` BenchFoundation
 `.build-bfg` and the aligned WMO `-g` `.build-bfal` (both built WITH the
-temporary probe rows of §51 (aq) — rebuild before a Foundation A/B),
-EngineBench `.build/engine-bench/.build` and `.build-al` at `9c9eecda`.
+temporary probe rows of §51 (ar) — rebuild before a Foundation A/B),
+EngineBench `.build/engine-bench/.build` and `.build-al` at `ccd8e2b1`.
 **For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
 (each incremental, ~1 minute):
@@ -52,7 +53,9 @@ sandbox_apply", say so and ask the user (an allowlist entry is the user's
 decision, never yours). **Keep `.build/l4/nowmo-base/`:** it holds the
 FROZEN BINARY of 2026-10-30 (BenchFoundation `-no-WMO -g` at `22af5f68`,
 with its bundle), the third matrix check of Docs/27. Main tree helpers in
-`.build/` (git-ignored): `.build/l7/` (§51 (aq): `probe-opts.swift` = the
+`.build/` (git-ignored): `.build/l8/` (§51 (ar): the same tools as
+`.build/l7/`, the probe rows plus `tmpLocaleCmp`, the base and variant
+binaries), `.build/l7/` (§51 (aq): `probe-opts.swift` = the
 8 temporary probe rows, `count_groups.sh` = the instruction count of every
 group for one binary, 6 lldb jobs in parallel, `cmp_groups.py` = the counts
 side by side, `foundation_ab_aq.py` / `foundation_ab_check.py` = A/B copies
@@ -124,7 +127,7 @@ skipped NSString → CoreFoundation → C++ bridge. **Never use Table 2 as
 evidence about the engine; never cite it as consolation for a Table 1 gap.**
 The ICU C gates stay those of 2026-10-29.
 
-**What this round did (2026-10-29…11-02; details in §51 (ai)–(aq)):**
+**What this round did (2026-10-29…11-02; details in §51 (ai)–(ar)):**
 - (ai) Latin compare's last mispredictions: the lead-byte ASCII test of
   `compareUTF8`, from the data (ICU C has twice as many); a branch-free
   decode gave latin −4.5% but ascii +4.5%: REJECTED.
@@ -160,23 +163,33 @@ The ICU C gates stay those of 2026-10-29.
   Thai options now +5.9% in instructions over the default path (was +13%);
   CJK options 534 against 333 (was 579). Accepted after a layout check
   (user decision, 2026-11-02). No matrix run since.
+- (ar) **The fast-Latin setup for the Foundation option sets, resolved at
+  init:** the default key and its numeric twin are read from the storage;
+  only other option sets use the shared cache. Every options compare −35..−56
+  instructions (WMO), −19..−32 (`-no-WMO`), ascii / latin included. WMO
+  A/B: `localizedStandardCompare` ascii / latin −7.4 / −12.5%,
+  `localizedCaseInsensitiveCompare` −7.0 / −5.8%, the options compare −8.0
+  / −7.1%; `-no-WMO` −2..−4%. New `Storage` fields go at the END (in the
+  middle they cost `compare(_:locale:)` +6.8% in `-no-WMO`); the plain-WMO
+  `compare(_:locale:)` +5..+7% that stayed is placement (aligned builds:
+  0.0%). User decision, 2026-11-03: accepted ("great wins").
 
 **NEXT TASK — not chosen yet. Ask the user.** Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
-1. **The rest of the options cost on CJK** (§51 (aq), "Still open"): one
-   root-secondary cjk call is 534 instructions against 333 for the default
-   path (WMO). Left: the setup lookup `resolveFastLatinSetup` +
-   `FastLatinCache.setup` (53 instructions, two calls, on EVERY
-   non-default options compare — the Latin ones too, so a cheaper lookup
-   would help ascii / latin options rows as well), the options word (~30),
-   and the first pinning whose pass always bails on CJK. A first-byte test
-   before the lookup would skip them for CJK / Thai but cost every ascii /
-   latin options compare (not tried; the user's rule).
-2. **Thai options compares +5.9%** over the default path (2004 against
-   1891 instructions per call, WMO; was +13% before §51 (aq)): the same
-   lookup and first pass as item 1.
+1. **The options compares in `-no-WMO`: calls across files** (§51 (ar),
+   "Still open"): one secondary + numeric ascii call spends 27 instructions
+   in the `icuOptions` getter, 19 in `primariesKey` (with two `static let`
+   addressors), 12 in an `==` on `Strength` through the generic `Equatable`
+   witness, 6 in the `latinMaxUTF8Lead` addressor — `-no-WMO` only (in WMO
+   they inline). They are on the ascii / latin options rows.
+2. **The rest of the options cost on CJK and Thai** (§51 (aq), (ar)): root
+   options on CJK 478 against 333 instructions (WMO, 1.43×), on Thai +3.1%.
+   Left: the options word (~30) and a first pinning whose pass always bails
+   on CJK. A first-byte test before the pass would skip them for CJK /
+   Thai but cost every ascii / latin options compare (not tried; the user's
+   rule).
 3. **ko's hanja are expansions** (7 476): Korean Han text still takes the
    pipeline; the quick path could use an expansion's first CE.
 4. cjk compare +3.8% since P3c (Table 1 cjk 19.0 ns, 2.15× faster than ICU;
@@ -454,6 +467,11 @@ compare 9.3/10.1/40.8/30.0/172.8, sortKey 104.4/121.0/117.7/373.3/155.5.
   (§51 (o)), then — since §51 (ao) — `compareBody(…, restart:
   optionsPassBailed)`, which calls `compareAfterOptionsPass` with no
   mismatch, the same bytes path. Bridged strings: the walk.
+  The pass's fast-Latin setup: `resolveFastLatinSetup` (force-inlined)
+  reads the default key and its numeric twin from `Storage` (resolved at
+  init; every Foundation option set has one of them), other keys from the
+  lock-free `FastLatinCache` through the `@inline(never)`
+  `resolveFastLatinSetupFromCache` (§51 (e), (ar)).
 - **The Foundation wrappers** (`StringProtocol+Locale.swift`,
   `String+Collation.swift`, `String+SortComparator.swift`): the eight public
   generic wrappers carry `@_specialize(where Self == String, T == String)`
@@ -510,7 +528,7 @@ W1a, §51 (an) C1 / C2; use `_withUnsafeGuaranteedRef` for the collator and
 `@_specialize` for the generic wrappers); a generic `@inline(__always)`
 helper with a closure called from another file (unspecialized in
 `-no-WMO`, §51 (ak) W1); in the quick CJK dispatch, a variable-top guard, the reordering inside `quickCJKPrimary`, an out-of-line reordered dispatch, or the reordering inline at the decision (§51 (ap) Q1–Q1h: each cost some group 5–51 instructions);
-in the options pass, any value that lives across the `compareUTF8` call — the mismatch in a variable outside the pinned closures (§51 (aq) V1 / V1b: ascii / latin options +1..+3 instructions; carry it in the result instead);
+new `Storage` fields in the middle of the class (they move the hot pointers after them; §51 (ar)); in the options pass, any value that lives across the `compareUTF8` call — the mismatch in a variable outside the pinned closures (§51 (aq) V1 / V1b: ascii / latin options +1..+3 instructions; carry it in the result instead);
 a branch-free ASCII / two-byte Latin decode in `compareUTF8` (latin −4.5%,
 ascii +4.5%; §51 (ai)); pinning only strings longer than 15 bytes (§51 (aa)); in `compareUTF8`,
 wrapping index increments (`&+= 1`; LLVM then reads each byte with `ldrsb`

@@ -63,7 +63,7 @@ public struct RootCollator: @unchecked Sendable {
         let defaultFLPrimaries: UnsafeBufferPointer<UInt16>
         let defaultFLPackedOptions: Int32
         let defaultFLWord: Int32
-        /// Owns the memory behind defaultFLPrimaries.
+        /// Owns the memory behind defaultFLPrimaries and twinFLPrimaries.
         let defaultFLStorage: DataStorage
         /// Pre-computed full 64-bit CEs for ASCII (0–127). Entry is 0 for characters needing full pipeline (digits, U+0000). Eliminates trie lookup + tag dispatch for common characters in the sort key path.
         let simpleCEs: UnsafeBufferPointer<Int64>
@@ -90,6 +90,11 @@ public struct RootCollator: @unchecked Sendable {
         let quickCJKSetupPtr: UnsafeMutablePointer<QuickCJKSetup>
         /// The default-options fast-Latin setup in one box; see DefaultFastLatinSetup.
         let defaultFLSetupPtr: UnsafeMutablePointer<DefaultFastLatinSetup>
+        /// The fast-Latin primaries key (CollationFastLatin.primariesKey) of the default options, and of its numeric twin (the default key with numeric toggled), each with its packed options (the low 16 bits are replaced per word) and primaries, resolved at init. Declared last, so that every older field keeps its offset (in the middle, they moved the pointers that the default path reads, and `compare(_:locale:)` ran 6–8% slower with the same code; technique log §51 (ar)). They serve every options word with one of these two keys — strength, case and backward-secondary changes and `.numeric`, so every option set that the Foundation wrappers build — without the shared cache (technique log §51 (ar)).
+        let defaultFLKey: Int32
+        let twinFLKey: Int32
+        let twinFLPackedOptions: Int32
+        let twinFLPrimaries: UnsafeBufferPointer<UInt16>
 
         init(data: CollationData, base: CollationData?, norm: NormalizationData,
              reordering: Reordering?, defaultOptions: CollationOptions,
@@ -126,6 +131,17 @@ public struct RootCollator: @unchecked Sendable {
             self.defaultFLPrimaries = flPrimaries
             self.defaultFLPackedOptions = packed
             self.defaultFLWord = defaultOptions.icuOptions
+            // The numeric twin: getOptions reads only the key bits, so the key itself is a valid options word for it.
+            let defaultKey = CollationFastLatin.primariesKey(defaultOptions.icuOptions)
+            let twinKey = defaultKey ^ CollationOptions.Bits.numeric
+            var twinPrims: [UInt16] = []
+            let twinPacked = CollationFastLatin.getOptions(
+                table: fastLatinTable, scriptsData: scriptsData, reordering: reordering,
+                options: twinKey, primaries: &twinPrims)
+            self.defaultFLKey = defaultKey
+            self.twinFLKey = twinKey
+            self.twinFLPackedOptions = twinPacked
+            self.twinFLPrimaries = flStorage.store(twinPrims)
             self.defaultFLStorage = flStorage
             // Pre-compute simple-CE tables: ASCII, and the Thai block (U+0E00–0E7F — the one non-Latin script whose hot scalars are mostly single simple CEs; profiling put ~200 ns of Thai compares in CE production). Same exclusion rules for both: specials (contractions, prefixes, digits) stay 0 and take the full path.
             let ceStorage = DataStorage()
@@ -1044,18 +1060,40 @@ public struct RootCollator: @unchecked Sendable {
 
 
 
-    /// The fast-Latin setup for an options word. The cache holds one entry per primaries key (see CollationFastLatin.primariesKey), computed and published on a miss; the packed options for this word are that entry's miniVarTop (bits 31..16) with this word in bits 15..0 — exactly what getOptions returns for the word itself. nil only if the cache is full, which 10 possible keys never make it (the caller would take the CE pipeline).
+    /// The fast-Latin setup for an options word. The two keys resolved at init (the default key and its numeric twin; see Storage.defaultFLKey) are read from the storage; the shared cache holds one entry per other primaries key (see CollationFastLatin.primariesKey), computed and published on a miss. The packed options for this word are the entry's miniVarTop (bits 31..16) with this word in bits 15..0 — exactly what getOptions returns for the word itself. nil only if the cache is full, which 10 possible keys never make it (the caller would take the CE pipeline).
+    ///
+    /// The two init-resolved keys come first: through the cache, every non-default options compare paid a call, an acquiring load and a scan of the snapshot (53 instructions with this function's frame; technique log §51 (ar)). Force-inlined: with the cache call out of line the body is small, and as a function of its own it cost a frame in the `-no-WMO` build, where the old body had been inlined.
+    @inline(__always)
     private func resolveFastLatinSetup(_ word: Int32) -> FastLatinSetup? {
         let key = CollationFastLatin.primariesKey(word)
-        guard let entry = fastLatinCache.setup(for: key) ?? fastLatinCache.insert(word: key, {
+        let st = storage
+        let entryPacked: Int32
+        let entryPrimaries: UnsafeBufferPointer<UInt16>
+        if key == st.defaultFLKey {
+            entryPacked = st.defaultFLPackedOptions
+            entryPrimaries = st.defaultFLPrimaries
+        } else if key == st.twinFLKey {
+            entryPacked = st.twinFLPackedOptions
+            entryPrimaries = st.twinFLPrimaries
+        } else {
+            guard let entry = resolveFastLatinSetupFromCache(key) else { return nil }
+            entryPacked = entry.packedOptions
+            entryPrimaries = entry.primaries
+        }
+        let packed = entryPacked < 0 ? entryPacked : (entryPacked & ~0xffff) | word
+        return FastLatinSetup(word: word, packedOptions: packed, primaries: entryPrimaries)
+    }
+
+    /// The cache entry for a primaries key that init did not resolve. Out of line, so that the two init-resolved keys need no frame for the cache call.
+    @inline(never)
+    private func resolveFastLatinSetupFromCache(_ key: Int32) -> FastLatinSetup? {
+        fastLatinCache.setup(for: key) ?? fastLatinCache.insert(word: key, {
             var primaries: [UInt16] = []
             let packed = CollationFastLatin.getOptions(
                 table: fastLatinTable, scriptsData: storage.scriptsData, reordering: reordering,
                 options: key, primaries: &primaries)
             return (packed, primaries)
-        }) else { return nil }
-        let packed = entry.packedOptions < 0 ? entry.packedOptions : (entry.packedOptions & ~0xffff) | word
-        return FastLatinSetup(word: word, packedOptions: packed, primaries: entry.primaries)
+        })
     }
 
     /// `restart` result of sharedPrefixRestart: the strings are equal byte for byte.
