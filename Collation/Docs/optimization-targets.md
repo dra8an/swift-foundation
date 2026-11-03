@@ -5440,3 +5440,48 @@ EngineBench (Table 1), plain / aligned, min: compare ascii 9.4 / 9.3 equal on bo
 
 **Still open** (`-no-WMO` split of one secondary + numeric ascii call): the options word `icuOptions` (27 instructions, a getter in another file), `primariesKey` (19, another file, with two `static let` addressors), an `==` on `Strength` through the generic `Equatable` witness (12; `options.strength == .identical`), the `latinMaxUTF8Lead` addressor (6) — all costs of calls across files in the `-no-WMO` build only; in WMO they inline.
 
+#### (as) The compare paths in `-no-WMO`: enum compares by case match, same-file copies of constants
+
+**Where** (the `-no-WMO` split of one root-secondary ascii call at HEAD `5c7955ca`: 333 instructions, WMO 271): calls into other files — the `icuOptions` getter (27), `CollationFastLatin.primariesKey` (19, plus three `CollationOptions.Bits` accessors), `options.strength == .identical` in `compareSlowPath` (~30: a metadata accessor, two stack stores and the generic `Equatable.==` through a dispatch thunk, for one byte compare), the `latinMaxUTF8Lead` accessor (6), the `FastLatinSetup` initializer (5). The default path paid the `latinMaxUTF8Lead` and `bailOutResult` accessors (12 of 209; WMO 192); every Thai compare in the CE pipeline paid `alternate == .shifted` in `variableTopValue`.
+
+**Why** (a scratch package, `.build/l8/xfile`, compiled with `swiftc -O` without `-wmo`): in per-file compilation a value from another file is a call — `static let`, `@usableFromInline static let`, `@inlinable static var` and `@_transparent static var` alike (an accessor or getter call); `enumValue == .case` is a call to the generic `==`; `if case .identical = value` is `and` / `cmp` / `cset`; a `static let` in the SAME file folds to an immediate.
+
+**Change.**
+1. In the compare paths of `RootCollator.swift` (`compareSlowPath`, `compareBody`, `compareFromRestart`, `quickPrimaryCompare`, `variableTopValue`): `options.hasIdenticalStrength` and `options.isShifted`, fileprivate `@inline(__always)` case matches in an extension of `CollationOptions` in that file. (The two compares in `sortKey` are not changed.)
+2. Same-file copies in an extension of `RootCollator`: `fastLatinBailOut` (= `CollationFastLatin.bailOutResult`), `latinMaxLead` (= `latinMaxUTF8Lead`), `prefixDependentResult` (= `CollationCompare.prefixDependent`), and `fastLatinPrimariesKey(_:)` (= `primariesKey`, literal masks), used in the code lines of `RootCollator.swift` (30 uses). `resolveFastLatinSetup` returns a tuple, not a `FastLatinSetup`. `SameFileCopiesTests` (new) checks each copy against its original, the key over all words 0..<0x400.
+
+**Counts** (`-no-WMO`, one call; HEAD → step 1 → steps 1 + 2):
+
+| group | HEAD | step 1 | steps 1 + 2 |
+|---|---:|---:|---:|
+| root secondary / primary / sec + numeric, ascii | 333 / 333 / 336 | −26 | **261 / 261 / 264 (−72, −22%)** |
+| the same, latin | 344.8 / 344.8 / 347.8 | −26 | **−72** |
+| the same, cjk / paths | | −25 | −76 / −67 |
+| `localizedStandardCompare` ascii / latin / cjk | 638 / 649.8 / 912.8 | −26 / −26 / −25 | −72 / −72 / −76 |
+| root defaults ascii / latin / cjk | 209 / 220.8 / 408 | 0 | **−19 / −19 / −15** |
+| `localizedCompare` ascii / latin / cjk | 479 / 490.8 / 695 | 0 | **−33 / −33 / −48** |
+| root defaults / secondary, thai | 2414.8 / 2485.8 | −66 / −66 | −123 / −159 |
+| th defaults / secondary, thai | 3228.0 / 3318.0 | −65 / −65 | −122 / −177 |
+
+WMO: step 1 changed only the Thai rows (−1..−2); the WMO BenchFoundation of steps 1 + 2 is byte-identical to that of step 1 (the constants fold either way). EngineBench (WMO) executes the same instructions as HEAD, call for call (paths 324.8, ascii 173.9, latin 169.1 per compare). The `-no-WMO` options compare on ascii (261) is now below the WMO count (271).
+
+**A/B against HEAD** (5 interleaved rounds, load 10–13; WMO base built in the worktree at `5c7955ca`; `-no-WMO` base = the HEAD engine built in the main tree, with the same probe rows; mean change):
+
+| row | `-no-WMO` ascii / latin / cjk / paths / thai | WMO ascii / latin / cjk / paths / thai |
+|---|---|---|
+| `localizedCaseInsensitiveCompare` | **−25.9 / −23.5** / −13.7 / −18.0 / −5.4% | 0.0 / 0.0 / +0.6 / 0.0 / −0.7% |
+| `localizedStandardCompare` | **−24.5 / −21.0** / −13.2 / −16.7 / −5.6% | +1.0 / +1.0 / +0.6 / −1.3 / −0.3% (mixed, mins equal except latin 17 → 20, 0−0−+) |
+| `compare(_:options:range:locale:)` | **−19.2 / −16.4** / −10.3 / −12.8 / −5.4% | 0.0 / 0.0 / −0.5 / 0.0 / −0.3% |
+| `localizedCompare` | **−9.2 / −9.0** / −13.8 / −9.4 / −4.0% | 0.0 / +1.0 (+0000) / +4.0 (0+0+0, min equal) / +2.9 (++0+0) / +0.5% |
+| `compare(_:locale:)` | **−7.8 / −8.8** / −3.4 / −0.8 / −3.7% | −7.5 / −4.2 / −3.4 / −2.3 / −0.8% (same instructions: layout) |
+| `.localizedStandard` sort | −5.3 / −5.2 / −0.8 / −1.7 / −4.9% | 0.0 / +0.1 / +0.4 / −1.2 / −0.8% |
+| `String.Comparator` sort | −2.7 / −3.0 / −1.3 / −3.1 / −4.5% | −0.1 / +0.1 / +0.2 / −1.5 / −0.5% |
+
+Nearly every `-no-WMO` cell is 5/5. EngineBench compare, plain / aligned: ascii −0.8 / +0.4%, latin 0.0 / +0.2% (min +1.0% both), cjk −0.6 / +0.4%, paths +1.3 / +1.2% (aligned 5/5, min 19.3 → 19.4; the same instructions: layout), thai −0.3 / −0.4%. **Kept** (user decision, 2026-11-03), with the understanding below.
+
+**What it means.** The shipping release builds compile WMO (`CMakeLists.txt`: `wholemodule` for Release; SwiftPM release builds by default), so a release user gets nothing from this step: the costs never existed there. It removes a handicap of the `-no-WMO` build that the matrix records as Table 2 (and that machine 1 needs). User decision, 2026-11-03: accept, and plan a WMO column for Table 2 (START HERE).
+
+**Tests.** `SameFileCopiesTests` (2 tests, new suite). The mutation "the key copy ignores the numeric bit" fails it and OptionsRestartTests with 542 issues. Suite **1570/138**; the four ladder tools build.
+
+**Still open** (`-no-WMO` only): `CollationConstants.noCEPrimary`, `noCE` and other constants in the CE compare loop of `CollationCompare.swift` (~7 instructions per Thai compare), the two strength compares in `sortKey`, the `icuOptions` getter (27; inlined it costs about the same).
+

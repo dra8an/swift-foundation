@@ -18,19 +18,19 @@ which this repo does not even have). The tools and docs live under
 `Collation/`.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the commit of §51 (ar) (the fast-Latin
-setups resolved at init, `RootCollator.swift`, the technique log and this
-file) on top of `ccd8e2b1` (§51 (aq)), `9c9eecda` (the handoff docs of
-2026-11-02) and `4b1487a5` (the matrix of 2026-11-02);
-`origin/port/collation` at `4b1487a5` unless the user pushed since. If the
-§51 (ar) commit is missing, `RootCollator.swift` and the two docs are
-modified — say so and give the add / commit lines (the memory files are
-outside the repo). Tree clean otherwise. The A/B worktree
-`../collation-baseline` is detached at `ccd8e2b1` with its own,
-unmodified `main.swift`; its builds there: WMO `-g` BenchFoundation
-`.build-bfg` and the aligned WMO `-g` `.build-bfal` (both built WITH the
-temporary probe rows of §51 (ar) — rebuild before a Foundation A/B),
-EngineBench `.build/engine-bench/.build` and `.build-al` at `ccd8e2b1`.
+paragraph).** Expected: HEAD = the commit of §51 (as) (case matches and
+same-file copies for `-no-WMO`: `RootCollator.swift`, the new
+`SameFileCopiesTests.swift`, the technique log and this file) on top of
+`5c7955ca` (§51 (ar)); `origin/port/collation` at `5c7955ca` (pushed
+2026-11-03) unless the user pushed since. If the §51 (as) commit is
+missing, those four files are modified or new — say so and give the add /
+commit lines (the memory files are outside the repo). Tree clean otherwise.
+The A/B worktree `../collation-baseline` is detached at `5c7955ca` with its
+own, unmodified `main.swift`; its builds there: WMO `-g` BenchFoundation
+`.build-bfg` (built WITH the temporary probe rows of §51 (ar) / (as) —
+rebuild before a Foundation A/B), the aligned `.build-bfal` (at
+`ccd8e2b1`), EngineBench `.build/engine-bench/.build`, `.build-al` and
+`.build-g` at `5c7955ca`.
 **For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
 (each incremental, ~1 minute):
@@ -79,8 +79,8 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1568 tests in 137
-suites** — `swift test` prints three summary lines (45/5, 582/92, 941/40; since §51 (ap));
+anything longer or with wider effect. Suite gate: **1570 tests in 138
+suites** — `swift test` prints three summary lines (45/5, 584/93, 941/40; since §51 (as));
 add them up.
 
 **Read next, in this order:**
@@ -127,7 +127,7 @@ skipped NSString → CoreFoundation → C++ bridge. **Never use Table 2 as
 evidence about the engine; never cite it as consolation for a Table 1 gap.**
 The ICU C gates stay those of 2026-10-29.
 
-**What this round did (2026-10-29…11-02; details in §51 (ai)–(ar)):**
+**What this round did (2026-10-29…11-02; details in §51 (ai)–(as)):**
 - (ai) Latin compare's last mispredictions: the lead-byte ASCII test of
   `compareUTF8`, from the data (ICU C has twice as many); a branch-free
   decode gave latin −4.5% but ascii +4.5%: REJECTED.
@@ -173,34 +173,57 @@ The ICU C gates stay those of 2026-10-29.
   middle they cost `compare(_:locale:)` +6.8% in `-no-WMO`); the plain-WMO
   `compare(_:locale:)` +5..+7% that stayed is placement (aligned builds:
   0.0%). User decision, 2026-11-03: accepted ("great wins").
+- (as) **The compare paths in `-no-WMO`:** enum compares by case match
+  (`hasIdenticalStrength`, `isShifted`) and same-file copies of three
+  constants and of `primariesKey` (`SameFileCopiesTests` checks them). In
+  `-no-WMO` each file compiles alone, and every value from another file was
+  a call (also with `@inlinable` / `@_transparent` — tested). `-no-WMO`:
+  options compares ascii / latin −16..−26%, `localizedCompare` −9%,
+  `compare(_:locale:)` −8%; WMO: no change (byte-identical code but for 1–2
+  Thai instructions). **Release builds are WMO** (`CMakeLists.txt`), so this
+  removes a handicap of the `-no-WMO` Table 2, not a cost that release users
+  had. User decision, 2026-11-03: accepted, and plan a WMO column for
+  Table 2 (NEXT TASK 1).
 
 **NEXT TASK — not chosen yet. Ask the user.** Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
-1. **The options compares in `-no-WMO`: calls across files** (§51 (ar),
-   "Still open"): one secondary + numeric ascii call spends 27 instructions
-   in the `icuOptions` getter, 19 in `primariesKey` (with two `static let`
-   addressors), 12 in an `==` on `Strength` through the generic `Equatable`
-   witness, 6 in the `latinMaxUTF8Lead` addressor — `-no-WMO` only (in WMO
-   they inline). They are on the ascii / latin options rows.
-2. **The rest of the options cost on CJK and Thai** (§51 (aq), (ar)): root
+1. **A WMO column for Table 2 (user decision, 2026-11-03: plan it).**
+   Release builds of swift-foundation are WMO (`CMakeLists.txt` line 43:
+   `wholemodule` for Release; SwiftPM release by default), but Table 2 is
+   measured with a `-no-WMO` BenchFoundation (`run_benchmarks.sh` line 31),
+   because machine 1 needs it (the WMO SIGILL, Docs/25). Plan to present
+   first: on machine 2, `run_benchmarks.sh` also builds a WMO BenchFoundation
+   (a fresh scratch path such as `.build-wmo`; a fresh `-no-WMO` build fails,
+   a fresh WMO build works), `bench_matrix.py` takes it as an optional second
+   binary, runs it interleaved in each of the K rounds, and prints an extra
+   "Swift (WMO)" column with its speedup; machine 1 skips it. Open questions
+   for the user: which column is the main one in Docs/21, and a new matrix
+   pair afterwards (the system-ICU reference question of the macOS update
+   still stands).
+2. **The `-no-WMO` costs left** (§51 (as), "Still open"): constants of
+   `CollationConstants` in the CE compare loop of `CollationCompare.swift`
+   (~7 per Thai compare), the strength compares in `sortKey`, the
+   `icuOptions` getter. `-no-WMO` only — after item 1 decide whether they
+   still matter.
+3. **The rest of the options cost on CJK and Thai** (§51 (aq), (ar)): root
    options on CJK 478 against 333 instructions (WMO, 1.43×), on Thai +3.1%.
    Left: the options word (~30) and a first pinning whose pass always bails
    on CJK. A first-byte test before the pass would skip them for CJK /
    Thai but cost every ascii / latin options compare (not tried; the user's
    rule).
-3. **ko's hanja are expansions** (7 476): Korean Han text still takes the
+4. **ko's hanja are expansions** (7 476): Korean Han text still takes the
    pipeline; the quick path could use an expansion's first CE.
-4. cjk compare +3.8% since P3c (Table 1 cjk 19.0 ns, 2.15× faster than ICU;
+5. cjk compare +3.8% since P3c (Table 1 cjk 19.0 ns, 2.15× faster than ICU;
    CJK pairs often share the first UTF-8 byte and take the helper path).
-5. CE production for precomposed Latin letters (NFD decomposition, ~119
+6. CE production for precomposed Latin letters (NFD decomposition, ~119
    instructions per accented letter); the run-time writer path for
    non-default options; L1 (the Thai lookahead; skipped by the user before as
    too small).
-6. Creation: the bundle open (~0.9 ms) and the data read and parse (~0.75
+7. Creation: the bundle open (~0.9 ms) and the data read and parse (~0.75
    ms; mapping the file is the candidate; §51 (q)).
-7. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
+8. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
    options rows in WMO (§51 (ac)).
 **Pending on the user's side: the macOS update.** After it: (a) set a new
 system-ICU reference from two matrix runs on a quiet machine that pass the
@@ -347,7 +370,11 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   non-`@inlinable` function MAY be specialized for the bench's types, so a
   cost seen in the `-no-WMO` count may be smaller or absent in the WMO A/B.
   Real clients of the shipping framework (library evolution) do NOT get such
-  specialization, so the `-no-WMO` build is the closer model of them. Count
+  specialization, so the `-no-WMO` build is the closer model of them. But
+  for code INSIDE the module the release build is WMO (`CMakeLists.txt`:
+  `wholemodule` for Release), so there WMO is the model that release users
+  get, and `-no-WMO` costs of calls across files are a handicap of Table 2
+  only (§51 (as)). Count
   in both builds; report both; A/B in the WMO pair and say which mode it is.
 - **Instruction count of a Table 2 call (the §51 (o) recipe):** add a
   temporary `@inline(never)` wrapper row to `Collation/Sources/BenchFoundation/main.swift`
@@ -471,7 +498,12 @@ compare 9.3/10.1/40.8/30.0/172.8, sortKey 104.4/121.0/117.7/373.3/155.5.
   reads the default key and its numeric twin from `Storage` (resolved at
   init; every Foundation option set has one of them), other keys from the
   lock-free `FastLatinCache` through the `@inline(never)`
-  `resolveFastLatinSetupFromCache` (§51 (e), (ar)).
+  `resolveFastLatinSetupFromCache` (§51 (e), (ar)). The compare paths test
+  the option enums with the fileprivate case matches `hasIdenticalStrength`
+  / `isShifted`, never `==`, and read `RootCollator.fastLatinBailOut`,
+  `latinMaxLead`, `prefixDependentResult`, `fastLatinPrimariesKey` — the
+  same-file copies of §51 (as) (`SameFileCopiesTests`). Keep new hot-path
+  constants in the same file, or `-no-WMO` pays a call for each.
 - **The Foundation wrappers** (`StringProtocol+Locale.swift`,
   `String+Collation.swift`, `String+SortComparator.swift`): the eight public
   generic wrappers carry `@_specialize(where Self == String, T == String)`

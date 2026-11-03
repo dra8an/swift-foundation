@@ -132,7 +132,7 @@ public struct RootCollator: @unchecked Sendable {
             self.defaultFLPackedOptions = packed
             self.defaultFLWord = defaultOptions.icuOptions
             // The numeric twin: getOptions reads only the key bits, so the key itself is a valid options word for it.
-            let defaultKey = CollationFastLatin.primariesKey(defaultOptions.icuOptions)
+            let defaultKey = RootCollator.fastLatinPrimariesKey(defaultOptions.icuOptions)
             let twinKey = defaultKey ^ CollationOptions.Bits.numeric
             var twinPrims: [UInt16] = []
             let twinPacked = CollationFastLatin.getOptions(
@@ -391,20 +391,20 @@ public struct RootCollator: @unchecked Sendable {
                     options: packed,
                     numeric: options.numeric, safety: safety,
                     mismatch: &mismatch)
-                if f != CollationFastLatin.bailOutResult { return f }
+                if f != RootCollator.fastLatinBailOut { return f }
                 let q = RootCollator.quickCJKDispatch(
                     lBytes, rBytes, at: mismatch,
                     setup: cjkSetup,
                     numeric: options.numeric, safety: safety)
-                if q != CollationFastLatin.bailOutResult { return q }
+                if q != RootCollator.fastLatinBailOut { return q }
                 // Headed for the pipeline: decide here — while the bytes are pinned — where compareBody may restart CE iteration, so it needs no identical-prefix walk of its own. STATIC helper with trivial parameters — instance methods or fat arguments called from these pinned-buffer closures regress every corpus.
                 restartScalars = RootCollator.restartScalarCount(
                     lBytes, rBytes, at: mismatch,
                     safety: safety, numeric: options.numeric)
-                return CollationFastLatin.bailOutResult
-            } ?? CollationFastLatin.bailOutResult
-        } ?? CollationFastLatin.bailOutResult
-        if fast != CollationFastLatin.bailOutResult {
+                return RootCollator.fastLatinBailOut
+            } ?? RootCollator.fastLatinBailOut
+        } ?? RootCollator.fastLatinBailOut
+        if fast != RootCollator.fastLatinBailOut {
             return Self.order(fromFastResult: fast)
         }
         restart = restartScalars
@@ -472,7 +472,7 @@ public struct RootCollator: @unchecked Sendable {
                 }
             }
         }
-        return CollationFastLatin.bailOutResult
+        return RootCollator.fastLatinBailOut
     }
 
     /// The order of two different quick CJK primaries under script reordering: a lead-byte permutation that keeps the order inside each group, so different primaries stay different (technique log §51 (ap)).
@@ -518,9 +518,9 @@ public struct RootCollator: @unchecked Sendable {
         let word = options.icuOptions
         var triedFastLatin = false
         // The gate is checked here, before the call: computing the setup and pinning the strings first cost CJK sorts +2–4% for a pass that always bails on them.
-        if options.strength == .identical {
-            if (left.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
-               (right.utf8.first ?? 0) <= CollationFastLatin.latinMaxUTF8Lead,
+        if options.hasIdenticalStrength {
+            if (left.utf8.first ?? 0) <= RootCollator.latinMaxLead,
+               (right.utf8.first ?? 0) <= RootCollator.latinMaxLead,
                let decided = identicalStrengthTertiaryPass(left, right, options: options) {
                 return decided
             }
@@ -551,7 +551,7 @@ public struct RootCollator: @unchecked Sendable {
                             return Self.order(fromFastResult: fast)
                         }
                         triedFastLatin = true
-                        assert(Int(CollationFastLatin.bailOutResult) == Self.optionsPassBailed, "a plain bail must be the marker without a mismatch")
+                        assert(Int(RootCollator.fastLatinBailOut) == Self.optionsPassBailed, "a plain bail must be the marker without a mismatch")
                         // The restart is placed later, in compareAfterOptionsPass: this pass decides the Latin compares, and any more code here made compareSlowPath too large to inline into `compare` (+76 instructions per ascii options compare in the `-no-WMO` build; technique log §51 (ac)). The marker carries the pass's mismatch, so compareAfterOptionsPass does not scan the prefix again; called from here, not through compareBody, whose frame cost ~39 instructions per call (technique log §51 (aq)).
                         if let decided = try compareAfterOptionsPass(
                             left, right, options: options, word: word, mismatch: Self.optionsPassMismatch(Int(fast))) {
@@ -587,7 +587,7 @@ public struct RootCollator: @unchecked Sendable {
                     mismatch: &mismatch)
             } ?? nil
         } ?? nil
-        guard let fast, fast != CollationFastLatin.bailOutResult, fast != 0 else { return nil }
+        guard let fast, fast != RootCollator.fastLatinBailOut, fast != 0 else { return nil }
         return fast < 0 ? .ascending : .descending
     }
 
@@ -627,14 +627,14 @@ public struct RootCollator: @unchecked Sendable {
 
         // Quick primary comparison: if both first-differing scalars are in the CJK Unified Ideographs range and map to OFFSET/IMPLICIT CEs, the comparison is decided here without the CE pipeline.
         if !fellBack, let l = lNext, let r = rNext, l != r,
-           options.strength != .identical,
+           !options.hasIdenticalStrength,
            Self.isCJKUnified(l.value), Self.isCJKUnified(r.value) {
             let qp = quickPrimaryCompare(l.value, r.value, options: options)
             if qp != 0 { return qp < 0 ? .ascending : .descending }
         }
 
         // Fast Latin (CollationFastLatin): when both remainders start within the mini-CE table's range, compare on the precompiled table with no iterator pipeline (and no scratch buffers); any unsupported character or mapping bails out to the regular path. The skip walk's iterators are reusable unless an unsafe boundary forced the comparison back to the start.
-        var fastResult = CollationFastLatin.bailOutResult
+        var fastResult = RootCollator.fastLatinBailOut
         let table = fastLatinTable
         if !table.isEmpty, !triedFastLatin {
             var lSide: CollationFastLatin.Side
@@ -661,7 +661,7 @@ public struct RootCollator: @unchecked Sendable {
         var scratch: ScratchBuffers?
         defer { if let scratch { giveScratch(scratch) } }
         var result: Int
-        if fastResult != CollationFastLatin.bailOutResult {
+        if fastResult != RootCollator.fastLatinBailOut {
             result = Int(fastResult)
         } else {
             // CEs are generated lazily: the primary level usually decides the comparison after a few characters.
@@ -684,7 +684,7 @@ public struct RootCollator: @unchecked Sendable {
                     prefixSkipped: shared > 0,
                     options: word,
                     variableTopValue: variableTopValue(options), reordering: reordering)
-                if result == CollationCompare.prefixDependent {
+                if result == RootCollator.prefixDependentResult {
                     // The skipped prefix can change the result (shifted, backward secondary): compare from the start.
                     result = try s.resetBothAndCompare(
                         numeric: options.numeric,
@@ -697,7 +697,7 @@ public struct RootCollator: @unchecked Sendable {
         if result != 0 {
             return result < 0 ? .ascending : .descending
         }
-        if options.strength == .identical {
+        if options.hasIdenticalStrength {
             // Identical level: compare NFD forms in code point order. The whole drain runs under two access scopes rather than two per scalar; see compareIdenticalLevel.
             let s = scratch ?? takeScratch()
             scratch = s
@@ -735,7 +735,7 @@ public struct RootCollator: @unchecked Sendable {
             }
         }
         guard let inner = scanned, let (decided, restart) = inner else { return nil }
-        if decided != CollationFastLatin.bailOutResult {
+        if decided != RootCollator.fastLatinBailOut {
             return decided < 0 ? .ascending : .descending
         }
         guard restart >= 0 else { return nil }
@@ -759,9 +759,9 @@ public struct RootCollator: @unchecked Sendable {
         }
         if let cjkSetup {
             let q = quickCJKDispatch(lBytes, rBytes, at: i, setup: cjkSetup, numeric: numeric, safety: safety)
-            if q != CollationFastLatin.bailOutResult { return (q, -1) }
+            if q != RootCollator.fastLatinBailOut { return (q, -1) }
         }
-        return (CollationFastLatin.bailOutResult, restartScalarCount(lBytes, rBytes, at: i, safety: safety, numeric: numeric))
+        return (RootCollator.fastLatinBailOut, restartScalarCount(lBytes, rBytes, at: i, safety: safety, numeric: numeric))
     }
 
     /// compareBody for a restart that the byte scan already placed (ICU's backup rule, `restartScalarCount`): no skip walk, and no fast Latin (the byte scan tried it). The pipeline reads both strings' pinned UTF-8 bytes (ScalarSource), so neither string is retained or walked again through a String iterator; a non-contiguous (bridged) string takes the String iterators as before.
@@ -790,7 +790,7 @@ public struct RootCollator: @unchecked Sendable {
                 skippingFirst: restart,
                 options: word, variableTopValue: vt, reordering: reordering)
         }
-        if result == CollationCompare.prefixDependent {
+        if result == RootCollator.prefixDependentResult {
             // The skipped prefix can change the result (shifted, backward secondary; rare): compare from the start, outside the pinned scope.
             result = try s.resetBothAndCompare(
                 numeric: numeric,
@@ -800,7 +800,7 @@ public struct RootCollator: @unchecked Sendable {
         if result != 0 {
             return result < 0 ? .ascending : .descending
         }
-        if options.strength == .identical {
+        if options.hasIdenticalStrength {
             return s.compareIdenticalLevel(
                 left: left.unicodeScalars, right: right.unicodeScalars, skippingFirst: restart)
         }
@@ -1009,7 +1009,7 @@ public struct RootCollator: @unchecked Sendable {
         guard rp != 0 else { return 0 }
         if lp == rp { return 0 }
         // Variable-weight check: if alternate=shifted and either primary is variable, we can't decide at primary level alone.
-        if options.alternate == .shifted {
+        if options.isShifted {
             let varTop = storage.scriptsData.lastPrimaryForGroup(
                 CollationData.reorderCodeFirst + options.maxVariable.rawValue) + 1
             if lp < varTop || rp < varTop { return 0 }
@@ -1053,7 +1053,7 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     private func variableTopValue(_ options: CollationOptions) -> UInt32 {
-        guard options.alternate == .shifted else { return 0 }
+        guard options.isShifted else { return 0 }
         return storage.scriptsData.lastPrimaryForGroup(
             CollationData.reorderCodeFirst + options.maxVariable.rawValue)
     }
@@ -1064,8 +1064,8 @@ public struct RootCollator: @unchecked Sendable {
     ///
     /// The two init-resolved keys come first: through the cache, every non-default options compare paid a call, an acquiring load and a scan of the snapshot (53 instructions with this function's frame; technique log §51 (ar)). Force-inlined: with the cache call out of line the body is small, and as a function of its own it cost a frame in the `-no-WMO` build, where the old body had been inlined.
     @inline(__always)
-    private func resolveFastLatinSetup(_ word: Int32) -> FastLatinSetup? {
-        let key = CollationFastLatin.primariesKey(word)
+    private func resolveFastLatinSetup(_ word: Int32) -> (packedOptions: Int32, primaries: UnsafeBufferPointer<UInt16>)? {
+        let key = RootCollator.fastLatinPrimariesKey(word)
         let st = storage
         let entryPacked: Int32
         let entryPrimaries: UnsafeBufferPointer<UInt16>
@@ -1081,7 +1081,7 @@ public struct RootCollator: @unchecked Sendable {
             entryPrimaries = entry.primaries
         }
         let packed = entryPacked < 0 ? entryPacked : (entryPacked & ~0xffff) | word
-        return FastLatinSetup(word: word, packedOptions: packed, primaries: entryPrimaries)
+        return (packed, entryPrimaries)
     }
 
     /// The cache entry for a primaries key that init did not resolve. Out of line, so that the two init-resolved keys need no frame for the cache call.
@@ -1117,11 +1117,11 @@ public struct RootCollator: @unchecked Sendable {
         var mismatch = i
         if i > 0 {
             // The safety check below only decides whether to restart at `i` or at 0. If the bytes at `i` are not fast-path eligible AND the bytes at 0 are not either, both restart points bail — skip the isUnsafe binary searches entirely (every all-Thai/CJK compare with a shared prefix lands here).
-            let lEligibleAtI = i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
-            let rEligibleAtI = i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+            let lEligibleAtI = i == lLength || lBytes[i] <= RootCollator.latinMaxLead
+            let rEligibleAtI = i == rLength || rBytes[i] <= RootCollator.latinMaxLead
             if !(lEligibleAtI && rEligibleAtI),
-               lBytes[0] > CollationFastLatin.latinMaxUTF8Lead
-                || rBytes[0] > CollationFastLatin.latinMaxUTF8Lead {
+               lBytes[0] > RootCollator.latinMaxLead
+                || rBytes[0] > RootCollator.latinMaxLead {
                 return (-1, mismatch)
             }
             // Restarting at an unsafe scalar is not equivalent to full iteration: compare from the start instead (ICU backs up partially; skipping less is always sound).
@@ -1132,8 +1132,8 @@ public struct RootCollator: @unchecked Sendable {
             }
         }
         // Both sides must resume with fast-path-eligible lead bytes.
-        guard i == lLength || lBytes[i] <= CollationFastLatin.latinMaxUTF8Lead,
-              i == rLength || rBytes[i] <= CollationFastLatin.latinMaxUTF8Lead
+        guard i == lLength || lBytes[i] <= RootCollator.latinMaxLead,
+              i == rLength || rBytes[i] <= RootCollator.latinMaxLead
         else { return (-1, mismatch) }
         return (i, mismatch)
     }
@@ -1190,7 +1190,7 @@ public struct RootCollator: @unchecked Sendable {
                 // The marker must stay at or below -2 in Int32: a mismatch past 2^31 - 3 bytes falls back to bailOutResult (the continuation then scans).
                 return restart == prefixBinaryEqual ? 0
                     : marksPrefixBail && m < Int(Int32.max) - 2 ? Int32(truncatingIfNeeded: optionsPassMarker(mismatch: m))
-                    : CollationFastLatin.bailOutResult
+                    : RootCollator.fastLatinBailOut
             }
             return CollationFastLatin.compareUTF8(
                 table: table, primaries: primaries.baseAddress.unsafelyUnwrapped, options: packedOptions,
@@ -1200,9 +1200,9 @@ public struct RootCollator: @unchecked Sendable {
         if lLength == 0 && rLength == 0 { return 0 }  // binary equal: both empty
         // The strings differ in their first byte, or one is empty: no shared prefix, so no backup and no restart question. On its own path: merged with the shared-prefix path, the moves of `i` and `mismatch` cost ~6 instructions per compare (technique log §51 (ag)).
         mismatch = 0
-        guard lLength == 0 || lBytes[0] <= CollationFastLatin.latinMaxUTF8Lead,
-              rLength == 0 || rBytes[0] <= CollationFastLatin.latinMaxUTF8Lead
-        else { return CollationFastLatin.bailOutResult }
+        guard lLength == 0 || lBytes[0] <= RootCollator.latinMaxLead,
+              rLength == 0 || rBytes[0] <= RootCollator.latinMaxLead
+        else { return RootCollator.fastLatinBailOut }
         return CollationFastLatin.compareUTF8(
             table: table, primaries: primaries.baseAddress.unsafelyUnwrapped, options: packedOptions,
             left: lBytes, right: rBytes)
@@ -1454,5 +1454,38 @@ struct RestartSafety {
         }
         return Self.slowIsUnsafe(c, numeric: numeric, dataUnsafe: dataUnsafe, baseUnsafe: baseUnsafe,
                                  dataTrie: dataTrie, baseTrie: baseTrie, norm: norm)
+    }
+}
+
+extension CollationOptions {
+    /// `strength == .identical` and `alternate == .shifted` for the compare paths, by pattern matching. `==` on these enums (declared in CollationOptions.swift) called the generic `Equatable` witness in the `-no-WMO` build — a metadata access, two stack stores and a thunk, ~30 instructions per test; a case match is a byte compare in both build modes. Fileprivate: a helper in this file inlines here (technique log §51 (as)).
+    @inline(__always)
+    fileprivate var hasIdenticalStrength: Bool {
+        if case .identical = strength { return true }
+        return false
+    }
+
+    @inline(__always)
+    fileprivate var isShifted: Bool {
+        if case .shifted = alternate { return true }
+        return false
+    }
+}
+
+extension RootCollator {
+    /// Same-file copies of values from other files that the compare paths read on every call. In the `-no-WMO` build each file compiles alone, and a constant or a small function from another file is a call there — also with `@inlinable` or `@_transparent` (an accessor call and a load, ~6 instructions per constant; `primariesKey` with its three `Bits` accessors ~26); a `static let` in this file folds to an immediate (technique log §51 (as)). `SameFileCopiesTests` checks each copy against its original.
+    /// CollationFastLatin.bailOutResult.
+    static let fastLatinBailOut: Int32 = -2
+    /// CollationFastLatin.latinMaxUTF8Lead.
+    static let latinMaxLead: UInt8 = 0xc5
+    /// CollationCompare.prefixDependent.
+    static let prefixDependentResult = 2
+
+    /// CollationFastLatin.primariesKey: numeric (2), alternate (0xc) and, only when shifted, maxVariable (7 << 4).
+    @inline(__always)
+    static func fastLatinPrimariesKey(_ options: Int32) -> Int32 {
+        let shifted = options & 0xc
+        let maxVariable = shifted != 0 ? options & (7 << 4) : 0
+        return (options & 2) | shifted | maxVariable
     }
 }
