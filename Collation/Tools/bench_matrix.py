@@ -31,6 +31,10 @@ SYS_BIN = os.environ.get("SYS_BIN")
 # BenchFoundation executable must build -no-WMO (Locale SIGILL, Docs/25).
 # Falls back to the BenchFoundation numbers when unset.
 ENGINE_BIN = os.environ.get("ENGINE_BIN")
+# Optional WMO BenchFoundation (machine 2 only; run_benchmarks.sh builds it):
+# release builds of swift-foundation compile WMO (CMakeLists.txt), so Table 2
+# gets a second "ours (WMO)" column next to the -no-WMO one (technique log §51 (as)).
+WMO_BIN = os.environ.get("WMO_BIN")
 
 # (label, corpus file, locale-or-None for ICU bin, reps) — reps equalize work
 # (thai is ~33k lines vs ~200-440 for the rest).
@@ -83,10 +87,12 @@ for label, corpus, loc, reps in CORPORA:
         ours.update(best([ENGINE_BIN, corpus, str(reps)]))
     sys_cmd = [SYS_BIN] if SYS_BIN else ["swift", "-O", SYS_SCRIPT]
     sysf = best(sys_cmd + [corpus, str(reps)])
-    results[label] = {"icu": icu, "ours": ours, "sys": sysf}
+    wmo = best([WMO_BIN, corpus, str(reps)]) if WMO_BIN else {}
+    results[label] = {"icu": icu, "ours": ours, "sys": sysf, "wmo": wmo}
 
 eng = "engine rows FULL-WMO via EngineBench" if ENGINE_BIN else "engine rows -no-WMO (set ENGINE_BIN!)"
-print(f"\nK={K}  min ns/op over interleaved runs. {eng}; Foundation rows -no-WMO on machine 1 (Docs/27).")
+fnd = "Foundation rows -no-WMO and WMO" if WMO_BIN else "Foundation rows -no-WMO only (WMO_BIN unset)"
+print(f"\nK={K}  min ns/op over interleaved runs. {eng}; {fnd} (Docs/27).")
 # Since 2026-10-29 Table 1 shows the speedup ICU / ours, like Table 2 (>1 = ours faster); before, it showed the ratio ours / ICU.
 print("\n===== TABLE 1: PURE COLLATOR ENGINE (speedup = ICU C/ours; >1 = ours faster) =====")
 print(f"{'corpus':6} | {'cmp ICU':>7} {'ours':>5} {'speedup':>7} | {'sk ICU':>7} {'ours':>6} {'speedup':>7} | {'skRet':>6} {'speedup':>7}")
@@ -109,8 +115,15 @@ APIS = ["compare(locale:)", "localizedCompare", "localizedStdCmp",
         "sortKeyPathCmp", "sortSortDescriptor"]
 for api in APIS:
     print(f"\n--- {api} ---")
-    print(f"{'corpus':6} | {'sysICU':>7} {'ours':>7} {'speedup':>7}")
+    if WMO_BIN:
+        print(f"{'corpus':6} | {'sysICU':>7} {'-noWMO':>7} {'speedup':>7} | {'WMO':>7} {'speedup':>7}")
+    else:
+        print(f"{'corpus':6} | {'sysICU':>7} {'ours':>7} {'speedup':>7}")
     for label, _, _, _ in CORPORA:
         s = results[label]["sys"].get(api)
         o = results[label]["ours"].get(api)
-        print(f"{label:6} | {fmt(s):>7} {fmt(o):>7} {ratio(s,o):>7}")
+        line = f"{label:6} | {fmt(s):>7} {fmt(o):>7} {ratio(s,o):>7}"
+        if WMO_BIN:
+            w = results[label]["wmo"].get(api)
+            line += f" | {fmt(w):>7} {ratio(s,w):>7}"
+        print(line)

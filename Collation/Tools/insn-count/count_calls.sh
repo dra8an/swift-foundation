@@ -11,7 +11,7 @@
 # Counts from the stop to the function's return (count_insns). Build the binary with `-Xswiftc -g` first.
 SCRIPT_DIR=${0:A:h}
 REPO=${SCRIPT_DIR:h:h:h}
-LLDB=/Applications/Xcode26.app/Contents/Developer/usr/bin/lldb
+source "${0:A:h:h}/swift_toolchain.sh"   # LLDB: the selected Xcode's lldb (has the Python framework; technique log §51 (at))
 n=${6:-10}
 rm -f $5; args=(-b -o "command script import $SCRIPT_DIR/count_insns.py" -o "breakpoint set $3")
 [[ -n "$7" ]] && args+=(-o "breakpoint disable $7")

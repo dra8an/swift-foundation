@@ -23,6 +23,21 @@ machine 2 also set `ICU_SRC`/`ICU_BUILD` (below).
 
 It builds all three harnesses and prints two tables (Table 2 has 14 API families since 2026-10-20: the nine String methods, an options compare, and four sort APIs whose ns/op is per sorted ELEMENT). That's the whole procedure.
 
+**Since 2026-11-04 (technique log §51 (at)):**
+- **The compiler** comes from `Collation/Tools/swift_toolchain.sh`: on Apple
+  Silicon the compiler of the selected Xcode (`xcrun --find swift`; Swift 6.5
+  with `Xcode2.app`), so that it matches the SDK; `SWIFT=<path>` overrides.
+  The swiftly snapshot (6.4-dev) cannot use the macOS 27 SDK.
+- **Table 2 has two Swift columns on Apple Silicon:** `-noWMO` (the column of
+  the history; machine 1 has only this one) and `WMO` — release builds of
+  swift-foundation compile WMO (`CMakeLists.txt`), so the WMO column is what
+  release users get. Both are built with SwiftPM's native build system
+  (`.build-matrix-nowmo`, `.build-matrix-wmo`): the default build system
+  cannot build `-no-WMO` from an empty scratch path.
+- **Every number before 2026-11-04 is from Swift 6.4-dev, the old SDK and
+  macOS 26.4.** The first matrix pair after the move is a new start, and it
+  sets the new system-ICU reference (see "Third check").
+
 ## What it does (so you trust it, not re-derive it)
 
 `run_benchmarks.sh` (machine-1/Intel defaults; override `ICU_SRC`/`ICU_BUILD`

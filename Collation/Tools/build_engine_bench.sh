@@ -3,6 +3,7 @@
 # main.swift). The engine sources are copied verbatim from the module into a
 # scratch package under .build/engine-bench; the resulting binary path is
 # printed on stdout. Safe on machine 1: no Locale, so no WMO SIGILL.
+source "${0:A:h}/swift_toolchain.sh"   # SWIFT: the compiler that matches the selected SDK (technique log §51 (at))
 set -e
 SCRIPT_DIR=${0:A:h}
 REPO=${SCRIPT_DIR:h:h}
@@ -38,7 +39,7 @@ let package = Package(
 )
 MANIFEST
 
-cd "$OUT" && swift build -c release >&2
+cd "$OUT" && "$SWIFT" build -c release >&2
 # Ask SwiftPM for the binary folder. A fixed ".build/release" is wrong for the
 # newer build system, which writes to ".build/out/Products/Release".
-echo "$(swift build -c release --show-bin-path)/EngineBench"
+echo "$("$SWIFT" build -c release --show-bin-path)/EngineBench"

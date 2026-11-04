@@ -5,7 +5,7 @@
 #   skip: 597 for ascii/latin/cjk (3 × 199), 1314 for paths; thai: 200 (inside the warm-up pass is fine).
 SCRIPT_DIR=${0:A:h}
 REPO=${SCRIPT_DIR:h:h:h}
-LLDB=/Applications/Xcode26.app/Contents/Developer/usr/bin/lldb
+source "${0:A:h:h}/swift_toolchain.sh"   # LLDB: the selected Xcode's lldb (has the Python framework; technique log §51 (at))
 n=${5:-10}
 ids=$($LLDB -b -o "breakpoint set -s EngineBench -n compare -K false" -o "breakpoint list" $1 2>&1 | grep -E "^\s+1\.[0-9]+:" | grep -v "RootCollator.compare(_:_:options:) " | perl -ne 'print "$1 " if /^\s+(1\.\d+):/')
 rm -f $4; args=(-b -o "command script import $SCRIPT_DIR/count_insns.py" -o "breakpoint set -s EngineBench -n compare -K false")

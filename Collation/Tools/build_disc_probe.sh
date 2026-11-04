@@ -18,6 +18,7 @@
 #   Collation/Tools/build_disc_probe.sh
 #   $(...)  Tests/FoundationInternationalizationTests/Collation/Conformance/CollationTest_NON_IGNORABLE_SHORT.txt --hex
 #   $(...)  Collation/Tools/bench/bench-uca.txt
+source "${0:A:h}/swift_toolchain.sh"   # SWIFT: the compiler that matches the selected SDK (technique log §51 (at))
 set -e
 SCRIPT_DIR=${0:A:h}
 REPO=${SCRIPT_DIR:h:h}
@@ -73,5 +74,5 @@ let package = Package(
 )
 MANIFEST
 
-cd "$OUT" && swift build -c release >&2
+cd "$OUT" && "$SWIFT" build -c release >&2
 echo "$OUT/.build/release/DiscProbe"

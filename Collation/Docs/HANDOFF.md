@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-## START HERE (current as of 2026-11-02 — everything below this section is history)
+## START HERE (current as of 2026-11-04 — everything below this section is history)
 
 **If anything in the history below contradicts this section, this section
 wins.** The history has stale rules and numbers on purpose; it is the record.
@@ -17,20 +17,37 @@ alias to ssh.github.com:443 — see "Network" below; never push `upstream`,
 which this repo does not even have). The tools and docs live under
 `Collation/`.
 
+**Toolchain since 2026-11-04 — read first (§51 (at)).** After the macOS
+27.2.1 update the selected Xcode is `/Applications/Xcode2.app`; its SDK needs
+**Swift 6.5**, and the swiftly snapshot (`swift` on `PATH`, 6.4-dev) can no
+longer build anything ("this SDK is not supported by the compiler"). User
+decision: move to Swift 6.5 — the compiler of the selected Xcode. The tool
+scripts get it from `Collation/Tools/swift_toolchain.sh` (`SWIFT`,
+`SWIFTC`, `LLDB` via `xcrun`). **For your own commands use
+`X=$(xcrun --find swift)` and `$X build …`, or put `${X:h}` first in
+`PATH`** (the worktree's scripts are older than the helper until it is at
+a commit that has it). BenchFoundation builds for A/Bs and the matrix use
+SwiftPM's **native build system** (`--build-system native`; the default
+one cannot build `-no-WMO` from an empty scratch path, with either
+compiler). Every older number in this file and in Docs/21 is from Swift
+6.4-dev and the old SDK: the next matrix pair is a new start (and the new
+macOS reference). Do not compare across the change.
+
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the commit of §51 (as) (case matches and
-same-file copies for `-no-WMO`: `RootCollator.swift`, the new
-`SameFileCopiesTests.swift`, the technique log and this file) on top of
-`5c7955ca` (§51 (ar)); `origin/port/collation` at `5c7955ca` (pushed
-2026-11-03) unless the user pushed since. If the §51 (as) commit is
-missing, those four files are modified or new — say so and give the add /
-commit lines (the memory files are outside the repo). Tree clean otherwise.
-The A/B worktree `../collation-baseline` is detached at `5c7955ca` with its
-own, unmodified `main.swift`; its builds there: WMO `-g` BenchFoundation
-`.build-bfg` (built WITH the temporary probe rows of §51 (ar) / (as) —
-rebuild before a Foundation A/B), the aligned `.build-bfal` (at
-`ccd8e2b1`), EngineBench `.build/engine-bench/.build`, `.build-al` and
-`.build-g` at `5c7955ca`.
+paragraph).** Expected: HEAD = the commit of §51 (at) (tools only:
+`swift_toolchain.sh` new, the seven `build_*.sh`, the two count scripts,
+`run_benchmarks.sh`, `bench_matrix.py`, the technique log, this file and
+Docs/27) on top of `f64250b6` (§51 (as)); `origin/port/collation` at
+`5c7955ca` unless the user pushed since (`f64250b6` and the tools commit not
+pushed on 2026-11-04). If the §51 (at) commit is missing, those files are
+modified or new — say so and give the add / commit lines (the memory files
+are outside the repo). Tree clean otherwise. The A/B worktree
+`../collation-baseline` is detached at `f64250b6` with its own,
+unmodified `main.swift`; its builds there, all with Swift 6.5 and WITHOUT
+probe rows: EngineBench `.build/engine-bench/.build`, `.build-al`,
+`.build-g`; BenchFoundation (native build system) WMO `-g`
+`.build-ab-wmo` and `-no-WMO -g` `.build-ab-nowmo` (binaries in
+`<scratch>/arm64-apple-macosx/release/`). The main tree has the same set.
 **For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
 (each incremental, ~1 minute):
@@ -40,6 +57,14 @@ cd $W && $W/Collation/Tools/build_engine_bench.sh            # plain EngineBench
 cd $W/.build/engine-bench && swift build -c release -Xswiftc -Xllvm -Xswiftc -align-all-functions=6 --scratch-path .build-al
 cd $W/.build/engine-bench && swift build -c release -Xswiftc -g --scratch-path .build-g
 cd $W && swift build -c release -Xswiftc -g --product BenchFoundation --scratch-path .build-bfg
+```
+R=/Users/dragan/Projects/dra8an/swift-foundation-collation; W=/Users/dragan/Projects/dra8an/collation-baseline
+X=$(xcrun --find swift); export PATH=${X:h}:$PATH         # Swift 6.5 (§51 (at))
+cd $W && $W/Collation/Tools/build_engine_bench.sh            # plain EngineBench
+cd $W/.build/engine-bench && swift build -c release -Xswiftc -Xllvm -Xswiftc -align-all-functions=6 --scratch-path .build-al
+cd $W/.build/engine-bench && swift build -c release -Xswiftc -g --scratch-path .build-g
+cd $W && swift build --build-system native -c release -Xswiftc -g --product BenchFoundation --scratch-path .build-ab-wmo
+cd $W && swift build --build-system native -c release -Xswiftc -no-whole-module-optimization -Xswiftc -g --product BenchFoundation --scratch-path .build-ab-nowmo
 ```
 (the same EngineBench forms in the main tree under `.build/engine-bench/`;
 never build `-g` into the default scratch path — that replaces the plain
@@ -52,8 +77,11 @@ so that the text contains "swift". If it fails with "Invalid manifest …
 sandbox_apply", say so and ask the user (an allowlist entry is the user's
 decision, never yours). **Keep `.build/l4/nowmo-base/`:** it holds the
 FROZEN BINARY of 2026-10-30 (BenchFoundation `-no-WMO -g` at `22af5f68`,
-with its bundle), the third matrix check of Docs/27. Main tree helpers in
-`.build/` (git-ignored): `.build/l8/` (§51 (ar): the same tools as
+with its bundle), the third matrix check of Docs/27 (a binary: it runs
+unchanged after the compiler move). Main tree helpers in
+`.build/` (git-ignored): `.build/l9/` (§51 (at): the Swift 6.5 tests,
+`build_ab_tree.sh` = all A/B builds of one tree, the A-against-A outputs),
+`.build/l8/` (§51 (ar): the same tools as
 `.build/l7/`, the probe rows plus `tmpLocaleCmp`, the base and variant
 binaries), `.build/l7/` (§51 (aq): `probe-opts.swift` = the
 8 temporary probe rows, `count_groups.sh` = the instruction count of every
@@ -189,19 +217,16 @@ The ICU C gates stay those of 2026-10-29.
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
-1. **A WMO column for Table 2 (user decision, 2026-11-03: plan it).**
-   Release builds of swift-foundation are WMO (`CMakeLists.txt` line 43:
-   `wholemodule` for Release; SwiftPM release by default), but Table 2 is
-   measured with a `-no-WMO` BenchFoundation (`run_benchmarks.sh` line 31),
-   because machine 1 needs it (the WMO SIGILL, Docs/25). Plan to present
-   first: on machine 2, `run_benchmarks.sh` also builds a WMO BenchFoundation
-   (a fresh scratch path such as `.build-wmo`; a fresh `-no-WMO` build fails,
-   a fresh WMO build works), `bench_matrix.py` takes it as an optional second
-   binary, runs it interleaved in each of the K rounds, and prints an extra
-   "Swift (WMO)" column with its speedup; machine 1 skips it. Open questions
-   for the user: which column is the main one in Docs/21, and a new matrix
-   pair afterwards (the system-ICU reference question of the macOS update
-   still stands).
+1. **The matrix pair of the new start (Swift 6.5, macOS 27.2.1).** The
+   WMO column for Table 2 is in the tools (§51 (at)): `run_benchmarks.sh`
+   builds `-no-WMO` and WMO BenchFoundation with the native build system,
+   `bench_matrix.py` prints both columns. Run two runs on a QUIET machine
+   (the load was 40–140 on 2026-11-04), check ICU C against its gates and the
+   frozen binary (Docs/27, "Third check"), then set the new macOS reference
+   from them and record Docs/21 with both columns. Open question for the
+   user before recording: which column is the main one in Docs/21 (proposed:
+   WMO, what release users get; `-no-WMO` next to it for the history and
+   machine 1).
 2. **The `-no-WMO` costs left** (§51 (as), "Still open"): constants of
    `CollationConstants` in the CE compare loop of `CollationCompare.swift`
    (~7 per Thai compare), the strength compares in `sortKey`, the
@@ -225,11 +250,10 @@ plain words — what it changes and what it gives — never as variant labels
    ms; mapping the file is the candidate; §51 (q)).
 8. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
    options rows in WMO (§51 (ac)).
-**Pending on the user's side: the macOS update.** After it: (a) set a new
-system-ICU reference from two matrix runs on a quiet machine that pass the
-ICU C and frozen-binary checks (Docs/27, "Third check"); (b) remind the user
-to start Chrome once without the `--disable-features=AperitifHelpers` switch
-(the user's global CLAUDE.md note).
+**The macOS update happened (2026-11-04, macOS 27.2.1, 26B125):** (a) the
+new system-ICU reference comes with NEXT TASK 1; (b) the Chrome reminder
+(start once without `--disable-features=AperitifHelpers`) was given on
+2026-11-04.
 Not an option (user decisions): public API changes — a non-throwing
 `compare`, Substring or UTF-8-buffer entries (2026-10-27); FoundationEssentials
 changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
@@ -323,12 +347,15 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
 **How to measure:**
 - **Full matrix:** `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
   ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i /Users/dragan/Projects/dra8an/swift-foundation-collation/Collation/Tools/run_benchmarks.sh 3`
-  (about 6–8 minutes with the 14 Table 2 APIs). Run it in the MAIN tree: it
-  builds BenchFoundation with `-no-whole-module-optimization`, which works
-  there only because the swift-syntax objects are cached (see below). Gates:
-  system-ICU `localizedCompare` about 194/365/369/300/494 (the long-term
-  reference; more than ~3% drift: do not record), ICU C as in the ICU note
-  below (2026-10-29). Two runs (A, B) that agree; record run B in Docs/21
+  (about 8–10 minutes since the WMO column; the first run builds the two
+  BenchFoundation scratch paths `.build-matrix-nowmo` / `.build-matrix-wmo`
+  from empty, ~10 minutes more). Since §51 (at) it builds both columns with
+  Swift 6.5 and the native build system (the older note "works only because
+  the swift-syntax objects are cached" no longer applies). Gates: until the
+  new start (NEXT TASK 1) there is NO valid system-ICU reference — the
+  long-term one, 194/365/369/300/494 for `localizedCompare`, is from macOS
+  26.4 and the old harness compiler; the first pair sets the new one, checked
+  with ICU C (the ICU note below, 2026-10-29) and the frozen binary. Two runs (A, B) that agree; record run B in Docs/21
   (and START HERE, the runbook ratio line, §51). Never start an extra pair
   of matrix runs without asking. The user's calls and video calls load the
   machine: on 2026-10-29 a pair during a call drifted +2..+6% and was not
@@ -349,6 +376,14 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   not change, rebuild both sides with `-Xswiftc -Xllvm -Xswiftc
   -align-all-functions=6 --scratch-path .build-al` and A/B again: if the
   difference goes away, it is code placement.
+- **Since §51 (at) (Swift 6.5):** build BOTH Foundation A/B sides with the
+  native build system, in both trees: WMO `-g` in `.build-ab-wmo`, `-no-WMO
+  -g` in `.build-ab-nowmo` (the commands under "For the next A/B" above).
+  That replaces the scratch-path and copy methods in the next items (kept as
+  history), which existed because the default build system could not build
+  `-no-WMO` from an empty scratch path. A paths result needs the aligned
+  EngineBench check: two builds of the same source differ by ~7% on paths
+  compare (A against A, §51 (at)).
 - **Foundation (Table 2) A/B:** `python3 Collation/Tools/ab/foundation_ab.py
   <base BenchFoundation> <variant> 5` (edit its `rows` list for the rows you
   need). A FRESH release build with `-no-whole-module-optimization` fails in

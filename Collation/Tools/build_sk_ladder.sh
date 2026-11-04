@@ -12,6 +12,7 @@
 #   Collation/Tools/build_sk_ladder.sh
 #   $(...)  Collation/Tools/bench/bench-ascii.txt 300
 #   $(...)  Collation/Tools/bench/bench-ascii.txt 1 holdS4   # then: sample PID 10
+source "${0:A:h}/swift_toolchain.sh"   # SWIFT: the compiler that matches the selected SDK (technique log §51 (at))
 set -e
 SCRIPT_DIR=${0:A:h}
 REPO=${SCRIPT_DIR:h:h}
@@ -65,7 +66,7 @@ let package = Package(
     ]
 )
 MANIFEST
-cd "$OUT" && swift build -c release >&2
+cd "$OUT" && "$SWIFT" build -c release >&2
 # Ask SwiftPM for the binary folder. A fixed ".build/release" is wrong for the
 # newer build system, which writes to ".build/out/Products/Release".
-echo "$(swift build -c release --show-bin-path)/SKLadder"
+echo "$("$SWIFT" build -c release --show-bin-path)/SKLadder"

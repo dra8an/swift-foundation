@@ -9,6 +9,7 @@
 #
 #   Collation/Tools/build_thai_ladder.sh
 #   $(...)  Collation/Tools/bench/bench-thai.txt 10
+source "${0:A:h}/swift_toolchain.sh"   # SWIFT: the compiler that matches the selected SDK (technique log §51 (at))
 set -e
 SCRIPT_DIR=${0:A:h}
 REPO=${SCRIPT_DIR:h:h}
@@ -53,5 +54,5 @@ let package = Package(
 )
 MANIFEST
 
-cd "$OUT" && swift build -c release >&2
+cd "$OUT" && "$SWIFT" build -c release >&2
 echo "$OUT/.build/release/CJKProbe"
