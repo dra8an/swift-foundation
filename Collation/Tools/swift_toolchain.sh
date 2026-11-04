@@ -17,4 +17,9 @@ if [[ -z "$SWIFT" ]]; then
 fi
 if [[ "$SWIFT" == */* ]]; then SWIFTC="${SWIFT:h}/swiftc"; else SWIFTC=swiftc; fi
 if [[ -z "$LLDB" ]]; then LLDB="$(xcrun --find lldb)"; fi
+# A swiftc called by its path finds no SDK on its own ("unable to load standard
+# library for target"); `swift build` passes one. Use the selected Xcode's SDK —
+# the one `swift build` uses. `xcrun --show-sdk-path` without `--sdk macosx`
+# returned the Command Line Tools SDK on machine 2 (27.2, against 27.5).
+if [[ "$(uname -m)" == arm64 && -z "$SDKROOT" ]]; then export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"; fi
 export SWIFT SWIFTC LLDB
