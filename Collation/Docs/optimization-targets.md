@@ -5526,3 +5526,30 @@ The two-level cells are the short calls (15–56 ns) — `localizedCompare`, `lo
 
 **Docs/21 recorded again** from the medians of the six runs (the same binaries as the pair): Table 1 compare 1.03× ascii, 1.06× latin, 2.03× cjk, 1.44× paths (two-level), 1.06× thai; sortKey 1.45×, 1.31×, 1.17×, 2.10×, 1.08×; Table 2 floor 2.90× WMO, 1.97× `-no-WMO`; 11 two-level cells.
 
+#### (av) cjk compare 5% slower with Swift 6.5: a stack protector in `compare` — the pinned pointers made untraceable
+
+**Where** (START HERE item 1 of 2026-11-04). The same engine source, built with the old compiler (Swift 6.4-dev, `main-snapshot-2026-04-27`, with `SDKROOT` set to `Xcode26.app`'s 26.4 SDK) and with Swift 6.5, in one interleaved session (EngineBench, 5 rounds, load 7–13): compare **cjk +5.0%** with 6.5 (5/5, min 19.1 → 20.0 ns); ascii −8.5% mean (min −3.2%), latin −2.5%, thai −1.1%; sortKey −2.7..−6.3% (all 5/5). Instructions per compare (EngineBench `-g`, 10 calls after 597): cjk 297.2 → 306.0, ascii 173.9 → 168.6. All of the cjk increase is in `RootCollator.compare` itself (137.4 → 148.4); the CJK helpers cost the same.
+
+**Cause** (a trace of one cjk call, 233 → 246 instructions): Swift 6.5 gives `compare` a **stack protector** — at the entry `adrp` / `ldr` / `ldr` / `stur` of the guard value into the frame (which grows by 16 bytes), before the return `ldur` / `adrp` / `ldr` / `ldr` / `cmp` / `b.ne`: 10 instructions on every compare, ascii included (its trace has the same pair). The optimized SIL (`swiftc -O -wmo -emit-sil` over the engine sources and SwiftPM's `resource_bundle_accessor.swift`) marks `compare` `sil [stack_protection]`: our indexing of the pinned bytes (`index_addr [stack_protection]` for `lBytes[i]`, `base + restart`, the quick CJK lead-byte test) traces back to the stack copy that `withContiguousStorageIfAvailable` makes of a small string. The standard library makes that copy with `_withUnprotectedUnsafeBytes` (in both SDKs), but the protection pass now sees our pointer arithmetic on it; Swift 6.4-dev did not trace the pointer that far. `compare` was the only engine function with a protector.
+
+**Tried first, no effect:** `bits(of:)` (the only `withUnsafeBytes(of: &local)` in `RootCollator.swift`) as `unsafeBitCast((options, UInt8(0)), to: UInt64.self)` — the same counts, the guard still there; undone.
+
+**Change.** `RootCollator.untraced(_:)`: the buffer again, with its base address through an integer round trip (`UInt(bitPattern:)` → `UnsafePointer(bitPattern:)`; no machine instruction), applied to both pinned buffers at the start of `compareFastPath`'s closures. The optimizer no longer traces the indexing to the stack copy; the SIL of the engine has no `[stack_protection]` function left. The standard library itself reads that copy without protection, so nothing that was guarded before loses its guard. `Collation/Tools/check_stack_protection.sh` (new) lists the engine functions with a protector — run it after a compiler or Xcode update (expected: "none").
+
+**Counts** (Swift 6.5): EngineBench compare cjk 306.0 → **296.8** (Swift 6.4-dev: 297.2), ascii 168.6 → **159.3**, latin 164.0 → **154.0**. BenchFoundation, every one of the 32 groups (probe rows of §51 (aq)–(ar) plus one `.localizedStandard` and one `String.Comparator` comparison and `compare(_:locale:)`), base → change: WMO −8..−10 (default Thai −2), `-no-WMO` −7..−14 (default Thai −4); for example `compare(_:locale:)` ascii 360 → 352 (WMO) / 523 → 516, one `String.Comparator` comparison 309 → 301 / 471 → 464, one `.localizedStandard` comparison 573 → 563 / 859 → 849.
+
+**A/B against HEAD `0f077c86`** (worktree at `f64250b6`, the same engine; 5 rounds, load 18–32): EngineBench aligned — compare **ascii −4.5%** (+−−−−, min −3.3%), **latin −5.6%** (5/5), **cjk −2.0%** (5/5), paths +0.4% (mixed; two-level), thai +0.8% (5/5, min +0.8%); plain — ascii +4.8% mean (+++−0, min −1.1%), latin −4.2%, cjk −2.2%, paths +3.6% (two-level), thai +0.5%; sortKey ±1% (unchanged code). Foundation, four layouts — the "+" cells move with the layout while every count goes down:
+
+| build | "+" cells | the same rows in the other layout |
+|---|---|---|
+| WMO, normal | `localizedStandardCompare` / `localizedCaseInsensitiveCompare` ascii +9.2 / +9.3% (two-level), CaseI latin +4.5% | aligned −3.6 / +5.8 / −2.4% |
+| WMO, aligned (7 rounds) | `compare(_:locale:)` ascii +5.9% (7/7, min 19 → 20), latin +4.2%; `String.Comparator` sort ascii / latin +2.1 / +1.5% | normal −1.0 / 0.0%; −0.0 / −0.9% |
+| `-no-WMO`, normal | `.localizedStandard` sort ascii / latin / cjk +4.1 / +2.2 / +2.0% (5/5) | aligned +0.8 / +0.1 / +0.5% |
+| `-no-WMO`, aligned (7 rounds) | `localizedCaseInsensitiveCompare` paths +2.4% (7/7) | normal +1.9% |
+
+Steady in every layout: `localizedCompare` and `compare(_:locale:)` on paths −3..−9%; the options compare 0..−2%. (The `-no-WMO` aligned builds are new: the native build system builds `-no-WMO` from an empty scratch path, §51 (at).)
+
+**CPU Counters on the worst cell** (`compare(_:locale:)` ascii, aligned WMO; a loop of 99.5 M calls at the end of the bench program, the last 1.2 s; two recordings each): base useful 90.5 / 90.6%, back end 0.0, **front end 9.4 / 9.3%**, discarded 0.0; change 87.4 / 87.5%, 0.0, **12.5 / 12.5%**, 0.0; per call 18.89 / 18.79 ns against 19.20 / 19.20 (+1.9%). So in that layout the entry loses ~0.35 ns to instruction delivery only — placement, no extra work and no mispredictions; the normal WMO layout read −1.0%. **Kept** (user decision, 2026-11-04).
+
+**Tests.** No new test (the change does not change any result; the stack protector is checked by `check_stack_protection.sh`, not by a test). Suite 1570/138 with Swift 6.5; the four ladder tools build. Not yet in a matrix: the next series records it (median of 4+ runs).
+

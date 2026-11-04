@@ -34,19 +34,22 @@ compiler). Every older number in this file and in Docs/21 is from Swift
 macOS reference). Do not compare across the change.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the commit of §51 (at) (tools only:
-`swift_toolchain.sh` new, the seven `build_*.sh`, the two count scripts,
-`run_benchmarks.sh`, `bench_matrix.py`, the technique log, this file and
-Docs/27) on top of `f64250b6` (§51 (as)); `origin/port/collation` at
-`5c7955ca` unless the user pushed since (`f64250b6` and the tools commit not
-pushed on 2026-11-04). If the §51 (at) commit is missing, those files are
-modified or new — say so and give the add / commit lines (the memory files
-are outside the repo). Tree clean otherwise. The A/B worktree
-`../collation-baseline` is detached at `f64250b6` with its own,
-unmodified `main.swift`; its builds there, all with Swift 6.5 and WITHOUT
-probe rows: EngineBench `.build/engine-bench/.build`, `.build-al`,
-`.build-g`; BenchFoundation (native build system) WMO `-g`
-`.build-ab-wmo` and `-no-WMO -g` `.build-ab-nowmo` (binaries in
+paragraph).** Expected: HEAD = the commit of §51 (av) (`RootCollator.swift`:
+`untraced(_:)` in `compareFastPath`, no stack protector with Swift 6.5; the
+new `Collation/Tools/check_stack_protection.sh`; the technique log and this
+file) on top of the commit of §51 (au) (the calibration, `matrix_record.py`,
+Docs/21 from six medians) and `0f077c86` (pushed 2026-11-04);
+`origin/port/collation` at `0f077c86` unless the user pushed since. If a
+commit is missing, its files are modified or new — say so and give the add /
+commit lines (the memory files are outside the repo). Tree clean otherwise.
+The A/B worktree `../collation-baseline` is detached at `f64250b6` (the same
+engine code as `0f077c86`) with its own, unmodified `main.swift`; its builds
+there, all with Swift 6.5: EngineBench `.build/engine-bench/.build`,
+`.build-al`, `.build-g`; BenchFoundation (native build system) WMO `-g`
+`.build-ab-wmo`, `-no-WMO -g` `.build-ab-nowmo`, aligned `.build-ab-wmo-al`
+and `.build-ab-nowmo-al` — **the four BenchFoundation builds WITH the
+temporary probe rows of §51 (av) (the aligned WMO one also with its CPU
+Counters loop): rebuild before a Foundation A/B** (binaries in
 `<scratch>/arm64-apple-macosx/release/`). The main tree has the same set.
 **For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
@@ -167,7 +170,7 @@ at least 4 runs** with `Collation/Tools/matrix_record.py`; two-level cells
 (runs 5% or more apart) get ‡ and their range; for A/B decisions on
 two-level rows trust counts and aligned builds.
 
-**What this round did (2026-10-29…11-02; details in §51 (ai)–(as)):**
+**What this round did (2026-10-29…11-02; details in §51 (ai)–(av)):**
 - (ai) Latin compare's last mispredictions: the lead-byte ASCII test of
   `compareUTF8`, from the data (ICU C has twice as many); a branch-free
   decode gave latin −4.5% but ascii +4.5%: REJECTED.
@@ -213,6 +216,16 @@ two-level rows trust counts and aligned builds.
   middle they cost `compare(_:locale:)` +6.8% in `-no-WMO`); the plain-WMO
   `compare(_:locale:)` +5..+7% that stayed is placement (aligned builds:
   0.0%). User decision, 2026-11-03: accepted ("great wins").
+- (av) **No stack protector in `compare` with Swift 6.5** (the cjk loss of
+  the compiler move): the pinned bytes go through `RootCollator.untraced(_:)`
+  (an integer round trip of the base address, no machine instruction), so
+  the optimizer no longer traces our indexing to the stack copy of a small
+  string, and `compare` loses the guard value (10 instructions per call).
+  EngineBench compare aligned: ascii −4.5%, latin −5.6%, cjk −2.0%; every
+  Foundation group −7..−14 instructions in both modes; the remaining "+"
+  cells move with the layout (CPU Counters: front end only). User decision,
+  2026-11-04: accepted. Check after every compiler update:
+  `Collation/Tools/check_stack_protection.sh` (expected "none").
 - (as) **The compare paths in `-no-WMO`:** enum compares by case match
   (`hasIdenticalStrength`, `isShifted`) and same-file copies of three
   constants and of `primariesKey` (`SameFileCopiesTests` checks them). In
@@ -229,11 +242,8 @@ two-level rows trust counts and aligned builds.
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
-1. **cjk compare 5.8% slower with Swift 6.5** (Table 1 19.0 → 20.1 ns, the
-   same source; §51 (at)). Count one cjk compare with the old and the new
-   compiler (the old one builds with `SDKROOT` set to `Xcode26.app`'s
-   26.4 SDK, a scratch test of §51 (at)) and diff the traces: a compiler
-   change that costs a hot path may have a cheap way around it.
+1. **A matrix series** (median of 4+ runs, the rules of 2026-11-04) to record
+   §51 (av) in Docs/21; about 25 minutes, no input needed.
 2. **Why short rows are two-level** (§51 (au): the same binary reads
    `localizedCompare` ascii WMO 18, 15, 15, 15, 18, 17 in six runs; paths
    compare 19.0–20.6). Measurement only: per program start (ASLR, the
@@ -554,7 +564,12 @@ and 104.4/121.0/117.7/373.3/155.5).
   / `isShifted`, never `==`, and read `RootCollator.fastLatinBailOut`,
   `latinMaxLead`, `prefixDependentResult`, `fastLatinPrimariesKey` — the
   same-file copies of §51 (as) (`SameFileCopiesTests`). Keep new hot-path
-  constants in the same file, or `-no-WMO` pays a call for each.
+  constants in the same file, or `-no-WMO` pays a call for each. The default
+  fast path indexes the pinned bytes through `RootCollator.untraced(_:)`
+  (§51 (av)): without it, Swift 6.5 traces the indexing to the stack copy of
+  a small string and gives `compare` a stack protector (10 instructions per
+  call). Keep new pinned-byte code behind `untraced`, and run
+  `Collation/Tools/check_stack_protection.sh` after compiler updates.
 - **The Foundation wrappers** (`StringProtocol+Locale.swift`,
   `String+Collation.swift`, `String+SortComparator.swift`): the eight public
   generic wrappers carry `@_specialize(where Self == String, T == String)`
@@ -611,7 +626,7 @@ W1a, §51 (an) C1 / C2; use `_withUnsafeGuaranteedRef` for the collator and
 `@_specialize` for the generic wrappers); a generic `@inline(__always)`
 helper with a closure called from another file (unspecialized in
 `-no-WMO`, §51 (ak) W1); in the quick CJK dispatch, a variable-top guard, the reordering inside `quickCJKPrimary`, an out-of-line reordered dispatch, or the reordering inline at the decision (§51 (ap) Q1–Q1h: each cost some group 5–51 instructions);
-new `Storage` fields in the middle of the class (they move the hot pointers after them; §51 (ar)); in the options pass, any value that lives across the `compareUTF8` call — the mismatch in a variable outside the pinned closures (§51 (aq) V1 / V1b: ascii / latin options +1..+3 instructions; carry it in the result instead);
+the bit cast in `bits(of:)` against the Swift 6.5 stack protector (no effect; the cause was the pinned-byte indexing, §51 (av)); new `Storage` fields in the middle of the class (they move the hot pointers after them; §51 (ar)); in the options pass, any value that lives across the `compareUTF8` call — the mismatch in a variable outside the pinned closures (§51 (aq) V1 / V1b: ascii / latin options +1..+3 instructions; carry it in the result instead);
 a branch-free ASCII / two-byte Latin decode in `compareUTF8` (latin −4.5%,
 ascii +4.5%; §51 (ai)); pinning only strings longer than 15 bytes (§51 (aa)); in `compareUTF8`,
 wrapping index increments (`&+= 1`; LLVM then reads each byte with `ldrsb`

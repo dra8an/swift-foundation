@@ -34,6 +34,10 @@ It builds all three harnesses and prints two tables (Table 2 has 14 API families
   release users get. Both are built with SwiftPM's native build system
   (`.build-matrix-nowmo`, `.build-matrix-wmo`): the default build system
   cannot build `-no-WMO` from an empty scratch path.
+- **After a compiler or Xcode update**, run
+  `Collation/Tools/check_stack_protection.sh`: it lists the engine
+  functions that the compiler gives a stack protector (10 instructions per
+  call in `compare` with Swift 6.5 before §51 (av)); expected: "none".
 - **Every number before 2026-11-04 is from Swift 6.4-dev, the old SDK and
   macOS 26.4.** The first matrix pair after the move is a new start, and it
   sets the new system-ICU reference (see "Third check").

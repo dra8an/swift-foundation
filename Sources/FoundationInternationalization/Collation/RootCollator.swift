@@ -357,6 +357,12 @@ public struct RootCollator: @unchecked Sendable {
         return withUnsafeBytes(of: &padded) { $0.loadUnaligned(as: UInt64.self) }
     }
 
+    /// The same buffer, through an integer round trip of its address (free in machine code). For a small string, `withContiguousStorageIfAvailable` hands out a pointer to a stack copy of its bytes, made without stack protection; when the optimizer traces our indexing back to that stack copy, Swift 6.5 gives the whole function a stack protector (a guard value stored at the entry and checked before the return: 10 instructions per compare). The round trip hides the origin, so the indexing stays unprotected, as the standard library's own access to the copy is (technique log §51 (av)).
+    @inline(__always)
+    static func untraced(_ bytes: UnsafeBufferPointer<UInt8>) -> UnsafeBufferPointer<UInt8> {
+        UnsafeBufferPointer(start: UnsafePointer<UInt8>(bitPattern: UInt(bitPattern: bytes.baseAddress)), count: bytes.count)
+    }
+
     /// False if CollationOptions ever outgrows 7 bytes: the pattern would then miss a field, so the default fast path turns itself off rather than match wrong options. A compile-time constant.
     static var optionBitsAreExact: Bool { MemoryLayout<(CollationOptions, UInt8)>.size == MemoryLayout<UInt64>.size }
 
@@ -382,8 +388,10 @@ public struct RootCollator: @unchecked Sendable {
         let primaries = setup.pointee.primaries
         let packed = setup.pointee.packedOptions
         var restartScalars = -1
-        let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lBytes in
-            right.utf8.withContiguousStorageIfAvailable { rBytes in
+        let fast: Int32 = left.utf8.withContiguousStorageIfAvailable { lPinned in
+            right.utf8.withContiguousStorageIfAvailable { rPinned in
+                let lBytes = RootCollator.untraced(lPinned)
+                let rBytes = RootCollator.untraced(rPinned)
                 var mismatch = -1
                 // RestartSafety by POINTER to its own box (see Storage.restartSafetyPtr), not by value — see DefaultFastLatinSetup.
                 let f = RootCollator.fastLatinUTF8(
