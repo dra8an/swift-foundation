@@ -34,7 +34,8 @@ compiler). Every older number in this file and in Docs/21 is from Swift
 macOS reference). Do not compare across the change.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the commit of §51 (av) (`RootCollator.swift`:
+paragraph).** Expected: HEAD = the docs commit of the matrix after §51 (av) (Docs/21,
+this file, the technique log, Docs/27) on top of the commit of §51 (av) (`RootCollator.swift`:
 `untraced(_:)` in `compareFastPath`, no stack protector with Swift 6.5; the
 new `Collation/Tools/check_stack_protection.sh`; the technique log and this
 file) on top of the commit of §51 (au) (the calibration, `matrix_record.py`,
@@ -134,27 +135,25 @@ add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-11-04 (the MEDIAN of 6 runs
-of the same binaries, engine of §51 (as); Swift 6.5, macOS 27.2.1 — a new
-start, §51 (at), (au); load 9–43, memory full by the user's choice; ICU C,
-macOS and the frozen binary on target). Table 1, EngineBench vs ICU C, ns
-per call ours / ICU, speedup = ICU / ours:**
+**Current numbers — RECORDED in Docs/21 on 2026-11-04, 15:20–15:38 (the
+MEDIAN of 4 runs at `c275fd45`, after §51 (av); Swift 6.5, macOS 27.2.1;
+load 13 → 4; ICU C within 0.4%, macOS within 0.5%, the frozen binary on
+target). Table 1, EngineBench vs ICU C, ns per call ours / ICU, speedup =
+ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 9.0 / 9.3 | 1.03× faster | 71.9 / 104.1 | 1.45× faster |
-| latin | 9.5 / 10.1 | 1.06× faster | 92.2 / 120.7 | 1.31× faster |
-| cjk | 20.1 / 40.7 | 2.03× faster | 102.3 / 119.3 | 1.17× faster |
-| paths | 20.4 (19.0–20.6, two-level) / 29.5 | 1.44× faster | 173.9 / 365.2 | 2.10× faster |
-| thai | 161.7 / 172.0 | 1.06× faster | 142.7 / 153.7 | 1.08× faster |
+| ascii | 8.8 / 9.3 | 1.06× faster | 72.5 / 104.0 | 1.43× faster |
+| latin | 9.1 / 10.1 | 1.11× faster | 92.6 / 120.6 | 1.30× faster |
+| cjk | 19.7 / 40.5 | 2.06× faster | 103.0 / 119.2 | 1.16× faster |
+| paths | 19.9 (two-level) / 29.5 | 1.48× faster | 173.8 / 365.9 | 2.11× faster |
+| thai | 162.1 / 171.6 | 1.06× faster | 143.6 / 153.4 | 1.07× faster |
 
 **All ten rows are faster than ICU C.** The allocating sortKey (`skRet`) is
-0.79–0.87× of ICU (1.65× faster on paths). Against 2026-11-02 (Swift
-6.4-dev) the compiler made every sortKey row faster and cjk compare 5.8%
-slower (19.0 → 20.1; not analysed). **Table 2** has two Swift columns:
-**WMO, the main one** (user decision, 2026-11-04; release builds are WMO)
-and `-no-WMO`; floor 2.90× (WMO, `localizedCaseInsensitiveCompare` thai)
-and 1.97× (`-no-WMO`, `range(of:locale:)` cjk); 11 short cells are
+0.78–0.85× of ICU (1.65× faster on paths). **Table 2** has two Swift
+columns: **WMO, the main one** (user decision, 2026-11-04; release builds
+are WMO) and `-no-WMO`; floor 2.88× (WMO, `localizedCaseInsensitiveCompare`
+thai) and 1.95× (`-no-WMO`, `range(of:locale:)` cjk); nine short cells are
 two-level (‡ in Docs/21). **The macOS reference** (macOS 27.2.1):
 `localizedCompare` 200/341/354/314/502. Table 2 is mostly the skipped
 NSString → CoreFoundation → C++ bridge. **Never use Table 2 as evidence
@@ -242,36 +241,34 @@ two-level rows trust counts and aligned builds.
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
-1. **A matrix series** (median of 4+ runs, the rules of 2026-11-04) to record
-   §51 (av) in Docs/21; about 25 minutes, no input needed.
-2. **Why short rows are two-level** (§51 (au): the same binary reads
+1. **Why short rows are two-level** (§51 (au): the same binary reads
    `localizedCompare` ascii WMO 18, 15, 15, 15, 18, 17 in six runs; paths
    compare 19.0–20.6). Measurement only: per program start (ASLR, the
    memory layout of the process)? The recording rule (median of 4+ runs)
    already copes with it; knowing the cause could make A/Bs on these rows
    cheaper.
-3. **The `-no-WMO` costs left** (§51 (as), "Still open"): constants of
+2. **The `-no-WMO` costs left** (§51 (as), "Still open"): constants of
    `CollationConstants` in the CE compare loop of `CollationCompare.swift`
    (~7 per Thai compare), the strength compares in `sortKey`, the
    `icuOptions` getter. `-no-WMO` only — since the WMO column is the main
    one in Docs/21, they matter less.
-4. **The rest of the options cost on CJK and Thai** (§51 (aq), (ar)): root
+3. **The rest of the options cost on CJK and Thai** (§51 (aq), (ar)): root
    options on CJK 478 against 333 instructions (WMO, 1.43×), on Thai +3.1%.
    Left: the options word (~30) and a first pinning whose pass always bails
    on CJK. A first-byte test before the pass would skip them for CJK /
    Thai but cost every ascii / latin options compare (not tried; the user's
    rule).
-5. **ko's hanja are expansions** (7 476): Korean Han text still takes the
+4. **ko's hanja are expansions** (7 476): Korean Han text still takes the
    pipeline; the quick path could use an expansion's first CE.
-6. cjk compare +3.8% since P3c (Table 1 cjk 19.0 ns, 2.15× faster than ICU;
+5. cjk compare +3.8% since P3c (Table 1 cjk 19.0 ns, 2.15× faster than ICU;
    CJK pairs often share the first UTF-8 byte and take the helper path).
-7. CE production for precomposed Latin letters (NFD decomposition, ~119
+6. CE production for precomposed Latin letters (NFD decomposition, ~119
    instructions per accented letter); the run-time writer path for
    non-default options; L1 (the Thai lookahead; skipped by the user before as
    too small).
-8. Creation: the bundle open (~0.9 ms) and the data read and parse (~0.75
+7. Creation: the bundle open (~0.9 ms) and the data read and parse (~0.75
    ms; mapping the file is the candidate; §51 (q)).
-9. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
+8. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
    options rows in WMO (§51 (ac)).
 **The macOS update happened (2026-11-04, macOS 27.2.1, 26B125):** (a) the
 new system-ICU reference was set on 2026-11-04 (Docs/21); (b) the Chrome reminder

@@ -92,8 +92,8 @@ env for machine 2):
   every compare and sortKey row reached ICU C (before, Table 1 showed the
   ratio `ours / ICU`, below 1 = faster; the history in the technique log
   and in older Docs/21 text uses that ratio). The Swift implementation
-  against hand-tuned C. Values as of 2026-11-04 (median of 6 runs, Swift 6.5, macOS 27.2.1, after
-  §51 (as)): compare 1.03–2.03× faster, sortKey 1.08–2.10× faster (current numbers:
+  against hand-tuned C. Values as of 2026-11-04 (median of 4 runs, Swift 6.5, macOS 27.2.1, after
+  §51 (av)): compare 1.06–2.06× faster, sortKey 1.07–2.11× faster (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1
