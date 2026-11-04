@@ -5505,3 +5505,24 @@ Nearly every `-no-WMO` cell is 5/5. EngineBench compare, plain / aligned: ascii 
 
 **Matrix after (at) — the new start** (Docs/21, 2026-11-04, run B at `18313630`, engine of (as); Swift 6.5, SDK 27.5, macOS 27.2.1; load 17–43, memory full by the user's choice; ICU C within 2.2% of its gates; the frozen binary of 2026-10-30 on its recorded values (`Collation/Tools/frozen_check.py`, three interleaved rounds); A and B within 0.9% in Table 1 and 1.0% on the system side; seven short Table 2 cells of ours 3–17% apart between the runs of the same binary, marked † in Docs/21): Table 1 (speedup) compare 1.03× ascii, 1.06× latin, 2.02× cjk, 1.44× paths, 1.06× thai; sortKey 1.45×, 1.30×, 1.17×, 2.10×, 1.07×. Against 2026-11-02 (Swift 6.4-dev) every sortKey row is faster (paths 195.8 → 174.3 ns) and cjk compare slower (19.0 → 20.1, not analysed); paths compare 19.3 → 20.5 is within its placement range. **The new macOS reference** (macOS 27.2.1): system `localizedCompare` 200/342/353/314/502 (macOS 26.4: 194/365/369/300/494). Table 2 with the WMO column as the main one (user decision): `localizedCompare` WMO 15/15/28/27/166 ns (13.3/22.8/12.6/11.6/3.0×), `-no-WMO` 35/35/49/50/225; floor 2.90× WMO (`localizedCaseInsensitiveCompare` thai), 1.97× `-no-WMO` (`range(of:locale:)` cjk).
 
+#### (au) Calibration of the new environment: the medians of six runs, two-level cells, new rules (measurement only)
+
+**Why** (user, 2026-11-04): after the move to Swift 6.5, the new SDK and macOS 27.2.1 "upgrading OS, Xcode and Swift created completely different environment" — recalibrate the baseline and the quietness requirement. The machine stays as the user works with it (Chrome, VS Code, several Claude Code sessions, Radar … open; 31 GB of 32 used, 7–8 GB swap; the user: "we will have to live with this state").
+
+**Series:** four matrix runs in a row (`.build/matrix/cal-series-2026-11-04.sh`, K=3, 13:21–13:39, load 9–32, 20 minutes after a wake) plus the pair of 10:59–11:09: six runs of the same binaries. Evaluation per cell: median, and spread = (max − min) / median (`.build/matrix/calibrate.py`).
+
+| part | result over the six runs |
+|---|---|
+| ICU C (Table 1) | every row within 1.5% |
+| our Table 1 | every cell within 1.8%, except **paths compare 20.5, 20.5, 20.6, 20.4, 19.2, 19.0** (7.8%) |
+| macOS column (Table 2) | all 70 cells within 2.0%, median 0.7% |
+| our WMO column | 52 stable (< 2%), 12 noisy (2–5%), 6 two-level (≥ 5%) |
+| our `-no-WMO` column | 59 stable, 6 noisy, 5 two-level |
+| frozen binary | `localizedCompare` and `localizedStandardCompare` on their values in both checks; its `compare(_:locale:)` ascii / latin 38 / 40 in one, 43 / 45 in the other |
+
+The two-level cells are the short calls (15–56 ns) — `localizedCompare`, `localizedStandardCompare`, `compare(_:locale:)` on ascii, latin, paths: each run lands on one of two levels (`localizedCompare` ascii WMO 18, 15, 15, 15, 18, 17; `-no-WMO` 30, 35, 35, 35, 35, 35). The frozen binary (old compiler, old build) shows the same, so it is a property of short calls and program starts, not of the new tools. Not yet explained (START HERE task 2).
+
+**New rules** (user decision, 2026-11-04; Docs/27 "The rules since 2026-11-04"): measure at least 10 minutes after a wake and outside a burst, at any load; the checks decide — ICU C within 2% of 9.3/10.1/40.7/29.5/172.0 (compare) and 104.1/120.7/119.3/365.2/153.7 (sortKey), macOS `localizedCompare` within 2.5% of 200/341/354/314/502 (the medians of the six runs); record the **median of at least 4 runs** — `Collation/Tools/matrix_record.py` (new) prints the Docs/21 tables with the checks and marks cells whose runs differ by 5% or more (‡, with the range); A/B decisions on two-level rows rest on counts and aligned builds.
+
+**Docs/21 recorded again** from the medians of the six runs (the same binaries as the pair): Table 1 compare 1.03× ascii, 1.06× latin, 2.03× cjk, 1.44× paths (two-level), 1.06× thai; sortKey 1.45×, 1.31×, 1.17×, 2.10×, 1.08×; Table 2 floor 2.90× WMO, 1.97× `-no-WMO`; 11 two-level cells.
+

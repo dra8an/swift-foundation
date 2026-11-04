@@ -122,40 +122,50 @@ add them up.
    instruction-count method) and the ALLOCATION/RESOLUTION HUNT note at the
    top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
-   matrix (2026-11-02, run B, at `f8a9debb`), with **the macOS anomaly** in
-   its header.
-4. `Collation/Docs/27-benchmark-runbook.md` — how to measure, the harness
+   matrix (2026-11-04, the median of 6 runs, Swift 6.5, macOS 27.2.1; WMO
+   the main column; two-level cells marked ‡).
+4. `Collation/Docs/27-benchmark-runbook.md` — **"The rules since
+   2026-11-04" at its top**, then how to measure, the harness
    cost, the gates, the speedup convention, and **the third check (the
    frozen binary)**.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-11-04 (run B at `18313630`,
-engine of §51 (as); Swift 6.5, macOS 27.2.1 — a new start, §51 (at); load
-17–43, memory full by the user's choice; ICU C and the frozen binary on
-target; A and B agree within 1.0% except seven short Table 2 cells). Table
-1, EngineBench vs ICU C, ns per call ours / ICU, speedup = ICU / ours:**
+**Current numbers — RECORDED in Docs/21 on 2026-11-04 (the MEDIAN of 6 runs
+of the same binaries, engine of §51 (as); Swift 6.5, macOS 27.2.1 — a new
+start, §51 (at), (au); load 9–43, memory full by the user's choice; ICU C,
+macOS and the frozen binary on target). Table 1, EngineBench vs ICU C, ns
+per call ours / ICU, speedup = ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 9.0 / 9.3 | 1.03× faster | 71.8 / 104.0 | 1.45× faster |
-| latin | 9.5 / 10.1 | 1.06× faster | 92.4 / 120.3 | 1.30× faster |
-| cjk | 20.1 / 40.7 | 2.02× faster | 102.1 / 119.6 | 1.17× faster |
-| paths | 20.5 / 29.5 | 1.44× faster | 174.3 / 365.3 | 2.10× faster |
-| thai | 162.0 / 172.0 | 1.06× faster | 142.8 / 153.4 | 1.07× faster |
+| ascii | 9.0 / 9.3 | 1.03× faster | 71.9 / 104.1 | 1.45× faster |
+| latin | 9.5 / 10.1 | 1.06× faster | 92.2 / 120.7 | 1.31× faster |
+| cjk | 20.1 / 40.7 | 2.03× faster | 102.3 / 119.3 | 1.17× faster |
+| paths | 20.4 (19.0–20.6, two-level) / 29.5 | 1.44× faster | 173.9 / 365.2 | 2.10× faster |
+| thai | 161.7 / 172.0 | 1.06× faster | 142.7 / 153.7 | 1.08× faster |
 
 **All ten rows are faster than ICU C.** The allocating sortKey (`skRet`) is
-0.79–0.86× of ICU (1.66× faster on paths). Against 2026-11-02 (Swift
+0.79–0.87× of ICU (1.65× faster on paths). Against 2026-11-02 (Swift
 6.4-dev) the compiler made every sortKey row faster and cjk compare 5.8%
-slower (19.0 → 20.1; not analysed); paths compare moves ~7% with placement
-(§51 (at)). **Table 2** has two Swift columns: **WMO, the main one** (user
-decision, 2026-11-04; release builds are WMO) and `-no-WMO`; floor 2.90×
-(WMO, `localizedCaseInsensitiveCompare` thai) and 1.97× (`-no-WMO`,
-`range(of:locale:)` cjk). **The new macOS reference** (macOS 27.2.1):
-`localizedCompare` 200/342/353/314/502. Table 2 is mostly the skipped
-NSString → CoreFoundation → C++ bridge. **Never use Table 2 as evidence about
-the engine; never cite it as consolation for a Table 1 gap.** The ICU C
-gates stay those of 2026-10-29.
+slower (19.0 → 20.1; not analysed). **Table 2** has two Swift columns:
+**WMO, the main one** (user decision, 2026-11-04; release builds are WMO)
+and `-no-WMO`; floor 2.90× (WMO, `localizedCaseInsensitiveCompare` thai)
+and 1.97× (`-no-WMO`, `range(of:locale:)` cjk); 11 short cells are
+two-level (‡ in Docs/21). **The macOS reference** (macOS 27.2.1):
+`localizedCompare` 200/341/354/314/502. Table 2 is mostly the skipped
+NSString → CoreFoundation → C++ bridge. **Never use Table 2 as evidence
+about the engine; never cite it as consolation for a Table 1 gap.**
+
+**The measurement rules since 2026-11-04 (user decision; Docs/27 "The rules
+since 2026-11-04"):** measure at least 10 minutes after a wake and outside
+a burst, at any load (the user's apps, Chrome among them, stay open: "we
+will have to live with this state"); the checks decide — ICU C within 2% of
+9.3/10.1/40.7/29.5/172.0 compare and 104.1/120.7/119.3/365.2/153.7
+sortKey, macOS within 2.5% of 200/341/354/314/502; record the **median of
+at least 4 runs** with `Collation/Tools/matrix_record.py`; two-level cells
+(runs 5% or more apart) get ‡ and their range; for A/B decisions on
+two-level rows trust counts and aligned builds.
 
 **What this round did (2026-10-29…11-02; details in §51 (ai)–(as)):**
 - (ai) Latin compare's last mispredictions: the lead-byte ASCII test of
@@ -224,10 +234,12 @@ plain words — what it changes and what it gives — never as variant labels
    compiler (the old one builds with `SDKROOT` set to `Xcode26.app`'s
    26.4 SDK, a scratch test of §51 (at)) and diff the traces: a compiler
    change that costs a hot path may have a cheap way around it.
-2. **Short Table 2 rows jump between runs of the same binary** (2026-11-04:
-   `localizedCompare` ascii WMO 18 / 15, `-no-WMO` 30 / 35; seven cells of
-   3–17%). Measurement only: is it per program start (memory layout of the
-   process, ASLR)? It decides whether such cells need more runs.
+2. **Why short rows are two-level** (§51 (au): the same binary reads
+   `localizedCompare` ascii WMO 18, 15, 15, 15, 18, 17 in six runs; paths
+   compare 19.0–20.6). Measurement only: per program start (ASLR, the
+   memory layout of the process)? The recording rule (median of 4+ runs)
+   already copes with it; knowing the cause could make A/Bs on these rows
+   cheaper.
 3. **The `-no-WMO` costs left** (§51 (as), "Still open"): constants of
    `CollationConstants` in the CE compare loop of `CollationCompare.swift`
    (~7 per Thai compare), the strength compares in `sortKey`, the
@@ -279,15 +291,14 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
 - **Never sit in a polling loop** (for example `sleep` until the load drops).
   Check the load ONCE; if acceptable, run — the system-ICU control decides
   whether a matrix run is valid, and interleaved A/Bs are valid for direction
-  under load. Guideline: for an A/B, run at any load and give the load in
-  one line (direction is what it measures). For a matrix, up to a 1-minute
-  load of about 25, just run; between about 25 and 50, run only if the
-  5-minute value is not far above the 1-minute one, and let the system-ICU
-  control decide afterwards (more than ~3% drift: do not record); above
-  about 50, or during a burst (the 5-minute value far above the 1-minute
-  one), say so in one line, do load-independent work (instruction counts,
-  code reading) and re-check ONCE before you start it. Run unavoidable waits
-  in the background.
+  under load. Guideline (since 2026-11-04, §51 (au)): for an A/B, run at
+  any load and give the load in one line (direction is what it measures).
+  For a matrix: at least 10 minutes after a wake and outside a burst (the
+  1-minute load far above the 5-minute one), at ANY load — the checks
+  decide (ICU C within 2%, macOS within 2.5% of the gates). During a burst,
+  say so in one line, do load-independent work and re-check ONCE. Do not
+  ask the user to close apps (2026-11-04: "I am not planning to close
+  ANYTHING"). Run unavoidable waits in the background.
 - **Make a break in long work.** After about 30–45 minutes of builds, A/Bs
   or matrix runs — or at each decision point (a variant regresses, a second
   matrix pair is needed, a new hypothesis) — stop, report in a few lines,
@@ -318,7 +329,8 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   sides before you run (a source grep, the binary hash, a symbol or a count).
 - **Benchmarks:** thai at 10 repetitions maximum. Wait at least 10 minutes
   after a wake from sleep (`pmset -g log | grep -E " (Sleep|Wake|DarkWake) "
-  | tail -3`). Run under `caffeinate -i`. Record two matrix runs that agree.
+  | tail -3`). Run under `caffeinate -i`. Record the median of at least 4
+  matrix runs (`Collation/Tools/matrix_record.py`; since 2026-11-04).
 - **Precision means removing OUR harness overhead — never making the ICU
   reference slower.**
 - **Fix bugs you find in the same pass** — never park them behind a
@@ -353,13 +365,13 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   from empty, ~10 minutes more). Since §51 (at) it builds both columns with
   Swift 6.5 and the native build system (the older note "works only because
   the swift-syntax objects are cached" no longer applies). Gates:
-  system-ICU `localizedCompare` about 200/342/353/314/502 (macOS 27.2.1, set
-  2026-11-04; more than ~3% drift: run the frozen-binary check,
-  `Collation/Tools/frozen_check.py`), ICU C as in the ICU note below
-  (2026-10-29). Short rows (below ~40 ns) can differ by up to ~17% between
-  runs of the same binary: mark such cells (Docs/21 "†"). Two runs (A, B) that agree; record run B in Docs/21
-  (and START HERE, the runbook ratio line, §51). Never start an extra pair
-  of matrix runs without asking. The user's calls and video calls load the
+  the gates of "The measurement rules since 2026-11-04" above (if only the
+  macOS side drifts: `python3 Collation/Tools/frozen_check.py
+  Collation/Tools/bench_system 3`). Run it at least 4 times (a series
+  script like `.build/matrix/cal-series-2026-11-04.sh`, about 5 minutes per
+  run) and record the medians: `python3 Collation/Tools/matrix_record.py
+  <run files>` prints the Docs/21 tables (and START HERE, the runbook ratio
+  line, §51). Never start an extra series of matrix runs without asking. The user's calls and video calls load the
   machine: on 2026-10-29 a pair during a call drifted +2..+6% and was not
   recorded. **Start every build script with
   its ABSOLUTE path** (or any command text that contains "swift"): Apple
@@ -495,10 +507,11 @@ the CLDR 49 integration branch (ICU 79.1, Unicode 18 data). Its speed equals
 79.0.1, so Table 1 stays comparable, but its KEYS differ from our bundled
 79.0.1 data. **Never generate golden files from it.** In that checkout,
 build and test in-source only, never `build/icuhost` (see `~/CLAUDE.md`).
-Gates: system-ICU `localizedCompare` 200/342/353/314/502 (macOS 27.2.1,
-2026-11-04; before: 194/365/369/300/494 on macOS 26.4); ICU C (2026-10-29,
-run B, confirmed 2026-11-04 within 2.2%) compare 9.3/10.1/40.8/30.0/172.8,
-sortKey 104.4/121.0/117.7/373.3/155.5.
+Gates (2026-11-04, medians of six runs): system-ICU `localizedCompare`
+200/341/354/314/502 (macOS 27.2.1; before: 194/365/369/300/494 on macOS
+26.4); ICU C compare 9.3/10.1/40.7/29.5/172.0, sortKey
+104.1/120.7/119.3/365.2/153.7 (before, 2026-10-29: 9.3/10.1/40.8/30.0/172.8
+and 104.4/121.0/117.7/373.3/155.5).
 
 **The code as it is now (details in §51):**
 - **compare, default options:** `compare(_:_:options:)` with

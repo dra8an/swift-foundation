@@ -88,8 +88,8 @@ env for machine 2):
   every compare and sortKey row reached ICU C (before, Table 1 showed the
   ratio `ours / ICU`, below 1 = faster; the history in the technique log
   and in older Docs/21 text uses that ratio). The Swift implementation
-  against hand-tuned C. Values as of 2026-11-04 (run B, Swift 6.5, macOS 27.2.1, after §51 (as)):
-  compare 1.03–2.02× faster, sortKey 1.07–2.10× faster (current numbers:
+  against hand-tuned C. Values as of 2026-11-04 (median of 6 runs, Swift 6.5, macOS 27.2.1, after
+  §51 (as)): compare 1.03–2.03× faster, sortKey 1.08–2.10× faster (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1
@@ -155,6 +155,39 @@ swift build -c release -Xswiftc -no-whole-module-optimization --product BenchFou
 ```
 (Always the `-no-WMO` flag on machine 1, or it SIGILLs.)
 
+## The rules since 2026-11-04 (the calibration, technique log §51 (au)) — read first
+
+Six matrix runs of the same binaries on 2026-11-04 (Swift 6.5, macOS
+27.2.1, the user's apps open, memory full, load 9–43) set these rules. They
+replace the older load limits and the "two runs, record run B" rule below.
+
+- **When to measure:** at least 10 minutes after a wake, and no burst (the
+  1-minute load not far above the 5-minute one). No fixed load limit: ICU C
+  stayed within 1.5% and the macOS column within 2.0% across all six runs.
+- **The gates** (medians of the six runs; `Collation/Tools/matrix_record.py`
+  checks them):
+
+  | corpus | ICU C compare | ICU C sortKey | macOS `localizedCompare` |
+  |---|---:|---:|---:|
+  | ascii | 9.3 | 104.1 | 200 |
+  | latin | 10.1 | 120.7 | 341 |
+  | cjk | 40.7 | 119.3 | 354 |
+  | paths | 29.5 | 365.2 | 314 |
+  | thai | 172.0 | 153.7 | 502 |
+
+  A set of runs counts if ICU C is within 2% and macOS within 2.5% of these.
+  If only the macOS side drifts, run the frozen-binary check (below).
+- **Recording:** run the matrix **at least 4 times** and record the
+  **median** of each cell: `python3 Collation/Tools/matrix_record.py
+  <run1.txt> … <run4.txt>` prints the Docs/21 tables and the checks. A cell
+  whose runs differ by 5% or more is a **two-level cell**, marked ‡ with its
+  range. On 2026-11-04 these were the short calls (15–56 ns) —
+  `localizedCompare`, `localizedStandardCompare`, `compare(_:locale:)` on
+  ascii, latin, paths — and paths compare in Table 1 (19.0–20.6 ns). They
+  take one of two levels per run (program start), not a spread of values.
+- **A/B decisions on two-level rows:** trust the instruction count and the
+  aligned builds; a timing difference below their range is not a finding.
+
 ## Before you record anything: check the machine
 
 Load average alone is misleading on this hardware. A box can read load 9 with
@@ -211,15 +244,9 @@ checkout, so it is NOT a fixed binary: it changes when that checkout changes
 branch or rebuilds. On 2026-10-15 the checkout held ICU 79.1 with Unicode 18
 data (the CLDR 49 integration branch), and its speed matched the old 79.0.1
 build. Check the branch first (`git -C $ICU_SRC branch --show-current`).
-Then expect roughly (one decimal, 2026-10-29, run B):
-
-| corpus | ICU compare | ICU sortKey |
-|---|---:|---:|
-| ascii | 9.3 | 104.4 |
-| latin | 10.1 | 121.0 |
-| cjk | 40.8 | 117.7 |
-| paths | 30.0 | 373.3 |
-| thai | 172.8 | 155.5 |
+Then expect the gates of the table at the top ("The rules since
+2026-11-04"); the older gates (2026-10-29, run B) were compare
+9.3/10.1/40.8/30.0/172.8 and sortKey 104.4/121.0/117.7/373.3/155.5.
 
 If a control has drifted, so has everything else: do not record the run.
 
@@ -242,5 +269,6 @@ that pass the other two checks (done 2026-11-04 for macOS 27.2.1: ICU C
 within 2.2%, the frozen binary on its values, A and B within 1.0% on the
 system side).
 
-And regardless of load: **run the matrix twice.** Two runs agreeing cell-for-cell
-is worth more than one run on a quiet machine.
+And regardless of load: **run the matrix at least four times and record the
+medians** (since 2026-11-04; until then: twice, run B recorded). Several runs
+agreeing cell for cell are worth more than one run on a quiet machine.
