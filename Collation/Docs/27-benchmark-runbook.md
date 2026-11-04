@@ -88,8 +88,8 @@ env for machine 2):
   every compare and sortKey row reached ICU C (before, Table 1 showed the
   ratio `ours / ICU`, below 1 = faster; the history in the technique log
   and in older Docs/21 text uses that ratio). The Swift implementation
-  against hand-tuned C. Values as of 2026-11-02 (run B, after §51 (ap)):
-  compare 1.00–2.15× faster, sortKey 1.04–1.89× faster (current numbers:
+  against hand-tuned C. Values as of 2026-11-04 (run B, Swift 6.5, macOS 27.2.1, after §51 (as)):
+  compare 1.03–2.02× faster, sortKey 1.07–2.10× faster (current numbers:
   `Docs/21`). Since 2026-10-15 both engine harnesses print one decimal; the
   old integer output was TRUNCATED (16.6 printed as 16, ICU's 9.5 as 9).
 - **Table 2 (Foundation APIs)**: `speedup = system-ICU / ours`, so **above 1
@@ -201,9 +201,10 @@ What actually degrades measurements, in order:
 
 **Primary control (since 2026-10-15): the system ICU in Table 2.** It is part
 of macOS, so it does not change unless the OS updates. On Apple Silicon
-(macOS 26) `localizedCompare` should read about 194/365/369/300/494 for
-ascii/latin/cjk/paths/thai. If it matches within ~2–3%, the load did not
-distort the run.
+(macOS 27.2.1, the reference of 2026-11-04) `localizedCompare` should read
+about 200/342/353/314/502 for ascii/latin/cjk/paths/thai (macOS 26.4, until
+2026-11-03: 194/365/369/300/494). If it matches within ~2–3%, the load did
+not distort the run.
 
 **Second check: ICU C in Table 1.** This column links against the LOCAL ICU
 checkout, so it is NOT a fixed binary: it changes when that checkout changes
@@ -235,7 +236,9 @@ Docs/21 has the expected values):
   record with the long-term reference for the speedups (Docs/21) and say so;
 - everything slow: the machine is slow — do not record.
 After a macOS update, set a new system-ICU reference from two quiet runs
-that pass the other two checks.
+that pass the other two checks (done 2026-11-04 for macOS 27.2.1: ICU C
+within 2.2%, the frozen binary on its values, A and B within 1.0% on the
+system side).
 
 And regardless of load: **run the matrix twice.** Two runs agreeing cell-for-cell
 is worth more than one run on a quiet machine.
