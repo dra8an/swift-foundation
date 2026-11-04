@@ -355,7 +355,7 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   the swift-syntax objects are cached" no longer applies). Gates:
   system-ICU `localizedCompare` about 200/342/353/314/502 (macOS 27.2.1, set
   2026-11-04; more than ~3% drift: run the frozen-binary check,
-  `.build/matrix/frozen_check.py`), ICU C as in the ICU note below
+  `Collation/Tools/frozen_check.py`), ICU C as in the ICU note below
   (2026-10-29). Short rows (below ~40 ns) can differ by up to ~17% between
   runs of the same binary: mark such cells (Docs/21 "†"). Two runs (A, B) that agree; record run B in Docs/21
   (and START HERE, the runbook ratio line, §51). Never start an extra pair

@@ -231,7 +231,9 @@ its gates, and our BenchFoundation binary of 2026-10-30 (`22af5f68`,
 recorded numbers. So when the system-ICU control drifts, run the frozen
 binary next to `bench_system` (three interleaved rounds of
 `localizedCompare`, `compare(_:locale:)`, `localizedStandardCompare`;
-Docs/21 has the expected values):
+Docs/21 has the expected values) — the script
+`Collation/Tools/frozen_check.py Collation/Tools/bench_system 3` does it
+(from the repo root, after a matrix run has built `bench_system`):
 - frozen binary and ICU C on target, the system side off: macOS changed —
   record with the long-term reference for the speedups (Docs/21) and say so;
 - everything slow: the machine is slow — do not record.
