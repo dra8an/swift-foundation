@@ -37,12 +37,14 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 §51 (ay): `Storage.init` and `writeSinglePass` only; §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-05): HEAD = the docs commit of the matrix
-after §51 (aw) on top of `b8d61638` (§51 (aw), the bench warm-up),
-`2a53ef68` (the handoff of 2026-11-04 evening) and `fb17704b`;
+paragraph).** Expected (2026-11-05 afternoon): HEAD = the docs commit of
+the matrix after §51 (ax) / (ay), on top of `d7508847` (§51 (ay)),
+`81d190a5` (§51 (ax)), `2ec617cf` and `b8d61638` (§51 (aw));
 `origin/port/collation` = `fb17704b` unless the user pushed since — check
-the ahead / behind count; tree clean.
-The A/B worktree `../collation-baseline` is detached at `f64250b6` (the same
+the ahead / behind count; tree clean. The worktree is at `81d190a5` (before
+§51 (ay)); both trees' `.build-ab-*` BenchFoundation builds hold the probe
+rows of `.build/l12/probe.swift` (rebuild before an A/B with other rows).
+(State of 2026-11-04, kept for its build list:) the A/B worktree was at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
 `main.swift`; its builds there, all with Swift 6.5: EngineBench
 `.build/engine-bench/.build`, `.build-al`, `.build-g` (at `f64250b6`);
@@ -141,31 +143,32 @@ add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-11-05, 10:06–10:25 (the
-MEDIAN of 4 runs at `b8d61638`, the engine of §51 (av), with the warm-up of
-§51 (aw); Swift 6.5, macOS 27.2.1; load 6.5 → 3.1; ICU C within 1.4%, macOS
+**Current numbers — RECORDED in Docs/21 on 2026-11-05, 14:33–14:52 (the
+MEDIAN of 4 runs at `d7508847`, after §51 (ax) and (ay), with the warm-up
+of §51 (aw); Swift 6.5, macOS 27.2.1; load 5–15; ICU C within 0.7%, macOS
 within 2.3%, the frozen binary within 1 ns). Table 1, EngineBench vs ICU C,
 ns per call ours / ICU, speedup = ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 8.8 / 9.3 | 1.06× faster | 72.2 / 104.8 | 1.45× faster |
-| latin | 9.1 / 10.2 | 1.12× faster | 93.0 / 122.4 | 1.32× faster |
-| cjk | 19.6 / 40.8 | 2.08× faster | 103.0 / 120.0 | 1.17× faster |
-| paths | 19.8 / 29.5 | 1.49× faster | 174.3 / 366.1 | 2.10× faster |
-| thai | 162.1 / 172.1 | 1.06× faster | 144.3 / 154.6 | 1.07× faster |
+| ascii | 8.7 / 9.3 | 1.07× faster | 72.1 / 104.2 | 1.45× faster |
+| latin | 9.1 / 10.1 | 1.11× faster | 92.7 / 121.2 | 1.31× faster |
+| cjk | 19.6 / 40.8 | 2.08× faster | 102.7 / 120.1 | 1.17× faster |
+| paths | 19.1 / 29.5 | 1.54× faster | 174.5 / 366.8 | 2.10× faster |
+| thai | 161.1 / 172.7 | 1.07× faster | 143.2 / 154.6 | 1.08× faster |
 
 **All ten rows are faster than ICU C.** The allocating sortKey (`skRet`) is
 0.79–0.86× of ICU (1.65× faster on paths). **Table 2** has two Swift
 columns: **WMO, the main one** (user decision, 2026-11-04; release builds
 are WMO) and `-no-WMO`; floor 2.88× (WMO, `localizedCaseInsensitiveCompare`
-thai) and 1.94× (`-no-WMO`, `range(of:locale:)` cjk). With the warm-up the
-short rows read one level (`localizedCompare` WMO 12/12/24/23/167, before
-16‡/18‡/28/27‡/167.5); five cells are ‡ (two are one whole-ns step, three
-the `.localizedStandard` sort, not explained). **The macOS reference** (macOS 27.2.1):
+thai) and 1.95× (`-no-WMO`, `range(of:locale:)` cjk). The short rows read one
+level since the warm-up of §51 (aw) (`localizedCompare` WMO 12/12/24/23/166.5;
+the options rows WMO ascii / latin 15–16 / 16, the options compare 24 / 25);
+five cells are ‡ (two are one whole-ns step, three the `.localizedStandard`
+sort, not explained). **The macOS reference** (macOS 27.2.1):
 `localizedCompare` 200/341/354/314/502 — a GATE of the checks; the Table 2
 speedups in Docs/21 use the macOS medians measured in the same series
-(`matrix_record.py`), within 2.3% of the reference on 2026-11-05. Table 2 is mostly the skipped
+(`matrix_record.py`), within 2.3% of the reference on 2026-11-05 (both series). Table 2 is mostly the skipped
 NSString → CoreFoundation → C++ bridge. **Never use Table 2 as evidence
 about the engine; never cite it as consolation for a Table 1 gap.**
 
@@ -268,14 +271,14 @@ lazy globals); keep the same block in both programs.
   pass and the identical-strength pass, removed with `untraced`; every
   options compare −11 instructions, WMO options rows ascii / latin −2..−7%;
   the aligned `-no-WMO` +1 ns is code fetch only (CPU Counters). User
-  decision: accepted. `check_stack_protection.sh` now matches every linkage
+  decision: accepted; in the matrix of 2026-11-05 afternoon. `check_stack_protection.sh` now matches every linkage
   and reads the binary (`stack_guard_funcs.py`); expected: `Storage.init`
   and `writeSinglePass` only (the writer's guard protects real writes).
 - (ax) **The `-no-WMO` costs left after (as)** (2026-11-05): same-file
   copies of the constants and option helpers in the CE compare and the sort
   key writer (`SameFileCopiesTests` checks them); `-no-WMO` `sortKey`
   −11..−18%, Thai −2..−4%; WMO and Table 1 unchanged. User decision:
-  accepted. Tools in `.build/l12/`; the four ladder tools build. Not yet in a matrix.
+  accepted. Tools in `.build/l12/`; the four ladder tools build. In the matrix of 2026-11-05 afternoon.
 - (aw) **The two levels of the short Table 2 rows** (2026-11-05): the
   `dispatch_once` window after the first wrapper call; a 100 ms warm-up in
   both Foundation benches (tools only). The tools of the hunt are in
