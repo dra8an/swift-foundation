@@ -254,8 +254,9 @@ since (au)) and thai 162.1 → 161.1. Table 2, ns, ours:
 | `localizedCaseInsensitiveCompare`, `-no-WMO` | 34 → 34 | 35 → 35 | 65 → 64 | **51 → 54** | 231.5 → 226.5 |
 
 The rest moved within ±1.5%. Two "+" cells: `localizedCaseInsensitiveCompare`
-paths `-no-WMO` +5.9% (its instructions −11; not in the A/Bs of (ay), which
-ran ascii, latin and thai) and the `.localizedStandard` sort cjk WMO +3.2%
+paths `-no-WMO` +5.9% (its instructions −11; a paths A/B afterwards: +4.9%
+in plain `-no-WMO`, −1.3% aligned, −3.0% WMO — the layout of the prefix-scan
+code, as paths showed since §51 (at); accepted as layout) and the `.localizedStandard` sort cjk WMO +3.2%
 (a row with a spread of 5–8% between runs).
 
 ## Analysis
