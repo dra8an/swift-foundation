@@ -176,7 +176,10 @@ will have to live with this state"); the checks decide — ICU C within 2% of
 sortKey, macOS within 2.5% of 200/341/354/314/502; record the **median of
 at least 4 runs** with `Collation/Tools/matrix_record.py`; two-level cells
 (runs 5% or more apart) get ‡ and their range; for A/B decisions on
-two-level rows trust counts and aligned builds.
+two-level rows trust counts and aligned builds. **Since 2026-11-05 (§51
+(aw)):** BenchFoundation and `bench_system_foundation.swift` run a 100 ms
+warm-up before the first measured row (the `dispatch_once` window of the
+lazy globals); keep the same block in both programs.
 
 **What this round did (2026-10-29…11-04; details in §51 (ai)–(av)):**
 - (ai) Latin compare's last mispredictions: the lead-byte ASCII test of
@@ -259,12 +262,28 @@ two-level rows trust counts and aligned builds.
   `Collation/Tools/check_stack_protection.sh` (expected "none").
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
+- (aw) **The two levels of the short Table 2 rows** (2026-11-05): the
+  `dispatch_once` window after the first wrapper call; a 100 ms warm-up in
+  both Foundation benches (tools only). The tools of the hunt are in
+  `.build/l11/` (`spawn.c` = a start without ASLR, `starts.py` /
+  `ab_starts.py` = many starts of one or two binaries, `main.swift.probe` =
+  the probe rows with the timed stream, `oncetest.swift` = the test without
+  collation code, the traces).
 
 **NEXT TASK — not chosen yet. Ask the user.** Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
-1. **Why short rows are two-level** (§51 (au): the same binary reads
+1. **DONE 2026-11-05 (§51 (aw)): why short rows are two-level.** The cause
+   is the `dispatch_once` window (~16–28 ms) after the first use of the two
+   lazy globals that each Foundation call reads (`CollatorCache.shared`,
+   `LocaleNotifications.cache`): ~+6 ns per call, and the window ended in a
+   different row in each start. Both Foundation benches now have a 100 ms
+   warm-up (same block in both); the short rows read one level. Docs/21 is
+   not yet recorded with it (the next matrix series; ask first). The paths
+   compare levels of Table 1 have another cause (not known; the warm-up did
+   not change them).
+   Old text: (§51 (au): the same binary reads
    `localizedCompare` ascii WMO 18, 15, 15, 15, 18, 17 in six runs; paths
    compare 19.0–20.6). Measurement only: per program start (ASLR, the
    memory layout of the process)? The recording rule (median of 4+ runs)

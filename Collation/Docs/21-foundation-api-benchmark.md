@@ -9,6 +9,16 @@ the MEDIAN of 4 runs** (the recording rule of 2026-11-04, Docs/27; technique
 log §51 (au)). **A new start** since 2026-11-04 (§51 (at)): do not compare
 with numbers before it at the level of a few percent.
 
+> **Note of 2026-11-05 (technique log §51 (aw)):** these tables were measured
+> WITHOUT the warm-up that both Foundation benches have now. In each run, the
+> first wrapper rows (`compare(_:locale:)`, `localizedCompare`,
+> `localizedStandardCompare`, `localizedCaseInsensitiveCompare`) fell partly
+> into a ~25 ms start-up window after the first wrapper call (`dispatch_once`
+> of two lazy globals, ~+6 ns per call). So our short cells here read up to
+> ~6 ns too high, and their speedups are understated, not overstated. The
+> ‡ cells come from this window. The other rows and Table 1 are not affected.
+> The next recording uses the warm-up.
+
 **Two Swift columns in Table 2 (since 2026-11-04):** **WMO** — the main
 column, because release builds of swift-foundation compile WMO
 (`CMakeLists.txt`); and `-no-WMO` — the column of the history (and the only

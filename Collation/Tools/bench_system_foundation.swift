@@ -35,6 +35,40 @@ func measure(_ name: String, ops: Int, _ body: () -> Void) {
 
 var sink = 0
 
+// Warm-up, not measured (technique log §51 (aw)). Swift initializes each `static let` once
+// (swift_once; dispatch_once on Apple platforms). For the next ~16-28 ms, until the kernel's
+// quiescent count of the CPUs moves on, each read of such a global takes the out-of-line
+// dispatch_once_f call. A Foundation call reads two of them, so the first rows of a run read up
+// to ~6 ns slow, on a level that changed from run to run. Each API runs once here, then the short
+// calls run for 100 ms: busy, not asleep, so that the CPU clock stays up. The system bench
+// (Tools/bench_system_foundation.swift) has the same block.
+struct WarmItem { let name: String }
+do {
+    let warmEnd = DispatchTime.now().uptimeNanoseconds + 100_000_000
+    let a = lines[0], b = lines.count > 1 ? lines[1] : lines[0]
+    let w = String(b.prefix(4))
+    sink += a.compare(b, locale: locale).rawValue + a.localizedCompare(b).rawValue
+    sink += a.localizedStandardCompare(b).rawValue + a.localizedCaseInsensitiveCompare(b).rawValue
+    sink += a.compare(b, options: [.caseInsensitive, .diacriticInsensitive], range: nil, locale: locale).rawValue
+    sink += (a.localizedStandardContains(w) ? 1 : 0) + (a.localizedCaseInsensitiveContains(w) ? 1 : 0)
+    sink += a.localizedStandardRange(of: w) == nil ? 0 : 1
+    sink += a.range(of: w, options: [], locale: locale) == nil ? 0 : 1
+    sink += a.range(of: w, options: [.backwards], locale: locale) == nil ? 0 : 1
+    let few = Array(lines.prefix(16))
+    let fewItems = few.map { WarmItem(name: $0) }
+    sink += few.sorted(using: String.StandardComparator.localizedStandard).count
+    sink += few.sorted(using: String.Comparator(options: [], locale: locale)).count
+    sink += fewItems.sorted(using: KeyPathComparator(\WarmItem.name, comparator: String.StandardComparator.localizedStandard)).count
+    sink += fewItems.sorted(using: SortDescriptor(\WarmItem.name, comparator: String.StandardComparator.localizedStandard)).count
+    while DispatchTime.now().uptimeNanoseconds < warmEnd {
+        for i in 1..<max(2, min(lines.count, 2000)) {
+            let x = lines[i - 1], y = lines[min(i, lines.count - 1)]
+            sink += x.compare(y, locale: locale).rawValue + x.localizedCompare(y).rawValue
+            sink += x.localizedStandardCompare(y).rawValue + x.localizedCaseInsensitiveCompare(y).rawValue
+        }
+    }
+}
+
 measure("compare(locale:)  ", ops: (lines.count - 1) * reps) {
     for _ in 0..<reps {
         for i in 1..<lines.count {

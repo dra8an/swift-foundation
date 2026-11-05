@@ -189,6 +189,19 @@ replace the older load limits and the "two runs, record run B" rule below.
   `localizedCompare`, `localizedStandardCompare`, `compare(_:locale:)` on
   ascii, latin, paths — and paths compare in Table 1 (19.0–20.6 ns). They
   take one of two levels per run (program start), not a spread of values.
+- **The cause of the Table 2 levels, and the warm-up (since 2026-11-05,
+  technique log §51 (aw)):** after the first use of a Swift `static let`,
+  `dispatch_once` keeps its guard out of the fast path for ~16–28 ms, and
+  each Foundation call reads two such globals (~+6 ns per call in that
+  window). The first wrapper rows of a run fell into the window, and its end
+  moved from start to start. Both Foundation benches (BenchFoundation and
+  `bench_system_foundation.swift`) now run every API once and the short
+  compares for 100 ms before the first measured row; with it the short rows
+  read one level (`localizedCompare` ascii WMO 12–12 ns over 15 starts,
+  before 16–19), and the macOS side did not change. Keep the same warm-up
+  in both programs. EngineBench and `bench_icu` have none: the engine rows
+  read no such global per call, and the paths compare levels have another
+  cause (not known).
 - **A/B decisions on two-level rows:** trust the instruction count and the
   aligned builds; a timing difference below their range is not a finding.
 

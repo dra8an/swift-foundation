@@ -5555,3 +5555,41 @@ Steady in every layout: `localizedCompare` and `compare(_:locale:)` on paths −
 
 **Matrix after (av)** (Docs/21, 2026-11-04, the median of 4 runs at `c275fd45`, 15:20–15:38; load 13 → 4; ICU C within 0.4% of the gates of (au), macOS within 0.5%, the frozen binary on target; nine two-level cells): Table 1 (speedup) compare 1.06× ascii, 1.11× latin, 2.06× cjk, 1.48× paths, 1.06× thai (ns 9.0 → 8.8, 9.5 → 9.1, 20.1 → 19.7, 20.4 → 19.9, 161.7 → 162.1 against the six-run medians of (au)); sortKey 1.43×, 1.30×, 1.16×, 2.11×, 1.07× (unchanged code, within 1%). Table 2: WMO mostly 0..−5% (`localizedStandardCompare` −3..−5%, `compare(_:locale:)` paths −6%), a few short or two-level cells +1..+3%; `-no-WMO` `localizedCompare` paths −11%, `compare(_:locale:)` paths −9%, the sorts +1..+2% and `range(of:options:locale:)` ascii / paths +6 / +5% (the search does not use the changed path; the aligned builds of (av) read the sorts at about 0: layout). Floor 2.88× WMO, 1.95× `-no-WMO`.
 
+
+#### (aw) Why the short Table 2 rows were two-level: the dispatch_once window after the first wrapper call — a warm-up in both Foundation benches (START HERE item 1 of 2026-11-04; tools only)
+
+**The question** (§51 (au)): the same binary read `localizedCompare` ascii WMO 18, 15, 15, 15, 18, 17 in six matrix runs; only the short cells (15–56 ns) had two levels.
+
+**What it is not** (one WMO BenchFoundation, 2026-11-05, load 7–12): 40 starts with ASLR on and off (a `posix_spawn` launcher with `_POSIX_SPAWN_DISABLE_ASLR`; `DYLD_PRINT_SEGMENTS` showed the text at 0x100000000 in every start without ASLR) and 40 starts with `SWIFT_DETERMINISTIC_HASHING=1`: the levels stay. The rows also changed level independently of each other in the same start. Inside ONE process a row stays on one value (±0.1 ns over 30 rounds, `pthread_cpu_number_np`: also across moves between the two P clusters); the process has 2 threads.
+
+**What it is** (temporary probe rows in `main.swift`, `.build/l11/main.swift.probe`):
+
+| test | engine row | `localizedCompare` ascii |
+|---|---|---|
+| a timed stream of passes after the first wrapper call | 8.8 throughout | 18.3–18.9 ns until 16–30 ms, then 12.4–12.8 ns |
+| 60 ms of other work first, then the first wrapper call | 8.8 | the same window, counted from the first wrapper call |
+| one wrapper call, 100 ms of other work, then the probe | 8.8 | 12.4 at once |
+| one call, 100 ms asleep, then the probe | 14–22 (the clock after idle) | 20–31: the same ratio as the engine — a second, separate effect |
+| `Locale.current` first | | the window stays; one explicit `compare(_:locale:)` first: 15.5 for the window |
+
+All three current-locale rows move at the same moment by about the same amount (`localizedCompare` 18.9 → 12.7, `localizedStandardCompare` 23.2 → 16.7, `localizedCaseInsensitiveCompare` 23.8 → 17.4: −6.1..−6.4 ns); a loop of `LocaleNotifications.cache.count()` and one of a private `os_unfair_lock` in the same window do not. CPU Counters (5-ms windows of the stream): slow window useful 74% / back end 0.8 / front end 25 / discarded 0.0%, after it 85 / 1.2 / 14 / 0.0% — more instructions per call and more fetch stalls, i.e. other code. Time Profiler (8 runs, 166 samples in the window, 573 after): only the window has `dispatch_once_f` (5.4%), a DYLD stub (4.8%) and code in a system library (4.2%); the address functions of `CollatorCache.shared` and `LocaleNotifications.cache` are in 10.2 / 12.7% of the stacks against 2.8 / 4.4%.
+
+**Cause.** A `static let` with a run-time initializer is guarded by `swift_once`; the inline test of its address function is `token == -1` (`cmn x8, #1`). On Apple platforms `swift_once` is `dispatch_once`, and libdispatch does not set the token to "done" when the initializer returns: it waits until the kernel's count of CPU quiescent points has moved on (a weakly ordered memory model needs that before readers may skip the barrier). Until then every read takes the out-of-line `dispatch_once_f`. A test program without collation code (`.build/l11/oncetest.swift`: a `static let` whose initializer calls `getpid()`, read through an `@inline(never)` function) reads it in 4.0–5.9 ns for 16–28 ms after the first use, then in 0.93 ns, in each of four starts. Each Foundation wrapper call reads two such globals (`CollatorCache.shared`, `LocaleNotifications.cache`): ~+6 ns per call for ~25 ms after the first wrapper call. A bench row lasts ~7 ms, so the first three or four wrapper rows of each run fall into the window, and where the window ends changes from start to start: two levels. The engine rows read no such global per call (EngineBench paths compare with a 100 ms warm-up 19.8–20.4 ns, without 19.9–20.9 ns, 12 starts each: not this effect; the paths levels of (au) have another cause).
+
+**For users:** once per process, for ~25 ms after the first collation call — at most a few milliseconds in total. Not a cost to remove from the product.
+
+**Change (tools only).** `Collation/Sources/BenchFoundation/main.swift` and `Collation/Tools/bench_system_foundation.swift` get the same warm-up before the first measured row: every API of the rows once (the compares, both contains, both ranges, the four sorts on 16 lines), then the four short compares in a busy loop for 100 ms (busy, so that the clock does not fall). EngineBench and `bench_icu` are unchanged, so Table 1 and its gates stay as they are.
+
+**Check** (old matrix binary against the new build, started in turn; min–max over the starts, whole ns):
+
+| row | WMO ascii, 15 starts each | WMO latin | `-no-WMO` ascii, 10 starts |
+|---|---|---|---|
+| `compare(_:locale:)` | 19–21 → **17–18** | 20–22 → 18–18 | 37–38 → 31–33 |
+| `localizedCompare` | 16–19 → **12–12** | 18–19 → 12–13 | 35–39 → 30–31 |
+| `localizedStandardCompare` | 19–24 → **16–16** | 19–23 → 16–17 | 34–40 → 34–35 |
+| `localizedCaseInsensitiveCompare` | 17–21 → **17–17** | 17–21 → 17–17 | 34–37 → 34–35 |
+| options compare, contains, `range(of:locale:)`, `String.Comparator` sort | unchanged (medians within ±1%) | unchanged | unchanged |
+
+The system side, old against new `bench_system` (6 starts each, ascii and latin): every row within its usual spread (`localizedCompare` medians 204 → 203, 348.5 → 353.5 ns): the macOS gates of (au) stay valid. So the recorded short cells of Docs/21 (2026-11-04) were too high by up to ~6 ns (our side only; the speedups were understated, never overstated); A/B decisions are not affected (both sides of an A/B ran the same harness; the two-level rows were decided by counts and aligned builds).
+
+**Side finding** (FoundationEssentials, not in scope): `LocaleNotifications.count()` costs 7.3 ns per call in this non-framework build (`LockedState`, an `os_unfair_lock`; a private lock pair costs 7.8 ns) — more than half of a 12.4 ns `localizedCompare`. The framework build reads an `Atomic` there.
