@@ -5630,3 +5630,39 @@ EngineBench compare and sortKey, plain and aligned (two aligned runs): within ±
 **Why the ascii / latin "+" cells are placement:** their groups execute the same instructions (+0), and the same rows read +3%, 0% or −6% in three `-no-WMO` layouts of the same engine code; the third layout differs from the first only in a temporary loop in `main.swift`. CPU Counters were planned for the `String.Comparator` sort, but in the third layout both sides ran at the same speed, so there was nothing to split.
 
 **Kept** (user decision, 2026-11-05). What it gives: `-no-WMO` only (Table 2's second column, machine 1): `sortKey` −11..−18%, Thai compares −2..−4%; release builds (WMO) are unchanged. **Tests:** suite 1572 in 138 suites (45 + 586 + 941). One full run at load 71 (during the lldb counts) had `FormatterCacheTests.synchronouslyClearingCache()` over its 60-s time limit; alone and in the full run at load 6.5 it passed. The four ladder tools build. The probe rows and tools are in `.build/l12/` (`probe.swift` with a `sortKey` row, `count_groups.sh`, `count_engine.sh`, `foundation_ab_ax.py`, the series scripts).
+
+#### (ay) Two stack protectors that the check of (av) missed: the options pass and the identical-strength pass (START HERE item 3, first step)
+
+**How it was found** (item 3: the options cost on CJK; a trace of one root-secondary cjk call, WMO, 435 instructions against 270 with the default options): `compare` 30, `compareSlowPath` 133, `compareAfterOptionsPass` 138, the decision itself (`quickCJKPrimary`, `scalarAt`) 100 on both. `compareSlowPath` began with `adrp / ldr / ldr / stur` and ended with `ldur / adrp / ldr / ldr / cmp / b.ne` on the GOT slot of `___stack_chk_guard` (`dyld_info -fixups`; objdump prints a wrong name for the slot): a stack protector, ~10 instructions on every compare with non-default options, ascii and latin included.
+
+**Why `check_stack_protection.sh` printed "none"** (§51 (av)): it searched `^sil [stack_protection]`, i.e. public functions only; the SIL had `sil private [stack_protection] @…compareSlowPath` and `writeSinglePass`. And `identicalStrengthTertiaryPass` had a protector in the machine code without a SIL mark. The machine code of both Swift 6.5 builds (EngineBench and BenchFoundation WMO) had four hot functions with a protector: `compareSlowPath`, `identicalStrengthTertiaryPass`, `CollationKeys.writeSinglePass` (two specializations); plus `Storage.init` (creation only). The frozen binary of 2026-10-30 (Swift 6.4-dev) has none: all from the move to Swift 6.5, the same cause as (av).
+
+**Change.** The options pass of `compareSlowPath` and the pass of `identicalStrengthTertiaryPass` index the pinned bytes through `RootCollator.untraced(_:)`, as the default fast path since (av). These are reads of the standard library's own, unprotected stack copy of a small string; nothing that was guarded before Swift 6.5 loses a guard. **Kept on purpose:** `writeSinglePass` writes into its own stack buffer (`withUnsafeTemporaryAllocation`) at computed offsets — there the guard is a real one, for <1% of a key (ICU C's writer has one too); `Storage.init` runs at creation. **Tools:** `check_stack_protection.sh` matches every linkage in the SIL and also lists the functions of the built EngineBench that load `___stack_chk_guard` (`Collation/Tools/stack_guard_funcs.py <binary> [filter]`, new); its header states the expected result: `Storage.init` and `writeSinglePass` only.
+
+**Counts** (one call; base `81d190a5` in the worktree, the same probe rows in both trees, 35 groups):
+
+| group | WMO | `-no-WMO` |
+|---|---|---|
+| root secondary / sec+numeric / primary, ascii, latin, cjk, paths, thai; `localizedStandardCompare` ascii / latin / cjk; th thai | **−11 each** (root secondary ascii 263 → 252, −4.2%; cjk 497.6 → 486.6) | **−11 each** |
+| `.localizedStandard` comparator ascii / latin / cjk | −22 / −22 / −10 | −20 / −20 / −10 |
+| root / th defaults on thai (they pass through `compareSlowPath` too) | −11 | −10 |
+| default-options compares on ascii, latin, cjk; `localizedCompare`, `compare(_:locale:)`, `String.Comparator`, `sortKey` | +0 | +0 |
+
+**A/B** (5 interleaved rounds each, alone, load 14 → 5; mean change, ascii / latin):
+
+| row | WMO | `-no-WMO` | `-no-WMO` aligned |
+|---|---|---|---|
+| options compare | **−4.0 / 0.0%** (−−−−−) | **−3.3 / −3.9%** (5/5) | +2.5 / +2.4% (5/5) |
+| `localizedStandardCompare` | **−7.4 / 0.0%** | −2.8 / −1.1% | +3.5 / +2.9% (5/5) |
+| `localizedCaseInsensitiveCompare` | −2.4 / −4.7% | −0.6 / 0.0% | +2.9 / +2.9% (5/5) |
+| `.localizedStandard` sort | **−1.7 / −1.9%** | +0.4 / 0.0% | −0.6 / −1.7% |
+| `localizedCompare` (+0 instructions) | 0.0 / −6.2% | +0.6 / −1.2% | **+2.6 / +3.2% (5/5)** |
+| `compare(_:locale:)` (+0) | 0.0 / 0.0% | −0.6 / +0.6% | **−3.8 / −3.1% (5/5)** |
+| `String.Comparator` sort (+0) | +0.4 / +0.4% | −1.1 / −0.9% | −3.0 / −2.8% |
+| thai rows | −0.7..+0.5% | +0.4..+2.0% | −0.5..+0.9% |
+
+EngineBench compare, plain / aligned: ascii −0.4 / +2.8% (+0000), latin ±0.2%, cjk −1.4 / +0.1%, paths −4.0 / −4.0% (5/5), thai −0.6 / −0.7% (5/5; the default thai path passes through `compareSlowPath`).
+
+**The aligned `-no-WMO` cells, by CPU Counters** (a temporary 4-s loop of `compare(_:options:range:locale:)` ascii at the end of `main.swift`, both sides rebuilt aligned; the loop still read 53.4–54.0 against 54.66 ns, +2.3%; two recordings each, the last 1.2 s): base useful 63.3 / back end 0.2 / front end 36.5 / discarded 0.0%, change 61.1 / 0.2 / 38.7 / 0.0% (both recordings of each side alike). Per call: useful 33.8 → 33.4 ns-equivalents (less work), instruction delivery 19.5 → 21.2: all of the +1.2 ns is code fetch — layout, the signature of (av). In the same aligned pair, rows with unchanged code moved ±1 ns too (`localizedCompare` +3%, `compare(_:locale:)` −3%).
+
+**Kept** (user decision, 2026-11-05). **Tests:** no new test (no result changes; the check script covers the protectors); suite 1572/138; the four ladder tools build. **Still open in item 3** (the trace above, without the protector): the CJK and Thai options compares still pay `compareSlowPath`'s frame and options word and a first pinning, then `compareAfterOptionsPass`'s frame, spills and second pinning, ~60–70 instructions that the default path does not pay; earlier attempts to fold work into the pass cost ascii / latin through the register allocation (§51 (ac), (aq)). Tools in `.build/l12/` (`trace_probe.sh`, `stack_guard_funcs.py`, `ay_ab_series.sh`, the traces and recordings).

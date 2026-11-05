@@ -33,8 +33,8 @@ compiler). Every number before 2026-11-04 (in the history below and in
 older technique-log entries) is from Swift 6.4-dev, the old SDK and macOS
 26.4; the matrices of 2026-11-04 are the new start and set the new macOS
 reference. Do not compare across the change. After any compiler or Xcode
-update run `Collation/Tools/check_stack_protection.sh` (expected "none",
-§51 (av)).
+update run `Collation/Tools/check_stack_protection.sh` (expected since
+§51 (ay): `Storage.init` and `writeSinglePass` only; §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
 paragraph).** Expected (2026-11-05): HEAD = the docs commit of the matrix
@@ -260,9 +260,17 @@ lazy globals); keep the same block in both programs.
   Foundation group −7..−14 instructions in both modes; the remaining "+"
   cells move with the layout (CPU Counters: front end only). User decision,
   2026-11-04: accepted. Check after every compiler update:
-  `Collation/Tools/check_stack_protection.sh` (expected "none").
+  `Collation/Tools/check_stack_protection.sh` (expected "none" at the time;
+  since §51 (ay): `Storage.init` and `writeSinglePass` only).
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
+- (ay) **Two more Swift 6.5 stack protectors** (2026-11-05): the options
+  pass and the identical-strength pass, removed with `untraced`; every
+  options compare −11 instructions, WMO options rows ascii / latin −2..−7%;
+  the aligned `-no-WMO` +1 ns is code fetch only (CPU Counters). User
+  decision: accepted. `check_stack_protection.sh` now matches every linkage
+  and reads the binary (`stack_guard_funcs.py`); expected: `Storage.init`
+  and `writeSinglePass` only (the writer's guard protects real writes).
 - (ax) **The `-no-WMO` costs left after (as)** (2026-11-05): same-file
   copies of the constants and option helpers in the CE compare and the sort
   key writer (`SameFileCopiesTests` checks them); `-no-WMO` `sortKey`
@@ -305,7 +313,13 @@ plain words — what it changes and what it gives — never as variant labels
    (~7 per Thai compare), the strength compares in `sortKey`, the
    `icuOptions` getter. `-no-WMO` only — since the WMO column is the main
    one in Docs/21, they matter less.
-3. **The rest of the options cost on CJK and Thai** (§51 (aq), (ar)): root
+3. **The rest of the options cost on CJK and Thai — first step DONE
+   2026-11-05 (§51 (ay)):** two stack protectors that the (av) check missed
+   (`compareSlowPath`, `identicalStrengthTertiaryPass`) removed with
+   `untraced`: −11 instructions on every options compare (ascii / latin too),
+   −20..−22 on the `.localizedStandard` comparator; the check script fixed.
+   Still open: the frames, spills and second pinning of the CJK / Thai
+   options path (~60–70 instructions). Old text: (§51 (aq), (ar)): root
    options on CJK 478 against 333 instructions (WMO, 1.43×), on Thai +3.1%.
    Left: the options word (~30) and a first pinning whose pass always bails
    on CJK. A first-byte test before the pass would skip them for CJK /
@@ -622,7 +636,9 @@ and 104.4/121.0/117.7/373.3/155.5).
   (§51 (av)): without it, Swift 6.5 traces the indexing to the stack copy of
   a small string and gives `compare` a stack protector (10 instructions per
   call). Keep new pinned-byte code behind `untraced`, and run
-  `Collation/Tools/check_stack_protection.sh` after compiler updates.
+  `Collation/Tools/check_stack_protection.sh` after compiler updates (since
+  §51 (ay) also the options pass and the identical-strength pass use
+  `untraced`; expected output: `Storage.init` and `writeSinglePass` only).
 - **The Foundation wrappers** (`StringProtocol+Locale.swift`,
   `String+Collation.swift`, `String+SortComparator.swift`): the eight public
   generic wrappers carry `@_specialize(where Self == String, T == String)`

@@ -544,11 +544,12 @@ public struct RootCollator: @unchecked Sendable {
                 if let setup = resolveFastLatinSetup(word), setup.packedOptions >= 0 {
                     let safety = restartSafetyPtr
                     let numeric = options.numeric
-                    let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
-                        right.utf8.withContiguousStorageIfAvailable { rBytes in
+                    // The pinned bytes go through `untraced`, as on the default fast path: else Swift 6.5 gives compareSlowPath a stack protector, 10 instructions on every options compare (technique log §51 (av), (ay)).
+                    let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lPinned in
+                        right.utf8.withContiguousStorageIfAvailable { rPinned in
                             var mismatch = -1
                             return RootCollator.fastLatinUTF8(
-                                lBytes, rBytes, table: table, primaries: setup.primaries,
+                                RootCollator.untraced(lPinned), RootCollator.untraced(rPinned), table: table, primaries: setup.primaries,
                                 options: setup.packedOptions, numeric: numeric, safety: safety,
                                 marksPrefixBail: true, mismatch: &mismatch)
                         } ?? nil
@@ -586,11 +587,12 @@ public struct RootCollator: @unchecked Sendable {
         guard let setup = resolveFastLatinSetup(tertiary.icuOptions), setup.packedOptions >= 0 else { return nil }
         let safety = restartSafetyPtr
         let numeric = options.numeric
-        let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lBytes in
-            right.utf8.withContiguousStorageIfAvailable { rBytes in
+        // `untraced`: no stack protector for this function (technique log §51 (ay)).
+        let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lPinned in
+            right.utf8.withContiguousStorageIfAvailable { rPinned in
                 var mismatch = -1
                 return RootCollator.fastLatinUTF8(
-                    lBytes, rBytes, table: table, primaries: setup.primaries,
+                    RootCollator.untraced(lPinned), RootCollator.untraced(rPinned), table: table, primaries: setup.primaries,
                     options: setup.packedOptions, numeric: numeric, safety: safety,
                     mismatch: &mismatch)
             } ?? nil
