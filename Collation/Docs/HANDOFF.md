@@ -29,38 +29,35 @@ scripts get it from `Collation/Tools/swift_toolchain.sh` (`SWIFT`,
 a commit that has it). BenchFoundation builds for A/Bs and the matrix use
 SwiftPM's **native build system** (`--build-system native`; the default
 one cannot build `-no-WMO` from an empty scratch path, with either
-compiler). Every older number in this file and in Docs/21 is from Swift
-6.4-dev and the old SDK: the next matrix pair is a new start (and the new
-macOS reference). Do not compare across the change.
+compiler). Every number before 2026-11-04 (in the history below and in
+older technique-log entries) is from Swift 6.4-dev, the old SDK and macOS
+26.4; the matrices of 2026-11-04 are the new start and set the new macOS
+reference. Do not compare across the change. After any compiler or Xcode
+update run `Collation/Tools/check_stack_protection.sh` (expected "none",
+§51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = the docs commit of the matrix after §51 (av) (Docs/21,
-this file, the technique log, Docs/27) on top of the commit of §51 (av) (`RootCollator.swift`:
-`untraced(_:)` in `compareFastPath`, no stack protector with Swift 6.5; the
-new `Collation/Tools/check_stack_protection.sh`; the technique log and this
-file) on top of the commit of §51 (au) (the calibration, `matrix_record.py`,
-Docs/21 from six medians) and `0f077c86` (pushed 2026-11-04);
-`origin/port/collation` at `0f077c86` unless the user pushed since. If a
-commit is missing, its files are modified or new — say so and give the add /
-commit lines (the memory files are outside the repo). Tree clean otherwise.
+paragraph).** Expected: HEAD = `fb17704b` (the docs of the matrix after §51
+(av)) on top of `c275fd45` (§51 (av)) and `6a1a3d83` (§51 (au)); **everything
+pushed on 2026-11-04** — `origin/port/collation` = `fb17704b`, 0 ahead / 0
+behind; tree clean. If the handoff docs commit of 2026-11-04 evening (this
+file and the memory pointer) is missing, `HANDOFF.md` is modified — say so and
+give the add / commit lines (the memory files are outside the repo).
 The A/B worktree `../collation-baseline` is detached at `f64250b6` (the same
-engine code as `0f077c86`) with its own, unmodified `main.swift`; its builds
-there, all with Swift 6.5: EngineBench `.build/engine-bench/.build`,
-`.build-al`, `.build-g`; BenchFoundation (native build system) WMO `-g`
-`.build-ab-wmo`, `-no-WMO -g` `.build-ab-nowmo`, aligned `.build-ab-wmo-al`
-and `.build-ab-nowmo-al` — **the four BenchFoundation builds WITH the
-temporary probe rows of §51 (av) (the aligned WMO one also with its CPU
-Counters loop): rebuild before a Foundation A/B** (binaries in
-`<scratch>/arm64-apple-macosx/release/`). The main tree has the same set.
+engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
+`main.swift`; its builds there, all with Swift 6.5: EngineBench
+`.build/engine-bench/.build`, `.build-al`, `.build-g` (at `f64250b6`);
+BenchFoundation (native build system) WMO `-g` `.build-ab-wmo`, `-no-WMO -g`
+`.build-ab-nowmo`, aligned `.build-ab-wmo-al` and `.build-ab-nowmo-al` —
+**the four BenchFoundation builds WITH the temporary probe rows of §51 (av)
+(the aligned WMO one also with its CPU Counters loop): rebuild before a
+Foundation A/B** (binaries in `<scratch>/arm64-apple-macosx/release/`). The
+main tree has the same set of scratch paths, also built with those probe
+rows; its bench file is restored. The matrix scratch paths
+`.build-matrix-nowmo` / `.build-matrix-wmo` (main tree) are current.
 **For the next A/B the base is HEAD:**
 `git -C ../collation-baseline checkout --detach <HEAD>`, then rebuild there
-(each incremental, ~1 minute):
-```
-W=/Users/dragan/Projects/dra8an/collation-baseline
-cd $W && $W/Collation/Tools/build_engine_bench.sh            # plain EngineBench
-cd $W/.build/engine-bench && swift build -c release -Xswiftc -Xllvm -Xswiftc -align-all-functions=6 --scratch-path .build-al
-cd $W/.build/engine-bench && swift build -c release -Xswiftc -g --scratch-path .build-g
-cd $W && swift build -c release -Xswiftc -g --product BenchFoundation --scratch-path .build-bfg
+(each incremental, ~1 minute; the BenchFoundation ones ~6 minutes from empty):
 ```
 R=/Users/dragan/Projects/dra8an/swift-foundation-collation; W=/Users/dragan/Projects/dra8an/collation-baseline
 X=$(xcrun --find swift); export PATH=${X:h}:$PATH         # Swift 6.5 (§51 (at))
@@ -69,6 +66,7 @@ cd $W/.build/engine-bench && swift build -c release -Xswiftc -Xllvm -Xswiftc -al
 cd $W/.build/engine-bench && swift build -c release -Xswiftc -g --scratch-path .build-g
 cd $W && swift build --build-system native -c release -Xswiftc -g --product BenchFoundation --scratch-path .build-ab-wmo
 cd $W && swift build --build-system native -c release -Xswiftc -no-whole-module-optimization -Xswiftc -g --product BenchFoundation --scratch-path .build-ab-nowmo
+# layout checks: the same two with -Xswiftc -Xllvm -Xswiftc -align-all-functions=6 into .build-ab-wmo-al / .build-ab-nowmo-al
 ```
 (the same EngineBench forms in the main tree under `.build/engine-bench/`;
 never build `-g` into the default scratch path — that replaces the plain
@@ -83,7 +81,12 @@ decision, never yours). **Keep `.build/l4/nowmo-base/`:** it holds the
 FROZEN BINARY of 2026-10-30 (BenchFoundation `-no-WMO -g` at `22af5f68`,
 with its bundle), the third matrix check of Docs/27 (a binary: it runs
 unchanged after the compiler move). Main tree helpers in
-`.build/` (git-ignored): `.build/l9/` (§51 (at): the Swift 6.5 tests,
+`.build/` (git-ignored): `.build/l10/` (§51 (av): `probe.swift` = the probe
+rows plus one `.localizedStandard` and one `String.Comparator` comparison,
+`count_groups.sh` / `cmp_groups.py` for 32 groups, `foundation_ab_check.py`
+= the sort and short-row A/B, `cpu/` = the CPU Counters recordings, the
+traces and the SIL files), `.build/l9/` (§51 (at): the Swift 6.5 tests,
+`trace_compare.sh` = a trace of one EngineBench compare with source lines,
 `build_ab_tree.sh` = all A/B builds of one tree, the A-against-A outputs),
 `.build/l8/` (§51 (ar): the same tools as
 `.build/l7/`, the probe rows plus `tmpLocaleCmp`, the base and variant
@@ -99,7 +102,9 @@ traces), `.build/l5/` (§51 (ao): `probe-stdcmpr.swift`, `probe-locstd.swift`),
 `foundation_ab_*.py` with longer row lists, `probe-opt.swift`,
 `probe-range.swift`), `.build/item3/probe-loc.swift` (the `tmp str locCmp`
 row), `.build/counters/` (`shares.py`, CPU Counters), `.build/matrix/`
-(`parse.py`, every matrix output).
+(every matrix output; `cal-series-2026-11-04.sh` / `av-series-2026-11-04.sh`
+= a series of 4 runs plus the frozen-binary check; `calibrate.py` = the
+spread of every cell over several runs).
 
 **What is routine and needs no question:** builds and A/Bs of up to about 10
 minutes (in TOTAL per series — see "Make a break"); the full test suite
@@ -117,17 +122,19 @@ add them up.
 
 **Read next, in this order:**
 1. Your memory index from disk and ALL its feedback files — the user's
-   working rules; then `project-next-steps-2026-11-02` (this round's
-   decisions, including one accepted exception to the ascii / latin rule).
-2. `Collation/Docs/optimization-targets.md` **§51 (ai)–(aq)** — the technique
-   log of the 2026-10-29…11-02 work (every change, every rejected variant,
-   every measurement), all of it; the matrix line after (ap) is the last
-   recorded matrix ((aq) came after it). For background: §51 (z)–(ah), §51 (l), (y), §50 (g) (the
+   working rules; then `project-next-steps-2026-11-04` (the state and the
+   decisions of 2026-11-02…11-04; the older `project-next-steps-2026-11-02`
+   is its history).
+2. `Collation/Docs/optimization-targets.md` **§51 (aq)–(av)** — the technique
+   log of 2026-11-02…11-04 (every change, every rejected variant, every
+   measurement), all of it, and the matrix line after (av) at the end of the
+   file (the last recorded matrix). Then §51 (ai)–(ap) (2026-10-29…11-02).
+   For background: §51 (z)–(ah), §51 (l), (y), §50 (g) (the
    instruction-count method) and the ALLOCATION/RESOLUTION HUNT note at the
    top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
-   matrix (2026-11-04, the median of 6 runs, Swift 6.5, macOS 27.2.1; WMO
-   the main column; two-level cells marked ‡).
+   matrix (2026-11-04 15:20–15:38, the median of 4 runs at `c275fd45`, Swift
+   6.5, macOS 27.2.1; WMO the main column; two-level cells marked ‡).
 4. `Collation/Docs/27-benchmark-runbook.md` — **"The rules since
    2026-11-04" at its top**, then how to measure, the harness
    cost, the gates, the speedup convention, and **the third check (the
@@ -155,7 +162,9 @@ columns: **WMO, the main one** (user decision, 2026-11-04; release builds
 are WMO) and `-no-WMO`; floor 2.88× (WMO, `localizedCaseInsensitiveCompare`
 thai) and 1.95× (`-no-WMO`, `range(of:locale:)` cjk); nine short cells are
 two-level (‡ in Docs/21). **The macOS reference** (macOS 27.2.1):
-`localizedCompare` 200/341/354/314/502. Table 2 is mostly the skipped
+`localizedCompare` 200/341/354/314/502 — a GATE of the checks; the Table 2
+speedups in Docs/21 use the macOS medians measured in the same series
+(`matrix_record.py`), within 0.5% of the reference on 2026-11-04. Table 2 is mostly the skipped
 NSString → CoreFoundation → C++ bridge. **Never use Table 2 as evidence
 about the engine; never cite it as consolation for a Table 1 gap.**
 
@@ -169,7 +178,7 @@ at least 4 runs** with `Collation/Tools/matrix_record.py`; two-level cells
 (runs 5% or more apart) get ‡ and their range; for A/B decisions on
 two-level rows trust counts and aligned builds.
 
-**What this round did (2026-10-29…11-02; details in §51 (ai)–(av)):**
+**What this round did (2026-10-29…11-04; details in §51 (ai)–(av)):**
 - (ai) Latin compare's last mispredictions: the lead-byte ASCII test of
   `compareUTF8`, from the data (ICU C has twice as many); a branch-free
   decode gave latin −4.5% but ascii +4.5%: REJECTED.
@@ -215,16 +224,6 @@ two-level rows trust counts and aligned builds.
   middle they cost `compare(_:locale:)` +6.8% in `-no-WMO`); the plain-WMO
   `compare(_:locale:)` +5..+7% that stayed is placement (aligned builds:
   0.0%). User decision, 2026-11-03: accepted ("great wins").
-- (av) **No stack protector in `compare` with Swift 6.5** (the cjk loss of
-  the compiler move): the pinned bytes go through `RootCollator.untraced(_:)`
-  (an integer round trip of the base address, no machine instruction), so
-  the optimizer no longer traces our indexing to the stack copy of a small
-  string, and `compare` loses the guard value (10 instructions per call).
-  EngineBench compare aligned: ascii −4.5%, latin −5.6%, cjk −2.0%; every
-  Foundation group −7..−14 instructions in both modes; the remaining "+"
-  cells move with the layout (CPU Counters: front end only). User decision,
-  2026-11-04: accepted. Check after every compiler update:
-  `Collation/Tools/check_stack_protection.sh` (expected "none").
 - (as) **The compare paths in `-no-WMO`:** enum compares by case match
   (`hasIdenticalStrength`, `isShifted`) and same-file copies of three
   constants and of `primariesKey` (`SameFileCopiesTests` checks them). In
@@ -235,7 +234,31 @@ two-level rows trust counts and aligned builds.
   Thai instructions). **Release builds are WMO** (`CMakeLists.txt`), so this
   removes a handicap of the `-no-WMO` Table 2, not a cost that release users
   had. User decision, 2026-11-03: accepted, and plan a WMO column for
-  Table 2 (NEXT TASK 1).
+  Table 2 (done in (at)).
+- (at) **The move to Swift 6.5** after the macOS 27.2.1 update (the
+  swiftly 6.4-dev snapshot cannot read the new SDK; user decision: Swift 6.5
+  of the selected Xcode, via `Collation/Tools/swift_toolchain.sh`;
+  BenchFoundation with the native build system), and **a WMO column for
+  Table 2** in `run_benchmarks.sh` / `bench_matrix.py` (user decision: WMO is
+  the main column). With 6.5, paths compare differs ~7% between two builds
+  of the same source: judge paths in aligned builds.
+- (au) **The calibration of the new environment** (six matrix runs of the
+  same binaries, the user's apps open, memory full): ICU C within 1.5%, macOS
+  within 2.0%, our short cells two-level. New rules (user decision): any load
+  outside a burst, the checks decide, the median of 4+ runs
+  (`Collation/Tools/matrix_record.py`), ‡ for two-level cells; new gates.
+- (av) **No stack protector in `compare` with Swift 6.5** (the cjk loss of
+  the compiler move): the pinned bytes go through `RootCollator.untraced(_:)`
+  (an integer round trip of the base address, no machine instruction), so
+  the optimizer no longer traces our indexing to the stack copy of a small
+  string, and `compare` loses the guard value (10 instructions per call).
+  EngineBench compare aligned: ascii −4.5%, latin −5.6%, cjk −2.0%; every
+  Foundation group −7..−14 instructions in both modes; the remaining "+"
+  cells move with the layout (CPU Counters: front end only). User decision,
+  2026-11-04: accepted. Check after every compiler update:
+  `Collation/Tools/check_stack_protection.sh` (expected "none").
+- Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
+  pushed.
 
 **NEXT TASK — not chosen yet. Ask the user.** Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
@@ -260,8 +283,9 @@ plain words — what it changes and what it gives — never as variant labels
    rule).
 4. **ko's hanja are expansions** (7 476): Korean Han text still takes the
    pipeline; the quick path could use an expansion's first CE.
-5. cjk compare +3.8% since P3c (Table 1 cjk 19.0 ns, 2.15× faster than ICU;
-   CJK pairs often share the first UTF-8 byte and take the helper path).
+5. cjk compare +3.8% since P3c (§51 (ah); Table 1 cjk now 19.7 ns, 2.06×
+   faster than ICU; CJK pairs often share the first UTF-8 byte and take the
+   helper path).
 6. CE production for precomposed Latin letters (NFD decomposition, ~119
    instructions per accented letter); the run-time writer path for
    non-default options; L1 (the Thai lookahead; skipped by the user before as
