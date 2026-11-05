@@ -37,12 +37,11 @@ update run `Collation/Tools/check_stack_protection.sh` (expected "none",
 §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected: HEAD = `fb17704b` (the docs of the matrix after §51
-(av)) on top of `c275fd45` (§51 (av)) and `6a1a3d83` (§51 (au)); **everything
-pushed on 2026-11-04** — `origin/port/collation` = `fb17704b`, 0 ahead / 0
-behind; tree clean. If the handoff docs commit of 2026-11-04 evening (this
-file and the memory pointer) is missing, `HANDOFF.md` is modified — say so and
-give the add / commit lines (the memory files are outside the repo).
+paragraph).** Expected (2026-11-05): HEAD = the docs commit of the matrix
+after §51 (aw) on top of `b8d61638` (§51 (aw), the bench warm-up),
+`2a53ef68` (the handoff of 2026-11-04 evening) and `fb17704b`;
+`origin/port/collation` = `fb17704b` unless the user pushed since — check
+the ahead / behind count; tree clean.
 The A/B worktree `../collation-baseline` is detached at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
 `main.swift`; its builds there, all with Swift 6.5: EngineBench
@@ -142,29 +141,31 @@ add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-11-04, 15:20–15:38 (the
-MEDIAN of 4 runs at `c275fd45`, after §51 (av); Swift 6.5, macOS 27.2.1;
-load 13 → 4; ICU C within 0.4%, macOS within 0.5%, the frozen binary on
-target). Table 1, EngineBench vs ICU C, ns per call ours / ICU, speedup =
-ICU / ours:**
+**Current numbers — RECORDED in Docs/21 on 2026-11-05, 10:06–10:25 (the
+MEDIAN of 4 runs at `b8d61638`, the engine of §51 (av), with the warm-up of
+§51 (aw); Swift 6.5, macOS 27.2.1; load 6.5 → 3.1; ICU C within 1.4%, macOS
+within 2.3%, the frozen binary within 1 ns). Table 1, EngineBench vs ICU C,
+ns per call ours / ICU, speedup = ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 8.8 / 9.3 | 1.06× faster | 72.5 / 104.0 | 1.43× faster |
-| latin | 9.1 / 10.1 | 1.11× faster | 92.6 / 120.6 | 1.30× faster |
-| cjk | 19.7 / 40.5 | 2.06× faster | 103.0 / 119.2 | 1.16× faster |
-| paths | 19.9 (two-level) / 29.5 | 1.48× faster | 173.8 / 365.9 | 2.11× faster |
-| thai | 162.1 / 171.6 | 1.06× faster | 143.6 / 153.4 | 1.07× faster |
+| ascii | 8.8 / 9.3 | 1.06× faster | 72.2 / 104.8 | 1.45× faster |
+| latin | 9.1 / 10.2 | 1.12× faster | 93.0 / 122.4 | 1.32× faster |
+| cjk | 19.6 / 40.8 | 2.08× faster | 103.0 / 120.0 | 1.17× faster |
+| paths | 19.8 / 29.5 | 1.49× faster | 174.3 / 366.1 | 2.10× faster |
+| thai | 162.1 / 172.1 | 1.06× faster | 144.3 / 154.6 | 1.07× faster |
 
 **All ten rows are faster than ICU C.** The allocating sortKey (`skRet`) is
-0.78–0.85× of ICU (1.65× faster on paths). **Table 2** has two Swift
+0.79–0.86× of ICU (1.65× faster on paths). **Table 2** has two Swift
 columns: **WMO, the main one** (user decision, 2026-11-04; release builds
 are WMO) and `-no-WMO`; floor 2.88× (WMO, `localizedCaseInsensitiveCompare`
-thai) and 1.95× (`-no-WMO`, `range(of:locale:)` cjk); nine short cells are
-two-level (‡ in Docs/21). **The macOS reference** (macOS 27.2.1):
+thai) and 1.94× (`-no-WMO`, `range(of:locale:)` cjk). With the warm-up the
+short rows read one level (`localizedCompare` WMO 12/12/24/23/167, before
+16‡/18‡/28/27‡/167.5); five cells are ‡ (two are one whole-ns step, three
+the `.localizedStandard` sort, not explained). **The macOS reference** (macOS 27.2.1):
 `localizedCompare` 200/341/354/314/502 — a GATE of the checks; the Table 2
 speedups in Docs/21 use the macOS medians measured in the same series
-(`matrix_record.py`), within 0.5% of the reference on 2026-11-04. Table 2 is mostly the skipped
+(`matrix_record.py`), within 2.3% of the reference on 2026-11-05. Table 2 is mostly the skipped
 NSString → CoreFoundation → C++ bridge. **Never use Table 2 as evidence
 about the engine; never cite it as consolation for a Table 1 gap.**
 
@@ -279,8 +280,8 @@ plain words — what it changes and what it gives — never as variant labels
    lazy globals that each Foundation call reads (`CollatorCache.shared`,
    `LocaleNotifications.cache`): ~+6 ns per call, and the window ended in a
    different row in each start. Both Foundation benches now have a 100 ms
-   warm-up (same block in both); the short rows read one level. Docs/21 is
-   not yet recorded with it (the next matrix series; ask first). The paths
+   warm-up (same block in both); the short rows read one level. Docs/21
+   recorded with it on 2026-11-05 (median of 4 runs at `b8d61638`). The paths
    compare levels of Table 1 have another cause (not known; the warm-up did
    not change them).
    Old text: (§51 (au): the same binary reads
