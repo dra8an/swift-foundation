@@ -5595,3 +5595,38 @@ The system side, old against new `bench_system` (6 starts each, ascii and latin)
 **Side finding** (FoundationEssentials, not in scope): `LocaleNotifications.count()` costs 7.3 ns per call in this non-framework build (`LockedState`, an `os_unfair_lock`; a private lock pair costs 7.8 ns) — more than half of a 12.4 ns `localizedCompare`. The framework build reads an `Atomic` there.
 
 **Matrix after (aw)** (Docs/21, 2026-11-05, the median of 4 runs at `b8d61638`, 10:06–10:25; load 6.5 → 3.1; ICU C within 1.0% (compare) and 1.4% (sortKey) of the gates of (au), macOS within 2.3%, the frozen binary within 1 ns): Table 1 (speedup) compare 1.06× ascii, 1.12× latin, 2.08× cjk, 1.49× paths, 1.06× thai; sortKey 1.45×, 1.32×, 1.17×, 2.10×, 1.07× (the engine of (av); within 1% of 2026-11-04). Table 2, the rows that ran in the start-up window: `localizedCompare` WMO 16‡/18‡/28/27‡/167.5 → 12/12/24/23/167, `compare(_:locale:)` WMO 19/20/32/31/172 → 17/18/30/29/173, `localizedStandardCompare` WMO ascii / latin 18‡ / 19‡ → 16 / 16, `localizedCompare` `-no-WMO` ascii / latin 35‡ / 36‡ → 30 / 31; the other rows within their spread. Five ‡ cells, against nine: `localizedCompare` latin WMO 12–13 and `compare(_:locale:)` ascii WMO 17–18 (one whole-ns step), and the `.localizedStandard` sort on ascii / cjk / paths WMO (5–8% apart; this row runs after the window: another cause, not explained). Floor 2.88× WMO, 1.94× `-no-WMO`.
+
+#### (ax) The `-no-WMO` costs left after (as): same-file copies in the CE compare and the sort key writer (START HERE item 2 of 2026-11-04)
+
+**Where** (the "Still open" list of (as)): in `-no-WMO` each file compiles alone, and every value from another file is a call. `CollationCompare.compareUpToQuaternary` (the CE compare; Thai and every pipeline compare) read `CollationConstants.noCEPrimary` / `noCEWeight16` / `mergeSeparatorPrimary`, four `CollationOptions.Bits`, three `Strength` raw values and three static helpers of `CollationOptions`. The sort key writer (`SortKey.swift`) read the same constants inside its per-CE loops (`writeSinglePass`, the default config's `tertiaryMask`), so there the calls ran about once per CE. `RootCollator.sortKey` tested `options.strength == / != .identical` with the generic `==` (§51 (as)).
+
+**Change.** An extension of `CollationCompare` (in `CollationCompare.swift`) and one of `CollationKeys` (in `SortKey.swift`), each with the same set of copies: the five constants, `bitAlternateMask` … `strengthShift`, `primaryStrength` / `secondaryStrength` / `tertiaryStrength`, and `strength(of:)`, `tertiaryMask(of:)`, `sortsTertiaryUpperCaseFirst(_:)`; the code lines of the two files use them (two `assert` lines keep the originals: release builds drop them). `RootCollator.sortKey` uses `hasIdenticalStrength`. `SameFileCopiesTests` gets two tests: every copy against its original, and the three helpers against the originals for every options word below 0x10000. The `icuOptions` getter stays (a force-inlined copy cost about the same, (as)).
+
+**Counts** (one call; base HEAD `b8d61638` in the worktree, the same probe rows in both trees, 35 groups):
+
+| group | `-no-WMO` | WMO (BenchFoundation) | EngineBench |
+|---|---|---|---|
+| root `sortKey` ascii / latin / thai | 2197.4 / 2218.0 / 2825.8 → **2012.2 / 2048.6 / 2641.2** (−185 / −169 / −185) | +0 | −1 (a spill became a move) |
+| root compare thai, default / secondary | 2267.0 / 2303.2 → −22 | +0 | +0 (thai 2070.4) |
+| th compare thai, default / secondary | 3077.0 / 3113.2 → −43 | +0 | |
+| the other 26 groups (ascii, latin, cjk, paths: four option sets, `localizedCompare`, `localizedStandardCompare`, `compare(_:locale:)`, both comparators) | **+0 each** | +0 each | ascii / latin compare +0 |
+
+The WMO machine code of EngineBench is not byte-identical: the register allocation of `compareUpToQuaternary` (3 `mov` more in one path not run by the bench corpora) and of `RootCollator.sortKey` changed.
+
+**A/B** (5 interleaved rounds each; the first `-no-WMO` and WMO pair partly ran during 12 lldb jobs — a mistake in the order; the checks after it ran alone, load 5–14):
+
+| rows | `-no-WMO` plain | `-no-WMO` aligned | `-no-WMO`, a third layout (only `main.swift` changed) | WMO (two runs) |
+|---|---|---|---|---|
+| `sortKey` probe ascii / latin / thai | −14.7 / −13.4 / −10.8% (5/5) | −17.9 / −15.2 / −11.2% (5/5) | | ±1% |
+| every thai row (compares, sorts, probe compares) | −2..−4% min (5/5) | −2.3..−4.2% (5/5) | | ±1% |
+| options compare latin | +4.1% min (+++++) | 0.0% (00000) | 0.0% | 0.0%; ascii −4.0 / +4.2% |
+| `localizedStandardCompare` latin | +2.8% min (++++0) | −0.6% | 0.0% | 0.0% |
+| `compare(_:locale:)` ascii / latin | −3.1 / 0.0% | +3.3 / +3.2% (+++++) | −6.1 / −3.0% | 0.0% |
+| `String.Comparator` sort ascii / latin | +2.1 / +1.7% | +3.0 / +3.1% (+++++) | **+0.1 / +0.1%**; a 4-s loop of it 1123.7 against 1123.9 ns | ±0.2% |
+| `.localizedStandard` sort ascii / latin | −1.4 / −2.0% | +1.7 / +1.9% | +0.5 / −0.1% | +0.2..+4.4% min, mixed signs |
+
+EngineBench compare and sortKey, plain and aligned (two aligned runs): within ±1% except single-run cells (aligned sortKey latin +1.5%, skRet latin +3.0% in the first run; ±0.5% in the repeat).
+
+**Why the ascii / latin "+" cells are placement:** their groups execute the same instructions (+0), and the same rows read +3%, 0% or −6% in three `-no-WMO` layouts of the same engine code; the third layout differs from the first only in a temporary loop in `main.swift`. CPU Counters were planned for the `String.Comparator` sort, but in the third layout both sides ran at the same speed, so there was nothing to split.
+
+**Kept** (user decision, 2026-11-05). What it gives: `-no-WMO` only (Table 2's second column, machine 1): `sortKey` −11..−18%, Thai compares −2..−4%; release builds (WMO) are unchanged. **Tests:** suite 1572 in 138 suites (45 + 586 + 941). One full run at load 71 (during the lldb counts) had `FormatterCacheTests.synchronouslyClearingCache()` over its 60-s time limit; alone and in the full run at load 6.5 it passed. The four ladder tools build. The probe rows and tools are in `.build/l12/` (`probe.swift` with a `sortKey` row, `count_groups.sh`, `count_engine.sh`, `foundation_ab_ax.py`, the series scripts).

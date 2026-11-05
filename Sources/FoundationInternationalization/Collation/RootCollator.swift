@@ -912,7 +912,7 @@ public struct RootCollator: @unchecked Sendable {
         let word = options.icuOptions
         let vt = variableTopValue(options)
         let reordering = self.reordering
-        let terminate = options.strength != .identical
+        let terminate = !options.hasIdenticalStrength
         let compressible = storage.compressibleBytes
         // The pinned UTF-8 bytes when the string is contiguous (ScalarSource: no reference counting); the String iterator otherwise.
         let pinned: Void? = try s.utf8.withContiguousStorageIfAvailable { bytes in
@@ -927,7 +927,7 @@ public struct RootCollator: @unchecked Sendable {
                 options: word, variableTopValue: vt,
                 reordering: reordering, terminate: terminate, into: &key)
         }
-        if options.strength == .identical {
+        if options.hasIdenticalStrength {
             key.append(1)  // level separator
             // Two access scopes for the whole drain, not two per scalar; see collectNFDScalars.
             scratch.collectNFDScalars(scalars: s.unicodeScalars)

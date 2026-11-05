@@ -48,9 +48,9 @@ enum CollationKeys {
     /// Map from strength to the level-flag set to write (CASE_LEVEL is independent; IDENTICAL_LEVEL is written separately).
     private static func levelFlags(strength: Int32) -> UInt32 {
         switch strength {
-        case CollationOptions.Strength.primary.rawValue: return 2
-        case CollationOptions.Strength.secondary.rawValue: return 6
-        case CollationOptions.Strength.tertiary.rawValue: return 0x16
+        case CollationKeys.primaryStrength: return 2
+        case CollationKeys.secondaryStrength: return 6
+        case CollationKeys.tertiaryStrength: return 0x16
         default: return 0x36  // quaternary and identical
         }
     }
@@ -198,9 +198,9 @@ enum CollationKeys {
         terminate: Bool = true, into key: inout [UInt8]
     ) {
         if reordering == nil
-            && CollationOptions.strength(of: options) == CollationOptions.Strength.tertiary.rawValue
-            && (options & (CollationOptions.Bits.alternateMask | CollationOptions.Bits.caseFirstAndUpperMask
-                | CollationOptions.Bits.caseLevel | CollationOptions.Bits.backwardSecondary)) == 0 {
+            && CollationKeys.strength(of: options) == CollationKeys.tertiaryStrength
+            && (options & (CollationKeys.bitAlternateMask | CollationKeys.bitCaseFirstAndUpperMask
+                | CollationKeys.bitCaseLevel | CollationKeys.bitBackwardSecondary)) == 0 {
             writeSinglePass(
                 ces: ces, compressibleBytes: compressibleBytes, config: DefaultSinglePassConfig(),
                 terminate: terminate, into: &key)
@@ -263,7 +263,7 @@ enum CollationKeys {
                 var ce = ces[cesIndex]
                 cesIndex += 1
                 var p = UInt32(truncatingIfNeeded: ce >> 32)
-                if p < variableTop && p > CollationConstants.mergeSeparatorPrimary {
+                if p < variableTop && p > CollationKeys.mergeSeparatorPrimary {
                     // Variable CE, shift it to quaternary level. Ignore all following primary ignorables, and shift further variable CEs.
                     if commonQuaternaries != 0 {
                         commonQuaternaries -= 1
@@ -289,10 +289,10 @@ enum CollationKeys {
                             cesIndex += 1
                             p = UInt32(truncatingIfNeeded: ce >> 32)
                         } while p == 0
-                    } while p < variableTop && p > CollationConstants.mergeSeparatorPrimary
+                    } while p < variableTop && p > CollationKeys.mergeSeparatorPrimary
                 }
                 // ce could be primary ignorable, or NO_CE, or the merge separator, or a regular primary CE, but it is not variable. If ce==NO_CE, then write nothing for the primary level but terminate compression on all levels and then exit the loop.
-                if p > CollationConstants.noCEPrimary && (levels & primaryFlag) != 0 {
+                if p > CollationKeys.noCEPrimary && (levels & primaryFlag) != 0 {
                     // Test the un-reordered primary for compressibility.
                     let isCompressible = compressibleBytes[Int(p >> 24)]
                     if let reordering { p = reordering.reorder(p) }
@@ -300,7 +300,7 @@ enum CollationKeys {
                     if !isCompressible || p1 != (prevReorderedPrimary >> 24) {
                         if prevReorderedPrimary != 0 {
                             if p < prevReorderedPrimary {
-                                if p1 > UInt32(CollationConstants.mergeSeparatorPrimary >> 24) {
+                                if p1 > UInt32(CollationKeys.mergeSeparatorPrimary >> 24) {
                                     primaries.appendByte(3)
                                 }
                             } else {
@@ -330,7 +330,7 @@ enum CollationKeys {
                     if s == 0 {
                         // secondary ignorable
                     } else if s == 0x0500  // COMMON_WEIGHT16
-                        && (!backwardSecondary || p != CollationConstants.mergeSeparatorPrimary) {
+                        && (!backwardSecondary || p != CollationKeys.mergeSeparatorPrimary) {
                         commonSecondaries += 1
                     } else if !backwardSecondary {
                         if commonSecondaries != 0 {
@@ -355,14 +355,14 @@ enum CollationKeys {
                                 commonSecondaries -= secCommonMaxCount
                             }
                         }
-                        if p > 0 && p <= CollationConstants.mergeSeparatorPrimary {
+                        if p > 0 && p <= CollationKeys.mergeSeparatorPrimary {
                             // The merge separator or NO_CE: reverse the segment.
                             if secSegmentStart < secondaries.count - 1 {
                                 secondaries.reverse(from: secSegmentStart)
                             }
                             secondaries.appendByte(
-                                p == CollationConstants.noCEPrimary
-                                    ? UInt32(levelSeparator) : UInt32(CollationConstants.mergeSeparatorPrimary >> 24))
+                                p == CollationKeys.noCEPrimary
+                                    ? UInt32(levelSeparator) : UInt32(CollationKeys.mergeSeparatorPrimary >> 24))
                             prevSecondary = 0
                             secSegmentStart = secondaries.count
                         } else {
@@ -444,7 +444,7 @@ enum CollationKeys {
                         tertiaries.appendWeight16(t)
                     } else {
                         // Tertiary weights with caseFirst=upperFirst. (Byte mapping table in the buffered writer.)
-                        if t <= CollationConstants.noCEWeight16 {
+                        if t <= CollationKeys.noCEWeight16 {
                             // Keep separators unchanged.
                         } else if lower32 > 0xffff {
                             // Invert case bits of primary & secondary CEs.
@@ -469,15 +469,15 @@ enum CollationKeys {
 
                 if (levels & quaternaryFlag) != 0 {
                     var q = lower32 & 0xffff
-                    if (q & 0xc0) == 0 && q > CollationConstants.noCEWeight16 {
+                    if (q & 0xc0) == 0 && q > CollationKeys.noCEWeight16 {
                         commonQuaternaries += 1
-                    } else if q == CollationConstants.noCEWeight16
+                    } else if q == CollationKeys.noCEWeight16
                         && alternateNonIgnorable
                         && quaternaries.isEmpty {
                         // If alternate=non-ignorable and there are only common quaternary weights, then we need not write anything.
                         quaternaries.appendByte(UInt32(levelSeparator))
                     } else {
-                        if q == CollationConstants.noCEWeight16 {
+                        if q == CollationKeys.noCEWeight16 {
                             q = UInt32(levelSeparator)
                         } else {
                             q = 0xfc + ((q >> 6) & 3)
@@ -671,7 +671,7 @@ extension CollationKeys {
     private struct DefaultSinglePassConfig: SinglePassConfig {
         var levels: UInt32 { 0x16 }  // primary, secondary, tertiary
         var variableTop: UInt32 { 0 }
-        var tertiaryMask: UInt32 { CollationConstants.onlyTertiaryMask }
+        var tertiaryMask: UInt32 { CollationKeys.onlyTertiaryMask }
         var strengthIsPrimary: Bool { false }
         var backwardSecondary: Bool { false }
         var upperFirst: Bool { false }
@@ -691,20 +691,64 @@ extension CollationKeys {
         let reordering: Reordering?
 
         init(options: Int32, variableTopValue: UInt32, reordering: Reordering?) {
-            var levels = CollationKeys.levelFlags(strength: CollationOptions.strength(of: options))
-            if (options & CollationOptions.Bits.caseLevel) != 0 {
+            var levels = CollationKeys.levelFlags(strength: CollationKeys.strength(of: options))
+            if (options & CollationKeys.bitCaseLevel) != 0 {
                 levels |= CollationKeys.caseFlag
             }
             self.levels = levels
-            self.alternateNonIgnorable = (options & CollationOptions.Bits.alternateMask) == 0
+            self.alternateNonIgnorable = (options & CollationKeys.bitAlternateMask) == 0
             // +1 so that we can use "<" and primary ignorables test out early.
             self.variableTop = alternateNonIgnorable ? 0 : variableTopValue + 1
-            self.tertiaryMask = CollationOptions.tertiaryMask(of: options)
+            self.tertiaryMask = CollationKeys.tertiaryMask(of: options)
             self.strengthIsPrimary =
-                CollationOptions.strength(of: options) == CollationOptions.Strength.primary.rawValue
-            self.backwardSecondary = (options & CollationOptions.Bits.backwardSecondary) != 0
-            self.upperFirst = (options & CollationOptions.Bits.upperFirst) != 0
+                CollationKeys.strength(of: options) == CollationKeys.primaryStrength
+            self.backwardSecondary = (options & CollationKeys.bitBackwardSecondary) != 0
+            self.upperFirst = (options & CollationKeys.bitUpperFirst) != 0
             self.reordering = reordering
         }
+    }
+}
+
+extension CollationKeys {
+    /// Same-file copies of values from other files that the sort key writer reads (CollationConstants.swift, CollationOptions.swift). In the `-no-WMO` build each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate (technique log §51 (as), (ax)). `SameFileCopiesTests` checks each copy against its original.
+    /// CollationConstants.noCEPrimary.
+    static let noCEPrimary: UInt32 = 1
+    /// CollationConstants.noCEWeight16.
+    static let noCEWeight16: UInt32 = 0x0100
+    /// CollationConstants.mergeSeparatorPrimary.
+    static let mergeSeparatorPrimary: UInt32 = 0x0200_0000
+    /// CollationConstants.onlyTertiaryMask.
+    static let onlyTertiaryMask: UInt32 = 0x3f3f
+    /// CollationConstants.caseAndTertiaryMask.
+    static let caseAndTertiaryMask: UInt32 = 0xff3f
+    /// CollationOptions.Bits.alternateMask, .upperFirst, .caseFirst, .caseFirstAndUpperMask, .caseLevel, .backwardSecondary, .strengthShift.
+    static let bitAlternateMask: Int32 = 0xc
+    static let bitUpperFirst: Int32 = 0x100
+    static let bitCaseFirst: Int32 = 0x200
+    static let bitCaseFirstAndUpperMask: Int32 = 0x300
+    static let bitCaseLevel: Int32 = 0x400
+    static let bitBackwardSecondary: Int32 = 0x800
+    static let strengthShift: Int32 = 12
+    /// CollationOptions.Strength.primary / .secondary / .tertiary .rawValue.
+    static let primaryStrength: Int32 = 0
+    static let secondaryStrength: Int32 = 1
+    static let tertiaryStrength: Int32 = 2
+
+    /// CollationOptions.strength(of:).
+    @inline(__always)
+    static func strength(of options: Int32) -> Int32 {
+        options >> strengthShift
+    }
+
+    /// CollationOptions.tertiaryMask(of:).
+    @inline(__always)
+    static func tertiaryMask(of options: Int32) -> UInt32 {
+        (options & (bitCaseLevel | bitCaseFirst)) == bitCaseFirst ? caseAndTertiaryMask : onlyTertiaryMask
+    }
+
+    /// CollationOptions.sortsTertiaryUpperCaseFirst(_:).
+    @inline(__always)
+    static func sortsTertiaryUpperCaseFirst(_ options: Int32) -> Bool {
+        (options & (bitCaseLevel | bitCaseFirstAndUpperMask)) == bitCaseFirstAndUpperMask
     }
 }

@@ -115,8 +115,8 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1570 tests in 138
-suites** — `swift test` prints three summary lines (45/5, 584/93, 941/40; since §51 (as));
+anything longer or with wider effect. Suite gate: **1572 tests in 138
+suites** — `swift test` prints three summary lines (45/5, 586/93, 941/40; since §51 (ax));
 add them up.
 
 **Read next, in this order:**
@@ -263,6 +263,11 @@ lazy globals); keep the same block in both programs.
   `Collation/Tools/check_stack_protection.sh` (expected "none").
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
+- (ax) **The `-no-WMO` costs left after (as)** (2026-11-05): same-file
+  copies of the constants and option helpers in the CE compare and the sort
+  key writer (`SameFileCopiesTests` checks them); `-no-WMO` `sortKey`
+  −11..−18%, Thai −2..−4%; WMO and Table 1 unchanged. User decision:
+  accepted. Tools in `.build/l12/`; the four ladder tools build. Not yet in a matrix.
 - (aw) **The two levels of the short Table 2 rows** (2026-11-05): the
   `dispatch_once` window after the first wrapper call; a 100 ms warm-up in
   both Foundation benches (tools only). The tools of the hunt are in
@@ -290,7 +295,12 @@ plain words — what it changes and what it gives — never as variant labels
    memory layout of the process)? The recording rule (median of 4+ runs)
    already copes with it; knowing the cause could make A/Bs on these rows
    cheaper.
-2. **The `-no-WMO` costs left** (§51 (as), "Still open"): constants of
+2. **DONE 2026-11-05 (§51 (ax)): the `-no-WMO` costs left.** Same-file
+   copies in `CollationCompare.swift` and `SortKey.swift`, case matches in
+   `RootCollator.sortKey`: `-no-WMO` `sortKey` −11..−18%, Thai compares
+   −2..−4%; WMO unchanged; the ascii / latin "+" cells were placement (three
+   layouts). Left: the `icuOptions` getter (a copy costs the same).
+   Old text: (§51 (as), "Still open"): constants of
    `CollationConstants` in the CE compare loop of `CollationCompare.swift`
    (~7 per Thai compare), the strength compares in `sortKey`, the
    `icuOptions` getter. `-no-WMO` only — since the WMO column is the main
@@ -605,7 +615,9 @@ and 104.4/121.0/117.7/373.3/155.5).
   / `isShifted`, never `==`, and read `RootCollator.fastLatinBailOut`,
   `latinMaxLead`, `prefixDependentResult`, `fastLatinPrimariesKey` — the
   same-file copies of §51 (as) (`SameFileCopiesTests`). Keep new hot-path
-  constants in the same file, or `-no-WMO` pays a call for each. The default
+  constants in the same file, or `-no-WMO` pays a call for each. Since §51
+  (ax), `CollationCompare.swift` (extension `CollationCompare`) and
+  `SortKey.swift` (extension `CollationKeys`) have their own copies too. The default
   fast path indexes the pinned bytes through `RootCollator.untraced(_:)`
   (§51 (av)): without it, Swift 6.5 traces the indexing to the stack copy of
   a small string and gives `compare` a stack protector (10 instructions per

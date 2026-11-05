@@ -15,7 +15,7 @@ enum CollationCompare {
         prefixSkipped: Bool = false
     ) throws -> Int {
         let variableTop: UInt32
-        if (options & CollationOptions.Bits.alternateMask) == 0 {
+        if (options & CollationCompare.bitAlternateMask) == 0 {
             variableTop = 0
         } else {
             // +1 so that we can use "<" and primary ignorables test out early.
@@ -35,7 +35,7 @@ enum CollationCompare {
                 var ce = try ces.ce(at: i)
                 i += 1
                 primary = UInt32(truncatingIfNeeded: ce >> 32)
-                if primary < variableTop && primary > CollationConstants.mergeSeparatorPrimary {
+                if primary < variableTop && primary > CollationCompare.mergeSeparatorPrimary {
                     // Variable CE, shift it to quaternary level. Ignore all following primary ignorables, and shift further variable CEs.
                     anyVariable = true
                     repeat {
@@ -51,7 +51,7 @@ enum CollationCompare {
                                 break
                             }
                         }
-                    } while primary < variableTop && primary > CollationConstants.mergeSeparatorPrimary
+                    } while primary < variableTop && primary > CollationCompare.mergeSeparatorPrimary
                 }
             } while primary == 0
             return primary
@@ -70,13 +70,13 @@ enum CollationCompare {
                 }
                 return leftPrimary < rightPrimary ? -1 : 1
             }
-            if leftPrimary == CollationConstants.noCEPrimary { break }
+            if leftPrimary == CollationCompare.noCEPrimary { break }
         }
 
         // Compare the buffered secondary & tertiary weights. We might skip the secondary level but continue with the case level which is turned on separately.
-        let strength = CollationOptions.strength(of: options)
-        if strength >= CollationOptions.Strength.secondary.rawValue {
-            if (options & CollationOptions.Bits.backwardSecondary) == 0 {
+        let strength = CollationCompare.strength(of: options)
+        if strength >= CollationCompare.secondaryStrength {
+            if (options & CollationCompare.bitBackwardSecondary) == 0 {
                 var leftIndex = 0
                 var rightIndex = 0
                 while true {
@@ -95,7 +95,7 @@ enum CollationCompare {
                     if leftSecondary != rightSecondary {
                         return leftSecondary < rightSecondary ? -1 : 1
                     }
-                    if leftSecondary == CollationConstants.noCEWeight16 { break }
+                    if leftSecondary == CollationCompare.noCEWeight16 { break }
                 }
             } else {
                 // The backwards secondary level compares secondary weights backwards within segments separated by the merge separator (U+FFFE, weight 02).
@@ -107,13 +107,13 @@ enum CollationCompare {
                     var leftLimit = leftStart
                     while true {
                         p = UInt32(truncatingIfNeeded: left.ces[leftLimit] >> 32)
-                        if !(p > CollationConstants.mergeSeparatorPrimary || p == 0) { break }
+                        if !(p > CollationCompare.mergeSeparatorPrimary || p == 0) { break }
                         leftLimit += 1
                     }
                     var rightLimit = rightStart
                     while true {
                         p = UInt32(truncatingIfNeeded: right.ces[rightLimit] >> 32)
-                        if !(p > CollationConstants.mergeSeparatorPrimary || p == 0) { break }
+                        if !(p > CollationCompare.mergeSeparatorPrimary || p == 0) { break }
                         rightLimit += 1
                     }
 
@@ -144,7 +144,7 @@ enum CollationCompare {
                     }
 
                     // Both strings have the same number of merge separators, or else there would have been a primary-level difference.
-                    if p == CollationConstants.noCEPrimary { break }
+                    if p == CollationCompare.noCEPrimary { break }
                     // Skip both merge separators and continue.
                     leftStart = leftLimit + 1
                     rightStart = rightLimit + 1
@@ -152,14 +152,14 @@ enum CollationCompare {
             }
         }
 
-        if (options & CollationOptions.Bits.caseLevel) != 0 {
+        if (options & CollationCompare.bitCaseLevel) != 0 {
             var leftIndex = 0
             var rightIndex = 0
             while true {
                 var leftCase: UInt32
                 var leftLower32: UInt32
                 var rightCase: UInt32
-                if strength == CollationOptions.Strength.primary.rawValue {
+                if strength == CollationCompare.primaryStrength {
                     // Primary+caseLevel: Ignore case level weights of primary ignorables. Otherwise we would get a-umlaut > a which is not desirable for accent-insensitive sorting. Check for (lower 32 bits) == 0 as well because variable CEs are stored with only primary weights.
                     var ce: Int64
                     repeat {
@@ -194,18 +194,18 @@ enum CollationCompare {
 
                 // No need to handle NO_CE and MERGE_SEPARATOR specially: There is one case weight for each previous-level weight, so level length differences were handled there.
                 if leftCase != rightCase {
-                    if (options & CollationOptions.Bits.upperFirst) == 0 {
+                    if (options & CollationCompare.bitUpperFirst) == 0 {
                         return leftCase < rightCase ? -1 : 1
                     } else {
                         return leftCase < rightCase ? 1 : -1
                     }
                 }
-                if (leftLower32 >> 16) == CollationConstants.noCEWeight16 { break }
+                if (leftLower32 >> 16) == CollationCompare.noCEWeight16 { break }
             }
         }
-        if strength <= CollationOptions.Strength.secondary.rawValue { return 0 }
+        if strength <= CollationCompare.secondaryStrength { return 0 }
 
-        let tertiaryMask = CollationOptions.tertiaryMask(of: options)
+        let tertiaryMask = CollationCompare.tertiaryMask(of: options)
 
         var leftIndex = 0
         var rightIndex = 0
@@ -232,16 +232,16 @@ enum CollationCompare {
             } while rightTertiary == 0
 
             if leftTertiary != rightTertiary {
-                if CollationOptions.sortsTertiaryUpperCaseFirst(options) {
+                if CollationCompare.sortsTertiaryUpperCaseFirst(options) {
                     // Pass through NO_CE and keep real tertiary weights larger than that. Do not change the artificial uppercase weight of a tertiary CE (0.0.ut), to keep tertiary CEs well-formed. Their case+tertiary weights must be greater than those of primary and secondary CEs.
-                    if leftTertiary > CollationConstants.noCEWeight16 {
+                    if leftTertiary > CollationCompare.noCEWeight16 {
                         if leftLower32 > 0xffff {
                             leftTertiary ^= 0xc000
                         } else {
                             leftTertiary += 0x4000
                         }
                     }
-                    if rightTertiary > CollationConstants.noCEWeight16 {
+                    if rightTertiary > CollationCompare.noCEWeight16 {
                         if rightLower32 > 0xffff {
                             rightTertiary ^= 0xc000
                         } else {
@@ -251,9 +251,9 @@ enum CollationCompare {
                 }
                 return leftTertiary < rightTertiary ? -1 : 1
             }
-            if leftTertiary == CollationConstants.noCEWeight16 { break }
+            if leftTertiary == CollationCompare.noCEWeight16 { break }
         }
-        if strength <= CollationOptions.Strength.tertiary.rawValue { return 0 }
+        if strength <= CollationCompare.tertiaryStrength { return 0 }
 
         if !anyVariable && (anyQuaternaries & 0xc0) == 0 {
             // If there are no "variable" CEs and no non-zero quaternary weights, then there are no quaternary differences.
@@ -268,7 +268,7 @@ enum CollationCompare {
                 let ce = left.ces[leftIndex]
                 leftIndex += 1
                 leftQuaternary = UInt32(truncatingIfNeeded: ce) & 0xffff
-                if leftQuaternary <= CollationConstants.noCEWeight16 {
+                if leftQuaternary <= CollationCompare.noCEWeight16 {
                     // Variable primary or completely ignorable or NO_CE.
                     leftQuaternary = UInt32(truncatingIfNeeded: ce >> 32)
                 } else {
@@ -282,7 +282,7 @@ enum CollationCompare {
                 let ce = right.ces[rightIndex]
                 rightIndex += 1
                 rightQuaternary = UInt32(truncatingIfNeeded: ce) & 0xffff
-                if rightQuaternary <= CollationConstants.noCEWeight16 {
+                if rightQuaternary <= CollationCompare.noCEWeight16 {
                     rightQuaternary = UInt32(truncatingIfNeeded: ce >> 32)
                 } else {
                     rightQuaternary |= 0xffff_ff3f
@@ -297,7 +297,7 @@ enum CollationCompare {
                 }
                 return leftQuaternary < rightQuaternary ? -1 : 1
             }
-            if leftQuaternary == CollationConstants.noCEPrimary { break }
+            if leftQuaternary == CollationCompare.noCEPrimary { break }
         }
         return 0
     }
@@ -310,5 +310,49 @@ enum CollationCompare {
             if ce != 0 { return ce >> 32 == 0 }
             i += 1
         }
+    }
+}
+
+extension CollationCompare {
+    /// Same-file copies of values from other files that the CE compare reads (CollationConstants.swift, CollationOptions.swift). In the `-no-WMO` build each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate (technique log §51 (as), (ax)). `SameFileCopiesTests` checks each copy against its original.
+    /// CollationConstants.noCEPrimary.
+    static let noCEPrimary: UInt32 = 1
+    /// CollationConstants.noCEWeight16.
+    static let noCEWeight16: UInt32 = 0x0100
+    /// CollationConstants.mergeSeparatorPrimary.
+    static let mergeSeparatorPrimary: UInt32 = 0x0200_0000
+    /// CollationConstants.onlyTertiaryMask.
+    static let onlyTertiaryMask: UInt32 = 0x3f3f
+    /// CollationConstants.caseAndTertiaryMask.
+    static let caseAndTertiaryMask: UInt32 = 0xff3f
+    /// CollationOptions.Bits.alternateMask, .upperFirst, .caseFirst, .caseFirstAndUpperMask, .caseLevel, .backwardSecondary, .strengthShift.
+    static let bitAlternateMask: Int32 = 0xc
+    static let bitUpperFirst: Int32 = 0x100
+    static let bitCaseFirst: Int32 = 0x200
+    static let bitCaseFirstAndUpperMask: Int32 = 0x300
+    static let bitCaseLevel: Int32 = 0x400
+    static let bitBackwardSecondary: Int32 = 0x800
+    static let strengthShift: Int32 = 12
+    /// CollationOptions.Strength.primary / .secondary / .tertiary .rawValue.
+    static let primaryStrength: Int32 = 0
+    static let secondaryStrength: Int32 = 1
+    static let tertiaryStrength: Int32 = 2
+
+    /// CollationOptions.strength(of:).
+    @inline(__always)
+    static func strength(of options: Int32) -> Int32 {
+        options >> strengthShift
+    }
+
+    /// CollationOptions.tertiaryMask(of:).
+    @inline(__always)
+    static func tertiaryMask(of options: Int32) -> UInt32 {
+        (options & (bitCaseLevel | bitCaseFirst)) == bitCaseFirst ? caseAndTertiaryMask : onlyTertiaryMask
+    }
+
+    /// CollationOptions.sortsTertiaryUpperCaseFirst(_:).
+    @inline(__always)
+    static func sortsTertiaryUpperCaseFirst(_ options: Int32) -> Bool {
+        (options & (bitCaseLevel | bitCaseFirstAndUpperMask)) == bitCaseFirstAndUpperMask
     }
 }
