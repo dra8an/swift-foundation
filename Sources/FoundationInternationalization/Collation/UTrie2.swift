@@ -32,11 +32,11 @@ struct UTrie2 {
         case unexpectedValueWidth
     }
 
-    /// Parses a serialized 32-bit UTrie2 from `bytes` starting at `offset`, spanning at most `length` bytes, into `storage`.
-    init(bytes: [UInt8], offset: Int, length: Int, storage: DataStorage) throws {
-        guard length >= 16 else { throw ParseError.tooShort }
+    /// Parses a serialized 32-bit UTrie2 from `raw` starting at `offset`, spanning at most `length` bytes, into `storage` (one bulk copy of the index and the data; technique log §51, START HERE item 7).
+    init(raw: UnsafeRawBufferPointer, offset: Int, length: Int, storage: DataStorage) throws {
+        guard length >= 16, offset >= 0, offset + length <= raw.count else { throw ParseError.tooShort }
         func u16(_ at: Int) -> UInt16 {
-            UInt16(bytes[offset + at]) | (UInt16(bytes[offset + at + 1]) << 8)
+            UInt16(raw[offset + at]) | (UInt16(raw[offset + at + 1]) << 8)
         }
         let signature = UInt32(u16(0)) | (UInt32(u16(2)) << 16)
         guard signature == 0x54726932 else { throw ParseError.badSignature(signature) }
@@ -50,19 +50,8 @@ struct UTrie2 {
         let dataStart = indexStart + indexLength * 2
         guard length >= 16 + indexLength * 2 + dataLength * 4 else { throw ParseError.tooShort }
 
-        var index = [UInt16](repeating: 0, count: indexLength)
-        for i in 0..<indexLength {
-            index[i] = UInt16(bytes[indexStart + i * 2]) | (UInt16(bytes[indexStart + i * 2 + 1]) << 8)
-        }
-        self.index = storage.store(index)
-
-        var data = [UInt32](repeating: 0, count: dataLength)
-        for i in 0..<dataLength {
-            let b = dataStart + i * 4
-            data[i] = UInt32(bytes[b]) | (UInt32(bytes[b + 1]) << 8)
-                | (UInt32(bytes[b + 2]) << 16) | (UInt32(bytes[b + 3]) << 24)
-        }
-        self.data = storage.store(data)
+        index = storage.storeLittleEndian(raw, at: indexStart, count: indexLength, as: UInt16.self)
+        data = storage.storeLittleEndian(raw, at: dataStart, count: dataLength, as: UInt32.self)
     }
 
     /// Value for code point `c` (0..0x10FFFF). Ported from UTRIE2_GET32 / _UTRIE2_INDEX_FROM_CP.

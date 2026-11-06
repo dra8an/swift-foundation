@@ -322,7 +322,7 @@ public struct RootCollator: @unchecked Sendable {
     }
 
     fileprivate static func makeTailoringStorage(named name: String) throws -> Storage {
-        let tailoring = try CollationData.tailoring(bytes: CollationData.tailoring(named: name))
+        let tailoring = try CollationData.bundledTailoring(named: name)
         let root = try CollationData.root()
         let data: CollationData
         let base: CollationData?

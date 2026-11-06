@@ -4,7 +4,9 @@
 # per call). Swift 6.5 gave one to RootCollator.compare, because the optimizer traced the fast path's indexing back
 # to the stack copy of a small string; RootCollator.untraced(_:) hides that origin. Run this after a compiler or
 # Xcode update. Expected in both lists (since §51 (ay)): only RootCollator.Storage.init (collator creation) and
-# CollationKeys.writeSinglePass (it WRITES into its own stack buffer: there the guard is a real one; kept on purpose).
+# CollationKeys.writeSinglePass (it WRITES into its own stack buffer: there the guard is a real one; kept on purpose);
+# since §51 (bd) also the three file parsers CollationData.init(contentsOf:), CollationData.bundledTailoring(named:)
+# and NormalizationData.init(contentsOf:) (creation only: Data.withUnsafeBytes passes a stack copy for a small Data).
 # Any other engine function in a list is new work for every call. Two checks: the SIL marks (every linkage — the first
 # version matched only public functions and missed compareSlowPath and writeSinglePass, technique log §51 (ay)), and
 # the machine code of the built EngineBench (functions that load ___stack_chk_guard; the SIL alone missed one).

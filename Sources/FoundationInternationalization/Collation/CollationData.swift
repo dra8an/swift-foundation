@@ -65,11 +65,16 @@ public struct CollationData: @unchecked Sendable {
     }
 
     public init(contentsOf url: URL) throws {
-        let bytes = [UInt8](try Data(contentsOf: url))
-        try self.init(bytes: bytes)
+        let file = try Data(contentsOf: url)
+        self = try file.withUnsafeBytes { try CollationData(raw: $0) }
     }
 
     public init(bytes: [UInt8]) throws {
+        self = try bytes.withUnsafeBytes { try CollationData(raw: $0) }
+    }
+
+    /// Parses the data from the raw bytes of the file: every part that is read is checked against the file size, and each part is copied once, in bulk, into the storage (technique log §51, START HERE item 7; it decoded byte by byte into arrays and copied them again before).
+    init(raw bytes: UnsafeRawBufferPointer) throws {
         guard bytes.count >= 24 else { throw ParseError.tooShort }
         guard bytes[2] == 0xda && bytes[3] == 0x27 else { throw ParseError.badMagic }
         guard bytes[8] == 0 else { throw ParseError.bigEndianData }
@@ -83,9 +88,7 @@ public struct CollationData: @unchecked Sendable {
         guard bytes.count >= headerSize + 8 else { throw ParseError.tooShort }
 
         func i32(_ byteOffset: Int) -> Int32 {
-            let b = headerSize + byteOffset
-            return Int32(bytes[b]) | (Int32(bytes[b + 1]) << 8)
-                | (Int32(bytes[b + 2]) << 16) | (Int32(bytes[b + 3]) << 24)
+            Int32(littleEndian: bytes.loadUnaligned(fromByteOffset: headerSize + byteOffset, as: Int32.self))
         }
 
         // Tailorings may carry fewer indexes than root (e.g. ko has 13, ending at the ce32s part); absent parts are length 0 via the part() guard.
@@ -97,10 +100,14 @@ public struct CollationData: @unchecked Sendable {
         var indexes = [Int32](repeating: 0, count: indexesLength)
         for i in 0..<indexesLength { indexes[i] = i32(i * 4) }
 
-        // Parts whose indexes are beyond indexesLength are absent (length 0), like CollationDataReader::getIndex returning -1.
-        func part(_ ix: Int) -> (offset: Int, length: Int) {
+        // Parts whose indexes are beyond indexesLength are absent (length 0), like CollationDataReader::getIndex returning -1. A part that does not fit in the file throws.
+        func part(_ ix: Int) throws -> (offset: Int, length: Int) {
             guard ix + 1 < indexesLength else { return (0, 0) }
-            return (Int(indexes[ix]), Int(indexes[ix + 1] - indexes[ix]))
+            let offset = Int(indexes[ix])
+            let length = Int(indexes[ix + 1] - indexes[ix])
+            guard length > 0 else { return (offset, 0) }
+            guard offset >= 0, headerSize + offset + length <= bytes.count else { throw ParseError.tooShort }
+            return (offset, length)
         }
 
         numericPrimary = UInt32(bitPattern: indexes[IX.options]) & 0xff00_0000
@@ -109,51 +116,32 @@ public struct CollationData: @unchecked Sendable {
         let storage = DataStorage()
         self.storage = storage
 
-        let (trieOffset, trieLength) = part(IX.trieOffset)
+        let (trieOffset, trieLength) = try part(IX.trieOffset)
         guard trieLength >= 8 else { throw ParseError.missingPart("trie") }
         trie = try UTrie2(
-            bytes: bytes, offset: headerSize + trieOffset, length: trieLength, storage: storage)
+            raw: bytes, offset: headerSize + trieOffset, length: trieLength, storage: storage)
 
-        let (cesOffset, cesLength) = part(IX.cesOffset)
-        var ces = [Int64](repeating: 0, count: max(0, cesLength / 8))
-        for i in 0..<ces.count {
-            let b = headerSize + cesOffset + i * 8
-            var v: UInt64 = 0
-            for j in 0..<8 { v |= UInt64(bytes[b + j]) << (8 * j) }
-            ces[i] = Int64(bitPattern: v)
-        }
-        self.ces = storage.store(ces)
+        let (cesOffset, cesLength) = try part(IX.cesOffset)
+        ces = storage.storeLittleEndian(bytes, at: headerSize + cesOffset, count: cesLength / 8, as: Int64.self)
 
-        let (ce32sOffset, ce32sLength) = part(IX.ce32sOffset)
-        var ce32s = [UInt32](repeating: 0, count: max(0, ce32sLength / 4))
-        for i in 0..<ce32s.count {
-            let b = headerSize + ce32sOffset + i * 4
-            ce32s[i] = UInt32(bytes[b]) | (UInt32(bytes[b + 1]) << 8)
-                | (UInt32(bytes[b + 2]) << 16) | (UInt32(bytes[b + 3]) << 24)
-        }
-        self.ce32s = storage.store(ce32s)
+        let (ce32sOffset, ce32sLength) = try part(IX.ce32sOffset)
+        ce32s = storage.storeLittleEndian(bytes, at: headerSize + ce32sOffset, count: ce32sLength / 4, as: UInt32.self)
 
-        let (contextsOffset, contextsLength) = part(IX.contextsOffset)
-        var contexts = [UInt16](repeating: 0, count: max(0, contextsLength / 2))
-        for i in 0..<contexts.count {
-            let b = headerSize + contextsOffset + i * 2
-            contexts[i] = UInt16(bytes[b]) | (UInt16(bytes[b + 1]) << 8)
-        }
-        self.contexts = storage.store(contexts)
+        let (contextsOffset, contextsLength) = try part(IX.contextsOffset)
+        contexts = storage.storeLittleEndian(
+            bytes, at: headerSize + contextsOffset, count: contextsLength / 2, as: UInt16.self)
 
         // Scripts part: u16 numScripts, scriptsIndex[numScripts+16], scriptStarts[].
-        let (scriptsOffset, scriptsLength) = part(IX.scriptsOffset)
+        let (scriptsOffset, scriptsLength) = try part(IX.scriptsOffset)
         if scriptsLength >= 2 {
-            var scripts = [UInt16](repeating: 0, count: scriptsLength / 2)
-            for i in 0..<scripts.count {
-                let b = headerSize + scriptsOffset + i * 2
-                scripts[i] = UInt16(bytes[b]) | (UInt16(bytes[b + 1]) << 8)
-            }
-            let numScripts = Int(scripts[0])
-            guard scripts.count > 1 + numScripts + 16 + 2 else { throw ParseError.missingPart("scripts") }
+            let start = headerSize + scriptsOffset
+            let count = scriptsLength / 2
+            let numScripts = Int(bytes[start]) | (Int(bytes[start + 1]) << 8)
+            guard count > 1 + numScripts + 16 + 2 else { throw ParseError.missingPart("scripts") }
             self.numScripts = numScripts
-            self.scriptsIndex = storage.store(Array(scripts[1..<(1 + numScripts + 16)]))
-            self.scriptStarts = storage.store(Array(scripts[(1 + numScripts + 16)...]))
+            self.scriptsIndex = storage.storeLittleEndian(bytes, at: start + 2, count: numScripts + 16, as: UInt16.self)
+            self.scriptStarts = storage.storeLittleEndian(
+                bytes, at: start + 2 * (1 + numScripts + 16), count: count - (1 + numScripts + 16), as: UInt16.self)
         } else {
             numScripts = 0
             scriptsIndex = storage.store([])
@@ -161,7 +149,7 @@ public struct CollationData: @unchecked Sendable {
         }
 
         // Unsafe-backward set: a serialized UnicodeSet (USerializedSet wire format): unit 0 is the boundary count with bit 0x8000 set when supplementary boundaries follow (then unit 1 is the BMP boundary count); BMP boundaries are one unit each, supplementary ones two (high, low). (uset_getSerializedSet/uset_serializedContains.)
-        let (ubOffset, ubLength) = part(IX.unsafeBwdOffset)
+        let (ubOffset, ubLength) = try part(IX.unsafeBwdOffset)
         if ubLength >= 2 {
             func u16(_ i: Int) -> Int {
                 let b = headerSize + ubOffset + i * 2
@@ -198,17 +186,15 @@ public struct CollationData: @unchecked Sendable {
         }
 
         // Fast Latin table: gated on the format version recorded both in the options word (bits 16..23) and the table's own first unit. (CollationDataReader: a mismatch means "no fast path", not an error for us — the regular pipeline handles everything.)
-        let (flOffset, flLength) = part(IX.fastLatinTableOffset)
+        let (flOffset, flLength) = try part(IX.fastLatinTableOffset)
         if flLength >= 4,
            ((indexes[IX.options] >> 16) & 0xff) == Int32(CollationFastLatin.version) {
-            var units = [UInt16](repeating: 0, count: flLength / 2)
-            for i in 0..<units.count {
-                let b = headerSize + flOffset + i * 2
-                units[i] = UInt16(bytes[b]) | (UInt16(bytes[b + 1]) << 8)
-            }
-            if (units[0] >> 8) == CollationFastLatin.version,
-               Int(units[0] & 0xff) <= units.count {
-                fastLatinTable = storage.store(units)
+            let start = headerSize + flOffset
+            let count = flLength / 2
+            let unit0 = UInt16(bytes[start]) | (UInt16(bytes[start + 1]) << 8)
+            if (unit0 >> 8) == CollationFastLatin.version,
+               Int(unit0 & 0xff) <= count {
+                fastLatinTable = storage.storeLittleEndian(bytes, at: start, count: count, as: UInt16.self)
             } else {
                 fastLatinTable = storage.store([])
             }
@@ -217,7 +203,7 @@ public struct CollationData: @unchecked Sendable {
         }
 
         // Optional in tailorings (fall back to the base data's).
-        let (cbOffset, cbLength) = part(IX.compressibleBytesOffset)
+        let (cbOffset, cbLength) = try part(IX.compressibleBytesOffset)
         if cbLength >= 256 {
             compressibleBytes = storage.store(
                 bytes[(headerSize + cbOffset)..<(headerSize + cbOffset + 256)].map { $0 != 0 })
@@ -312,38 +298,45 @@ public struct CollationData: @unchecked Sendable {
 
     /// Parses a compiled tailoring ("UCol" v5 with data header). (CollationDataReader::read, tailoring path.)
     static func tailoring(bytes: [UInt8]) throws -> Tailoring {
+        try bytes.withUnsafeBytes { try tailoring(raw: $0) }
+    }
+
+    /// The tailoring parse on the raw bytes of the file; the parts it reads are checked against the file size (technique log §51, START HERE item 7).
+    static func tailoring(raw bytes: UnsafeRawBufferPointer) throws -> Tailoring {
         guard bytes.count >= 24, bytes[2] == 0xda, bytes[3] == 0x27 else {
             throw ParseError.badMagic
         }
         let headerSize = Int(bytes[0]) | (Int(bytes[1]) << 8)
+        guard bytes.count >= headerSize + 8 else { throw ParseError.tooShort }
         func i32(_ byteOffset: Int) -> Int32 {
-            let b = headerSize + byteOffset
-            return Int32(bytes[b]) | (Int32(bytes[b + 1]) << 8)
-                | (Int32(bytes[b + 2]) << 16) | (Int32(bytes[b + 3]) << 24)
+            Int32(littleEndian: bytes.loadUnaligned(fromByteOffset: headerSize + byteOffset, as: Int32.self))
         }
         let indexesLength = Int(i32(0))
+        guard indexesLength >= 2, bytes.count >= headerSize + indexesLength * 4 else { throw ParseError.tooShort }
         var indexes = [Int32](repeating: 0, count: indexesLength)
         for i in 0..<indexesLength { indexes[i] = i32(i * 4) }
-        func part(_ ix: Int) -> (offset: Int, length: Int) {
+        func part(_ ix: Int) throws -> (offset: Int, length: Int) {
             guard ix + 1 < indexesLength else { return (0, 0) }
-            return (headerSize + Int(indexes[ix]), Int(indexes[ix + 1] - indexes[ix]))
+            let offset = headerSize + Int(indexes[ix])
+            let length = Int(indexes[ix + 1] - indexes[ix])
+            guard length > 0 else { return (offset, 0) }
+            guard offset >= headerSize, offset + length <= bytes.count else { throw ParseError.tooShort }
+            return (offset, length)
         }
 
         let options = indexes[IX.options] & 0xffff
 
         // Mappings: present only if there is a trie.
-        let (_, trieLength) = part(IX.trieOffset)
-        let data: CollationData? = trieLength >= 8 ? try CollationData(bytes: bytes) : nil
+        let (_, trieLength) = try part(IX.trieOffset)
+        let data: CollationData? = trieLength >= 8 ? try CollationData(raw: bytes) : nil
 
         // Script reordering: codes (with trailing ranges) and the permutation table.
         var reordering: Reordering?
-        let (rcOffset, rcLength) = part(IX.reorderCodesOffset)
+        let (rcOffset, rcLength) = try part(IX.reorderCodesOffset)
         if rcLength >= 4 {
             var raw = [UInt32](repeating: 0, count: rcLength / 4)
             for i in 0..<raw.count {
-                let b = rcOffset + i * 4
-                raw[i] = UInt32(bytes[b]) | (UInt32(bytes[b + 1]) << 8)
-                    | (UInt32(bytes[b + 2]) << 16) | (UInt32(bytes[b + 3]) << 24)
+                raw[i] = UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: rcOffset + i * 4, as: UInt32.self))
             }
             // Trailing entries with non-zero upper 16 bits are reorder ranges.
             var rangesLength = 0
@@ -352,12 +345,12 @@ public struct CollationData: @unchecked Sendable {
                 rangesLength += 1
             }
             let ranges = Array(raw[(raw.count - rangesLength)...])
-            let (rtOffset, rtLength) = part(IX.reorderTableOffset)
+            let (rtOffset, rtLength) = try part(IX.reorderTableOffset)
             guard rtLength >= 256 else {
                 // Regenerating an omitted reorder table requires the builder's makeReorderRanges; not needed for ICU-compiled data.
                 throw ParseError.missingPart("reorderTable")
             }
-            let table = Array(bytes[rtOffset..<(rtOffset + 256)])
+            let table = [UInt8](bytes[rtOffset..<(rtOffset + 256)])
             reordering = Reordering(table: table, rawRanges: ranges)
         }
 
@@ -365,10 +358,19 @@ public struct CollationData: @unchecked Sendable {
     }
 
     public static func tailoring(named name: String) throws -> [UInt8] {
+        [UInt8](try tailoringFile(named: name))
+    }
+
+    /// The bundled tailoring, parsed in place from its file — no copy into an array (technique log §51, START HERE item 7).
+    static func bundledTailoring(named name: String) throws -> Tailoring {
+        try tailoringFile(named: name).withUnsafeBytes { try tailoring(raw: $0) }
+    }
+
+    private static func tailoringFile(named name: String) throws -> Data {
         guard let url = collationResourceURL(name, "bin", subdirectory: "tailorings") else {
             throw ParseError.missingPart("bundled tailoring \(name)")
         }
-        return [UInt8](try Data(contentsOf: url))
+        return try Data(contentsOf: url)
     }
 }
 

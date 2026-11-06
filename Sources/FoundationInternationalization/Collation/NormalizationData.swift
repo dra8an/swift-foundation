@@ -22,18 +22,17 @@ public struct NormalizationData: @unchecked Sendable {
     }
 
     public init(contentsOf url: URL) throws {
-        let bytes = [UInt8](try Data(contentsOf: url))
+        let file = try Data(contentsOf: url)
+        self = try file.withUnsafeBytes { try NormalizationData(raw: $0) }
+    }
+
+    /// Parses nfd.bin from the raw bytes of the file: each array is checked against the file size and copied once, in bulk, into the storage (technique log §51, START HERE item 7).
+    init(raw bytes: UnsafeRawBufferPointer) throws {
         var pos = 0
         func u32() throws -> UInt32 {
             guard pos + 4 <= bytes.count else { throw ParseError.tooShort }
             defer { pos += 4 }
-            return UInt32(bytes[pos]) | (UInt32(bytes[pos + 1]) << 8)
-                | (UInt32(bytes[pos + 2]) << 16) | (UInt32(bytes[pos + 3]) << 24)
-        }
-        func u16() throws -> UInt16 {
-            guard pos + 2 <= bytes.count else { throw ParseError.tooShort }
-            defer { pos += 2 }
-            return UInt16(bytes[pos]) | (UInt16(bytes[pos + 1]) << 8)
+            return UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: pos, as: UInt32.self))
         }
         guard try u32() == 0x4446_4e53 else { throw ParseError.badMagic }  // "SNFD"
         let version = try u32()
@@ -42,12 +41,15 @@ public struct NormalizationData: @unchecked Sendable {
         let storage = DataStorage()
         self.storage = storage
 
-        var idx = [UInt16](repeating: 0, count: Int(try u32()))
-        for i in 0..<idx.count { idx[i] = try u16() }
-        var dat = [UInt32](repeating: 0, count: Int(try u32()))
-        for i in 0..<dat.count { dat[i] = try u32() }
-        var buf = [UInt32](repeating: 0, count: Int(try u32()))
-        for i in 0..<buf.count { buf[i] = try u32() }
+        func array<T: FixedWidthInteger>(_ type: T.Type) throws -> UnsafeBufferPointer<T> {
+            let count = Int(try u32())
+            guard pos + count * MemoryLayout<T>.size <= bytes.count else { throw ParseError.tooShort }
+            defer { pos += count * MemoryLayout<T>.size }
+            return storage.storeLittleEndian(bytes, at: pos, count: count, as: T.self)
+        }
+        let idx = try array(UInt16.self)
+        let dat = try array(UInt32.self)
+        let buf = try array(UInt32.self)
 
         // Validate once so the unchecked reads below stay in bounds for every scalar (0...0x10FFFF) and every stored offset/length.
         guard idx.count == 0x110000 >> 6,
@@ -60,9 +62,9 @@ public struct NormalizationData: @unchecked Sendable {
               })
         else { throw ParseError.tooShort }
 
-        index = storage.store(idx)
-        data = storage.store(dat)
-        buffer = storage.store(buf)
+        index = idx
+        data = dat
+        buffer = buf
     }
 
     /// The bundled normalization data (Unicode 17, from ICU's nfc.txt), parsed once per process and shared: the value is immutable, and a copy is one retain. Parsing it took ~135 µs on every collator creation (technique log §51).
