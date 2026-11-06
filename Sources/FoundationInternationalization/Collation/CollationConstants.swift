@@ -186,25 +186,30 @@ enum CollationConstants {
         return incThreeBytePrimaryByOffset(p, isCompressible, offset)
     }
 
-    /// Ported from Collation::incThreeBytePrimaryByOffset().
+    /// Ported from Collation::incThreeBytePrimaryByOffset(). `offset` is never negative here (a code point is at or after the start of its OFFSET range), so the arithmetic is unsigned: the signed form compiled to three divisions with sign fix-ups and two overflow checks, 44 instructions per CJK ideograph in OFFSET form — about one per CJK compare (technique log §51 (bb)). `OffsetPrimaryTests` checks it against the signed original.
     static func incThreeBytePrimaryByOffset(
         _ basePrimary: UInt32, _ isCompressible: Bool, _ offset: Int32
     ) -> UInt32 {
+        assert(offset >= 0, "an OFFSET-range code point precedes its range")
         // Extract the third byte, minus the minimum byte value, plus the offset, modulo the number of usable byte values, plus the minimum.
-        var offset = offset + (Int32(bitPattern: basePrimary >> 8) & 0xff) - 2
-        var primary = UInt32(bitPattern: (offset % 254) + 2) << 8
-        offset /= 254
-        // Same with the second byte, but reserve the PRIMARY_COMPRESSION_LOW_BYTE and high byte if necessary.
-        if isCompressible {
-            offset += (Int32(bitPattern: basePrimary >> 16) & 0xff) - 4
-            primary |= UInt32(bitPattern: (offset % 251) + 4) << 16
-            offset /= 251
-        } else {
-            offset += (Int32(bitPattern: basePrimary >> 16) & 0xff) - 2
-            primary |= UInt32(bitPattern: (offset % 254) + 2) << 16
-            offset /= 254
-        }
+        var off = UInt32(bitPattern: offset) &+ ((basePrimary >> 8) & 0xff) &- 2
+        var primary = ((off % 254) &+ 2) << 8
+        off /= 254
+        // Same with the second byte, but reserve the PRIMARY_COMPRESSION_LOW_BYTE and high byte if necessary. Compressible ranges are out of line: every OFFSET range in the CJK blocks is not compressible (the root data: 33 000 CJK code points, none compressible; compressible ranges are other scripts), and with both steps inline the compiler computed both and selected one.
+        if isCompressible { return incThreeBytePrimaryCompressible(basePrimary, primary, off) }
+        off = off &+ ((basePrimary >> 16) & 0xff) &- 2
+        primary |= ((off % 254) &+ 2) << 16
+        off /= 254
         // First byte, assume no further overflow.
-        return primary | ((basePrimary & 0xff00_0000) &+ UInt32(bitPattern: offset << 24))
+        return primary | ((basePrimary & 0xff00_0000) &+ (off << 24))
+    }
+
+    /// The second and first bytes of incThreeBytePrimaryByOffset for a compressible lead byte: the second byte skips the PRIMARY_COMPRESSION_LOW_BYTE and the high byte.
+    @inline(never)
+    private static func incThreeBytePrimaryCompressible(_ basePrimary: UInt32, _ low: UInt32, _ carry: UInt32) -> UInt32 {
+        var off = carry &+ ((basePrimary >> 16) & 0xff) &- 4
+        let primary = low | (((off % 251) &+ 4) << 16)
+        off /= 251
+        return primary | ((basePrimary & 0xff00_0000) &+ (off << 24))
     }
 }

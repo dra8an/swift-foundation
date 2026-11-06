@@ -5743,3 +5743,25 @@ EngineBench compare (Table 1), plain / aligned: thai −1.1% (5/5) / −0.3%, as
 | ko secondary | **61 → 29 (−52%)** | **83 → 47 (−43%)** | **85 → 47 (−45%)** |
 
 EngineBench compare (Table 1), plain / aligned: cjk −0.4 / −0.1%, ascii, latin, paths, thai within ±0.7%. Foundation rows whose code did not change: the `.localizedStandard` sort ascii / latin +1.7 / +1.8% WMO (5/5), −1.4 / −0.9% `-no-WMO` (5/5), +1.4 / +5.6% `-no-WMO` aligned (the same row moved with the layout in (az)); root cjk defaults (probe) +5.1% WMO (19 → 20 ns, one whole-ns step, −1 instruction), 0.0% aligned; the options compare cjk +2.3% WMO, −2.9% aligned; every other ascii / latin row 0..−8%. **Kept** (user decision, 2026-11-06: "absolute no brainer"). The four ladder tools build; `check_stack_protection.sh`: `Storage.init` and `writeSinglePass` only. Tools in `.build/l13/` (`kohanja/`, `count_ba.sh`, `ba_series.sh`, `foundation_ab_ba.py`).
+
+#### (bb) The OFFSET primaries of CJK ideographs: unsigned arithmetic, the compressible step out of line (START HERE item 5)
+
+**Where** (item 5 named the ~3 instructions of register shuffling that cjk compare got in §51 (ah); 40 EngineBench cjk compares at `d117eef7`, 309.9 instructions each): `compare` 139.9, `quickCJKPrimary` 75.0, **`incThreeBytePrimaryByOffset` 44.0**, `scalarAt` 38.0, `sharedPrefixRestart` 13.0. A CJK ideograph whose data has the OFFSET form gets its primary by stepping the bytes of its range's base primary — about one such ideograph per compare. The port of ICU's function computed with signed Int32: three divisions by the constants 254 / 251 (each `smull / add / asr / add`, plus `msub`), two overflow checks (`b.vs`), and BOTH second-byte steps (compressible and not) selected by `csel`.
+
+**The data** (the probe `.build/l13/kohanja`, root): 33 000+ CJK code points have the OFFSET form, in U+3400–4DBF, U+4E00–9FFF and U+20000+; **none of their ranges is compressible**. The compressible OFFSET ranges (20 723 code points) are other scripts (U+07DA–2D65, U+A000–1E8C4).
+
+**Change** (`CollationConstants.incThreeBytePrimaryByOffset`, also used by CE production): unsigned arithmetic — the offset is never negative (a code point is at or after the start of its range; debug builds assert it), so every intermediate value is non-negative and the results are the same; the compressible second-byte step in an `@inline(never)` helper (`incThreeBytePrimaryCompressible`). 44 → ~25 instructions on the CJK path.
+
+**Counts** (one call; base `d117eef7` in the worktree):
+
+| | base | unsigned | **unsigned + the compressible step out of line (shipped)** |
+|---|---:|---:|---:|
+| EngineBench cjk compare (40 calls) | 309.9 | 300.9 | **290.9 (−6.1%)** |
+| EngineBench cjk `sortKey` (20 calls) | 1601.6 | 1584.0 | **1564.5 (−2.3%)** |
+| EngineBench ascii / latin compare | 151.7 / 151.1 | +0 | +0 |
+
+BenchFoundation, all 39 groups, both modes: every root cjk group **−11** (root defaults 332.2 → 320.8 WMO), ko cjk −8, the other 29 groups +0.
+
+**A/B** (EngineBench, 5 interleaved rounds, load 33 → 23): cjk compare **19.6 → 18.8 ns** plain (−3.0% mean, −4.1% min), **19.7 → 18.6** aligned (−4.6%, −5.6%); cjk sortKey / skRet −1.4 / −1.8% plain, −1.1 / −1.6% aligned (5/5). The rows with unchanged code moved with the layout and the load: ascii compare plain +5.6% mean (one round 9.4 → 11.6 ns under load; ++0+0, min 8.8 both), aligned −1.9%; paths +2.2 / −0.9%; thai skRet aligned +2.6% (+++−+). No Foundation A/B: the change is outside `compare` and every ascii / latin path, and those groups count +0 in both modes. **Kept** (user decision, 2026-11-06). Not chased: the ~3 instructions of item 5's original note (placement in the shared entry; §51 (ag), (ah) showed how fragile that area is).
+
+**Tests:** `OffsetPrimaryTests` (new): the function against the signed original for every third byte, the edges of the second byte, both compressibility settings and offsets 0..<1024, and 200 000 random large offsets; the mutation "254 → 253 in the second-byte remainder" fails both tests. Suite **1574/138**; the four ladder tools build; `check_stack_protection.sh`: `Storage.init` and `writeSinglePass` only. Tools in `.build/l13/` (`bb_job.sh`, the counts and traces).

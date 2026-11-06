@@ -117,8 +117,8 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1572 tests in 138
-suites** — `swift test` prints three summary lines (45/5, 586/93, 941/40; since §51 (ax));
+anything longer or with wider effect. Suite gate: **1574 tests in 138
+suites** — `swift test` prints three summary lines (45/5, 588/94, 941/40; since §51 (bb));
 add them up.
 
 **Read next, in this order:**
@@ -267,6 +267,11 @@ lazy globals); keep the same block in both programs.
   since §51 (ay): `Storage.init` and `writeSinglePass` only).
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
+- (bb) **The OFFSET primaries of CJK ideographs** (2026-11-06): unsigned
+  arithmetic in `incThreeBytePrimaryByOffset`, the compressible step out of
+  line (no CJK range is compressible); cjk compare −6.1% in instructions,
+  −3..−5% in time; cjk sortKey −1..−2%; everything else +0. User decision:
+  accepted. Not yet in a matrix.
 - (ba) **ko's hanja in the quick CJK compare** (2026-11-06): an expansion's
   first CE decides when the two first primaries differ; ko defaults on cjk
   1301 → 389 instructions (−70%, WMO), every root cjk group −1, all else +0;
@@ -354,7 +359,11 @@ plain words — what it changes and what it gives — never as variant labels
    `default` of the switch); ko on cjk −58..−70% in instructions, every
    other group +0 or −1. Old text: **ko's hanja are expansions** (7 476): Korean Han text still takes the
    pipeline; the quick path could use an expansion's first CE.
-5. cjk compare +3.8% since P3c (§51 (ah); Table 1 cjk now 19.7 ns, 2.06×
+5. **DONE 2026-11-06 (§51 (bb)), another way:** the OFFSET primaries of CJK
+   ideographs with unsigned arithmetic and the compressible step out of
+   line: cjk compare −19 instructions (−6.1%), 19.6 → 18.7 ns in EngineBench;
+   cjk sortKey −2.3%. The ~3 instructions of the original note stay
+   (placement in the shared entry). Old text: cjk compare +3.8% since P3c (§51 (ah); Table 1 cjk now 19.7 ns, 2.06×
    faster than ICU; CJK pairs often share the first UTF-8 byte and take the
    helper path).
 6. CE production for precomposed Latin letters (NFD decomposition, ~119
