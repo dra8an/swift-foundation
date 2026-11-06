@@ -49,9 +49,10 @@ the ahead / behind count after `git fetch origin`). The working tree has no
 engine changes: item 6's code was removed by the user (§51 (bc); its forms
 are saved as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
 `.build/l15/bc-form5b.patch`). The worktree `../collation-baseline` is
-detached at `726821fc`, clean, its `main.swift` the committed one; its
-EngineBench `.build`, `.build-al`, `.build-g` and its `.build-ab-wmo` /
-`.build-ab-nowmo` (with the probe rows) are at `726821fc`; the main tree's
+detached at `d7508847` (the check of the matrix "+" cells), clean, its
+`main.swift` the committed one; its EngineBench `.build`, `.build-al`,
+`.build-g` are at `726821fc`, its `.build-ab-wmo`, `.build-ab-nowmo`,
+`.build-ab-nowmo-al` at `d7508847` with the probe rows of `.build/l16/`; the main tree's
 EngineBench `.build-al`, `.build-g` and its `.build-ab-*` builds hold item 6's
 form 5 (rebuild them before an A/B; probe rows: see "How to measure", the
 tools of 2026-11-05/06); its plain EngineBench and the matrix builds are at
@@ -173,8 +174,10 @@ EngineBench vs ICU C, ns per call ours / ICU, speedup = ICU / ours:**
 0.80–0.87× of ICU (1.66× faster on paths). Against 2026-11-05: cjk compare
 19.6 → 18.4 (§51 (bb)); `localizedStandardCompare` WMO 15/16/33/28 →
 14/15/31.5/27, the options rows 1–3 ns faster (§51 (az)); three steady "+"
-cells, not yet explained: `compare(_:locale:)` cjk `-no-WMO` 49 → 52, the
-`SortDescriptor` sort `-no-WMO` ascii / latin +2.0 / +2.7% (Docs/21). **Table 2** has two Swift
+cells in `-no-WMO` (`compare(_:locale:)` cjk 49 → 52, the `SortDescriptor`
+sort ascii / latin +2.0 / +2.7%), checked the same day: code placement, not
+work (fewer or equal instructions, the sign changes between a plain and an
+aligned build; §51 (bb), after the matrix line). **Table 2** has two Swift
 columns: **WMO, the main one** (user decision, 2026-11-04; release builds
 are WMO) and `-no-WMO`; floor 2.90× (WMO, `localizedCaseInsensitiveCompare`
 thai) and 1.96× (`-no-WMO`, `range(of:locale:)` cjk). The short rows read one
@@ -327,11 +330,12 @@ lazy globals); keep the same block in both programs.
   collation code, the traces).
 
 **NEXT TASK — item 6 is closed and the matrix of §51 (az)–(bb) is recorded
-(2026-11-06 afternoon); ask.** The open items: the two steady "+" cells of
-that matrix (`compare(_:locale:)` cjk `-no-WMO` 49 → 52; the `SortDescriptor`
-sort `-no-WMO` ascii / latin +2.0 / +2.7% — a count and an A/B against
-`d7508847` would tell work from layout), item 7, item 8 (recommended: close
-it — five changes rewrote the options path since §51 (ac)). Present these candidates in
+(2026-11-06 afternoon), and its two "+" cells are layout (checked); ask.**
+The open items: item 7, item 8 (recommended: close it — five changes
+rewrote the options path since §51 (ac)). **The worktree is at
+`d7508847`** (the check of the "+" cells), with BenchFoundation `-no-WMO`,
+WMO and aligned `-no-WMO` builds that hold the probe rows of `.build/l16/`;
+move it to HEAD and rebuild before the next A/B. Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**

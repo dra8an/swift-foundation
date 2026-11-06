@@ -266,7 +266,13 @@ modes since (bb)); the `SortDescriptor` sort `-no-WMO` ascii / latin 1882.5 /
 counted −12 instructions in `-no-WMO` in (az), the same comparator in the
 `.localizedStandard` sort row +0.8 / +0.8%, the WMO column −1.1 / −3.4%);
 `localizedCompare` paths WMO 23 → 23.5 (runs 23, 24, 24, 23: a whole-ns
-step). The first two are not explained by a count or an A/B yet.
+step). The first two were checked afterwards (technique log §51 (bb), the
+paragraph after the matrix line): every counted call runs the same or fewer
+instructions than at `d7508847`; `d7508847` itself reads 52 ns on
+`compare(_:locale:)` cjk in a new `-no-WMO` build; the `SortDescriptor` sort
+changes sign between a plain and an aligned `-no-WMO` build, and one
+`SortDescriptor` comparison is not slower in either — code placement, not
+work.
 
 ## Analysis
 
