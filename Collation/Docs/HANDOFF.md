@@ -44,18 +44,18 @@ top of `d117eef7` (§51 (ba)), `35010ca1` (§51 (az)), `9ddf70f3`, `98bd2228`
 `origin/port/collation` = `fb17704b`, NOT pushed** (the user pushes; check
 the ahead / behind count after `git fetch origin`). Plus, if the handoff docs
 commit of 2026-11-06 is missing, `HANDOFF.md` / `optimization-targets.md`
-are modified (give the add / commit lines). **The working tree also holds
-the item-6 code that the A/B rejected (§51 (bc) form 4), uncommitted:**
-`CollationElements.swift`, `NFDIterator.swift`, `RootCollator.swift`,
-`ScratchBuffers.swift` modified and `Tests/.../Collation/LatinDirectTests.swift`
-new — saved as `.build/l14/bc-form4.patch` and
-`.build/l14/LatinDirectTests.swift.form4`. **Do not commit it**; the user
-decides first (NEXT TASK, item 6). The worktree `../collation-baseline` is
+are modified (give the add / commit lines). **Item 6 is closed (§51 (bc));
+the user removes its code with `git checkout` on `CollationElements.swift`,
+`NFDIterator.swift`, `RootCollator.swift`, `ScratchBuffers.swift` and deletes
+`Tests/.../Collation/LatinDirectTests.swift`.** If those files still show as
+changed, the user has not done it yet: never run the matrix on that tree. The
+forms are saved as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
+`.build/l15/bc-form5b.patch`. The worktree `../collation-baseline` is
 detached at `726821fc`, clean, its `main.swift` the committed one; its
-EngineBench `.build`, `.build-al`, `.build-g` are at `726821fc`; its and the
-main tree's `.build-ab-*` BenchFoundation builds are older (rebuild with the
-probe rows before a Foundation A/B — see "How to measure", the tools of
-2026-11-05/06). The main tree's EngineBench builds hold form 4.
+EngineBench `.build`, `.build-al`, `.build-g` and its `.build-ab-wmo` /
+`.build-ab-nowmo` (with the probe rows) are at `726821fc`; the main tree's
+EngineBench and `.build-ab-*` builds hold item 6's form 5 (rebuild after the
+checkout; probe rows: see "How to measure", the tools of 2026-11-05/06).
 (State of 2026-11-04, kept for its build list:) the A/B worktree was at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
 `main.swift`; its builds there, all with Swift 6.5: EngineBench
@@ -280,9 +280,13 @@ lazy globals); keep the same block in both programs.
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
 - (bc) **Precomposed Latin letters in the sort key's ASCII run** (2026-11-06):
-  four forms; the best that ships nothing to ascii does not exist yet — form
-  4 gave latin sortKey −7% but ascii sortKey +0.8..+1.2% in both layouts;
-  rejected by the rule, uncommitted, decision open (NEXT TASK item 6).
+  six forms, each with an ascii cost in at least one build mode — form 4
+  (in the ASCII run) latin sortKey −7%, ascii sortKey +0.8..+1.2% in both
+  layouts; form 5 (the run untouched, the letter whole from the NFD step)
+  latin sortKey −3.5%, but `-no-WMO` ascii sortKey +6..+8 instructions, and
+  either the `-no-WMO` or the WMO Thai compares pay. **CLOSED by user
+  decision** ("stop item 6, I agree"); nothing committed; patches in
+  `.build/l14/`, `.build/l15/`.
 - (bb) **The OFFSET primaries of CJK ideographs** (2026-11-06): unsigned
   arithmetic in `incThreeBytePrimaryByOffset`, the compressible step out of
   line (no CJK range is compressible); cjk compare −6.1% in instructions,
@@ -319,14 +323,15 @@ lazy globals); keep the same block in both programs.
   the probe rows with the timed stream, `oncetest.swift` = the test without
   collation code, the traces).
 
-**NEXT TASK — first the open decision of item 6 (below), then ask.** Since the
+**NEXT TASK — item 6 is closed (2026-11-06 afternoon); next the matrix, then ask.** Since the
 last recorded matrix (2026-11-05 afternoon, `d7508847`), three accepted
 changes are NOT in a matrix: §51 (az) (the option presets), (ba) (ko's
 hanja), (bb) (the CJK OFFSET primaries) — a series of 4 runs (~25 min) is a
-candidate after item 6. **Not before item 6 is settled:** `run_benchmarks.sh`
-builds from the working tree, so with form 4 in the tree the matrix would
-measure the rejected code. The open items: item 6 (decision), item 7, item 8,
-the matrix. Present these candidates in
+candidate now. **Only after the checkout of item 6's files:** `run_benchmarks.sh`
+builds from the working tree, so with item 6's code in the tree the matrix
+would measure the rejected code. The open items: the matrix, item 7, item 8
+(recommended: close it — five changes rewrote the options path since §51
+(ac)). Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
@@ -389,7 +394,13 @@ plain words — what it changes and what it gives — never as variant labels
    (placement in the shared entry). Old text: cjk compare +3.8% since P3c (§51 (ah); Table 1 cjk now 19.7 ns, 2.06×
    faster than ICU; CJK pairs often share the first UTF-8 byte and take the
    helper path).
-6. **IN PROGRESS — the user's decision is open (§51 (bc)):** precomposed
+6. **CLOSED 2026-11-06 (§51 (bc), user decision "stop item 6, I agree"):**
+   six forms, each with an ascii cost in one build mode; form 5 (the letter
+   whole from the NFD step's §16 path, the run byte-identical) gave latin
+   sortKey −3.5%, but `-no-WMO` ascii sortKey +6..+8 instructions, and the
+   Thai compares paid in `-no-WMO` (a Bool argument on `next`) or in WMO (two
+   entries: the NFD step no longer inlined into the Thai compare loop). Do
+   not try again without a new idea. Old text: precomposed
    Latin letters (é, ü, ć …, U+00C0–017F) in the sort key's ASCII run. The
    letter's own trie entry (ICU's canonical closure) gives the same CEs as
    its NFD decomposition (24 556 letter × collator pairs, 0 differences, 392
