@@ -34,7 +34,8 @@ older technique-log entries) is from Swift 6.4-dev, the old SDK and macOS
 26.4; the matrices of 2026-11-04 are the new start and set the new macOS
 reference. Do not compare across the change. After any compiler or Xcode
 update run `Collation/Tools/check_stack_protection.sh` (expected since
-§51 (ay): `Storage.init` and `writeSinglePass` only; §51 (av)).
+§51 (ay): `Storage.init` and `writeSinglePass` only; since §51 (bd) also the
+three file parsers, creation only; §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
 paragraph).** Expected (2026-11-06, afternoon): HEAD = the docs commit of
@@ -426,8 +427,15 @@ plain words — what it changes and what it gives — never as variant labels
    the record. Either way keep `.build/l14/bc-form4.patch`. The other parts
    of the old item 6 (the run-time writer path for non-default options; L1,
    the Thai lookahead, skipped by the user before as too small) are untouched.
-7. Creation: the bundle open (~0.9 ms) and the data read and parse (~0.75
-   ms; mapping the file is the candidate; §51 (q)).
+7. **DONE 2026-11-06 (§51 (bd)), uncommitted until the user commits it:**
+   the data files parsed from their raw bytes, each part copied once in bulk
+   and checked against the file size (no `[UInt8]` copy, no byte-by-byte
+   decode): `RootCollator()` after a `Bundle.main` lookup 2046 → 1807 µs,
+   ucadata read + parse 539 → 308 µs, nfd 150 → 108 µs, a tailoring −12..−30
+   µs; mapping the file gave nothing (the page faults cost as much as the
+   read). Left: the file read (~175 µs) and SwiftPM's bundle open (~1.1 ms,
+   not in the framework build). Old text: the bundle open (~0.9 ms) and the
+   data read and parse (~0.75 ms; mapping the file is the candidate; §51 (q)).
 8. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
    options rows in WMO (§51 (ac)).
 **The macOS update happened (2026-11-04, macOS 27.2.1, 26B125):** (a) the
@@ -558,7 +566,9 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   widened) for data questions. `Collation/Tools/check_stack_protection.sh`
   (committed) checks the SIL of every linkage and the machine code of the
   built EngineBench (`stack_guard_funcs.py`); expected: `Storage.init` and
-  `writeSinglePass` only.
+  `writeSinglePass`, and since §51 (bd) `CollationData.init(contentsOf:)`,
+  `CollationData.bundledTailoring(named:)`, `NormalizationData.init(contentsOf:)`
+  (creation only: `Data.withUnsafeBytes` passes a stack copy for a small `Data`).
 - **Full matrix:** `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
   ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i /Users/dragan/Projects/dra8an/swift-foundation-collation/Collation/Tools/run_benchmarks.sh 3`
   (about 8–10 minutes since the WMO column; the first run builds the two
