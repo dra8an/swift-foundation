@@ -5668,3 +5668,49 @@ EngineBench compare, plain / aligned: ascii −0.4 / +2.8% (+0000), latin ±0.2%
 **Kept** (user decision, 2026-11-05). **Tests:** no new test (no result changes; the check script covers the protectors); suite 1572/138; the four ladder tools build. **Still open in item 3** (the trace above, without the protector): the CJK and Thai options compares still pay `compareSlowPath`'s frame and options word and a first pinning, then `compareAfterOptionsPass`'s frame, spills and second pinning, ~60–70 instructions that the default path does not pay; earlier attempts to fold work into the pass cost ascii / latin through the register allocation (§51 (ac), (aq)). Tools in `.build/l12/` (`trace_probe.sh`, `stack_guard_funcs.py`, `ay_ab_series.sh`, the traces and recordings).
 
 **Matrix after (ax) and (ay)** (Docs/21, 2026-11-05, the median of 4 runs at `d7508847`, 14:33–14:52; load 5–15, swap ~10 GB; ICU C within 0.4% (compare) and 0.7% (sortKey) of the gates of (au), macOS within 2.3%, the frozen binary within 1 ns): Table 1 (speedup) compare 1.07× ascii, 1.11× latin, 2.08× cjk, 1.54× paths, 1.07× thai; sortKey 1.45×, 1.31×, 1.17×, 2.10×, 1.08× (within 1% of the morning except paths compare 19.8 → 19.1 and thai 162.1 → 161.1). Table 2 against the morning (`b8d61638`): WMO `localizedStandardCompare` ascii 16 → 15, `localizedCaseInsensitiveCompare` ascii / latin / paths 17 / 17 / 28 → 16 / 16 / 27, the options compare ascii 25 → 24; `-no-WMO` the options compare ascii / latin 48 / 50 → 47 / 48, `compare(_:locale:)` −3%, every thai row −1.5..−2.8%; two "+" cells: `localizedCaseInsensitiveCompare` paths `-no-WMO` 51 → 54 (+5.9%, its instructions −11; a paths A/B afterwards, 7 rounds: `-no-WMO` plain +4.9% and the paths options rows +5..+11% (7/7), but `-no-WMO` aligned −0.7..−3.3% on four of the five options rows and WMO −0.6..−3.0%: layout of the prefix-scan code, the paths behaviour of §51 (at); user decision, 2026-11-05: accepted as layout) and the `.localizedStandard` sort cjk WMO 1301 → 1342 (+3.2%, a row with 5–8% spread between runs); the rest within ±1.5%. Five ‡ cells (two whole-ns steps, three `.localizedStandard` sort cells). Floor 2.88× WMO, 1.95× `-no-WMO`.
+
+#### (az) The option sets of the Foundation wrappers, resolved at init: no options word, no setup lookup per call (START HERE item 3, second step)
+
+**Where** (a trace of one root-secondary ascii call at `d7508847`, WMO): an options compare cost 74 instructions more than a default compare around the same core (`compareUTF8` 65 in both): the failed entry guard and the call into `compareSlowPath` (~25 with the frames), **the options word** (`icuOptions`, ~27) and **the fast-Latin setup** (`resolveFastLatinSetup`, ~18). The word and the setup are the same on every call for a given option set (the ALLOCATION/RESOLUTION HUNT shape), and the Foundation wrappers build only a few sets (`CollationOptions.from`): secondary + numeric (`localizedStandardCompare`), secondary (`localizedCaseInsensitiveCompare`), primary (the options compare with case and diacritic insensitivity), identical + numeric (`.localizedStandard`, `.forcedOrdering`), each on the collator's other defaults.
+
+**Change.** `RootCollator.OptionPresets` (a heap box behind the new `Storage.optionPresetsPtr`, declared last): for those four sets and the defaults, the bit pattern (`bits(of:)`), the word, and the packed options and primaries that `resolveFastLatinSetup` gives for the word, computed at init with the same rules. `compareSlowPath` tests `restart >= 0` first — only the default fast path sets a restart, after its guard matched the default options, so the word is `defaultFLWord` (every Thai default compare comes this way) — then the five patterns in that order; a miss computes the word and the setup as before.
+
+**Forms** (counts of the critical groups, WMO / `-no-WMO`, against `d7508847`):
+
+| form | options groups | `.localizedStandard` ascii / latin | thai defaults |
+|---|---|---|---|
+| three presets (sec + numeric, secondary, primary) | −25..−36 / −23..−43 | −3 / **+12** | **+19** / +9 |
+| five presets (+ identical + numeric, + the defaults) | −25..−35 / −28..−39 | −17 / −15 | **+7** / −19 |
+| **five presets + the `restart` test (shipped)** | −26..−39 / −28..−43 | −16 / −12 | −11 / −39 |
+
+The +7 of the five-preset form: four failed tests (12) and a larger prologue (10 → 18 instructions) against the word's 26.
+
+**Counts of every group** (shipped form; base `d7508847` in the worktree, the same probe rows in both trees):
+
+| group | WMO | `-no-WMO` |
+|---|---|---|
+| root secondary ascii / latin / cjk / paths / thai | **252 → 223** (−11.5%), −29, −31, −27, −39 | −31, −31, −37, −35, −30 |
+| root secondary + numeric ascii / latin / cjk / paths | **255 → 220** (−13.7%), −35, −37, −33 | −37, −37, −43, −41 |
+| root primary ascii / latin / cjk | −26, −26, −28 | −28, −28, −34 |
+| `localizedStandardCompare` ascii / latin / cjk | **349 → 314** (−10%), −35, −37 | −37, −37, −43 |
+| `.localizedStandard` comparator ascii / latin / cjk / thai | −16, −16, −9, −9 | −12 each |
+| root / th defaults thai | −11 | −39 |
+| th secondary thai | −39 | −30 |
+| default compares ascii / latin / cjk, `localizedCompare`, `compare(_:locale:)`, `String.Comparator`, `sortKey` | +0 each | +0 each |
+
+**A/B** (5 interleaved rounds each; load 9 → 4; mean change ascii / latin; whole-ns rows step by ~6%):
+
+| row | WMO | WMO aligned | `-no-WMO` | `-no-WMO` aligned |
+|---|---|---|---|---|
+| `localizedStandardCompare` | 0.0 / **−6.2%** (5/5) | **−6.7 / −6.2%** (5/5) | 0.0 / −2.8% | −1.1 / −3.3% |
+| `localizedCaseInsensitiveCompare` | **−6.2%** (5/5) / 0.0 | **−6.2%** / 0.0 | +2.9% (5/5) / 0.0 | 0.0 / −1.1% |
+| options compare | −0.8 / −1.6% | +0.8 / +4.0% (25 → 26, 5/5) | −1.7 / −2.0% | +1.2 / −1.2% |
+| `.localizedStandard` sort | +0.5% (5/5) / +2.7% (mixed) | +0.5% (++−++) / −0.8% | +2.1% (5/5) / −3.3% | −0.1 / −0.1% |
+| `String.Comparator` sort (+0 instructions) | +1.4 / +1.4% (5/5) | −0.7 / −0.1% | −1.5 / −6.2% | −0.5 / 0.0% |
+| `localizedCompare` (+0) | 0.0 / 0.0% | 0.0 / −4.8% | +3.2% (5/5) / +0.6% | −1.3 / 0.0% |
+| `compare(_:locale:)` (+0) | 0.0 / 0.0% | 0.0 / 0.0% | −0.6 / −3.1% | +4.6 / +3.9% (5/5) |
+| thai rows | −0.9..+0.8%; `.localizedStandard` sort +0.4% | −1.8..−0.6%; `.localizedStandard` sort +2.2% | −1.0..+0.7% | −0.9..+1.4% |
+
+EngineBench compare (Table 1), plain / aligned: thai −1.1% (5/5) / −0.3%, ascii / latin / cjk within ±1.5%, paths +3.6% plain (5/5) / +0.5% aligned (code not run by the default paths compare: layout). Every "+" cell is on a row whose instructions went down or stayed the same, and changes size or sign between the four layouts (the pattern of (ax), (ay)); CPU Counters were not run (user decision).
+
+**Kept** (user decision, 2026-11-05). **Tests:** no new test; the mutations "the numeric preset gets the non-numeric primaries" and "the identical preset gets the word of secondary + numeric" fail `OptionsRestartTests` with 21 issues each. Suite 1572/138; `check_stack_protection.sh`: `Storage.init` and `writeSinglePass` only; the four ladder tools build. Tools in `.build/l12/` (`count_subset.sh`, `az_series.sh`, `az_wmo_al.sh`, the traces). **Still open in item 3:** the frames, spills and second pinning of `compareAfterOptionsPass` on CJK and Thai (one root-secondary cjk call: 401 instructions against 333 with the default options).

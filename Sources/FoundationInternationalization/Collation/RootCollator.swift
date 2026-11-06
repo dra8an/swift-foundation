@@ -45,6 +45,15 @@ public struct RootCollator: @unchecked Sendable {
         let primaries: UnsafeBufferPointer<UInt16>
     }
 
+    /// The non-default option sets of the Foundation wrappers, resolved at init: `localizedStandardCompare` (secondary + numeric), `localizedCaseInsensitiveCompare` (secondary), the options compare with case and diacritic insensitivity (primary) and `.localizedStandard` (identical + numeric), each on the collator's other defaults; last the defaults themselves (a default compare that bails reaches `compareSlowPath` too: every Thai compare). For each: the bit pattern of the options (see `bits(of:)`), the options word, and the fast-Latin setup that `resolveFastLatinSetup` gives for that word. `compareSlowPath` compares the pattern of its options with these first: a hit skips the options word (`icuOptions`, ~27 instructions) and the setup lookup (~18) — the same result on every call for a given option set (technique log §51 (az)). Heap-boxed behind one pointer, like the other setups.
+    struct OptionPresets {
+        let bits: (UInt64, UInt64, UInt64, UInt64, UInt64)
+        let words: (Int32, Int32, Int32, Int32, Int32)
+        let packed: (Int32, Int32, Int32, Int32, Int32)
+        let primaries: (UnsafeBufferPointer<UInt16>, UnsafeBufferPointer<UInt16>, UnsafeBufferPointer<UInt16>,
+                        UnsafeBufferPointer<UInt16>, UnsafeBufferPointer<UInt16>)
+    }
+
     /// All stored state lives behind one class reference so a RootCollator value is a single pointer. As a flat struct the collator was ~768 bytes; every method call materialized that copy on the stack (and a throwing call in a loop re-copied it per iteration — the optimizer cannot hoist the copy across a throwing call). Everything is immutable after init.
     final class Storage: @unchecked Sendable {
         let data: CollationData
@@ -95,6 +104,8 @@ public struct RootCollator: @unchecked Sendable {
         let twinFLKey: Int32
         let twinFLPackedOptions: Int32
         let twinFLPrimaries: UnsafeBufferPointer<UInt16>
+        /// The option sets of the Foundation wrappers, resolved at init; see OptionPresets. Declared last, for the reason above.
+        let optionPresetsPtr: UnsafeMutablePointer<OptionPresets>
 
         init(data: CollationData, base: CollationData?, norm: NormalizationData,
              reordering: Reordering?, defaultOptions: CollationOptions,
@@ -141,7 +152,8 @@ public struct RootCollator: @unchecked Sendable {
             self.defaultFLKey = defaultKey
             self.twinFLKey = twinKey
             self.twinFLPackedOptions = twinPacked
-            self.twinFLPrimaries = flStorage.store(twinPrims)
+            let twinPrimaries = flStorage.store(twinPrims)
+            self.twinFLPrimaries = twinPrimaries
             self.defaultFLStorage = flStorage
             // Pre-compute simple-CE tables: ASCII, and the Thai block (U+0E00–0E7F — the one non-Latin script whose hot scalars are mostly single simple CEs; profiling put ~200 ns of Thai compares in CE production). Same exclusion rules for both: specials (contractions, prefixes, digits) stay 0 and take the full path.
             let ceStorage = DataStorage()
@@ -173,6 +185,38 @@ public struct RootCollator: @unchecked Sendable {
                 optionBits: RootCollator.bits(of: defaultOptions), packedOptions: packed,
                 table: fastLatinTable, primaries: flPrimaries))
             self.defaultFLSetupPtr = flBox
+            // The presets: the same packed options and primaries as resolveFastLatinSetup gives for their words.
+            func preset(_ strength: CollationOptions.Strength, numeric: Bool) -> (UInt64, Int32, Int32, UnsafeBufferPointer<UInt16>) {
+                var o = defaultOptions
+                o.strength = strength
+                o.numeric = numeric
+                return preset(o)
+            }
+            func preset(_ o: CollationOptions) -> (UInt64, Int32, Int32, UnsafeBufferPointer<UInt16>) {
+                let word = o.icuOptions
+                let key = RootCollator.fastLatinPrimariesKey(word)
+                let entryPacked: Int32
+                let entryPrimaries: UnsafeBufferPointer<UInt16>
+                if key == defaultKey {
+                    (entryPacked, entryPrimaries) = (packed, flPrimaries)
+                } else if key == twinKey {
+                    (entryPacked, entryPrimaries) = (twinPacked, twinPrimaries)
+                } else {
+                    var p: [UInt16] = []
+                    entryPacked = CollationFastLatin.getOptions(
+                        table: fastLatinTable, scriptsData: scriptsData, reordering: reordering, options: key, primaries: &p)
+                    entryPrimaries = flStorage.store(p)
+                }
+                let presetPacked = entryPacked < 0 ? entryPacked : (entryPacked & ~0xffff) | word
+                return (RootCollator.bits(of: o), word, presetPacked, entryPrimaries)
+            }
+            let p0 = preset(.secondary, numeric: true), p1 = preset(.secondary, numeric: false), p2 = preset(.primary, numeric: false)
+            let p3 = preset(.identical, numeric: true), p4 = preset(defaultOptions)
+            let presets = UnsafeMutablePointer<OptionPresets>.allocate(capacity: 1)
+            presets.initialize(to: OptionPresets(
+                bits: (p0.0, p1.0, p2.0, p3.0, p4.0), words: (p0.1, p1.1, p2.1, p3.1, p4.1),
+                packed: (p0.2, p1.2, p2.2, p3.2, p4.2), primaries: (p0.3, p1.3, p2.3, p3.3, p4.3)))
+            self.optionPresetsPtr = presets
         }
 
         deinit {
@@ -182,6 +226,8 @@ public struct RootCollator: @unchecked Sendable {
             defaultFLSetupPtr.deallocate()
             restartSafetyPtr.deinitialize(count: 1)
             restartSafetyPtr.deallocate()
+            optionPresetsPtr.deinitialize(count: 1)
+            optionPresetsPtr.deallocate()
         }
     }
 
@@ -522,8 +568,31 @@ public struct RootCollator: @unchecked Sendable {
         _ left: String, _ right: String, options: CollationOptions,
         restart: Int = -1
     ) throws -> Order {
-        // The options word, computed once for the whole slow path (22 instructions; compareBody used to compute it again — technique log §51).
-        let word = options.icuOptions
+        // The options word and, for the option sets of the Foundation wrappers, the fast-Latin setup: from the presets resolved at init when the pattern matches (technique log §51 (az)), else computed once for the whole slow path (compareBody used to compute it again — technique log §51).
+        let optionBits = Self.bits(of: options)
+        let presets = storage.optionPresetsPtr
+        let word: Int32
+        var presetPacked: Int32 = -1
+        var presetPrimaries = UnsafeBufferPointer<UInt16>(start: nil, count: 0)
+        var hasPreset = true
+        if restart >= 0 {
+            // Only the default fast path sets a restart, after its guard matched the default options: so these are the defaults (every Thai default compare comes this way; four preset tests cost it +7 instructions in WMO).
+            word = defaultFLWord
+            hasPreset = false
+        } else if optionBits == presets.pointee.bits.0 {
+            word = presets.pointee.words.0; presetPacked = presets.pointee.packed.0; presetPrimaries = presets.pointee.primaries.0
+        } else if optionBits == presets.pointee.bits.1 {
+            word = presets.pointee.words.1; presetPacked = presets.pointee.packed.1; presetPrimaries = presets.pointee.primaries.1
+        } else if optionBits == presets.pointee.bits.2 {
+            word = presets.pointee.words.2; presetPacked = presets.pointee.packed.2; presetPrimaries = presets.pointee.primaries.2
+        } else if optionBits == presets.pointee.bits.3 {
+            word = presets.pointee.words.3; presetPacked = presets.pointee.packed.3; presetPrimaries = presets.pointee.primaries.3
+        } else if optionBits == presets.pointee.bits.4 {
+            word = presets.pointee.words.4; presetPacked = presets.pointee.packed.4; presetPrimaries = presets.pointee.primaries.4
+        } else {
+            word = options.icuOptions
+            hasPreset = false
+        }
         var triedFastLatin = false
         // The gate is checked here, before the call: computing the setup and pinning the strings first cost CJK sorts +2–4% for a pass that always bails on them.
         if options.hasIdenticalStrength {
@@ -541,7 +610,8 @@ public struct RootCollator: @unchecked Sendable {
                 // The caller's fast path already ran for these options — but only if both strings had contiguous UTF-8 (bridged strings skip the byte path; compareBody's scalar fast-Latin should still get its chance on those).
                 triedFastLatin = left.isContiguousUTF8 && right.isContiguousUTF8
             } else {
-                if let setup = resolveFastLatinSetup(word), setup.packedOptions >= 0 {
+                if let setup = hasPreset ? (packedOptions: presetPacked, primaries: presetPrimaries) : resolveFastLatinSetup(word),
+                   setup.packedOptions >= 0 {
                     let safety = restartSafetyPtr
                     let numeric = options.numeric
                     // The pinned bytes go through `untraced`, as on the default fast path: else Swift 6.5 gives compareSlowPath a stack protector, 10 instructions on every options compare (technique log §51 (av), (ay)).

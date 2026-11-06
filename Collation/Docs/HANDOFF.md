@@ -267,6 +267,11 @@ lazy globals); keep the same block in both programs.
   since §51 (ay): `Storage.init` and `writeSinglePass` only).
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
+- (az) **The Foundation option sets resolved at init** (2026-11-05):
+  `OptionPresets` (bit pattern, word, fast-Latin setup of five option sets)
+  and a `restart >= 0` test for the defaults in `compareSlowPath`; every
+  options group −26..−43 instructions, every other group +0; user decision:
+  accepted (the "+" cells change with the layout). Not yet in a matrix.
 - (ay) **Two more Swift 6.5 stack protectors** (2026-11-05): the options
   pass and the identical-strength pass, removed with `untraced`; every
   options compare −11 instructions, WMO options rows ascii / latin −2..−7%;
@@ -321,8 +326,14 @@ plain words — what it changes and what it gives — never as variant labels
    (`compareSlowPath`, `identicalStrengthTertiaryPass`) removed with
    `untraced`: −11 instructions on every options compare (ascii / latin too),
    −20..−22 on the `.localizedStandard` comparator; the check script fixed.
-   Still open: the frames, spills and second pinning of the CJK / Thai
-   options path (~60–70 instructions). Old text: (§51 (aq), (ar)): root
+   **Second step DONE (§51 (az)):** the five option sets of the Foundation
+   wrappers (and the defaults) resolved at init (`OptionPresets`); options
+   compares −26..−43 instructions (ascii root secondary 252 → 223),
+   `localizedStandardCompare` 349 → 314, `.localizedStandard` −9..−16;
+   WMO `localizedStandardCompare` / `localizedCaseInsensitiveCompare` ascii /
+   latin 1 ns faster. Still open: the frames, spills and second pinning of
+   `compareAfterOptionsPass` on CJK / Thai (cjk secondary 401 against 333).
+   Old text: (§51 (aq), (ar)): root
    options on CJK 478 against 333 instructions (WMO, 1.43×), on Thai +3.1%.
    Left: the options word (~30) and a first pinning whose pass always bails
    on CJK. A first-byte test before the pass would skip them for CJK /
@@ -632,7 +643,10 @@ and 104.4/121.0/117.7/373.3/155.5).
   / `isShifted`, never `==`, and read `RootCollator.fastLatinBailOut`,
   `latinMaxLead`, `prefixDependentResult`, `fastLatinPrimariesKey` — the
   same-file copies of §51 (as) (`SameFileCopiesTests`). Keep new hot-path
-  constants in the same file, or `-no-WMO` pays a call for each. Since §51
+  constants in the same file, or `-no-WMO` pays a call for each. The
+  options word and setup of the Foundation option sets come from
+  `Storage.optionPresetsPtr` (§51 (az)); a new wrapper option set belongs
+  there too, or it pays ~45 instructions per call. Since §51
   (ax), `CollationCompare.swift` (extension `CollationCompare`) and
   `SortKey.swift` (extension `CollationKeys`) have their own copies too. The default
   fast path indexes the pinned bytes through `RootCollator.untraced(_:)`
