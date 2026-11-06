@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-## START HERE (current as of 2026-11-04 — everything below this section is history)
+## START HERE (current as of 2026-11-06 — everything below this section is history)
 
 **If anything in the history below contradicts this section, this section
 wins.** The history has stale rules and numbers on purpose; it is the record.
@@ -37,13 +37,25 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 §51 (ay): `Storage.init` and `writeSinglePass` only; §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-05 afternoon): HEAD = the docs commit of
-the matrix after §51 (ax) / (ay), on top of `d7508847` (§51 (ay)),
-`81d190a5` (§51 (ax)), `2ec617cf` and `b8d61638` (§51 (aw));
-`origin/port/collation` = `fb17704b` unless the user pushed since — check
-the ahead / behind count; tree clean. The worktree is at `81d190a5` (before
-§51 (ay)); both trees' `.build-ab-*` BenchFoundation builds hold the probe
-rows of `.build/l12/probe.swift` (rebuild before an A/B with other rows).
+paragraph).** Expected (2026-11-06, midday): HEAD = `726821fc` (§51 (bb)) on
+top of `d117eef7` (§51 (ba)), `35010ca1` (§51 (az)), `9ddf70f3`, `98bd2228`
+(the matrix of 2026-11-05 afternoon), `d7508847` (ay), `81d190a5` (ax),
+`2ec617cf`, `b8d61638` (aw), `2a53ef68` — **10 commits ahead of
+`origin/port/collation` = `fb17704b`, NOT pushed** (the user pushes; check
+the ahead / behind count after `git fetch origin`). Plus, if the handoff docs
+commit of 2026-11-06 is missing, `HANDOFF.md` / `optimization-targets.md`
+are modified (give the add / commit lines). **The working tree also holds
+the item-6 code that the A/B rejected (§51 (bc) form 4), uncommitted:**
+`CollationElements.swift`, `NFDIterator.swift`, `RootCollator.swift`,
+`ScratchBuffers.swift` modified and `Tests/.../Collation/LatinDirectTests.swift`
+new — saved as `.build/l14/bc-form4.patch` and
+`.build/l14/LatinDirectTests.swift.form4`. **Do not commit it**; the user
+decides first (NEXT TASK, item 6). The worktree `../collation-baseline` is
+detached at `726821fc`, clean, its `main.swift` the committed one; its
+EngineBench `.build`, `.build-al`, `.build-g` are at `726821fc`; its and the
+main tree's `.build-ab-*` BenchFoundation builds are older (rebuild with the
+probe rows before a Foundation A/B — see "How to measure", the tools of
+2026-11-05/06). The main tree's EngineBench builds hold form 4.
 (State of 2026-11-04, kept for its build list:) the A/B worktree was at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
 `main.swift`; its builds there, all with Swift 6.5: EngineBench
@@ -123,23 +135,23 @@ add them up.
 
 **Read next, in this order:**
 1. Your memory index from disk and ALL its feedback files — the user's
-   working rules; then `project-next-steps-2026-11-04` (the state and the
-   decisions of 2026-11-02…11-04; the older `project-next-steps-2026-11-02`
-   is its history).
-2. `Collation/Docs/optimization-targets.md` **§51 (aq)–(av)** — the technique
-   log of 2026-11-02…11-04 (every change, every rejected variant, every
-   measurement), all of it, and the matrix line after (av) at the end of the
-   file (the last recorded matrix). Then §51 (ai)–(ap) (2026-10-29…11-02).
-   For background: §51 (z)–(ah), §51 (l), (y), §50 (g) (the
-   instruction-count method) and the ALLOCATION/RESOLUTION HUNT note at the
-   top of the file.
+   working rules; then `project-next-steps-2026-11-06` (the state and the
+   decisions of 2026-11-05…11-06; `project-next-steps-2026-11-04` is its
+   history).
+2. `Collation/Docs/optimization-targets.md` **§51 (aw)–(bc)** — the technique
+   log of 2026-11-05…11-06, all of it (the two matrix lines of 2026-11-05 sit
+   after (aw) and after (ay)); **(bc) is the open item 6**. Then §51 (aq)–(av)
+   (2026-11-02…11-04). For background: §51 (ai)–(ap), (z)–(ah), (l), (y),
+   §50 (g) (the instruction-count method) and the ALLOCATION/RESOLUTION HUNT
+   note at the top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
-   matrix (2026-11-04 15:20–15:38, the median of 4 runs at `c275fd45`, Swift
-   6.5, macOS 27.2.1; WMO the main column; two-level cells marked ‡).
+   matrix (2026-11-05 14:33–14:52, the median of 4 runs at `d7508847`, Swift
+   6.5, macOS 27.2.1; WMO the main column; with the warm-up of §51 (aw); five
+   ‡ cells).
 4. `Collation/Docs/27-benchmark-runbook.md` — **"The rules since
-   2026-11-04" at its top**, then how to measure, the harness
-   cost, the gates, the speedup convention, and **the third check (the
-   frozen binary)**.
+   2026-11-04" at its top** (with the warm-up of 2026-11-05), then how to
+   measure, the harness cost, the gates, the speedup convention, and **the
+   third check (the frozen binary)**.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
@@ -267,6 +279,10 @@ lazy globals); keep the same block in both programs.
   since §51 (ay): `Storage.init` and `writeSinglePass` only).
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
+- (bc) **Precomposed Latin letters in the sort key's ASCII run** (2026-11-06):
+  four forms; the best that ships nothing to ascii does not exist yet — form
+  4 gave latin sortKey −7% but ascii sortKey +0.8..+1.2% in both layouts;
+  rejected by the rule, uncommitted, decision open (NEXT TASK item 6).
 - (bb) **The OFFSET primaries of CJK ideographs** (2026-11-06): unsigned
   arithmetic in `incThreeBytePrimaryByOffset`, the compressible step out of
   line (no CJK range is compressible); cjk compare −6.1% in instructions,
@@ -303,7 +319,14 @@ lazy globals); keep the same block in both programs.
   the probe rows with the timed stream, `oncetest.swift` = the test without
   collation code, the traces).
 
-**NEXT TASK — not chosen yet. Ask the user.** Present these candidates in
+**NEXT TASK — first the open decision of item 6 (below), then ask.** Since the
+last recorded matrix (2026-11-05 afternoon, `d7508847`), three accepted
+changes are NOT in a matrix: §51 (az) (the option presets), (ba) (ko's
+hanja), (bb) (the CJK OFFSET primaries) — a series of 4 runs (~25 min) is a
+candidate after item 6. **Not before item 6 is settled:** `run_benchmarks.sh`
+builds from the working tree, so with form 4 in the tree the matrix would
+measure the rejected code. The open items: item 6 (decision), item 7, item 8,
+the matrix. Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
@@ -366,10 +389,28 @@ plain words — what it changes and what it gives — never as variant labels
    (placement in the shared entry). Old text: cjk compare +3.8% since P3c (§51 (ah); Table 1 cjk now 19.7 ns, 2.06×
    faster than ICU; CJK pairs often share the first UTF-8 byte and take the
    helper path).
-6. CE production for precomposed Latin letters (NFD decomposition, ~119
-   instructions per accented letter); the run-time writer path for
-   non-default options; L1 (the Thai lookahead; skipped by the user before as
-   too small).
+6. **IN PROGRESS — the user's decision is open (§51 (bc)):** precomposed
+   Latin letters (é, ü, ć …, U+00C0–017F) in the sort key's ASCII run. The
+   letter's own trie entry (ICU's canonical closure) gives the same CEs as
+   its NFD decomposition (24 556 letter × collator pairs, 0 differences, 392
+   pairs with a context form keep the NFD path). Form 4 (a cold call at the
+   run loop's non-ASCII exit): latin sortKey **−7.1 / −7.2% (7/7, plain /
+   aligned)**, but **ascii sortKey +0.8 / +1.2%** in BOTH layouts (+4.8
+   instructions per key: any new call in `collectSimpleASCIIRun` changes the
+   register allocation of the run that every ASCII key uses) — REJECTED by
+   the rule "no ascii / latin loss". Ask the user, in plain words:
+   (a) **look for a form with no ascii cost** (~30–60 min, open result): keep
+   `collectSimpleASCIIRun` byte-identical; the letter leaves the run as today,
+   and only the NFD step and the separate mark round go — e.g. the §16 path
+   of `NFDIterator.next()` (which only precomposed letters reach) hands the
+   letter undecomposed to the CE loop's slow path, which fixes history and
+   NFD positions; whole-string production only (search maps NFD positions);
+   estimated 3–5% of a latin key; count every group, then A/B plain and
+   aligned with 7 rounds; or (b) **stop item 6**: the user runs `git checkout`
+   on the four files and deletes `LatinDirectTests.swift`; §51 (bc) stays as
+   the record. Either way keep `.build/l14/bc-form4.patch`. The other parts
+   of the old item 6 (the run-time writer path for non-default options; L1,
+   the Thai lookahead, skipped by the user before as too small) are untouched.
 7. Creation: the bundle open (~0.9 ms) and the data read and parse (~0.75
    ms; mapping the file is the candidate; §51 (q)).
 8. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
@@ -460,6 +501,23 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   dispatch that is inlined into the hot entry moves the register allocation
   of the whole entry — root cjk, Thai under th / ja / zh, and the `-no-WMO`
   entries on ascii / latin each paid 5–51 instructions in some variant.
+- **Pitfalls of 2026-11-05/06:** the wake log says "Using BATT" for the
+  first second after a wake while the Thunderbolt dock reconnects — check
+  `pmset -g ps` ("Now drawing from 'AC Power'") before you say "battery"
+  (the user corrected this); after a wake the load bursts to 300+ for ~10
+  minutes — do the counts, docs and builds then, and start a timed job with
+  a background `sleep` until 10 minutes after the wake, never a polling loop;
+  never run a timed A/B while lldb counts run (12 jobs load the machine);
+  probe rows in `main.swift` that use top-level `var`s need `@MainActor`, a
+  top-level global used by an early probe call must be a lazy `static let`
+  (an `enum` box), and a nested function in an `init` must not read `self`
+  before every stored property is set; `echo =====` fails in zsh (`=word`
+  expansion) — use `echo '---'`; a `sed` replacement with an apostrophe
+  inside double quotes broke `check_stack_protection.sh` once — use a
+  Python edit; in `collectSimpleASCIIRun` ANY new code (a branch in the loop,
+  a call at an exit, a Bool result) costs every ASCII key 2–16 instructions
+  (§51 (bc)); LLVM folds an early `if` back into a `switch`'s decision tree
+  (§51 (ba): keep the old cases and send new ones to `default`).
 - **Pitfalls of this round:** zsh does not split `set -- $spec` (a corpus
   named "cjk 01" made lldb wait 15 minutes on a process that could not start
   — loop over `corpus:n` strings with `${c%%:*}` / `${c##*:}`, and check a
@@ -469,6 +527,23 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   longer than the job needs (a 15-minute sleep timed out).
 
 **How to measure:**
+- **The tools of 2026-11-05/06** (git-ignored, in `.build/l12/`–`l14/`):
+  `.build/l12/probe.swift` = the probe rows (engine compares per option set
+  incl. th and ko, Foundation calls, root `sortKey`); `main.swift.orig` (the
+  committed bench file) and `main.swift.probe` (with the rows) — copy the
+  probe version into BOTH trees before the A/B builds and the `.orig` back
+  after; `build_all.sh <tree> <log>` = BenchFoundation `-no-WMO -g` and WMO
+  `-g`, EngineBench plain / aligned / `-g` of one tree; `count_groups.sh
+  <BenchFoundation> <tag>` = all 39 groups (6 lldb jobs), `cmp_groups.py
+  <base tag> <variant tag>`, `count_subset.sh` = a chosen few; `trace_probe.sh`
+  (one probe-row call with source lines), `.build/l13/trace_sk.sh` (one
+  EngineBench sortKey call); `foundation_ab_ax.py` / `.build/l13/foundation_ab_ba.py`
+  = Foundation A/B copies (ascii, latin, thai or cjk; the probe rows);
+  `.build/l13/kohanja/` = a probe package (engine sources copied, `storage`
+  widened) for data questions. `Collation/Tools/check_stack_protection.sh`
+  (committed) checks the SIL of every linkage and the machine code of the
+  built EngineBench (`stack_guard_funcs.py`); expected: `Storage.init` and
+  `writeSinglePass` only.
 - **Full matrix:** `ICU_SRC=~/Projects/Unicode/icu-DraganBesevic-2
   ICU_BUILD=$ICU_SRC/icu4c/source caffeinate -i /Users/dragan/Projects/dra8an/swift-foundation-collation/Collation/Tools/run_benchmarks.sh 3`
   (about 8–10 minutes since the WMO column; the first run builds the two
