@@ -267,6 +267,12 @@ lazy globals); keep the same block in both programs.
   since §51 (ay): `Storage.init` and `writeSinglePass` only).
 - Matrices recorded 2026-11-04 (the new start, then after §51 (av)); all
   pushed.
+- (ba) **ko's hanja in the quick CJK compare** (2026-11-06): an expansion's
+  first CE decides when the two first primaries differ; ko defaults on cjk
+  1301 → 389 instructions (−70%, WMO), every root cjk group −1, all else +0;
+  `QuickCJKSetup` has the CE32 arrays at its end. Time: ko defaults on cjk
+  57 → 21 ns (WMO), 80 → 39 ns (`-no-WMO`); Table 1 unchanged. User
+  decision: accepted. Not yet in a matrix.
 - (az) **The Foundation option sets resolved at init** (2026-11-05):
   `OptionPresets` (bit pattern, word, fast-Latin setup of five option sets)
   and a `restart >= 0` test for the defaults in `compareSlowPath`; every
@@ -331,15 +337,22 @@ plain words — what it changes and what it gives — never as variant labels
    compares −26..−43 instructions (ascii root secondary 252 → 223),
    `localizedStandardCompare` 349 → 314, `.localizedStandard` −9..−16;
    WMO `localizedStandardCompare` / `localizedCaseInsensitiveCompare` ascii /
-   latin 1 ns faster. Still open: the frames, spills and second pinning of
-   `compareAfterOptionsPass` on CJK / Thai (cjk secondary 401 against 333).
-   Old text: (§51 (aq), (ar)): root
+   latin 1 ns faster. **Closed 2026-11-05 (user decision: "we done enough
+   for CJK and Thai"):** the rest stays — the frames, the spills and the
+   second pinning of `compareAfterOptionsPass` on CJK / Thai (one cjk
+   secondary call 401 against 333 instructions with the defaults; Thai
+   options +1.5% over the default path). Earlier attempts there cost the
+   ascii / latin options compares through the register allocation (§51 (ac),
+   (aq)). Old text: (§51 (aq), (ar)): root
    options on CJK 478 against 333 instructions (WMO, 1.43×), on Thai +3.1%.
    Left: the options word (~30) and a first pinning whose pass always bails
    on CJK. A first-byte test before the pass would skip them for CJK /
    Thai but cost every ascii / latin options compare (not tried; the user's
    rule).
-4. **ko's hanja are expansions** (7 476): Korean Han text still takes the
+4. **DONE 2026-11-06 (§51 (ba)): ko's hanja in the quick CJK compare** —
+   an expansion's first CE (`quickCJKExpansionPrimary`, out of line from the
+   `default` of the switch); ko on cjk −58..−70% in instructions, every
+   other group +0 or −1. Old text: **ko's hanja are expansions** (7 476): Korean Han text still takes the
    pipeline; the quick path could use an expansion's first CE.
 5. cjk compare +3.8% since P3c (§51 (ah); Table 1 cjk now 19.7 ns, 2.06×
    faster than ICU; CJK pairs often share the first UTF-8 byte and take the

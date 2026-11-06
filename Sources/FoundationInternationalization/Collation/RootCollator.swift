@@ -30,6 +30,9 @@ public struct RootCollator: @unchecked Sendable {
         let reordering: UnsafePointer<ReorderingView>?
         /// The last primary of the highest variable group (maxVariable = currency). Every primary that quickCJKPrimary returns is above it — ideographs are never variable, so a primary difference decides under alternate=shifted too; `QuickCJKTests` checks it for every ideograph of every bundled collator, and quickCJKPrimary asserts it in debug builds. Not tested in the release hot path: the guard cost root's CJK compare +13 instructions of spills.
         let maxVariableTop: UInt32
+        /// The CE32 arrays of the data and the base: the first CE of an EXPANSION32 (ko's hanja, technique log §51 (ba)). Declared last, so that the older fields keep their offsets.
+        let dataCE32s: UnsafeBufferPointer<UInt32>
+        let baseCE32s: UnsafeBufferPointer<UInt32>
     }
 
     /// The default-options fast-Latin setup, resolved at init and heap-boxed, so that compareFastPath reads its setup through ONE pointer instead of separate fields of the storage object. The compare ladder (technique log §50) put the entry's guard and those field loads at ~2.7 ns of a ~15 ns ascii compare, and the core it feeds at ~9 ns.
@@ -173,7 +176,8 @@ public struct RootCollator: @unchecked Sendable {
                 baseCEs: base?.ces ?? data.ces,
                 reordering: reordering.map { ceStorage.store([ReorderingView($0, storage: ceStorage)]).baseAddress! },
                 maxVariableTop: scriptsData.lastPrimaryForGroup(
-                    CollationData.reorderCodeFirst + CollationOptions.MaxVariable.currency.rawValue))
+                    CollationData.reorderCodeFirst + CollationOptions.MaxVariable.currency.rawValue),
+                dataCE32s: data.ce32s, baseCE32s: base?.ce32s ?? data.ce32s)
             let box = UnsafeMutablePointer<QuickCJKSetup>.allocate(capacity: 1)
             box.initialize(to: setup)
             self.quickCJKSetupPtr = box
@@ -559,8 +563,33 @@ public struct RootCollator: @unchecked Sendable {
         case .implicit:
             return CollationConstants.unassignedPrimaryFromCodePoint(c)
         default:
-            return 0
+            // Expansions (ko's hanja) and every other form, in the helper: the cases above keep the decision tree they had before §51 (ba) — with the expansion cases in this switch, the long-primary path of the root data got ~2.5 instructions longer per call (root cjk compare +5), also with a separate test before the switch.
+            return quickCJKExpansionPrimary(c, ce32, q)
         }
+    }
+
+    /// The primary of an expansion's first CE, 0 for any other form (ko tailors its 7476 hanja as 2- and 3-CE expansions: reading consonant, vowel, final). The caller decides only on DIFFERENT primaries, and different first primaries decide the primary level there; equal ones fall through to the pipeline. 0 (bail) when the first CE has no primary (technique log §51 (ba)). Out of line, so that the root data's paths keep their registers; it looks up again whether the CE32 came from the base, instead of a flag on the hot path.
+    @inline(never)
+    private static func quickCJKExpansionPrimary(_ c: UInt32, _ ce32: UInt32, _ q: UnsafePointer<QuickCJKSetup>) -> UInt32 {
+        let tag = CollationConstants.tagFromCE32(ce32)
+        guard tag == .expansion32 || tag == .expansion else { return 0 }
+        let fromBase = q.pointee.dataTrie.get(c) == CollationConstants.fallbackCE32
+        let idx = CollationConstants.indexFromCE32(ce32)
+        if tag == .expansion32 {
+            let ce32s = fromBase ? q.pointee.baseCE32s : q.pointee.dataCE32s
+            guard idx < ce32s.count else { return 0 }
+            return firstPrimary(ofCE32: ce32s[idx])
+        }
+        let ces = fromBase ? q.pointee.baseCEs : q.pointee.dataCEs
+        guard idx < ces.count else { return 0 }
+        return UInt32(truncatingIfNeeded: ces[idx] >> 32)
+    }
+
+    /// The primary of an expansion's first CE32: a normal or a long-primary CE32; 0 for any other form (a long-secondary CE has no primary). The same values as CollationConstants.ceFromCE32 gives.
+    @inline(__always)
+    private static func firstPrimary(ofCE32 x: UInt32) -> UInt32 {
+        guard CollationConstants.isSpecialCE32(x) else { return x & 0xffff_0000 }
+        return (x & 0xf) == CollationConstants.Tag.longPrimary.rawValue ? x & 0xffff_ff00 : 0
     }
 
     /// The non-default-options byte path and the CE pipeline. `triedFastLatin` semantics: when the caller's fast path bailed, the byte scan already proved fast-Latin inapplicable, but compareBody re-derives that cheaply via its own eligibility checks, so no flag needs to be threaded.
@@ -1104,17 +1133,19 @@ public struct RootCollator: @unchecked Sendable {
         return lFinal < rFinal ? -1 : 1
     }
 
-    /// Returns the primary weight for a scalar if it maps to a single CE (simple, LONG_PRIMARY, OFFSET, or IMPLICIT). Returns 0 for anything that needs the full pipeline (expansions, contractions, prefixes, etc.).
+    /// Returns the primary weight of the first CE of a scalar: a single CE (simple, LONG_PRIMARY, OFFSET, or IMPLICIT) or an expansion (its first CE, §51 (ba)). Returns 0 for anything that needs the full pipeline (contractions, prefixes, an expansion that starts without a primary, etc.).
     @inline(__always)
     private func quickPrimary(_ c: UInt32) -> UInt32 {
         var ce32 = data.trie.get(c)
         var cesSource = data.ces
+        var ce32sSource = data.ce32s
         if ce32 == CollationConstants.fallbackCE32 {
             guard let b = base else { return 0 }
             ce32 = b.trie.get(c)
             cesSource = b.ces
+            ce32sSource = b.ce32s
         }
-        // Only forms that produce exactly ONE CE. A normal CE32 is such a CE (primary = the top 16 bits): the tailored ideographs of ja and zh. The callers use this only for CJK unified ideographs and decide only on different primaries, so case variants or non-common secondary / tertiary weights do not matter (technique log §51 (ap)).
+        // Forms whose FIRST CE has a known primary: one CE (a normal CE32 — primary = the top 16 bits — is the form of the tailored ideographs of ja and zh) or, since §51 (ba), an expansion (ko's hanja). The callers use this only for CJK unified ideographs and decide only on different primaries, so case variants or non-common secondary / tertiary weights do not matter (technique log §51 (ap)).
         guard CollationConstants.isSpecialCE32(ce32) else { return ce32 & 0xffff_0000 }
         switch CollationConstants.tagFromCE32(ce32) {
         case .longPrimary:
@@ -1127,6 +1158,15 @@ public struct RootCollator: @unchecked Sendable {
             return CollationConstants.threeBytePrimaryForOffsetData(c, dataCE)
         case .implicit:
             return CollationConstants.unassignedPrimaryFromCodePoint(c)
+        case .expansion32:
+            // An expansion's first CE, as in quickCJKPrimary (technique log §51 (ba)).
+            let idx = CollationConstants.indexFromCE32(ce32)
+            guard idx < ce32sSource.count else { return 0 }
+            return Self.firstPrimary(ofCE32: ce32sSource[idx])
+        case .expansion:
+            let idx = CollationConstants.indexFromCE32(ce32)
+            guard idx < cesSource.count else { return 0 }
+            return UInt32(truncatingIfNeeded: cesSource[idx] >> 32)
         default:
             return 0
         }
