@@ -37,25 +37,25 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 §51 (ay): `Storage.init` and `writeSinglePass` only; §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-06, midday): HEAD = `726821fc` (§51 (bb)) on
-top of `d117eef7` (§51 (ba)), `35010ca1` (§51 (az)), `9ddf70f3`, `98bd2228`
-(the matrix of 2026-11-05 afternoon), `d7508847` (ay), `81d190a5` (ax),
-`2ec617cf`, `b8d61638` (aw), `2a53ef68` — **10 commits ahead of
+paragraph).** Expected (2026-11-06, afternoon): HEAD = the docs commit of
+the matrix of 2026-11-06 (if the user committed it; else `Docs/21`,
+`HANDOFF.md`, `optimization-targets.md` are modified — give the add / commit
+lines) on top of `6266beef` (item 6 closed, §51 (bc)), `a840099a` (handoff),
+`726821fc` (§51 (bb)), `d117eef7` (§51 (ba)), `35010ca1` (§51 (az)),
+`9ddf70f3`, `98bd2228`, `d7508847` (ay), `81d190a5` (ax), `2ec617cf`,
+`b8d61638` (aw), `2a53ef68` — **12 or 13 commits ahead of
 `origin/port/collation` = `fb17704b`, NOT pushed** (the user pushes; check
-the ahead / behind count after `git fetch origin`). Plus, if the handoff docs
-commit of 2026-11-06 is missing, `HANDOFF.md` / `optimization-targets.md`
-are modified (give the add / commit lines). **Item 6 is closed (§51 (bc));
-the user removes its code with `git checkout` on `CollationElements.swift`,
-`NFDIterator.swift`, `RootCollator.swift`, `ScratchBuffers.swift` and deletes
-`Tests/.../Collation/LatinDirectTests.swift`.** If those files still show as
-changed, the user has not done it yet: never run the matrix on that tree. The
-forms are saved as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
-`.build/l15/bc-form5b.patch`. The worktree `../collation-baseline` is
+the ahead / behind count after `git fetch origin`). The working tree has no
+engine changes: item 6's code was removed by the user (§51 (bc); its forms
+are saved as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
+`.build/l15/bc-form5b.patch`). The worktree `../collation-baseline` is
 detached at `726821fc`, clean, its `main.swift` the committed one; its
 EngineBench `.build`, `.build-al`, `.build-g` and its `.build-ab-wmo` /
 `.build-ab-nowmo` (with the probe rows) are at `726821fc`; the main tree's
-EngineBench and `.build-ab-*` builds hold item 6's form 5 (rebuild after the
-checkout; probe rows: see "How to measure", the tools of 2026-11-05/06).
+EngineBench `.build-al`, `.build-g` and its `.build-ab-*` builds hold item 6's
+form 5 (rebuild them before an A/B; probe rows: see "How to measure", the
+tools of 2026-11-05/06); its plain EngineBench and the matrix builds are at
+`6266beef`.
 (State of 2026-11-04, kept for its build list:) the A/B worktree was at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
 `main.swift`; its builds there, all with Swift 6.5: EngineBench
@@ -145,9 +145,9 @@ add them up.
    §50 (g) (the instruction-count method) and the ALLOCATION/RESOLUTION HUNT
    note at the top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
-   matrix (2026-11-05 14:33–14:52, the median of 4 runs at `d7508847`, Swift
-   6.5, macOS 27.2.1; WMO the main column; with the warm-up of §51 (aw); five
-   ‡ cells).
+   matrix (2026-11-06 13:45–14:04, the median of 4 runs at `6266beef`, the
+   engine of §51 (az)–(bb); Swift 6.5, macOS 27.2.1; WMO the main column; with
+   the warm-up of §51 (aw); three ‡ cells).
 4. `Collation/Docs/27-benchmark-runbook.md` — **"The rules since
    2026-11-04" at its top** (with the warm-up of 2026-11-05), then how to
    measure, the harness cost, the gates, the speedup convention, and **the
@@ -155,32 +155,35 @@ add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-11-05, 14:33–14:52 (the
-MEDIAN of 4 runs at `d7508847`, after §51 (ax) and (ay), with the warm-up
-of §51 (aw); Swift 6.5, macOS 27.2.1; load 5–15; ICU C within 0.7%, macOS
-within 2.3%, the frozen binary within 1 ns). Table 1, EngineBench vs ICU C,
-ns per call ours / ICU, speedup = ICU / ours:**
+**Current numbers — RECORDED in Docs/21 on 2026-11-06, 13:45–14:04 (the
+MEDIAN of 4 runs at `6266beef`, the engine of `726821fc`: after §51 (az),
+(ba), (bb); with the warm-up of §51 (aw); Swift 6.5, macOS 27.2.1; load
+3.5–9, a burst after run 4; ICU C within 0.2%, macOS within 1.9%). Table 1,
+EngineBench vs ICU C, ns per call ours / ICU, speedup = ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 8.7 / 9.3 | 1.07× faster | 72.1 / 104.2 | 1.45× faster |
-| latin | 9.1 / 10.1 | 1.11× faster | 92.7 / 121.2 | 1.31× faster |
-| cjk | 19.6 / 40.8 | 2.08× faster | 102.7 / 120.1 | 1.17× faster |
-| paths | 19.1 / 29.5 | 1.54× faster | 174.5 / 366.8 | 2.10× faster |
-| thai | 161.1 / 172.7 | 1.07× faster | 143.2 / 154.6 | 1.08× faster |
+| ascii | 8.8 / 9.3 | 1.06× faster | 71.7 / 104.2 | 1.45× faster |
+| latin | 9.1 / 10.1 | 1.11× faster | 92.2 / 120.8 | 1.31× faster |
+| cjk | 18.4 / 40.6 | 2.20× faster | 101.0 / 119.6 | 1.18× faster |
+| paths | 19.9 / 29.5 | 1.48× faster | 173.5 / 365.8 | 2.11× faster |
+| thai | 160.4 / 172.3 | 1.07× faster | 143.1 / 154.0 | 1.08× faster |
 
 **All ten rows are faster than ICU C.** The allocating sortKey (`skRet`) is
-0.79–0.86× of ICU (1.65× faster on paths). **Table 2** has two Swift
+0.80–0.87× of ICU (1.66× faster on paths). Against 2026-11-05: cjk compare
+19.6 → 18.4 (§51 (bb)); `localizedStandardCompare` WMO 15/16/33/28 →
+14/15/31.5/27, the options rows 1–3 ns faster (§51 (az)); three steady "+"
+cells, not yet explained: `compare(_:locale:)` cjk `-no-WMO` 49 → 52, the
+`SortDescriptor` sort `-no-WMO` ascii / latin +2.0 / +2.7% (Docs/21). **Table 2** has two Swift
 columns: **WMO, the main one** (user decision, 2026-11-04; release builds
-are WMO) and `-no-WMO`; floor 2.88× (WMO, `localizedCaseInsensitiveCompare`
-thai) and 1.95× (`-no-WMO`, `range(of:locale:)` cjk). The short rows read one
-level since the warm-up of §51 (aw) (`localizedCompare` WMO 12/12/24/23/166.5;
-the options rows WMO ascii / latin 15–16 / 16, the options compare 24 / 25);
-five cells are ‡ (two are one whole-ns step, three the `.localizedStandard`
-sort, not explained). **The macOS reference** (macOS 27.2.1):
+are WMO) and `-no-WMO`; floor 2.90× (WMO, `localizedCaseInsensitiveCompare`
+thai) and 1.96× (`-no-WMO`, `range(of:locale:)` cjk). The short rows read one
+level since the warm-up of §51 (aw) (`localizedCompare` WMO 12/12/24/23.5/166;
+the options rows WMO ascii / latin 14–15 / 15–16, the options compare 24 / 24);
+three cells are ‡ (the `.localizedStandard` sort, not explained). **The macOS reference** (macOS 27.2.1):
 `localizedCompare` 200/341/354/314/502 — a GATE of the checks; the Table 2
 speedups in Docs/21 use the macOS medians measured in the same series
-(`matrix_record.py`), within 2.3% of the reference on 2026-11-05 (both series). Table 2 is mostly the skipped
+(`matrix_record.py`), within 2.3% of the reference on 2026-11-05 (both series) and 1.9% on 2026-11-06. Table 2 is mostly the skipped
 NSString → CoreFoundation → C++ bridge. **Never use Table 2 as evidence
 about the engine; never cite it as consolation for a Table 1 gap.**
 
@@ -323,15 +326,12 @@ lazy globals); keep the same block in both programs.
   the probe rows with the timed stream, `oncetest.swift` = the test without
   collation code, the traces).
 
-**NEXT TASK — item 6 is closed (2026-11-06 afternoon); next the matrix, then ask.** Since the
-last recorded matrix (2026-11-05 afternoon, `d7508847`), three accepted
-changes are NOT in a matrix: §51 (az) (the option presets), (ba) (ko's
-hanja), (bb) (the CJK OFFSET primaries) — a series of 4 runs (~25 min) is a
-candidate now. **Only after the checkout of item 6's files:** `run_benchmarks.sh`
-builds from the working tree, so with item 6's code in the tree the matrix
-would measure the rejected code. The open items: the matrix, item 7, item 8
-(recommended: close it — five changes rewrote the options path since §51
-(ac)). Present these candidates in
+**NEXT TASK — item 6 is closed and the matrix of §51 (az)–(bb) is recorded
+(2026-11-06 afternoon); ask.** The open items: the two steady "+" cells of
+that matrix (`compare(_:locale:)` cjk `-no-WMO` 49 → 52; the `SortDescriptor`
+sort `-no-WMO` ascii / latin +2.0 / +2.7% — a count and an A/B against
+`d7508847` would tell work from layout), item 7, item 8 (recommended: close
+it — five changes rewrote the options path since §51 (ac)). Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
