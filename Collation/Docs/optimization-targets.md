@@ -4525,7 +4525,7 @@ pinning (a store, a load and a store more before the first byte compare).
 V5 (the options branch ends with its own `compareBody` calls, so `restart`
 is not live there) removed that chain (614 instructions) but not the WMO
 difference (A/B against HEAD: ascii / latin +1..+9%, load 37–57;
-`-no-WMO` as V4). Not shipped; the cause of HEAD's WMO advantage is open.
+`-no-WMO` as V4). Not shipped; the cause of HEAD's WMO advantage is open. **Closed 2026-11-06 (user decision, START HERE item 8), not measured:** five later changes rewrote the options path ((aq), (ar), (as), (ay), (az)); the WMO options rows went from ~38 to 14–16 ns, and the code of (z) no longer exists to compare against.
 
 **Kept: V4** (user decision, 2026-10-27): on ascii and latin it is never
 slower than the code before (z), in either build mode, and it keeps the

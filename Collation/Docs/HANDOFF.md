@@ -38,25 +38,24 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 three file parsers, creation only; §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-06, afternoon): HEAD = the docs commit of
-the matrix of 2026-11-06 (if the user committed it; else `Docs/21`,
-`HANDOFF.md`, `optimization-targets.md` are modified — give the add / commit
-lines) on top of `6266beef` (item 6 closed, §51 (bc)), `a840099a` (handoff),
-`726821fc` (§51 (bb)), `d117eef7` (§51 (ba)), `35010ca1` (§51 (az)),
+paragraph).** Expected (2026-11-06, evening): HEAD = the docs commit that
+closes item 8 (if the user committed it; else `HANDOFF.md` and
+`optimization-targets.md` are modified — give the add / commit lines) on top
+of `8936e834` (item 7 docs), `d7361747` (item 7, §51 (bd)), `def10289`,
+`aed466b3` (the matrix of 2026-11-06), `6266beef` (item 6 closed),
+`a840099a`, `726821fc` (§51 (bb)), `d117eef7` (ba), `35010ca1` (az),
 `9ddf70f3`, `98bd2228`, `d7508847` (ay), `81d190a5` (ax), `2ec617cf`,
-`b8d61638` (aw), `2a53ef68` — **12 or 13 commits ahead of
+`b8d61638` (aw), `2a53ef68` — **16 commits ahead (17 with the item-8 docs) of
 `origin/port/collation` = `fb17704b`, NOT pushed** (the user pushes; check
-the ahead / behind count after `git fetch origin`). The working tree has no
-engine changes: item 6's code was removed by the user (§51 (bc); its forms
-are saved as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
-`.build/l15/bc-form5b.patch`). The worktree `../collation-baseline` is
-detached at `d7508847` (the check of the matrix "+" cells), clean, its
-`main.swift` the committed one; its EngineBench `.build`, `.build-al`,
-`.build-g` are at `726821fc`, its `.build-ab-wmo`, `.build-ab-nowmo`,
-`.build-ab-nowmo-al` at `d7508847` with the probe rows of `.build/l16/`; the main tree's
-EngineBench `.build-al`, `.build-g` and its `.build-ab-*` builds hold item 6's
-form 5 (rebuild them before an A/B; probe rows: see "How to measure", the
-tools of 2026-11-05/06); its plain EngineBench and the matrix builds are at
+the ahead / behind count after `git fetch origin`). Item 6's forms are saved
+as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
+`.build/l15/bc-form5b.patch`. The worktree `../collation-baseline` is
+detached at `aed466b3` (the item-7 check), clean, its `main.swift` the
+committed one; its EngineBench `.build`, `.build-al`, `.build-g` are at
+`726821fc` (the same engine), its `.build-ab-wmo`, `.build-ab-nowmo`,
+`.build-ab-nowmo-al` at `aed466b3` without probe rows. The main tree's
+EngineBench `.build`, `.build-al`, `.build-g` and `.build-ab-*` builds hold
+item 7's code (`d7361747`) without probe rows; its matrix builds are at
 `6266beef`.
 (State of 2026-11-04, kept for its build list:) the A/B worktree was at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
@@ -330,13 +329,14 @@ lazy globals); keep the same block in both programs.
   the probe rows with the timed stream, `oncetest.swift` = the test without
   collation code, the traces).
 
-**NEXT TASK — item 6 is closed and the matrix of §51 (az)–(bb) is recorded
-(2026-11-06 afternoon), and its two "+" cells are layout (checked); ask.**
-The open items: item 7, item 8 (recommended: close it — five changes
-rewrote the options path since §51 (ac)). **The worktree is at
-`d7508847`** (the check of the "+" cells), with BenchFoundation `-no-WMO`,
-WMO and aligned `-no-WMO` builds that hold the probe rows of `.build/l16/`;
-move it to HEAD and rebuild before the next A/B. Present these candidates in
+**NEXT TASK — the list of 2026-11-02…11-06 is done (2026-11-06 evening):
+item 6 closed, the matrix of §51 (az)–(bb) recorded (its two "+" cells are
+layout), item 7 done (§51 (bd), committed), item 8 closed. No open item is
+left; ask the user for the next goal.** Item 7 is not yet in a matrix (it
+changes only creation, which the matrix does not time). **The worktree is at
+`aed466b3`** (the item-7 check), with BenchFoundation `-no-WMO`, WMO and
+aligned `-no-WMO` builds of that commit and the committed `main.swift`; move
+it to HEAD and rebuild before the next A/B. Present these candidates in
 this order, with the evidence, and let the user choose. **Present each in
 plain words — what it changes and what it gives — never as variant labels
 ("V2 vs V1c"; memory `feedback-no-variant-labels`).**
@@ -436,8 +436,11 @@ plain words — what it changes and what it gives — never as variant labels
    read). Left: the file read (~175 µs) and SwiftPM's bundle open (~1.1 ms,
    not in the framework build). Old text: the bundle open (~0.9 ms) and the
    data read and parse (~0.75 ms; mapping the file is the candidate; §51 (q)).
-8. Measurement only: why HEAD (z) was 1–3 ns faster on the ascii / latin
-   options rows in WMO (§51 (ac)).
+8. **CLOSED 2026-11-06 (user decision), no measurement:** why HEAD (z) was
+   1–3 ns faster on the ascii / latin options rows in WMO (§51 (ac)). Five
+   changes rewrote the options path since then ((aq), (ar), (as), (ay), (az));
+   the WMO options rows went from ~38 to 14–16 ns, and the code of (z) no
+   longer exists to compare against.
 **The macOS update happened (2026-11-04, macOS 27.2.1, 26B125):** (a) the
 new system-ICU reference was set on 2026-11-04 (Docs/21); (b) the Chrome reminder
 (start once without `--disable-features=AperitifHelpers`) was given on
