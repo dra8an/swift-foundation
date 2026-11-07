@@ -38,16 +38,12 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 three file parsers, creation only; §51 (av)).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-06, evening): HEAD = the docs commit that
-closes item 8 (if the user committed it; else `HANDOFF.md` and
-`optimization-targets.md` are modified — give the add / commit lines) on top
-of `8936e834` (item 7 docs), `d7361747` (item 7, §51 (bd)), `def10289`,
-`aed466b3` (the matrix of 2026-11-06), `6266beef` (item 6 closed),
-`a840099a`, `726821fc` (§51 (bb)), `d117eef7` (ba), `35010ca1` (az),
-`9ddf70f3`, `98bd2228`, `d7508847` (ay), `81d190a5` (ax), `2ec617cf`,
-`b8d61638` (aw), `2a53ef68` — **16 commits ahead (17 with the item-8 docs) of
-`origin/port/collation` = `fb17704b`, NOT pushed** (the user pushes; check
-the ahead / behind count after `git fetch origin`). Item 6's forms are saved
+paragraph).** Expected (2026-11-06, evening): everything up to `630ec5c7`
+(item 8 closed) is PUSHED (`origin/port/collation` = `630ec5c7`); on top of
+it, the docs commit of the final matrix (if the user committed it; else
+`Docs/21`, `HANDOFF.md`, `optimization-targets.md` are modified — give the
+add / commit lines): 0 or 1 commit ahead of origin (check after `git fetch
+origin`). Item 6's forms are saved
 as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
 `.build/l15/bc-form5b.patch`. The worktree `../collation-baseline` is
 detached at `aed466b3` (the item-7 check), clean, its `main.swift` the
@@ -146,9 +142,9 @@ add them up.
    §50 (g) (the instruction-count method) and the ALLOCATION/RESOLUTION HUNT
    note at the top of the file.
 3. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
-   matrix (2026-11-06 13:45–14:04, the median of 4 runs at `6266beef`, the
-   engine of §51 (az)–(bb); Swift 6.5, macOS 27.2.1; WMO the main column; with
-   the warm-up of §51 (aw); three ‡ cells).
+   matrix — the final one of the round (2026-11-06 16:23–16:42, the median
+   of 4 runs at `630ec5c7`; Swift 6.5, macOS 27.2.1; WMO the main column;
+   with the warm-up of §51 (aw); two ‡ cells).
 4. `Collation/Docs/27-benchmark-runbook.md` — **"The rules since
    2026-11-04" at its top** (with the warm-up of 2026-11-05), then how to
    measure, the harness cost, the gates, the speedup convention, and **the
@@ -156,22 +152,26 @@ add them up.
 5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
    ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
 
-**Current numbers — RECORDED in Docs/21 on 2026-11-06, 13:45–14:04 (the
-MEDIAN of 4 runs at `6266beef`, the engine of `726821fc`: after §51 (az),
-(ba), (bb); with the warm-up of §51 (aw); Swift 6.5, macOS 27.2.1; load
-3.5–9, a burst after run 4; ICU C within 0.2%, macOS within 1.9%). Table 1,
+**Current numbers — RECORDED in Docs/21 on 2026-11-06, 16:23–16:42, the
+FINAL MATRIX of the round (the MEDIAN of 4 runs at `630ec5c7`, pushed: the
+engine of §51 (az)–(bb) plus (bd), creation only; with the warm-up of §51
+(aw); Swift 6.5, macOS 27.2.1; load 4–21, a burst in run 3; ICU C within
+0.5%, macOS within 2.3%, the frozen binary within 4 ns). Table 1,
 EngineBench vs ICU C, ns per call ours / ICU, speedup = ICU / ours:**
 
 | corpus | compare | speedup | sortKey | speedup |
 |---|---|---|---|---|
-| ascii | 8.8 / 9.3 | 1.06× faster | 71.7 / 104.2 | 1.45× faster |
-| latin | 9.1 / 10.1 | 1.11× faster | 92.2 / 120.8 | 1.31× faster |
-| cjk | 18.4 / 40.6 | 2.20× faster | 101.0 / 119.6 | 1.18× faster |
-| paths | 19.9 / 29.5 | 1.48× faster | 173.5 / 365.8 | 2.11× faster |
-| thai | 160.4 / 172.3 | 1.07× faster | 143.1 / 154.0 | 1.08× faster |
+| ascii | 8.9 / 9.3 | 1.04× faster | 71.8 / 104.0 | 1.45× faster |
+| latin | 9.1 / 10.1 | 1.11× faster | 92.1 / 120.7 | 1.31× faster |
+| cjk | 18.4 / 40.5 | 2.20× faster | 101.1 / 119.8 | 1.19× faster |
+| paths | 19.9 / 29.5 | 1.49× faster | 173.4 / 365.3 | 2.11× faster |
+| thai | 160.4 / 172.2 | 1.07× faster | 143.1 / 153.9 | 1.08× faster |
 
 **All ten rows are faster than ICU C.** The allocating sortKey (`skRet`) is
-0.80–0.87× of ICU (1.66× faster on paths). Against 2026-11-05: cjk compare
+0.80–0.86× of ICU (1.66× faster on paths). Against the afternoon recording
+(13:45, `6266beef`): ascii compare 8.8 → 8.9 (identical machine code at a new
+address, §51 (bd)), the `-no-WMO` sorts 3.5–5.5% faster, `range(of:locale:)`
+cjk `-no-WMO` +3.4% (`-no-WMO` floor 1.96× → 1.91×). Against 2026-11-05: cjk compare
 19.6 → 18.4 (§51 (bb)); `localizedStandardCompare` WMO 15/16/33/28 →
 14/15/31.5/27, the options rows 1–3 ns faster (§51 (az)); three steady "+"
 cells in `-no-WMO` (`compare(_:locale:)` cjk 49 → 52, the `SortDescriptor`
@@ -180,10 +180,12 @@ work (fewer or equal instructions, the sign changes between a plain and an
 aligned build; §51 (bb), after the matrix line). **Table 2** has two Swift
 columns: **WMO, the main one** (user decision, 2026-11-04; release builds
 are WMO) and `-no-WMO`; floor 2.90× (WMO, `localizedCaseInsensitiveCompare`
-thai) and 1.96× (`-no-WMO`, `range(of:locale:)` cjk). The short rows read one
+thai) and 1.91× (`-no-WMO`, `range(of:locale:)` cjk). The short rows read one
 level since the warm-up of §51 (aw) (`localizedCompare` WMO 12/12/24/23.5/166;
 the options rows WMO ascii / latin 14–15 / 15–16, the options compare 24 / 24);
-three cells are ‡ (the `.localizedStandard` sort, not explained). **The macOS reference** (macOS 27.2.1):
+two cells are ‡ in the final matrix (`range(of:locale:)` and
+`range(backwards)` ascii `-no-WMO`; in the afternoon three: the
+`.localizedStandard` sort). **The macOS reference** (macOS 27.2.1):
 `localizedCompare` 200/341/354/314/502 — a GATE of the checks; the Table 2
 speedups in Docs/21 use the macOS medians measured in the same series
 (`matrix_record.py`), within 2.3% of the reference on 2026-11-05 (both series) and 1.9% on 2026-11-06. Table 2 is mostly the skipped
