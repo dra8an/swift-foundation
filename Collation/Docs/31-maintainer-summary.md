@@ -1,0 +1,149 @@
+# 31 — Summary for the swift-foundation maintainers
+
+> Written 2026-11-09 for the upstream review of branch `port/collation`
+> (fork `dra8an/swift-foundation`). Every number has its source in this
+> repository; the sources are named in brackets.
+
+## 1. What the port is
+
+A Swift implementation of the Unicode Collation Algorithm (UTS #10) inside
+`FoundationInternationalization`, so that the locale-aware string APIs work
+on platforms without the Darwin Foundation framework (issue #284). It follows
+ICU4C's collation runtime (the "v2" design) and the ICU4X model:
+
+- It reads ICU's binary collation data ("UCol" format v5): the root data
+  `ucadata.icu` and 98 compiled tailorings, from ICU 79.0.1. There is no
+  runtime rule builder; a tailoring is a compiled binary
+  (`Collation/Tools/extract_tailoring.c` extracts them from an ICU build).
+- It normalizes to NFD on the fly (its own data, `nfd.bin`, generated from
+  ICU's `nfc.txt`, Unicode 17).
+- It has ICU's fast paths for Latin text ("fast Latin"), sort keys, and
+  collation-aware search (`contains`, `range(of:)`).
+
+Code: `Sources/FoundationInternationalization/Collation/` (15 files, 7,459
+lines) and the Foundation wiring in `String/String+Collation.swift` (the
+collator cache, 287 lines), `String/StringProtocol+Locale.swift` and
+`String/String+SortComparator.swift`.
+
+## 2. What it changes for users
+
+**Darwin framework build (`FOUNDATION_FRAMEWORK`): nothing.**
+`foundation_swift_collation_feature_enabled()` returns `false` there, and
+the existing paths stay.
+
+**All other builds (SwiftPM, the CMake build of the toolchain: Linux,
+Windows):** these APIs collate with the engine, with the Darwin signatures:
+
+- `localizedCompare`, `localizedCaseInsensitiveCompare`,
+  `localizedStandardCompare`, `compare(_:options:range:locale:)`;
+- `localizedStandardContains`, `localizedCaseInsensitiveContains`,
+  `localizedStandardRange(of:)`, `range(of:options:range:locale:)`;
+- `String.StandardComparator` (`.localizedStandard`, `.localized`) and
+  `String.Comparator` with a locale, so the sorts with `SortDescriptor` and
+  `KeyPathComparator` too.
+
+A locale change invalidates the cached collators (`LocaleNotifications`).
+
+## 3. Correctness
+
+- **The UCA conformance files** (`CollationTest_NON_IGNORABLE_SHORT.txt`,
+  `CollationTest_SHIFTED_SHORT.txt`), ICU's `collationtest.txt`, and ICU's
+  collation test data `cmsccoll`, `g7coll`, `regcoll` and the per-locale
+  suites, extracted to JSON (`Tests/.../Collation/Conformance/`).
+- **Sort keys byte for byte equal to ICU's `ucol_getSortKey`**, across
+  option sets and tailorings (`SortKeyTests.keysMatchICUByteForByte`,
+  `TailoringTests.keysMatchICU`; reference keys generated with ICU 79.0.1,
+  `Tests/.../Collation/Golden/`).
+- **Internal invariants:** compare against sort-key order for every option
+  set, the restart after a common prefix, the fast paths against the full
+  path, search positions (`PositionInvariantTests`), concurrency with the
+  Thread Sanitizer.
+- 39 test files with 225 test functions, most of them parameterized; the
+  package's full suite passes: 1576 tests in 140 suites.
+- **One deliberate difference from ICU:** ICU's `ucol_strcoll` skips a
+  common prefix in a way that is wrong for two option sets (alternate =
+  shifted, backward secondary); its compare then disagrees with its own sort
+  keys. Our compare agrees with the sort keys and UTS #10 (technique log
+  §51 (z)).
+
+## 4. Performance
+
+Measured on Apple Silicon (M1 Max), macOS 27.2.1, Swift 6.5, the median of 4
+runs (Docs/21, 2026-11-06).
+
+**The engine against ICU4C** (EngineBench against ICU C, ns per call;
+speedup = ICU / ours):
+
+| corpus | compare | sortKey |
+|---|---|---|
+| ASCII | 8.9 / 9.3, 1.04× | 71.8 / 104.0, 1.45× |
+| Latin | 9.1 / 10.1, 1.11× | 92.1 / 120.7, 1.31× |
+| CJK | 18.4 / 40.5, 2.20× | 101.1 / 119.8, 1.19× |
+| paths | 19.9 / 29.5, 1.49× | 173.4 / 365.3, 2.11× |
+| Thai | 160.4 / 172.2, 1.07× | 143.1 / 153.9, 1.08× |
+
+The API that returns a new `[UInt8]` key is 0.80–0.86× of ICU, which writes
+into the caller's buffer; most of that difference is the new array itself
+(§51 (be)).
+
+**The Foundation APIs against macOS's own implementation** (WMO release
+build against `NSString` → CoreFoundation → ICU on the same machine;
+mostly the bridge that the Swift path does not have): `localizedCompare`
+12 / 12 / 24 / 23.5 / 166 ns against 201 / 349 / 356 / 313 / 504 ns; the
+lowest speedup of all rows 2.90× (Docs/21).
+
+**Collator creation** (the first collator of a process): 418 µs in a cold
+process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
+(§51 (bf)).
+
+## 5. Build changes
+
+- **CMake:** `Collation/CMakeLists.txt` with the 15 sources;
+  `String+Collation.swift` in `String/CMakeLists.txt`.
+- **The data, compiled in:** a C target `_FoundationCollationData` (SwiftPM
+  and CMake) with `ucadata.icu`, `nfd.bin` and the 98 tailorings as byte
+  arrays, as swift-foundation-icu ships ICU's data. It adds 2.08 MB to the
+  library and about 10 MB of generated text to the repository
+  (`Sources/_FoundationCollationData/data/*.inc`). The generator is
+  `Collation/Tools/gen_collation_data.py`; the input files stay in
+  `Sources/FoundationInternationalization/Collation/Resources/`.
+- **Checked:** the SwiftPM build and its full suite; the CMake build on
+  macOS (with Xcode's `cmake` and `ninja`), whose library collates in a small
+  program (root and Swedish).
+
+## 6. Open points (for the maintainers to decide)
+
+1. **Public engine types.** `RootCollator`, `CollationData`,
+   `NormalizationData` and `CollationOptions` are `public` in
+   `FoundationInternationalization`. They are not needed as API; they could
+   become `internal` (or `package`), which needs small changes in the tests.
+2. **Upstream `main` has an ICU-based compare (PR #1683),** behind the flag
+   `FOUNDATION_ICU_STRING_COMPARE` (off by default), for
+   `compare(_:options:range:locale:)` only; it opens and closes an ICU
+   collator per call. This branch starts from `upstream/release/6.3`
+   (`dbacc677`); a PR to `main` must replace or reconcile it (rebase plan:
+   Docs/24).
+3. **Not yet built or tested on Linux or Windows.** The CMake build was
+   checked on macOS only.
+4. **Big-endian hosts:** the data parsers have a byte-swapping path for
+   big-endian hosts (`DataStorage.storeLittleEndian`), not yet run on such a
+   host.
+5. **Test-only data in the library:** the ICU4X variant of the root data
+   (`ucadata-icu4x.icu`, used only by tests through the public
+   `CollationData.rootICU4X()`) is still a SwiftPM resource of the library;
+   it could move to the test target.
+6. **Scope cuts:** no custom rules at run time (no rule builder); NFD
+   normalization cannot be turned off; script reordering only as the data
+   supplies it.
+7. **Data updates:** a new ICU version means: extract the tailorings, copy
+   `ucadata.icu`, regenerate `nfd.bin` and the reference keys, and run
+   `gen_collation_data.py`.
+8. **`Collation/`** (docs, tools, benchmarks, the technique log) is the
+   working folder of the port and not meant for the upstream PR.
+
+## 7. A possible PR sequence
+
+The port can go in as one PR or in steps. The steps of Docs/26 still apply in
+outline: the core compare with the root data and a few tailorings, then sort
+keys, the fast paths, search, the Foundation wiring, and the remaining
+tailorings. The build changes of section 5 belong to the first step.

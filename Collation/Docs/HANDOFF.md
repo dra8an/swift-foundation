@@ -357,8 +357,12 @@ canImport(_FoundationCollationData)`); the file lookup stays as the fallback
 for the test-only ICU4X variant (still a SwiftPM resource) and for the bench
 tools, which copy the engine sources and the files. Checked: full suite
 1576/140 on the compiled-in path; the CMake build links the data, and a
-small program against the CMake libraries collates (root and sv). Not yet
-measured: the creation time without the file read and the bundle open.
+small program against the CMake libraries collates (root and sv). Creation
+(§51 (bf), 20 processes each): `RootCollator()` cold 3891 → 418 µs, after a
+`Bundle.main` lookup 1817 → 436 µs, tailorings ja / sv 306 / 248 → 248 / 192.
+**The summary for the maintainers:** `Collation/Docs/31-maintainer-summary.md`
+(2026-11-09: what the port is, what it changes, correctness, performance,
+build changes, eight open points).
 Also open: a Linux build (no Docker or Linux machine here), the big-endian
 path of §51 (bd) (untested), a summary for the maintainers. How to build
 with CMake on this Mac: Xcode's `cmake` / `ninja` in
