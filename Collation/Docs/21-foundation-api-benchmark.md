@@ -235,6 +235,8 @@ compare the two sides within a corpus, never one corpus with another.
 | Thai   | 160.4 | 172.2 | **1.07× faster** | 143.1 | 153.9 | **1.08× faster** | 192.8 | 0.80× (slower) |
 
 
+**The skRet column (the allocating `sortKey(for:)`) and ICU** (technique log §51 (be), 2026-11-09): ICU's `ucol_getSortKey` writes into the caller's buffer; ours returns a new `[UInt8]`. About three quarters of the extra ~530 instructions per key are the new array itself (`malloc` ~265, the standard library's `malloc_size` ~130 with macOS 27's allocator); the rest is array plumbing, already in its cheapest form (three other forms tried, all slower). The like-for-like cell is the inout `sortKey`.
+
 **Change against the recording of 2026-11-06 afternoon (13:45–14:04,
 `6266beef`; the same engine but for §51 (bd), which changes creation
 only).** Table 1 within 1% except ascii compare 8.8 → 8.9 (+1.1%: the

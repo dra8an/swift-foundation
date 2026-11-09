@@ -334,7 +334,39 @@ lazy globals); keep the same block in both programs.
 **NEXT TASK — the list of 2026-11-02…11-06 is done (2026-11-06 evening):
 item 6 closed, the matrix of §51 (az)–(bb) recorded (its two "+" cells are
 layout), item 7 done (§51 (bd), committed), item 8 closed. No open item is
-left; ask the user for the next goal.** Item 7 is not yet in a matrix (it
+left; ask the user for the next goal.** (2026-11-09: the allocating sortKey
+checked — §51 (be): its gap to ICU is mostly the new array's `malloc` and
+`malloc_size`; three other copy forms were slower; nothing changed.)
+**Upstream preparation (started 2026-11-09, user's choice).** The CMake build
+(the toolchain's) did not compile with the port: the Collation folder and
+`String+Collation.swift` were missing from the CMake lists ("cannot find
+'RootCollator'"; the Codable errors in the format styles were follow-on
+errors — the fork point `dbacc677` builds cleanly). Fixed: a
+`Collation/CMakeLists.txt`, `String+Collation.swift` in `String/CMakeLists.txt`,
+`add_subdirectory(Collation)`, the new file in `Package.swift`'s `exclude`;
+`collationResourceURL` uses `Bundle.module` only under `#if SWIFT_PACKAGE`.
+**The data, compiled in (user decision, 2026-11-09):** the C target
+`_FoundationCollationData` (SwiftPM and CMake) holds `ucadata.icu`,
+`nfd.bin` and the 98 tailorings as byte arrays (2.08 MB; 10 MB of generated
+text in `Sources/_FoundationCollationData/data/*.inc`), as swift-foundation-icu
+ships ICU's data; `_foundation_collation_resource(name, &length)` finds them
+by name ("ucadata", "nfd", "tailorings/<name>"). Regenerate after any change
+to `Collation/Resources`: `python3 Collation/Tools/gen_collation_data.py`.
+The engine reads them through `collationResourceBytes` (`#if
+canImport(_FoundationCollationData)`); the file lookup stays as the fallback
+for the test-only ICU4X variant (still a SwiftPM resource) and for the bench
+tools, which copy the engine sources and the files. Checked: full suite
+1576/140 on the compiled-in path; the CMake build links the data, and a
+small program against the CMake libraries collates (root and sv). Not yet
+measured: the creation time without the file read and the bundle open.
+Also open: a Linux build (no Docker or Linux machine here), the big-endian
+path of §51 (bd) (untested), a summary for the maintainers. How to build
+with CMake on this Mac: Xcode's `cmake` / `ninja` in
+`/Applications/Xcode2.app/Contents/Developer/usr/local/bin`, `SDKROOT` set,
+`-D_SwiftFoundationICU_SourceDIR` / `-D_SwiftCollections_SourceDIR` pointing
+at `.build/checkouts/`, build dir `.build/cmake`, target
+`FoundationInternationalization`. The worktree is at `dbacc677` (the
+fork point) for that check. Item 7 is not yet in a matrix (it
 changes only creation, which the matrix does not time). **The worktree is at
 `aed466b3`** (the item-7 check), with BenchFoundation `-no-WMO`, WMO and
 aligned `-no-WMO` builds of that commit and the committed `main.swift`; move
