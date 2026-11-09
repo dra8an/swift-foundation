@@ -73,6 +73,7 @@ public struct NormalizationData: @unchecked Sendable {
     }
 
     private static let bundled = Result { () throws -> NormalizationData in
+        if let bytes = collationResourceBytes("nfd") { return try NormalizationData(raw: bytes) }
         guard let url = collationResourceURL("nfd", "bin") else {
             throw ParseError.tooShort
         }

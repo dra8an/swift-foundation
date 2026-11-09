@@ -102,9 +102,7 @@ import Testing
 
     /// The release quick path does not test the variable top: every primary that quickCJKPrimary returns for a CJK unified ideograph must be above the highest variable top (maxVariable = currency), so that a primary difference decides under alternate=shifted too. Checked here for every ideograph of root and of all bundled tailorings.
     @Test func quickPrimariesAreNeverVariable() throws {
-        let any = try #require(collationResourceURL("ja", "bin", subdirectory: "tailorings"))
-        let names = try FileManager.default.contentsOfDirectory(atPath: any.deletingLastPathComponent().path)
-            .filter { $0.hasSuffix(".bin") }.map { String($0.dropLast(4)) }.sorted()
+        let names = RestartSafetyTests.tailorings.sorted()
         try #require(names.count > 90, "the bundled tailorings")
         var failures = 0
         for name in [""] + names {

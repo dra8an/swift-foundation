@@ -1,0 +1,4 @@
+module _FoundationCollationData {
+    header "_FoundationCollationData.h"
+    export *
+}
