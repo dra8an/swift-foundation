@@ -23,13 +23,13 @@ import Testing
 /// caseFirst/caseLevel off; alternate per file (non-ignorable vs shifted).
 ///
 /// Lines containing unpaired surrogates are skipped: Swift Strings cannot
-/// represent them (the scalar-based design shares this property with ICU4X).
+/// represent them.
 /// Skipping a line compares its neighbors directly, which the files' total
 /// order permits.
 @Suite struct ConformanceTests {
     private static let _collators = Result {
         [("regular", try RootCollator()),
-         ("icu4x", RootCollator(data: try CollationTestData.rootICU4X(), norm: try .standard()))]
+         ("nfd-only", RootCollator(data: try CollationTestData.rootNFDOnly(), norm: try .standard()))]
     }
     static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 

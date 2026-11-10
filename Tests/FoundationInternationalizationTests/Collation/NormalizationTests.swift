@@ -98,11 +98,11 @@ import Testing
 
 /// Canonical equivalence at the collator level: all forms of the same text
 /// must compare equal, against both the regular (closure) data and the
-/// NFD-only ICU4X-variant data.
+/// NFD-only root data.
 @Suite struct CanonicalEquivalenceTests {
     private static let _collators = Result {
         [("regular", try RootCollator()),
-         ("icu4x", RootCollator(data: try CollationTestData.rootICU4X(), norm: try .standard()))]
+         ("nfd-only", RootCollator(data: try CollationTestData.rootNFDOnly(), norm: try .standard()))]
     }
     static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 

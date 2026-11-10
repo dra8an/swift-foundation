@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// Incremental NFD: adapts a Unicode scalar stream into its canonical decomposition with canonical ordering applied — the "fused decomposition" front end of the ICU4X collator model.
+// Incremental NFD: adapts a Unicode scalar stream into its canonical decomposition with canonical ordering applied — the front end of the collator, which normalizes every input.
 //
 // Each refill produces one reorderable unit: a starter (or the string-initial run of non-starters) plus all following combining marks, with the marks stably sorted by canonical combining class (the Canonical Ordering Algorithm, UAX #15).
 

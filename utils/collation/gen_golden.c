@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
         }
         /* Locale option sets use the locale's default settings. */
         if (!optionSets[k].locale) ucol_setStrength(coll, optionSets[k].strength);
-        /* Our implementation follows the ICU4X model: normalization is always
+        /* Our implementation always normalizes its input: normalization is always
          * on. ICU's root collator defaults to normalization OFF, which gives
          * different (non-canonical) results for input whose combining marks
          * are not in canonical order. Generate the reference answers the same way. */

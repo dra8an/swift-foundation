@@ -18,7 +18,7 @@
 // Hangul syllables are not in nfc.txt and are decomposed arithmetically at
 // runtime; this tool asserts that assumption.
 //
-// nfd.bin layout (little-endian), version 2 — the ICU4X-style single-trie
+// nfd.bin layout (little-endian), version 2 — a single-trie
 // design: one lookup per scalar yields ccc + lead-ccc + decomposition.
 //   u32 magic "SNFD" (0x44464e53)
 //   u32 version (2)

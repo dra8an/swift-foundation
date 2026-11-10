@@ -8,8 +8,10 @@
 
 A Swift implementation of the Unicode Collation Algorithm (UTS #10) inside
 `FoundationInternationalization`, so that the locale-aware string APIs work
-on platforms without the Darwin Foundation framework (issue #284). It follows
-ICU4C's collation runtime (the "v2" design) and the ICU4X model:
+on platforms without the Darwin Foundation framework (issue #284). It reads
+ICU's collation data and follows the structure of ICU4C's collation runtime
+(the "v2" design), from which parts are ported (`NOTICE.txt` has the entry
+with ICU's license):
 
 - It reads ICU's binary collation data ("UCol" format v5): the root data
   `ucadata.icu` and 98 compiled tailorings, taken from an ICU 79.0.1 build;
@@ -145,11 +147,13 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    big-endian hosts (`DataStorage.storeLittleEndian`), not yet run on such a
    host. Needs a big-endian machine or an emulator; not possible on the
    development Mac.
-5. **Test-only data: in the test target (done 2026-11-09).** The ICU4X
-   variant of the root data (`ucadata-icu4x.icu`, 585 KB, used only by the
+5. **Test-only data: in the test target (done 2026-11-09).** The NFD-only
+   root data (`ucadata-nfd-only.icu`, 585 KB: ICU's root data without
+   canonical closure, as ICU's `genuca` tool builds it with option `-X`;
+   used only by the
    conformance and differential tests) moved to
-   `Tests/.../Collation/TestData/`, loaded by `CollationTestData.rootICU4X()`;
-   `CollationData.rootICU4X()` is gone. `FoundationInternationalization`
+   `Tests/.../Collation/TestData/`, loaded by `CollationTestData.rootNFDOnly()`;
+   the library's own loader for it is gone. `FoundationInternationalization`
    now has no resources and ships no resource bundle.
 6. **Scope cuts:** no custom rules at run time (no rule builder); NFD
    normalization cannot be turned off; script reordering only as the data
@@ -192,7 +196,7 @@ to upstream `main` are at this repository's root). Counted on
 | No force unwraps (`!`, `as!`) in sources or tests; `try` / `#require` in tests | **done 2026-11-10:** 88 in 13 test files → `try #require`, a `guard let` in one parser; 2 in the sources → `flatMap`, and `guard let … else { preconditionFailure(…) }` (the compiled wrapper code is identical). Left on purpose: 4 `unsafelyUnwrapped` in hot paths, part of the unsafe use (row 2). The new `preconditionFailure` cannot be reached from a test (a private helper, called only with stored-property key paths), so it has no exit test | — |
 | Performance through `swift-benchmark` entries under `Benchmarks/` | **done 2026-11-10:** `Benchmarks/Benchmarks/Internationalization/BenchmarkCollation.swift` — the 14 Foundation APIs of Table 2 (5 compares, 5 searches, 4 sorts) on 5 corpora, 70 entries named `Collation-<API>-<corpus>`; the corpora in `Internationalization/Resources/` (our ascii, latin, cjk and paths corpora, and 200 lines of the shuffled Thai corpus); `CollationCorpora.swift` finds them through `Bundle.module` (a separate file: its import of the system Foundation must not reach the collation calls); one `resources:` line in `Benchmarks/Package.swift`. The engine types are `package`, so the benchmark package cannot measure the engine itself (Table 1). Checked on macOS: the compare and search rows agree with the WMO column of Docs/21 (`localizedCompare` ascii 13.4 ns against 12); the sort rows are nearer to the `-no-WMO` column. To build on this branch, `BenchmarkTimeZone.swift` got upstream's own fix of PR #1958 (`TimeZone.knownTimeZoneIdentifiers`) | on a fresh upstream `main`, keep only the new files and the two added lines; run with `SWIFTCI_USE_LOCAL_DEPS=<a folder whose swift-foundation is this checkout>` |
 | Every source file starts with the Swift.org license header | **done 2026-11-10:** the standard header (Copyright (c) 2026 Apple Inc. and the Swift project authors, Apache License v2.0 with Runtime Library Exception, the LICENSE and CONTRIBUTORS lines) added to the 15 engine files, 37 collation test files and the 4 generators in `utils/collation`; the damaged header of `String+Collation.swift` and the 3 test headers without the CONTRIBUTORS line made standard. Comments only: the code without comments is identical in all 57 Swift files | — |
-| Derived work is listed in `NOTICE.txt` (it lists, for example, three Base64 sources) | **deferred (the owner's decision, 2026-11-10):** the owner's view is that the engine implements UCA (UTS #10), the same source that ICU implements, and shares no implementation with ICU; `NOTICE.txt` has no ICU entry | decide with the maintainers whether an entry is necessary (for example for the bundled ICU data files) |
+| Derived work is listed in `NOTICE.txt` (it lists, for example, three Base64 sources) | **done 2026-11-10:** a `NOTICE.txt` entry for ICU's collation code (the ported parts of ICU4C's `i18n/collation*.cpp`, `common/ucharstrie.cpp`, `common/utrie2.cpp`) and ICU's collation data, with the Unicode License V3 of ICU `release-78.3`; the header of `RootCollator.swift` and section 1 name UTS #10 first and point to the entry; the NFD-only test data has a name that says what it is (`ucadata-nfd-only.icu`, `CollationTestData.rootNFDOnly()`) | confirm the form of the entry with the maintainers |
 | Small PRs, one task each; squashed commits; tests that fail before and pass after | the sequence of section 7 fits | one PR per step, each with its tests |
 | DocC documentation for new methods | the new `StringProtocol` collation methods follow the Darwin signatures; their DocC is partly there | complete DocC on every method that the PR adds |
 | Merge-forward branching: target the earliest release branch that should get the change | not decided | choose `main` or a `release/6.x` branch; this also decides how open point 2 (#1683) is met |

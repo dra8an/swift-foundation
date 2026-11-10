@@ -10,10 +10,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-// String comparison against the CLDR root collation.
+// String comparison by the Unicode Collation Algorithm (UTS #10), on ICU's binary collation data: the CLDR root collation and its tailorings.
 //
-// Ported from ICU4C's "collation v2" design on the ICU4X architectural model:
-// - input is incrementally NFD-decomposed and canonically reordered before CE lookup (the fused-decomposition front end), so arbitrary non-NFD input compares correctly
+// The runtime structure follows ICU4C's collation code (the "collation v2" design; see NOTICE.txt). Unlike ICU4C, it always normalizes the input to NFD:
+// - input is incrementally NFD-decomposed and canonically reordered before CE lookup, so arbitrary non-NFD input compares correctly
 // - all strengths (primary..quaternary, identical) and settings: alternate shifted + maxVariable, case-first, case-level, backwards-secondary ("French"), numeric (CODAN)
 // - full context-dependent mappings: contraction (suffix) matching including discontiguous contractions per UTS #10 S2.1, and prefix matching over the two preceding scalars (sufficient for all CLDR prefixes)
 // - root plus compiled tailorings with script reordering; works against both the regular root data (with canonical closure) and the NFD-only variant

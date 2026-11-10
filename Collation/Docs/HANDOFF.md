@@ -42,18 +42,16 @@ matrix recorded 2026-11-06, see "Current numbers"). The work is the
 **upstream preparation** of the port for swift-foundation: the CMake build,
 the compiled-in data, the maintainer summary (`Collation/Docs/31-maintainer-summary.md`)
 and the compliance with upstream's contribution guide (a 4-step plan; all
-four steps done on 2026-11-10, see NEXT TASK; then the license headers,
-added the same day; the ICU entry in `NOTICE.txt` deferred by the user,
-Docs/31 section 8).
+four steps done on 2026-11-10, see NEXT TASK; then the license headers
+and the ICU entry in `NOTICE.txt`, the same day, Docs/31 section 8).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
 paragraph).** Expected (2026-11-10, afternoon): HEAD = `bc8c65f8` (guide
 step 4) on `893ae795` (step 3), `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
 and `c2f87de9` (step 1) — **5 commits ahead of
 `origin/port/collation` = `dd24f0ba`, not pushed** — plus the license-header
-commit if the user made it (else 57 Swift files, 2 C files and 1 Python
-file with header-only changes, and `HANDOFF.md`, `31-maintainer-summary.md`
-are modified: give the add / commit lines). The
+commit and the ICU-notice commit if the user made them (check git; if
+`NOTICE.txt` is modified, give the add / commit lines). The
 working tree has no engine code changes. The worktree `../collation-baseline` is
 detached at `dbacc677` (the fork point of the branch, used for the CMake
 check), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
@@ -411,10 +409,19 @@ in the user's 4-step plan:
    line standard; `code_unchanged.py`: 57 Swift files CODE UNCHANGED (run it
    from the repository root: with a relative path from another folder it
    reports "new:"). Module maps have no header upstream, so none was added.
-   **The ICU entry: deferred by the user** ("ignore ICU for now. our
-   algorithm is purely based on UCA and it is the same source as ICU");
-   Docs/31 records the user's view; do not raise it again unless the user
-   or a reviewer does.
+   **The ICU entry: done the same day.** The user first deferred it ("our
+   algorithm is purely based on UCA"); the project's own records (the
+   "faithful port of …" comments, Docs/03, Docs/15) say parts are ported
+   from ICU4C, so the user agreed to: `NOTICE.txt` entry (ICU's collation
+   code and data, Unicode License V3 of `release-78.3`), the header of
+   `RootCollator.swift` and Docs/31 section 1 with UTS #10 first and a
+   pointer to `NOTICE.txt`, the "ported from" file references kept. **User
+   rule: no reference to ICU4X in the files for the PR** (Sources, Tests,
+   utils, Benchmarks, Docs/31): `.build/l25/drop_icu4x.py` removed them;
+   the NFD-only test data is now `TestData/ucadata-nfd-only.icu`, loaded by
+   `CollationTestData.rootNFDOnly()`, test label "nfd-only". Suite
+   1576/140. The working folder `Collation/` (e.g. Docs/02's file name)
+   still has them; it is not for the PR.
 **At PR time (not now):** the split into small PRs (Docs/31 section 7), the
 target branch (upstream's merge-forward model: the earliest release branch
 that should get the change), the Evolution question (API parity with Darwin
