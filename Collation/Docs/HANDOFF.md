@@ -387,7 +387,8 @@ A Linux build and the big-endian path are open points 3 and 4 of
 Docker, no Linux, no big-endian machine). **User decision, 2026-11-10: keep
 them only in that list — do not offer them as next steps.** **The upstream
 contribution guide** (`CONTRIBUTING.md`, `CONTRIBUTION_GUIDELINE.md` on
-upstream `main`; found 2026-11-10, the project had not known it): the gaps
+upstream `main`; found 2026-11-10, the project had not known it; copies,
+identical to upstream `main`, at the repository root since the same day): the gaps
 of the branch are section 8 of Docs/31 (comments with history, Unsafe use,
 `@unchecked Sendable`, force unwraps in tests, `Benchmarks/` entries, the
 target branch, the Evolution question); to fix on the PR branch. How to build

@@ -177,7 +177,8 @@ tailorings. The build changes of section 5 belong to the first step.
 ## 8. Gaps against the upstream contribution guide (to fix on the PR branch)
 
 Upstream `main` has `CONTRIBUTING.md` and `CONTRIBUTION_GUIDELINE.md`
-(added after this branch's fork point, upstream PR #2012). Counted on
+(added after this branch's fork point, upstream PR #2012; copies identical
+to upstream `main` are at this repository's root). Counted on
 2026-11-10 in the engine and its Foundation wiring:
 
 | rule | state of the branch | what the PR branch needs |
