@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-## START HERE (current as of 2026-11-06 — everything below this section is history)
+## START HERE (current as of 2026-11-10 — everything below this section is history)
 
 **If anything in the history below contradicts this section, this section
 wins.** The history has stale rules and numbers on purpose; it is the record.
@@ -37,22 +37,27 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 §51 (ay): `Storage.init` and `writeSinglePass` only; since §51 (bd) also the
 three file parsers, creation only; §51 (av)).
 
+**The phase now (2026-11-10).** The performance round is FINISHED (final
+matrix recorded 2026-11-06, see "Current numbers"). The work is the
+**upstream preparation** of the port for swift-foundation: the CMake build,
+the compiled-in data, the maintainer summary (`Collation/Docs/31-maintainer-summary.md`)
+and the compliance with upstream's contribution guide (a 4-step plan; steps
+1 and 2 done, **step 3 ON HOLD by the user's decision**, see NEXT TASK).
+
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-06, evening): everything up to `630ec5c7`
-(item 8 closed) is PUSHED (`origin/port/collation` = `630ec5c7`); on top of
-it, the docs commit of the final matrix (if the user committed it; else
-`Docs/21`, `HANDOFF.md`, `optimization-targets.md` are modified — give the
-add / commit lines): 0 or 1 commit ahead of origin (check after `git fetch
-origin`). Item 6's forms are saved
-as `.build/l14/bc-form4.patch`, `.build/l15/bc-form5.patch`,
-`.build/l15/bc-form5b.patch`. The worktree `../collation-baseline` is
-detached at `aed466b3` (the item-7 check), clean, its `main.swift` the
-committed one; its EngineBench `.build`, `.build-al`, `.build-g` are at
-`726821fc` (the same engine), its `.build-ab-wmo`, `.build-ab-nowmo`,
-`.build-ab-nowmo-al` at `aed466b3` without probe rows. The main tree's
-EngineBench `.build`, `.build-al`, `.build-g` and `.build-ab-*` builds hold
-item 7's code (`d7361747`) without probe rows; its matrix builds are at
-`6266beef`.
+paragraph).** Expected (2026-11-10, noon): HEAD = `a5d42d78` (guide step 2,
+the comments) on `c2f87de9` (guide step 1) — **2 commits ahead of
+`origin/port/collation` = `dd24f0ba`, not pushed** — plus the handoff docs
+commit of 2026-11-10 if the user made it (else `HANDOFF.md` and
+`31-maintainer-summary.md` are modified: give the add / commit lines). The
+working tree has no code changes. The worktree `../collation-baseline` is
+detached at `dbacc677` (the fork point of the branch, used for the CMake
+check), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
+before the next A/B (the block below). The main tree's builds: default
+`.build` (SwiftPM release, BenchFoundation) at HEAD's code; EngineBench
+`.build`/`.build-al`/`.build-g` at the code of `b30a9e66` (the same engine
+code as HEAD; comments differ); `.build/cmake` = the CMake build (see NEXT
+TASK); the matrix builds at `6266beef`.
 (State of 2026-11-04, kept for its build list:) the A/B worktree was at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
 `main.swift`; its builds there, all with Swift 6.5: EngineBench
@@ -126,31 +131,32 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1574 tests in 138
-suites** — `swift test` prints three summary lines (45/5, 588/94, 941/40; since §51 (bb));
-add them up.
+anything longer or with wider effect. Suite gate: **1576 tests in 140
+suites** — `swift test` prints three summary lines (45/5, 590/95, 941/40;
+since 2026-11-09); add them up.
 
 **Read next, in this order:**
 1. Your memory index from disk and ALL its feedback files — the user's
    working rules; then `project-next-steps-2026-11-06` (the state and the
-   decisions of 2026-11-05…11-06; `project-next-steps-2026-11-04` is its
-   history).
-2. `Collation/Docs/optimization-targets.md` **§51 (aw)–(bc)** — the technique
-   log of 2026-11-05…11-06, all of it (the two matrix lines of 2026-11-05 sit
-   after (aw) and after (ay)); **(bc) is the open item 6**. Then §51 (aq)–(av)
-   (2026-11-02…11-04). For background: §51 (ai)–(ap), (z)–(ah), (l), (y),
-   §50 (g) (the instruction-count method) and the ALLOCATION/RESOLUTION HUNT
-   note at the top of the file.
-3. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
+   decisions up to 2026-11-10), `project-m8-integration-state` (the
+   integration and the upstream preparation) and
+   `reference-upstream-contribution-guide`.
+2. `Collation/Docs/31-maintainer-summary.md` — the summary for the
+   swift-foundation maintainers: what the port is, what it changes,
+   correctness, performance, build changes, **section 6 (open points)** and
+   **section 8 (the gaps against the contribution guide, with what is done)**.
+3. `CONTRIBUTION_GUIDELINE.md` and `CONTRIBUTING.md` at the repository root
+   (copies of upstream `main`'s files) and `utils/collation/README.md` (the
+   data generators and the order of a data update).
+4. `Collation/Docs/optimization-targets.md` — §51 (bd)–(bf) and the final
+   matrix line after (bf) (2026-11-06…11-09: creation, the allocating
+   sortKey, the compiled-in data). Background only: §51 (aw)–(bc) and older;
+   the performance work is finished.
+5. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
    matrix — the final one of the round (2026-11-06 16:23–16:42, the median
-   of 4 runs at `630ec5c7`; Swift 6.5, macOS 27.2.1; WMO the main column;
-   with the warm-up of §51 (aw); two ‡ cells).
-4. `Collation/Docs/27-benchmark-runbook.md` — **"The rules since
-   2026-11-04" at its top** (with the warm-up of 2026-11-05), then how to
-   measure, the harness cost, the gates, the speedup convention, and **the
-   third check (the frozen binary)**.
-5. `Collation/Docs/30-icu4j-fastlatin-signed-pair-bug.md` — a side note (an
-   ICU4J bug we do NOT have; do not make our fast-Latin `pair` type signed).
+   of 4 runs at `630ec5c7`; Swift 6.5, macOS 27.2.1; WMO the main column).
+6. Only if you measure: `Collation/Docs/27-benchmark-runbook.md` ("The
+   rules since 2026-11-04" at its top, the third check: the frozen binary).
 
 **Current numbers — RECORDED in Docs/21 on 2026-11-06, 16:23–16:42, the
 FINAL MATRIX of the round (the MEDIAN of 4 runs at `630ec5c7`, pushed: the
@@ -331,10 +337,63 @@ lazy globals); keep the same block in both programs.
   the probe rows with the timed stream, `oncetest.swift` = the test without
   collation code, the traces).
 
-**NEXT TASK — the list of 2026-11-02…11-06 is done (2026-11-06 evening):
-item 6 closed, the matrix of §51 (az)–(bb) recorded (its two "+" cells are
-layout), item 7 done (§51 (bd), committed), item 8 closed. No open item is
-left; ask the user for the next goal.** (2026-11-09: the allocating sortKey
+**NEXT TASK (2026-11-10) — ask the user first.** The open work is the
+compliance with upstream's contribution guide (`CONTRIBUTION_GUIDELINE.md`
+at the root; gaps and status: section 8 of `Collation/Docs/31-maintainer-summary.md`),
+in the user's 4-step plan:
+1. **DONE:** no force unwraps in the collation tests (88 → `try #require`)
+   or the sources (2); every `@unchecked Sendable` (9) has an
+   `@unchecked Sendable:` reason and a `// TODO:` migration path or a "no
+   migration is planned" note (`c2f87de9`).
+2. **DONE:** source comments keep the "why" without history — no references
+   to the technique log or § numbers, no measurements, no `Collation/Tools`
+   references (121 lines in 17 files, `a5d42d78`). The check:
+   `python3 .build/l24/code_unchanged.py <file> [rev]` removes all comments
+   from the file and from `<rev>:<file>` and compares the rest ("CODE
+   UNCHANGED"); `.build/l24/apply.py` applied the edits.
+3. **ON HOLD (user decision, 2026-11-10, at the handoff) — resume only when
+   the user says so: the unsafe code, justified, not removed** (the user:
+   "the unsafe part is crucial for our implementation … commenting that we
+   did it for a reason"). Done so far: the inventory, 250 uses of
+   `Unsafe…Pointer` types in the engine and `String+Collation.swift`, by kind
+   — (a) read-only data views (tables, CEs, tries): 104, mostly
+   `RootCollator.swift` 46, `CollationData` 13, `CollationElements` 12;
+   (b) pinned UTF-8 bytes of the strings (and byte tables): 45,
+   `RootCollator` 19, `CollationSearch` 13; (c) one-object boxes and in-place
+   pointers (the setup boxes, `ScratchBuffers.left/right/keyBuffer`, the
+   collators in the cache slots): 42; raw pointers (published slots,
+   `DataStorage` allocations, the writer's temporary region): 18; the rest
+   small (the writer's `UnsafeMutablePointer<UInt8>`, CEBuffer's storage,
+   the lock). The plan for the rest: one "why unsafe" comment per kind at
+   its central declaration (most kinds already have one: `DataStorage`'s
+   header, `ScalarSource`, `ScratchBuffers.left/right`, the setup boxes,
+   `CEBuffer`, the writer's region — check each and add what is missing,
+   e.g. why not `Span`: non-escapable, cannot be stored, needs macOS 26);
+   move a stray use into its helper only where the machine code stays the
+   same (count it); a short section in Docs/31 with the measured cost of the
+   safe alternatives (sources: technique log §30 storage box, §37 search
+   buffers, §48 exclusivity scopes, §51 (k) scratch pointers, §51 (h)
+   CEBuffer, the String-iterator retains of §51; Span: memory
+   `project-span-findings`).
+4. **Not started:** `swift-benchmark` entries in upstream's `Benchmarks/`
+   (e.g. `Benchmarks/Benchmarks/Internationalization/BenchmarkCollation.swift`,
+   in the form of their `BenchmarkLocale.swift`): `localizedCompare`,
+   `localizedStandardCompare`, `compare(_:locale:)`, contains, a sort, on our
+   corpora. Risk: the package needs `package-benchmark` from GitHub, and the
+   network proxy blocked a GitHub fetch over HTTPS on 2026-11-09 (SSH over
+   443 works) — test the fetch first.
+**At PR time (not now):** the split into small PRs (Docs/31 section 7), the
+target branch (upstream's merge-forward model: the earliest release branch
+that should get the change), the Evolution question (API parity with Darwin
+— ask the workgroup), and the other developer's upstream change #1683
+(Docs/31 open point 2: can our PR leave its FoundationEssentials stub
+untouched?). These are recorded; do not work on them before the user starts
+the PR branch. The Linux build and the big-endian check are open points 3
+and 4 of Docs/31 — **user decision 2026-11-10: never offer them as next
+steps** (this Mac cannot do them).
+
+**Done 2026-11-09…10 (the upstream preparation, all committed):**
+the list of 2026-11-02…06 finished (item 6 closed, the matrix of §51 (az)–(bb) recorded, item 7 done, item 8 closed). (2026-11-09: the allocating sortKey
 checked — §51 (be): its gap to ICU is mostly the new array's `malloc` and
 `malloc_size`; three other copy forms were slower; nothing changed.)
 **Upstream preparation (started 2026-11-09, user's choice).** The CMake build
@@ -400,22 +459,27 @@ wrapper code identical instruction for instruction (33 functions). **Step 2
 done the same day:** 121 comment lines in 17 files without history (no §
 or technique-log references, no measurements, no `Collation/Tools`
 references); `.build/l24/code_unchanged.py <file> [rev]` checked that the
-code without comments is identical, file by file. Next: step 3, a
-why-comment per kind of unsafe use and isolation in small helpers, then
-step 4, `Benchmarks/` entries. How to build
-with CMake on this Mac: Xcode's `cmake` / `ninja` in
-`/Applications/Xcode2.app/Contents/Developer/usr/local/bin`, `SDKROOT` set,
+code without comments is identical, file by file. Step 3 is on hold (see
+NEXT TASK). **How to build with CMake on this Mac:** Xcode's `cmake` /
+`ninja` in `/Applications/Xcode2.app/Contents/Developer/usr/local/bin`,
+`SDKROOT=$(xcrun --sdk macosx --show-sdk-path)` exported and
+`-DCMAKE_OSX_SYSROOT=$SDKROOT` (else "unable to load standard library"),
+`-DCMAKE_Swift_COMPILER=$(xcrun --find swiftc)`, `-G Ninja`,
 `-D_SwiftFoundationICU_SourceDIR` / `-D_SwiftCollections_SourceDIR` pointing
-at `.build/checkouts/`, build dir `.build/cmake`, target
-`FoundationInternationalization`. The worktree is at `dbacc677` (the
-fork point) for that check. Item 7 is not yet in a matrix (it
-changes only creation, which the matrix does not time). **The worktree is at
-`aed466b3`** (the item-7 check), with BenchFoundation `-no-WMO`, WMO and
-aligned `-no-WMO` builds of that commit and the committed `main.swift`; move
-it to HEAD and rebuild before the next A/B. Present these candidates in
-this order, with the evidence, and let the user choose. **Present each in
-plain words — what it changes and what it gives — never as variant labels
-("V2 vs V1c"; memory `feedback-no-variant-labels`).**
+at `.build/checkouts/swift-foundation-icu` / `swift-collections`, build dir
+`.build/cmake`, target `FoundationInternationalization`; the first configure
+checks out swift-syntax for the macros. **After any CMake file change the
+reconfigure tries to update swift-syntax from GitHub over HTTPS, which the
+network proxy blocks (502): run `cmake -DFETCHCONTENT_UPDATES_DISCONNECTED=ON .`
+in `.build/cmake` first.** A program against the CMake libraries needs
+`-I .build/cmake/swift`, `-Xcc -I.build/cmake/_CModulesForClients`, and
+`-Xcc -fmodule-map-file=` for each module map there and for
+`_FoundationICU`'s. Item 7 (creation) is not in a matrix: the matrix does
+not time creation. **Present choices in plain words — what each changes
+and what it gives — never as variant labels ("V2 vs V1c"; memory
+`feedback-no-variant-labels`).**
+
+**The list of 2026-11-02…11-06 (history; all done or closed):**
 1. **DONE 2026-11-05 (§51 (aw)): why short rows are two-level.** The cause
    is the `dispatch_once` window (~16–28 ms) after the first use of the two
    lazy globals that each Foundation call reads (`CollatorCache.shared`,
@@ -603,6 +667,25 @@ changes (the remaining wrapper cost, `LocaleNotifications.count()`'s lock,
   dispatch that is inlined into the hot entry moves the register allocation
   of the whole entry — root cjk, Thai under th / ja / zh, and the `-no-WMO`
   entries on ascii / latin each paid 5–51 instructions in some variant.
+- **Status every 15–20 minutes, a full stop at 30–45 (repeated 2026-11-06):**
+  the clock starts when the user says "do X" and counts ALL work — code,
+  test runs, checks, docs — not only measuring. On 2026-11-06 item 7 ran ~55
+  minutes without a report: "dont go working for an hour without update! How
+  many times I need to write that????".
+- **Pitfalls of 2026-11-09/10:** a commit line must not name a path whose
+  removal is already staged — the add then fails with "pathspec did not
+  match" and stages nothing (give `-A <dirs>` for moves and deletions);
+  zsh does not split `$S` into several paths — use an array `S=(a b c)` and
+  `$S` (a count read 0 falsely); a SwiftPM test bundle's
+  `url(forResource:withExtension:subdirectory:)` did not find a file in a
+  copied folder — look up the folder (`url(forResource: "TestData",
+  withExtension: nil)`) and append the name; `Data.withUnsafeBytes` gives the
+  calling function a stack protector (a stack copy for a small `Data`) —
+  accepted in the three creation-only parsers, and `check_stack_protection.sh`
+  lists them as expected; library sizes: an unstripped CMake build is
+  mostly symbol tables — compare with `strip -x` copies (the port adds 2.08
+  MB of data and ~0.28 MB of code to a stripped library); the fork's
+  `origin/main` is a copy of upstream `main` from 2026-06-04, not current.
 - **Pitfalls of 2026-11-05/06:** the wake log says "Using BATT" for the
   first second after a wake while the Thunderbolt dock reconnects — check
   `pmset -g ps` ("Now drawing from 'AC Power'") before you say "battery"

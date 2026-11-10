@@ -12,7 +12,10 @@ on platforms without the Darwin Foundation framework (issue #284). It follows
 ICU4C's collation runtime (the "v2" design) and the ICU4X model:
 
 - It reads ICU's binary collation data ("UCol" format v5): the root data
-  `ucadata.icu` and 98 compiled tailorings, from ICU 79.0.1. There is no
+  `ucadata.icu` and 98 compiled tailorings, taken from an ICU 79.0.1 build;
+  the root data is byte for byte ICU's `ucadata-unihan.icu` of tag
+  `release-78.3` (plus 12 bytes of fill from the packaged data build), so
+  the two versions have the same root collation data. There is no
   runtime rule builder; a tailoring is a compiled binary
   (`utils/collation/extract_tailoring.c` extracts them from an ICU build).
 - It normalizes to NFD on the fly (its own data, `nfd.bin`, generated from
@@ -184,7 +187,7 @@ to upstream `main` are at this repository's root). Counted on
 | rule | state of the branch | what the PR branch needs |
 |---|---|---|
 | No comments that only explain what the code does, or that refer to the history of a change; no manual wrapping | **done 2026-11-10:** 121 comment lines in 17 files rewritten — no reference to the technique log or a § number is left, no measurement numbers (one kept where the number is the reason: a tailoring build takes ~0.2 ms, so the cache does not hold its lock during it), no references to `Collation/Tools`; the "why" of each choice stays. Checked file by file: the code without comments is identical | the history stays in `Collation/Docs` and goes into the PR descriptions |
-| Avoid `Unsafe…Pointer` APIs unless no safe alternative exists; isolate them in small helpers | 254 uses (data views, pinned UTF-8 bytes, scratch buffers) | a short justification per kind of use (performance, measured); keep them inside small helpers; expect review discussion |
+| Avoid `Unsafe…Pointer` APIs unless no safe alternative exists; isolate them in small helpers | 250 uses, by kind (counted 2026-11-10): read-only data views 104, pinned UTF-8 bytes 45, one-object boxes and in-place pointers 42, raw pointers 18, small rest; **the justification step is on hold** (the owner's decision) | a short justification per kind of use (performance, measured); keep them inside small helpers; expect review discussion |
 | `@unchecked Sendable` and `nonisolated(unsafe)`: a comment why it is safe, and a `// TODO:` migration path | **done 2026-11-10:** all 9 have an `@unchecked Sendable:` reason; 6 have a `// TODO:` migration path (one Sendable wrapper for the buffer views; `LockedState` for the tailoring cache; a standard thread-local API); 3 say why no migration is planned (raw memory, lock-free published snapshots) | — |
 | No force unwraps (`!`, `as!`) in sources or tests; `try` / `#require` in tests | **done 2026-11-10:** 88 in 13 test files → `try #require`, a `guard let` in one parser; 2 in the sources → `flatMap`, and `guard let … else { preconditionFailure(…) }` (the compiled wrapper code is identical). Left on purpose: 4 `unsafelyUnwrapped` in hot paths, part of the unsafe use (row 2). The new `preconditionFailure` cannot be reached from a test (a private helper, called only with stored-property key paths), so it has no exit test | — |
 | Performance through `swift-benchmark` entries under `Benchmarks/` | the benchmarks live in `Collation/` (not part of the PR) | `Benchmarks/` entries for the numbers the PR claims |
