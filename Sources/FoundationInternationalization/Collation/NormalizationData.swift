@@ -5,7 +5,7 @@
 import Foundation
 
 // @unchecked: the buffer views are immutable after init and their memory is owned by `storage`, which the struct retains.
-public struct NormalizationData: @unchecked Sendable {
+package struct NormalizationData: @unchecked Sendable {
     /// Owns the memory behind the buffer views below.
     let storage: DataStorage
     /// Block number per 64-scalar range (0..<0x110000 covered).
@@ -15,13 +15,13 @@ public struct NormalizationData: @unchecked Sendable {
     /// Decomposition scalars, referenced by the values' offset/length.
     let buffer: UnsafeBufferPointer<UInt32>
 
-    public enum ParseError: Error {
+    package enum ParseError: Error {
         case tooShort
         case badMagic
         case unsupportedVersion(UInt32)
     }
 
-    public init(contentsOf url: URL) throws {
+    package init(contentsOf url: URL) throws {
         let file = try Data(contentsOf: url)
         self = try file.withUnsafeBytes { try NormalizationData(raw: $0) }
     }
@@ -68,7 +68,7 @@ public struct NormalizationData: @unchecked Sendable {
     }
 
     /// The bundled normalization data (Unicode 17, from ICU's nfc.txt), parsed once per process and shared: the value is immutable, and a copy is one retain. Parsing it took ~135 µs on every collator creation (technique log §51).
-    public static func standard() throws -> NormalizationData {
+    package static func standard() throws -> NormalizationData {
         try bundled.get()
     }
 

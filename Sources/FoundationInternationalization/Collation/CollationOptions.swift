@@ -1,7 +1,7 @@
 // Collation options, mirroring ICU4C's CollationSettings options word (i18n/collationsettings.h) so the ported comparison code can use the same bit tests as the original.
 
-public struct CollationOptions: Sendable, Equatable {
-    public enum Strength: Int32, Sendable {
+package struct CollationOptions: Sendable, Equatable {
+    package enum Strength: Int32, Sendable {
         case primary = 0
         case secondary = 1
         case tertiary = 2
@@ -10,39 +10,39 @@ public struct CollationOptions: Sendable, Equatable {
         case identical = 15
     }
 
-    public enum Alternate: Sendable {
+    package enum Alternate: Sendable {
         /// Variable characters (spaces, punctuation, ...) are regular CEs.
         case nonIgnorable
         /// Variable characters are shifted down to the quaternary level.
         case shifted
     }
 
-    public enum CaseFirst: Sendable {
+    package enum CaseFirst: Sendable {
         case off
         case lowerFirst
         case upperFirst
     }
 
     /// Which reorder groups count as "variable" under alternate=shifted.
-    public enum MaxVariable: Int32, Sendable {
+    package enum MaxVariable: Int32, Sendable {
         case space = 0
         case punctuation = 1
         case symbol = 2
         case currency = 3
     }
 
-    public var strength: Strength = .tertiary
-    public var alternate: Alternate = .nonIgnorable
-    public var maxVariable: MaxVariable = .punctuation
-    public var caseFirst: CaseFirst = .off
+    package var strength: Strength = .tertiary
+    package var alternate: Alternate = .nonIgnorable
+    package var maxVariable: MaxVariable = .punctuation
+    package var caseFirst: CaseFirst = .off
     /// Insert a separate case level between the secondary and tertiary levels.
-    public var caseLevel = false
+    package var caseLevel = false
     /// Compare secondary weights backwards ("French" accent ordering).
-    public var backwardSecondary = false
+    package var backwardSecondary = false
     /// Compare digit runs numerically (CODAN): "item9" < "item10".
-    public var numeric = false
+    package var numeric = false
 
-    public init() {}
+    package init() {}
 
     /// Decodes a CollationSettings options word (e.g. a tailoring's defaults from the data's IX_OPTIONS).
     init(icuOptionsWord word: Int32) {

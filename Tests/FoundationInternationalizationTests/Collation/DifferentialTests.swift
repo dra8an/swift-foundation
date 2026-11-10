@@ -11,7 +11,7 @@ import Testing
 @Suite struct DifferentialTests {
     private static let _collators = Result {
         [("regular", try RootCollator()),
-         ("icu4x", RootCollator(data: try .rootICU4X(), norm: try .standard()))]
+         ("icu4x", RootCollator(data: try CollationTestData.rootICU4X(), norm: try .standard()))]
     }
     static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 

@@ -7,8 +7,8 @@
 # Usage (from the repo root): python3 Collation/Tools/gen_collation_data.py
 #   Reads  Sources/FoundationInternationalization/Collation/Resources/{ucadata.icu, nfd.bin, tailorings/*.bin}
 #   Writes Sources/_FoundationCollationData/{collation_data.c, data/*.inc, include/_FoundationCollationData.h}
-# Run it again after any change to those files. The ICU4X variant (ucadata-icu4x.icu) is test-only data and is not
-# compiled in.
+# Run it again after any change to those files. (The ICU4X variant, ucadata-icu4x.icu, is test-only data in
+# Tests/FoundationInternationalizationTests/Collation/TestData/ and is not compiled in.)
 import os, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

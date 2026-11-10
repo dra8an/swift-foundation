@@ -7,14 +7,14 @@
 // - root plus compiled tailorings with script reordering; works against both the regular root data (with canonical closure) and the NFD-only variant
 
 // @unchecked: the two stored views (fast Latin table, restart safety) point into the storage owned by `data`/`base`/`norm`, which the struct retains; everything is immutable after init.
-public struct RootCollator: @unchecked Sendable {
-    public enum Order: Int, Sendable {
+package struct RootCollator: @unchecked Sendable {
+    package enum Order: Int, Sendable {
         case ascending = -1
         case same = 0
         case descending = 1
     }
 
-    public enum CollationError: Error {
+    package enum CollationError: Error {
         case unsupportedMapping(scalar: UInt32, tag: UInt32)
         case malformedData
     }
@@ -277,7 +277,7 @@ public struct RootCollator: @unchecked Sendable {
     var base: CollationData? { storage.base }
     var norm: NormalizationData { storage.norm }
     var reordering: Reordering? { storage.reordering }
-    public var defaultOptions: CollationOptions { storage.defaultOptions }
+    package var defaultOptions: CollationOptions { storage.defaultOptions }
     private var threadLocal: ThreadLocalScratch { storage.threadLocal }
     private var fastLatinCache: FastLatinCache { storage.fastLatinCache }
     private var defaultFLPrimaries: UnsafeBufferPointer<UInt16> { storage.defaultFLPrimaries }
@@ -294,17 +294,17 @@ public struct RootCollator: @unchecked Sendable {
     private var restartSafetyPtr: UnsafePointer<RestartSafety> { UnsafePointer(storage.restartSafetyPtr) }
 
     /// A collator over the given data. Not cached: every call builds its own storage (custom data, tests).
-    public init(data: CollationData, norm: NormalizationData) {
+    package init(data: CollationData, norm: NormalizationData) {
         self.storage = Self.makeRootStorage(data: data, norm: norm)
     }
 
     /// The root collator. Its storage is built once per process and shared (it is immutable; the per-thread scratch buffers stay per thread), as ICU builds its root collator once. Building it took ~490 µs on every call (technique log §51).
-    public init() throws {
+    package init() throws {
         self.storage = try Self.rootStorage.get()
     }
 
     /// A collator for a bundled locale tailoring (e.g. "sv", "de-phonebook", "fr_CA", "ja", "zh"), based on the regular root data. Its storage is built once per process and name and shared, as ICU's UnifiedCache does for tailorings.
-    public init(tailoringNamed name: String) throws {
+    package init(tailoringNamed name: String) throws {
         self.storage = try Self.tailoringStorages.storage(named: name)
     }
 
@@ -369,12 +369,12 @@ public struct RootCollator: @unchecked Sendable {
     ///
     /// Hot/cold split: the default-options fast-Latin byte path lives in a non-throwing function (it cannot fail), so the error-handling ABI is only paid when the CE pipeline actually runs. Measured on Intel: `throws` alone cost 10 ns/call on the fast path — two thirds of the entire mini-CE comparison.
     @inline(__always)
-    public func compare(_ left: String, _ right: String) throws -> Order {
+    package func compare(_ left: String, _ right: String) throws -> Order {
         try compare(left, right, options: defaultOptions)
     }
 
     /// Explicit-options variant; the no-options overload above forwards with the collator's defaults. Overloads, not an optional default parameter: the Optional wrap plus nil-resolution branch cost +2..3 ns on the hot entry (measured, EngineBench A/B).
-    public func compare(
+    package func compare(
         _ left: String, _ right: String, options: CollationOptions
     ) throws -> Order {
         var restart = -1
@@ -928,11 +928,11 @@ public struct RootCollator: @unchecked Sendable {
 
     /// Searches for `pattern` within `text` at the given collation strength. Returns the range of the first match, or nil if not found.
     @inline(__always)
-    public func search(for pattern: String, in text: String) -> Range<String.Index>? {
+    package func search(for pattern: String, in text: String) -> Range<String.Index>? {
         search(for: pattern, in: text, options: defaultOptions)
     }
 
-    public func search(
+    package func search(
         for pattern: String, in text: String, options: CollationOptions
     ) -> Range<String.Index>? {
         let scratch = takeScratch()
@@ -946,11 +946,11 @@ public struct RootCollator: @unchecked Sendable {
 
     /// Searches backwards for `pattern` in `text`. Returns the range of the last match, or nil if not found.
     @inline(__always)
-    public func searchBackwards(for pattern: String, in text: String) -> Range<String.Index>? {
+    package func searchBackwards(for pattern: String, in text: String) -> Range<String.Index>? {
         searchBackwards(for: pattern, in: text, options: defaultOptions)
     }
 
-    public func searchBackwards(
+    package func searchBackwards(
         for pattern: String, in text: String, options: CollationOptions
     ) -> Range<String.Index>? {
         let scratch = takeScratch()
@@ -964,11 +964,11 @@ public struct RootCollator: @unchecked Sendable {
 
     /// Returns true if `text` contains `pattern` at the given collation strength.
     @inline(__always)
-    public func contains(pattern: String, in text: String) -> Bool {
+    package func contains(pattern: String, in text: String) -> Bool {
         contains(pattern: pattern, in: text, options: defaultOptions)
     }
 
-    public func contains(
+    package func contains(
         pattern: String, in text: String, options: CollationOptions
     ) -> Bool {
         // Reuse the thread-local scratch iterator across calls — searching one pattern over many strings (the localizedStandardContains case) then allocates no per-call CEIterator or CE buffer.
@@ -983,11 +983,11 @@ public struct RootCollator: @unchecked Sendable {
 
     /// The sort key for a string: level bytes with 01 separators, optional identical level (BOCSU over NFD), 00 terminator. Byte-wise comparison of two sort keys equals compare() at the same options.
     @inline(__always)
-    public func sortKey(for s: String) throws -> [UInt8] {
+    package func sortKey(for s: String) throws -> [UInt8] {
         try sortKey(for: s, options: defaultOptions)
     }
 
-    public func sortKey(
+    package func sortKey(
         for s: String, options: CollationOptions
     ) throws -> [UInt8] {
         var key: [UInt8] = []
@@ -999,11 +999,11 @@ public struct RootCollator: @unchecked Sendable {
     ///
     /// This is the ICU `ucol_getSortKey(dest, destCapacity)` model: the caller owns the output memory.
     @inline(__always)
-    public func sortKey(for s: String, into key: inout [UInt8]) throws {
+    package func sortKey(for s: String, into key: inout [UInt8]) throws {
         try sortKey(for: s, into: &key, options: defaultOptions)
     }
 
-    public func sortKey(
+    package func sortKey(
         for s: String, into key: inout [UInt8], options: CollationOptions
     ) throws {
         let scratch = takeScratch()

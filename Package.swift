@@ -195,15 +195,10 @@ let package = Package(
                 "Locale/CMakeLists.txt",
                 "Calendar/CMakeLists.txt",
                 "Collation/CMakeLists.txt",
-                "Collation/Resources/ucadata.icu",
-                "Collation/Resources/nfd.bin",
-                "Collation/Resources/tailorings",
+                // The collation data is compiled in (_FoundationCollationData); these files are the generator's input.
+                "Collation/Resources",
                 "CMakeLists.txt",
                 "Predicate/CMakeLists.txt"
-            ],
-            // The root data, nfd.bin and the tailorings are compiled in (_FoundationCollationData); the files stay here as the generator's input. Only the test-only ICU4X variant is a resource.
-            resources: [
-                .copy("Collation/Resources/ucadata-icu4x.icu"),
             ],
             cSettings: wasiLibcCSettings,
             swiftSettings: [
@@ -220,6 +215,7 @@ let package = Package(
             resources: [
                 .copy("Collation/Golden"),
                 .copy("Collation/Conformance"),
+                .copy("Collation/TestData"),
             ],
             swiftSettings: availabilityMacros + featureSettings + testOnlySwiftSettings
         ),

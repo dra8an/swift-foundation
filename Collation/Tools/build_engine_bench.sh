@@ -12,7 +12,7 @@ ENGINE_SRC="$REPO/Sources/FoundationInternationalization/Collation"
 
 mkdir -p "$OUT/Sources/CollEngine/Resources" "$OUT/Sources/EngineBench"
 cp "$ENGINE_SRC"/*.swift "$OUT/Sources/CollEngine/"
-cp "$ENGINE_SRC/Resources/ucadata.icu" "$ENGINE_SRC/Resources/ucadata-icu4x.icu" \
+cp "$ENGINE_SRC/Resources/ucadata.icu" \
    "$ENGINE_SRC/Resources/nfd.bin" "$OUT/Sources/CollEngine/Resources/"
 rsync -a --delete "$ENGINE_SRC/Resources/tailorings/" "$OUT/Sources/CollEngine/Resources/tailorings/"
 cp "$SCRIPT_DIR/engine-bench/main.swift" "$OUT/Sources/EngineBench/main.swift"
@@ -29,7 +29,6 @@ let package = Package(
             path: "Sources/CollEngine",
             resources: [
                 .copy("Resources/ucadata.icu"),
-                .copy("Resources/ucadata-icu4x.icu"),
                 .copy("Resources/nfd.bin"),
                 .copy("Resources/tailorings"),
             ]

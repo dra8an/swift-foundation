@@ -32,7 +32,7 @@ import Testing
 
     @Test func rootTablesMatchTheFullCheck() throws {
         #expect(Self.mismatches(try RootCollator()) == [])
-        #expect(Self.mismatches(RootCollator(data: try .rootICU4X(), norm: try .standard())) == [])
+        #expect(Self.mismatches(RootCollator(data: try CollationTestData.rootICU4X(), norm: try .standard())) == [])
     }
 
     @Test(arguments: tailorings) func tailoringTablesMatchTheFullCheck(name: String) throws {

@@ -1,0 +1,16 @@
+import Foundation
+@testable import FoundationInternationalization
+
+/// Collation data that only the tests use, in the test bundle (`TestData/`); the library ships only the data it needs, compiled in.
+enum CollationTestData {
+    /// The NFD-only root data (genuca -X variant: no canonical closure, no Hangul syllable mappings; it needs the NFD front end), parsed once per test process. The conformance and differential tests run it next to the bundled root data.
+    static func rootICU4X() throws -> CollationData { try icu4x.get() }
+
+    private static let icu4x = Result { () throws -> CollationData in
+        // The folder first, then the file, as the Golden and Conformance tests find theirs (a lookup with `subdirectory:` did not find it).
+        guard let folder = Bundle.module.url(forResource: "TestData", withExtension: nil) else {
+            throw CollationData.ParseError.missingPart("TestData in the test bundle")
+        }
+        return try CollationData(contentsOf: folder.appendingPathComponent("ucadata-icu4x.icu"))
+    }
+}
