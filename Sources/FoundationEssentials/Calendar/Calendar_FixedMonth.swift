@@ -375,7 +375,7 @@ internal final class _CalendarFixedMonth: _CalendarProtocol, Sendable {
             return DateInterval(start: firstEraStart, end: secondEraStart)
         case .ethiopicAmeteAlem:
             return DateInterval(start: _CalendarUtility.localMidnight(rataDie: rules.startOfYear(1), in: timeZone), duration: duration)
-        case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura:
+        case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic:
             guard extendedYear >= 1 else { return nil }
             return DateInterval(start: _CalendarUtility.localMidnight(rataDie: rules.startOfYear(1), in: timeZone), duration: duration)
         }
@@ -721,6 +721,7 @@ extension _CalendarFixedMonth {
         case islamicCivil
         case islamicTabular
         case islamicUmmAlQura
+        case islamic
 
         init?(identifier: Calendar.Identifier) {
             switch identifier {
@@ -732,6 +733,7 @@ extension _CalendarFixedMonth {
             case .islamicCivil: self = .islamicCivil
             case .islamicTabular: self = .islamicTabular
             case .islamicUmmAlQura: self = .islamicUmmAlQura
+            case .islamic: self = .islamic
             default: return nil
             }
         }
@@ -739,7 +741,7 @@ extension _CalendarFixedMonth {
         var monthsInYear: Int {
             switch self {
             case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem: return 13
-            case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return 12
+            case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return 12
             }
         }
 
@@ -748,13 +750,13 @@ extension _CalendarFixedMonth {
         var eraRange: Range<Int> {
             switch self {
             case .coptic, .ethiopicAmeteMihret: return 0..<2
-            case .ethiopicAmeteAlem, .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return 0..<1
+            case .ethiopicAmeteAlem, .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return 0..<1
             }
         }
 
         var yearRange: Range<Int> {
             switch self {
-            case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return 1..<5_000_001
+            case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return 1..<5_000_001
             case .persian, .indian: return -5_000_000..<5_000_001
             }
         }
@@ -762,7 +764,7 @@ extension _CalendarFixedMonth {
         var yearForWeekOfYearRange: Range<Int> {
             switch self {
             case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem, .persian, .indian: return -5_000_000..<5_000_001
-            case .islamicCivil, .islamicTabular, .islamicUmmAlQura: return 1..<5_000_001
+            case .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return 1..<5_000_001
             }
         }
 
@@ -770,14 +772,14 @@ extension _CalendarFixedMonth {
         var yearLengths: ClosedRange<Int> {
             switch self {
             case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem, .persian, .indian: return 365...366
-            case .islamicCivil, .islamicTabular, .islamicUmmAlQura: return 354...355
+            case .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return 354...355
             }
         }
 
         var minimumDayRange: Range<Int> {
             switch self {
             case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem: return 1..<6
-            case .persian, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return 1..<30
+            case .persian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return 1..<30
             case .indian: return 1..<31
             }
         }
@@ -786,7 +788,7 @@ extension _CalendarFixedMonth {
         var maximumDayRange: Range<Int> {
             switch self {
             case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem: return 1..<31
-            case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return 1..<32
+            case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return 1..<32
             }
         }
 
@@ -794,7 +796,7 @@ extension _CalendarFixedMonth {
             switch self {
             case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem: return -1..<2
             case .persian: return 1..<6
-            case .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return -1..<6
+            case .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return -1..<6
             }
         }
 
@@ -802,7 +804,7 @@ extension _CalendarFixedMonth {
             switch self {
             case .coptic, .ethiopicAmeteMihret, .ethiopicAmeteAlem: return -1..<6
             case .persian: return 1..<6
-            case .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return -1..<6
+            case .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return -1..<6
             }
         }
 
@@ -820,7 +822,7 @@ extension _CalendarFixedMonth {
                 return extendedYear > 0 ? (1, extendedYear) : (0, 1 - extendedYear)
             case .ethiopicAmeteMihret:
                 return extendedYear > 0 ? (1, extendedYear) : (0, extendedYear + ameteAlemOffset)
-            case .ethiopicAmeteAlem, .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura:
+            case .ethiopicAmeteAlem, .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic:
                 return (0, extendedYear)
             }
         }
@@ -841,7 +843,7 @@ extension _CalendarFixedMonth {
                 if (era ?? 1) == 1 { return year }
                 let (result, overflow) = year.subtractingReportingOverflow(ameteAlemOffset)
                 return overflow ? nil : result
-            case .ethiopicAmeteAlem, .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura:
+            case .ethiopicAmeteAlem, .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic:
                 return year
             }
         }
@@ -869,7 +871,7 @@ extension _CalendarFixedMonth {
             case .ethiopicAmeteMihret: return 2_431
             case .ethiopicAmeteAlem: return -2_006_444
             case .persian, .indian: return 0
-            case .islamicCivil, .islamicUmmAlQura: return 227_015
+            case .islamicCivil, .islamicUmmAlQura, .islamic: return 227_015
             case .islamicTabular: return 227_014
             }
         }
@@ -887,6 +889,8 @@ extension _CalendarFixedMonth {
                 guard let entry = Self.ummAlQuraEntry(year) else { return Self.islamicCivil.startOfYear(year) }
                 let shift = Int(entry >> 13)
                 return epochRataDie + _CalendarUtility.floorDiv(10_631 * (year - 1), 30) + (entry & 0x1000 == 0 ? shift : -shift)
+            case .islamic:
+                return epochRataDie + Self.islamicMonthStart(12 * (year - 1))
             case .persian:
                 // Each year in the correction table is one day shorter than the 33 year rule says. The year after it starts one day earlier.
                 func isCorrected(_ year: Int) -> Bool {
@@ -931,6 +935,9 @@ extension _CalendarFixedMonth {
             case .islamicUmmAlQura:
                 guard let entry = Self.ummAlQuraEntry(year) else { return Self.islamicCivil.daysInMonth(year: year, month: month) }
                 return 29 + Int((entry >> (month - 1)) & 1)
+            case .islamic:
+                let monthIndex = 12 * (year - 1) + month - 1
+                return Self.islamicMonthStart(monthIndex + 1) - Self.islamicMonthStart(monthIndex)
             }
         }
 
@@ -952,6 +959,8 @@ extension _CalendarFixedMonth {
             case .islamicUmmAlQura:
                 guard let entry = Self.ummAlQuraEntry(year) else { return Self.islamicCivil.daysBeforeMonth(year: year, month: month) }
                 return 29 * (month - 1) + (entry & UInt16((1 << (month - 1)) - 1)).nonzeroBitCount
+            case .islamic:
+                return Self.islamicMonthStart(12 * (year - 1) + month - 1) - Self.islamicMonthStart(12 * (year - 1))
             }
         }
 
@@ -966,7 +975,7 @@ extension _CalendarFixedMonth {
             case .coptic: return era == 1 ? 1 : nil
             case .ethiopicAmeteMihret: return era == 1 ? 1 : 1 - ameteAlemOffset
             case .ethiopicAmeteAlem: return 1
-            case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura: return extendedYear >= 1 ? 1 : nil
+            case .persian, .indian, .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic: return extendedYear >= 1 ? 1 : nil
             }
         }
 
@@ -1000,6 +1009,14 @@ extension _CalendarFixedMonth {
                 if remainder < 31 * 5 { return (year, remainder / 31 + 2, remainder % 31 + 1, dayIndex + 1) }
                 remainder -= 31 * 5
                 return (year, remainder / 30 + 7, remainder % 30 + 1, dayIndex + 1)
+            case .islamic:
+                // The mean month gives a month that is at most one off. The two loops step to the month that holds the day.
+                let days = rataDie - epochRataDie
+                var monthIndex = Int((Double(days) / Self.islamicMeanMonth).rounded(.down))
+                while Self.islamicMonthStart(monthIndex) > days { monthIndex -= 1 }
+                while Self.islamicMonthStart(monthIndex + 1) <= days { monthIndex += 1 }
+                let year = _CalendarUtility.floorDiv(monthIndex, 12) + 1
+                return (year, monthIndex - 12 * (year - 1) + 1, days - Self.islamicMonthStart(monthIndex) + 1, days - Self.islamicMonthStart(12 * (year - 1)) + 1)
             case .islamicCivil, .islamicTabular, .islamicUmmAlQura:
                 // The average length of 30 years (10,631 days) gives the year, by the estimate of Calendrical Calculations. The two loops make sure that the year holds the day.
                 var year = Int(_CalendarUtility.floorDiv(Int64(rataDie - epochRataDie) * 30 + 10_646, 10_631))
@@ -1070,6 +1087,23 @@ extension _CalendarFixedMonth {
             0x2A8D, 0x052D, 0x0A9D, 0x055A, 0x0755, 0x2749, 0x0F13, 0x2E4A, // 1588-1595
             0x2A96, 0x0556, 0x06B5, 0x2BAA, 0x2B94, // 1596-1600
         ]
+
+        // The mean length of a month of the moon, in days, as ICU uses it.
+        private static let islamicMeanMonth = 29.530588853
+
+        // The first day of a month of `.islamic`, in days from 1 Muharram AH 1 of the civil calendar, found as ICU finds it. The months count from 0 at that day.
+        // The first guess is the mean month, at 00:00 UTC. If the moon is past the new moon at that time, ICU steps back and the month starts on the earliest day past it. If not, it steps forward and the month starts on the day after the first day past it.
+        private static func islamicMonthStart(_ monthIndex: Int) -> Int {
+            let hijraMilliseconds = -42_521_587_200_000.0
+            let dayMilliseconds = 86_400_000.0
+            var time = hijraMilliseconds + (Double(monthIndex) * islamicMeanMonth).rounded(.down) * dayMilliseconds
+            if _CalendarAstronomy.ICUMoon.age(atMilliseconds: time) >= 0 {
+                repeat { time -= dayMilliseconds } while _CalendarAstronomy.ICUMoon.age(atMilliseconds: time) >= 0
+            } else {
+                repeat { time += dayMilliseconds } while _CalendarAstronomy.ICUMoon.age(atMilliseconds: time) < 0
+            }
+            return Int(((time - hijraMilliseconds) / dayMilliseconds).rounded(.down)) + 1
+        }
 
         private static func ummAlQuraEntry(_ year: Int) -> UInt16? {
             guard year >= 1300 && year <= 1600 else { return nil }

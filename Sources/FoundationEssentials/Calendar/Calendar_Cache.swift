@@ -84,7 +84,7 @@ func _calendarClass(identifier: Calendar.Identifier) -> _CalendarProtocol.Type? 
             }
             if foundation_swift_islamic_calendars_feature_enabled() {
                 switch identifier {
-                case .islamicCivil, .islamicTabular, .islamicUmmAlQura:
+                case .islamicCivil, .islamicTabular, .islamicUmmAlQura, .islamic:
                     return _CalendarFixedMonth.self
                 default:
                     break
