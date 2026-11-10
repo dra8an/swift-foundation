@@ -14,7 +14,7 @@ ICU4C's collation runtime (the "v2" design) and the ICU4X model:
 - It reads ICU's binary collation data ("UCol" format v5): the root data
   `ucadata.icu` and 98 compiled tailorings, from ICU 79.0.1. There is no
   runtime rule builder; a tailoring is a compiled binary
-  (`Collation/Tools/extract_tailoring.c` extracts them from an ICU build).
+  (`utils/collation/extract_tailoring.c` extracts them from an ICU build).
 - It normalizes to NFD on the fly (its own data, `nfd.bin`, generated from
   ICU's `nfc.txt`, Unicode 17).
 - It has ICU's fast paths for Latin text ("fast Latin"), sort keys, and
@@ -105,7 +105,7 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
   arrays, as swift-foundation-icu ships ICU's data. It adds 2.08 MB to the
   library and about 10 MB of generated text to the repository
   (`Sources/_FoundationCollationData/data/*.inc`). The generator is
-  `Collation/Tools/gen_collation_data.py`; the input files stay in
+  `utils/collation/gen_collation_data.py`; the input files stay in
   `Sources/FoundationInternationalization/Collation/Resources/`.
 - **No resource bundle:** `FoundationInternationalization` has no SwiftPM
   resources any more; the file lookup in the engine exists only where the C
@@ -144,18 +144,20 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    normalization cannot be turned off; script reordering only as the data
    supplies it.
 7. **Data updates:** a new ICU version means: extract the tailorings
-   (`Collation/Tools/extract_tailoring.c`), copy `ucadata.icu`, regenerate
-   `nfd.bin` from ICU's `nfc.txt` (`swift Collation/Tools/gen_norm_data.swift
+   (`utils/collation/extract_tailoring.c`), copy `ucadata.icu`, regenerate
+   `nfd.bin` from ICU's `nfc.txt` (`swift utils/collation/gen_norm_data.swift
    <nfc.txt> <nfd.bin>`), regenerate the reference keys
-   (`Collation/Tools/gen_golden.c`), then run
-   `python3 Collation/Tools/gen_collation_data.py`. Check: for the same
+   (`utils/collation/gen_golden.c`), then run
+   `python3 utils/collation/gen_collation_data.py`. Check: for the same
    Unicode version, `gen_norm_data.swift` gives the old `nfd.bin` byte for
    byte (checked 2026-11-09 with ICU's `nfc.txt` of `release-78.3`).
 8. **`Collation/`** (docs, tools, benchmarks, the technique log) is the
-   working folder of the port and not meant for the upstream PR. **But the
-   data generators are:** `gen_collation_data.py`, `gen_norm_data.swift`,
-   `extract_tailoring.c` and `gen_golden.c` are needed for every data
-   update, so the PR must give them a place (for example a `utils/` folder).
+   working folder of the port and not meant for the upstream PR. **The data
+   generators are, and they are in `utils/collation/` (2026-11-09),** next to
+   upstream's own data updater (`utils/update-iana-charset-names`):
+   `extract_tailoring.c`, `gen_norm_data.swift`, `gen_golden.c`,
+   `gen_collation_data.py`, with a README that gives the order of a data
+   update.
 
 ## 7. A possible PR sequence
 

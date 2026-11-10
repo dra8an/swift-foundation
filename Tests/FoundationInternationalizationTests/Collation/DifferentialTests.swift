@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import FoundationInternationalization
 
-/// Differential tests against ICU4C: Tools/gen_golden.c produced
+/// Differential tests against ICU4C: utils/collation/gen_golden.c produced
 /// Golden/matrix-<option-set>.txt by running ucol_strcollUTF8 over every ordered
 /// pair of Golden/corpus.txt strings, for each option set (a named combination of collator settings). Our
 /// compare() must agree on all pairs, for every option set — against both
@@ -15,7 +15,7 @@ import Testing
     }
     static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 
-    /// Must match the optionSets table in Tools/gen_golden.c.
+    /// Must match the optionSets table in utils/collation/gen_golden.c.
     static let optionSets: [(String, CollationOptions)] = {
         func options(_ strength: CollationOptions.Strength, _ tweak: (inout CollationOptions) -> Void = { _ in }) -> CollationOptions {
             var o = CollationOptions()

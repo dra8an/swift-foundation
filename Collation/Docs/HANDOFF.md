@@ -351,7 +351,7 @@ errors — the fork point `dbacc677` builds cleanly). Fixed: a
 text in `Sources/_FoundationCollationData/data/*.inc`), as swift-foundation-icu
 ships ICU's data; `_foundation_collation_resource(name, &length)` finds them
 by name ("ucadata", "nfd", "tailorings/<name>"). Regenerate after any change
-to `Collation/Resources`: `python3 Collation/Tools/gen_collation_data.py`.
+to `Collation/Resources`: `python3 utils/collation/gen_collation_data.py`.
 The engine reads them through `collationResourceBytes` (`#if
 canImport(_FoundationCollationData)`); the file lookup stays as the fallback
 for the test-only ICU4X variant (still a SwiftPM resource) and for the bench
@@ -369,9 +369,13 @@ tools keep working (same package, or their own package), and the
 instruction counts of compare and sortKey are identical. (The leftovers
 of the early standalone package, cleaned up the same day: `Collation/Sources/
 Bench` deleted — EngineBench and the key tests replace it; `GenNormData` is
-now the script `Collation/Tools/gen_norm_data.swift`, run with `swift
+now the script `utils/collation/gen_norm_data.swift`, run with `swift
 <script> <nfc.txt> <nfd.bin>`, and it gives the bundled `nfd.bin` byte for
-byte from ICU's Unicode 17 `nfc.txt`.) **Open point 5 done
+byte from ICU's Unicode 17 `nfc.txt`.) **The four data generators are in
+`utils/collation/`** (moved the same day; with a README and the order of a
+data update): `extract_tailoring.c`, `gen_norm_data.swift`, `gen_golden.c`,
+`gen_collation_data.py`. The bundled `ucadata.icu` is ICU's
+`ucadata-unihan.icu` of `release-78.3` plus 12 bytes of fill (checked). **Open point 5 done
 (2026-11-09):** `ucadata-icu4x.icu` moved to
 `Tests/FoundationInternationalizationTests/Collation/TestData/`
 (`CollationTestData.rootICU4X()`); `CollationData.rootICU4X()` removed; the

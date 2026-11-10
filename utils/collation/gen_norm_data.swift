@@ -26,8 +26,8 @@
 // A value of 0 therefore means "inert": ccc 0 and no decomposition.
 //
 // Usage (from the repo root; a plain script, no package):
-//   swift Collation/Tools/gen_norm_data.swift <path/to/nfc.txt> Sources/FoundationInternationalization/Collation/Resources/nfd.bin
-// then regenerate the compiled-in data: python3 Collation/Tools/gen_collation_data.py
+//   swift utils/collation/gen_norm_data.swift <path/to/nfc.txt> Sources/FoundationInternationalization/Collation/Resources/nfd.bin
+// then regenerate the compiled-in data: python3 utils/collation/gen_collation_data.py
 // Check: for the same Unicode version, the output must equal the old file byte for byte (2026-11-09: ICU's
 // nfc.txt of tag release-78.3, Unicode 17.0.0, gives the bundled nfd.bin exactly).
 
@@ -41,7 +41,7 @@ func hex<S: StringProtocol>(_ s: S) -> UInt32 {
 func run() throws {
 let arguments = CommandLine.arguments
 guard arguments.count == 3 else {
-    FileHandle.standardError.write(Data("usage: swift Collation/Tools/gen_norm_data.swift <nfc.txt> <nfd.bin>\n".utf8))
+    FileHandle.standardError.write(Data("usage: swift utils/collation/gen_norm_data.swift <nfc.txt> <nfd.bin>\n".utf8))
     exit(2)
 }
 
