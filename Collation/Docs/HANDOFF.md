@@ -366,9 +366,12 @@ build changes, eight open points). **Open point 1 done (user decision,
 2026-11-09):** the four engine types and their members are `package`, not
 `public` — Foundation's clients cannot see them; the benchmark harnesses and
 tools keep working (same package, or their own package), and the
-instruction counts of compare and sortKey are identical. (`Collation/Sources/
-Bench` and `GenNormData` are not targets of any package: leftovers of the
-early standalone package, not built by anything.) **Open point 5 done
+instruction counts of compare and sortKey are identical. (The leftovers
+of the early standalone package, cleaned up the same day: `Collation/Sources/
+Bench` deleted — EngineBench and the key tests replace it; `GenNormData` is
+now the script `Collation/Tools/gen_norm_data.swift`, run with `swift
+<script> <nfc.txt> <nfd.bin>`, and it gives the bundled `nfd.bin` byte for
+byte from ICU's Unicode 17 `nfc.txt`.) **Open point 5 done
 (2026-11-09):** `ucadata-icu4x.icu` moved to
 `Tests/FoundationInternationalizationTests/Collation/TestData/`
 (`CollationTestData.rootICU4X()`); `CollationData.rootICU4X()` removed; the
@@ -1742,7 +1745,7 @@ clang gen_golden.c -o gen_golden -I $ICU_SRC/icu4c/source/common \
 DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
   ../Tests/CollationTests/Golden/corpus.txt ../Tests/CollationTests/Golden
 # fuzz keys: same with fuzz-corpus.txt + "--keys-only"; tailorings:
-# extract_tailoring.c; norm data: swift run GenNormData <nfc.txt> <nfd.bin>
+# extract_tailoring.c; norm data: swift Collation/Tools/gen_norm_data.swift <nfc.txt> <nfd.bin>, then python3 Collation/Tools/gen_collation_data.py
 # test fixtures: extract_locale_suites.py / extract_regcoll.py /
 #   extract_cmsccoll.py / extract_g7coll.py
 ```

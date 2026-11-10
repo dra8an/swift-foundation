@@ -25,7 +25,11 @@
 //
 // A value of 0 therefore means "inert": ccc 0 and no decomposition.
 //
-// Usage: gennormdata <path/to/nfc.txt> <path/to/nfd.bin>
+// Usage (from the repo root; a plain script, no package):
+//   swift Collation/Tools/gen_norm_data.swift <path/to/nfc.txt> Sources/FoundationInternationalization/Collation/Resources/nfd.bin
+// then regenerate the compiled-in data: python3 Collation/Tools/gen_collation_data.py
+// Check: for the same Unicode version, the output must equal the old file byte for byte (2026-11-09: ICU's
+// nfc.txt of tag release-78.3, Unicode 17.0.0, gives the bundled nfd.bin exactly).
 
 import Foundation
 
@@ -37,7 +41,7 @@ func hex<S: StringProtocol>(_ s: S) -> UInt32 {
 func run() throws {
 let arguments = CommandLine.arguments
 guard arguments.count == 3 else {
-    FileHandle.standardError.write(Data("usage: gennormdata <nfc.txt> <nfd.bin>\n".utf8))
+    FileHandle.standardError.write(Data("usage: swift Collation/Tools/gen_norm_data.swift <nfc.txt> <nfd.bin>\n".utf8))
     exit(2)
 }
 
@@ -157,7 +161,7 @@ append32(UInt32(buffer.count))
 buffer.forEach(append32)
 
 try out.write(to: URL(fileURLWithPath: arguments[2]))
-print("Unicode \(unicodeVersion): \(cccMap.count) ccc entries, \(fullDecomp.count) decompositions, \(blockNumbers.count) trie blocks, \(buffer.count) buffer scalars, \(out.count) bytes")
+print("\(unicodeVersion): \(cccMap.count) ccc entries, \(fullDecomp.count) decompositions, \(blockNumbers.count) trie blocks, \(buffer.count) buffer scalars, \(out.count) bytes")
 }
 
 try run()

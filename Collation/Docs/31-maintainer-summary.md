@@ -143,11 +143,19 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
 6. **Scope cuts:** no custom rules at run time (no rule builder); NFD
    normalization cannot be turned off; script reordering only as the data
    supplies it.
-7. **Data updates:** a new ICU version means: extract the tailorings, copy
-   `ucadata.icu`, regenerate `nfd.bin` and the reference keys, and run
-   `gen_collation_data.py`.
+7. **Data updates:** a new ICU version means: extract the tailorings
+   (`Collation/Tools/extract_tailoring.c`), copy `ucadata.icu`, regenerate
+   `nfd.bin` from ICU's `nfc.txt` (`swift Collation/Tools/gen_norm_data.swift
+   <nfc.txt> <nfd.bin>`), regenerate the reference keys
+   (`Collation/Tools/gen_golden.c`), then run
+   `python3 Collation/Tools/gen_collation_data.py`. Check: for the same
+   Unicode version, `gen_norm_data.swift` gives the old `nfd.bin` byte for
+   byte (checked 2026-11-09 with ICU's `nfc.txt` of `release-78.3`).
 8. **`Collation/`** (docs, tools, benchmarks, the technique log) is the
-   working folder of the port and not meant for the upstream PR.
+   working folder of the port and not meant for the upstream PR. **But the
+   data generators are:** `gen_collation_data.py`, `gen_norm_data.swift`,
+   `extract_tailoring.c` and `gen_golden.c` are needed for every data
+   update, so the PR must give them a place (for example a `utils/` folder).
 
 ## 7. A possible PR sequence
 
