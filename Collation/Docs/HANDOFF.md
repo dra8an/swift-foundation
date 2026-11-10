@@ -42,15 +42,17 @@ matrix recorded 2026-11-06, see "Current numbers"). The work is the
 **upstream preparation** of the port for swift-foundation: the CMake build,
 the compiled-in data, the maintainer summary (`Collation/Docs/31-maintainer-summary.md`)
 and the compliance with upstream's contribution guide (a 4-step plan; steps
-1 and 2 done, **step 3 ON HOLD by the user's decision**, see NEXT TASK).
+1, 2 and 3 done, step 4 not started, see NEXT TASK).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-10, noon): HEAD = `a5d42d78` (guide step 2,
-the comments) on `c2f87de9` (guide step 1) — **2 commits ahead of
-`origin/port/collation` = `dd24f0ba`, not pushed** — plus the handoff docs
-commit of 2026-11-10 if the user made it (else `HANDOFF.md` and
+paragraph).** Expected (2026-11-10, afternoon): HEAD = `abcdac47` (the
+handoff docs of 2026-11-10) on `a5d42d78` (guide step 2, the comments) on
+`c2f87de9` (guide step 1) — **3 commits ahead of
+`origin/port/collation` = `dd24f0ba`, not pushed** — plus the guide step 3
+commit if the user made it (else 4 sources with comment-only changes —
+`DataStorage`, `NFDIterator`, `SortKey`, `RootCollator` — and `HANDOFF.md`,
 `31-maintainer-summary.md` are modified: give the add / commit lines). The
-working tree has no code changes. The worktree `../collation-baseline` is
+working tree has no code changes (comments only). The worktree `../collation-baseline` is
 detached at `dbacc677` (the fork point of the branch, used for the CMake
 check), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
 before the next A/B (the block below). The main tree's builds: default
@@ -351,30 +353,23 @@ in the user's 4-step plan:
    `python3 .build/l24/code_unchanged.py <file> [rev]` removes all comments
    from the file and from `<rev>:<file>` and compares the rest ("CODE
    UNCHANGED"); `.build/l24/apply.py` applied the edits.
-3. **ON HOLD (user decision, 2026-11-10, at the handoff) — resume only when
-   the user says so: the unsafe code, justified, not removed** (the user:
-   "the unsafe part is crucial for our implementation … commenting that we
-   did it for a reason"). Done so far: the inventory, 250 uses of
-   `Unsafe…Pointer` types in the engine and `String+Collation.swift`, by kind
-   — (a) read-only data views (tables, CEs, tries): 104, mostly
-   `RootCollator.swift` 46, `CollationData` 13, `CollationElements` 12;
-   (b) pinned UTF-8 bytes of the strings (and byte tables): 45,
-   `RootCollator` 19, `CollationSearch` 13; (c) one-object boxes and in-place
-   pointers (the setup boxes, `ScratchBuffers.left/right/keyBuffer`, the
-   collators in the cache slots): 42; raw pointers (published slots,
-   `DataStorage` allocations, the writer's temporary region): 18; the rest
-   small (the writer's `UnsafeMutablePointer<UInt8>`, CEBuffer's storage,
-   the lock). The plan for the rest: one "why unsafe" comment per kind at
-   its central declaration (most kinds already have one: `DataStorage`'s
-   header, `ScalarSource`, `ScratchBuffers.left/right`, the setup boxes,
-   `CEBuffer`, the writer's region — check each and add what is missing,
-   e.g. why not `Span`: non-escapable, cannot be stored, needs macOS 26);
-   move a stray use into its helper only where the machine code stays the
-   same (count it); a short section in Docs/31 with the measured cost of the
-   safe alternatives (sources: technique log §30 storage box, §37 search
-   buffers, §48 exclusivity scopes, §51 (k) scratch pointers, §51 (h)
-   CEBuffer, the String-iterator retains of §51; Span: memory
-   `project-span-findings`).
+3. **DONE (2026-11-10 afternoon, user's go after the hold): the unsafe
+   code, justified, not removed** (the user: "the unsafe part is crucial
+   for our implementation … commenting that we did it for a reason"). The
+   inventory: 250 uses of `Unsafe…Pointer` types in the engine and
+   `String+Collation.swift` — read-only data views 104, pinned UTF-8 bytes
+   45, boxes and in-place pointers 42, raw pointers 18, a small rest. Each
+   kind already had its "why" at its central declaration but for three
+   gaps, now closed with comments only (`code_unchanged.py`: CODE UNCHANGED
+   in `DataStorage`, `NFDIterator`, `SortKey`, `RootCollator`): why not
+   `Span` (the `DataStorage` header, `ScalarSource`), the reason of each of
+   the 4 `unsafelyUnwrapped`, and the setup boxes (the doc of
+   `RootCollator.Storage`). No use moved into a new helper: each allocation
+   is already in the init / deinit of the type that owns it. **Docs/31
+   section 9** has the table: per kind, where the source gives the reason,
+   the safe form, and its measured cost at the time of the change (sources:
+   Docs/11 round 6, §22, §46 (a), §50 (d), §51 (b), (h), (k), (y), (aj),
+   (ak)); section 8 row 2 says done.
 4. **Not started:** `swift-benchmark` entries in upstream's `Benchmarks/`
    (e.g. `Benchmarks/Benchmarks/Internationalization/BenchmarkCollation.swift`,
    in the form of their `BenchmarkLocale.swift`): `localizedCompare`,
@@ -459,8 +454,8 @@ wrapper code identical instruction for instruction (33 functions). **Step 2
 done the same day:** 121 comment lines in 17 files without history (no §
 or technique-log references, no measurements, no `Collation/Tools`
 references); `.build/l24/code_unchanged.py <file> [rev]` checked that the
-code without comments is identical, file by file. Step 3 is on hold (see
-NEXT TASK). **How to build with CMake on this Mac:** Xcode's `cmake` /
+code without comments is identical, file by file. Step 3 done the same
+afternoon (see NEXT TASK; Docs/31 section 9). **How to build with CMake on this Mac:** Xcode's `cmake` /
 `ninja` in `/Applications/Xcode2.app/Contents/Developer/usr/local/bin`,
 `SDKROOT=$(xcrun --sdk macosx --show-sdk-path)` exported and
 `-DCMAKE_OSX_SYSROOT=$SDKROOT` (else "unable to load standard library"),

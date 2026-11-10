@@ -58,7 +58,7 @@ package struct RootCollator: @unchecked Sendable {
                         UnsafeBufferPointer<UInt16>, UnsafeBufferPointer<UInt16>)
     }
 
-    /// All stored state lives behind one class reference, so a RootCollator value is a single pointer: a large struct would be copied on the stack at every method call, and per iteration around a throwing call, which the optimizer cannot hoist the copy across. Everything is immutable after init.
+    /// All stored state lives behind one class reference, so a RootCollator value is a single pointer: a large struct would be copied on the stack at every method call, and per iteration around a throwing call, which the optimizer cannot hoist the copy across. Everything is immutable after init. The setup boxes (the `…Ptr` fields) are raw pointers to memory that this class allocates in init and frees in deinit: a pointer is a trivial value, so the static fast paths and the pinned-buffer closures receive it with no reference counting.
     // @unchecked Sendable: every stored property is a `let` set in init; the buffer views point into memory owned by the data (`DataStorage`), which this class retains.
     // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
     final class Storage: @unchecked Sendable {
@@ -1295,6 +1295,8 @@ package struct RootCollator: @unchecked Sendable {
     /// The byte fast path: identical-prefix scan on raw UTF-8, safety check, then CollationFastLatin.compareUTF8 from the restart offset. Returns -1/0/1, or bailOutResult when the regular path must run. Static with trivial parameters: it runs inside the contiguous-storage closures. (RuleBasedCollator::doCompare, UTF-8 variant.)
     ///
     /// `marksPrefixBail` (a constant at each call site): when true, a bail at the end of a shared prefix — before the fast-Latin core runs; Thai and CJK text — returns `optionsPassMarker(mismatch:)` (-2 or less) instead of bailOutResult, so the caller gets the mismatch in the result register (compareSlowPath's options pass); a separate value would have to live across the core call on every Latin compare.
+    ///
+    /// `primaries` has all its `latinLimit` entries whenever the packed options are >= 0 (CollationFastLatin.getOptions), so its base address is not nil.
     private static func fastLatinUTF8(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
         table: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>,

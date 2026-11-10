@@ -2,7 +2,7 @@
 //
 // Each refill produces one reorderable unit: a starter (or the string-initial run of non-starters) plus all following combining marks, with the marks stably sorted by canonical combining class (the Canonical Ordering Algorithm, UAX #15).
 
-/// The NFD front end's UTF-8 input: the bytes of a pinned contiguous string through a pointer. A trivial struct (no reference), so a reset assigns it with plain stores. A String iterator holds a strong reference to its string, so storing one in the scratch iterators would retain and release both strings of every slow-path compare; the bytes need none. Valid only while the string's storage is pinned (`withContiguousStorageIfAvailable`): the caller resets the iterator inside that scope and does not read it after. `bytes == nil` means "read the String iterator instead" (NFDIterator.fallback).
+/// The NFD front end's UTF-8 input: the bytes of a pinned contiguous string through a pointer. A trivial struct (no reference), so a reset assigns it with plain stores. A String iterator holds a strong reference to its string, so storing one in the scratch iterators would retain and release both strings of every slow-path compare; the bytes need none. Valid only while the string's storage is pinned (`withContiguousStorageIfAvailable`): the caller resets the iterator inside that scope and does not read it after. `bytes == nil` means "read the String iterator instead" (NFDIterator.fallback). Not `String.utf8Span`: it needs macOS 26 (the package supports macOS 15), and a `Span` is non-escapable, so the scratch iterators, which stay in the thread's buffers between calls, cannot store it.
 struct ScalarSource {
     private(set) var bytes: UnsafePointer<UInt8>? = nil
     private var position = 0
@@ -30,7 +30,7 @@ struct ScalarSource {
         lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4
     }
 
-    /// The next scalar of a bytes source (call only when `bytes != nil`).
+    /// The next scalar of a bytes source (call only when `bytes != nil`). Both callers test `bytes` first (`nextSourceScalar`, and `isAtSource` before the ASCII run), so `unsafelyUnwrapped` does not repeat that test for each scalar.
     @inline(__always)
     mutating func next() -> UInt32? {
         let b = bytes.unsafelyUnwrapped

@@ -240,6 +240,7 @@ enum CollationKeys {
             of: UInt8.self,
             capacity: capPrimaries + capSecondaries + capCases + capTertiaries + capQuaternaries + slack
         ) { region in
+            // The region has at least `slack` bytes, so its base address is not nil.
             let start = region.baseAddress.unsafelyUnwrapped
             var primaries = RegionLevel(start, capPrimaries)
             var secondaries = RegionLevel(start + capPrimaries + 1, capSecondaries)
