@@ -362,7 +362,19 @@ small program against the CMake libraries collates (root and sv). Creation
 `Bundle.main` lookup 1817 → 436 µs, tailorings ja / sv 306 / 248 → 248 / 192.
 **The summary for the maintainers:** `Collation/Docs/31-maintainer-summary.md`
 (2026-11-09: what the port is, what it changes, correctness, performance,
-build changes, eight open points).
+build changes, eight open points). **Open point 1 done (user decision,
+2026-11-09):** the four engine types and their members are `package`, not
+`public` — Foundation's clients cannot see them; the benchmark harnesses and
+tools keep working (same package, or their own package), and the
+instruction counts of compare and sortKey are identical. (`Collation/Sources/
+Bench` and `GenNormData` are not targets of any package: leftovers of the
+early standalone package, not built by anything.) **Open point 5 done
+(2026-11-09):** `ucadata-icu4x.icu` moved to
+`Tests/FoundationInternationalizationTests/Collation/TestData/`
+(`CollationTestData.rootICU4X()`); `CollationData.rootICU4X()` removed; the
+library has no resources and no resource bundle; the file lookup exists only
+`#if !canImport(_FoundationCollationData)` (the tools); the 7 tool build
+scripts no longer copy the file.
 Also open: a Linux build (no Docker or Linux machine here), the big-endian
 path of §51 (bd) (untested), a summary for the maintainers. How to build
 with CMake on this Mac: Xcode's `cmake` / `ninja` in

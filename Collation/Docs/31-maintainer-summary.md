@@ -107,16 +107,22 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
   (`Sources/_FoundationCollationData/data/*.inc`). The generator is
   `Collation/Tools/gen_collation_data.py`; the input files stay in
   `Sources/FoundationInternationalization/Collation/Resources/`.
+- **No resource bundle:** `FoundationInternationalization` has no SwiftPM
+  resources any more; the file lookup in the engine exists only where the C
+  data module does not (the bench tools, which copy the engine sources).
 - **Checked:** the SwiftPM build and its full suite; the CMake build on
   macOS (with Xcode's `cmake` and `ninja`), whose library collates in a small
   program (root and Swedish).
 
 ## 6. Open points (for the maintainers to decide)
 
-1. **Public engine types.** `RootCollator`, `CollationData`,
-   `NormalizationData` and `CollationOptions` are `public` in
-   `FoundationInternationalization`. They are not needed as API; they could
-   become `internal` (or `package`), which needs small changes in the tests.
+1. **Engine types: `package`, not `public` (done 2026-11-09).** `RootCollator`,
+   `CollationData`, `NormalizationData` and `CollationOptions` were `public`
+   in `FoundationInternationalization`, which made them Foundation API. They
+   are now `package`: visible inside swift-foundation (the Foundation wiring,
+   the benchmark harness in the same package), not to its clients. The tests
+   use `@testable import`. The machine code of compare and sortKey did not
+   change (instruction counts identical).
 2. **Upstream `main` has an ICU-based compare (PR #1683),** behind the flag
    `FOUNDATION_ICU_STRING_COMPARE` (off by default), for
    `compare(_:options:range:locale:)` only; it opens and closes an ICU
@@ -128,10 +134,12 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
 4. **Big-endian hosts:** the data parsers have a byte-swapping path for
    big-endian hosts (`DataStorage.storeLittleEndian`), not yet run on such a
    host.
-5. **Test-only data in the library:** the ICU4X variant of the root data
-   (`ucadata-icu4x.icu`, used only by tests through the public
-   `CollationData.rootICU4X()`) is still a SwiftPM resource of the library;
-   it could move to the test target.
+5. **Test-only data: in the test target (done 2026-11-09).** The ICU4X
+   variant of the root data (`ucadata-icu4x.icu`, 585 KB, used only by the
+   conformance and differential tests) moved to
+   `Tests/.../Collation/TestData/`, loaded by `CollationTestData.rootICU4X()`;
+   `CollationData.rootICU4X()` is gone. `FoundationInternationalization`
+   now has no resources and ships no resource bundle.
 6. **Scope cuts:** no custom rules at run time (no rule builder); NFD
    normalization cannot be turned off; script reordering only as the data
    supplies it.
