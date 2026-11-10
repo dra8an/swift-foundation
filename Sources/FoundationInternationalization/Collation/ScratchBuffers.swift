@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Reusable per-call buffers. Building the CE and NFD iterators afresh costs several heap allocations per compare()/sortKey() call; a RootCollator instead keeps a thread-local buffer set and resets it, so repeated calls run allocation-free once the buffers have grown to the working size. (ICU4C reaches the same goal with stack buffers, which Swift arrays cannot express.) The public API stays thread-safe: each thread owns its own buffer set, with no locking or reference counting on the checkout path.
 
 import Foundation

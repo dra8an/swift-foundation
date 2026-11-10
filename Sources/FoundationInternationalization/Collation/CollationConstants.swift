@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Constants and bit-layout helpers for collation elements, ported from ICU4C i18n/collation.h and collation.cpp (ICU 79, data format "UCol" v5).
 //
 // A CE32 is a 32-bit encoding of one (or more) collation elements. Simple CE32 (low byte < 0xc0): ppppsstt = 16-bit primary, 8-bit secondary, 8-bit tertiary. Special CE32 (low byte >= 0xc0): bits 3..0 hold a tag; layout of the rest depends on the tag.

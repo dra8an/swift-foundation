@@ -42,18 +42,18 @@ matrix recorded 2026-11-06, see "Current numbers"). The work is the
 **upstream preparation** of the port for swift-foundation: the CMake build,
 the compiled-in data, the maintainer summary (`Collation/Docs/31-maintainer-summary.md`)
 and the compliance with upstream's contribution guide (a 4-step plan; all
-four steps done on 2026-11-10, see NEXT TASK; two new gaps found: license
-headers and the ICU entry in `NOTICE.txt`, Docs/31 section 8).
+four steps done on 2026-11-10, see NEXT TASK; then the license headers,
+added the same day; the ICU entry in `NOTICE.txt` deferred by the user,
+Docs/31 section 8).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-10, afternoon): HEAD = `893ae795` (guide
-step 3) on `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
-and `c2f87de9` (step 1) — **4 commits ahead of
-`origin/port/collation` = `dd24f0ba`, not pushed** — plus the guide step 4
-commit if the user made it (else the `Benchmarks/` changes of step 4 —
-three modified files, `BenchmarkCollation.swift`, `CollationCorpora.swift`
-and `Resources/` new — and `HANDOFF.md`, `31-maintainer-summary.md` are
-modified: give the add / commit lines). The
+paragraph).** Expected (2026-11-10, afternoon): HEAD = `bc8c65f8` (guide
+step 4) on `893ae795` (step 3), `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
+and `c2f87de9` (step 1) — **5 commits ahead of
+`origin/port/collation` = `dd24f0ba`, not pushed** — plus the license-header
+commit if the user made it (else 57 Swift files, 2 C files and 1 Python
+file with header-only changes, and `HANDOFF.md`, `31-maintainer-summary.md`
+are modified: give the add / commit lines). The
 working tree has no engine code changes. The worktree `../collation-baseline` is
 detached at `dbacc677` (the fork point of the branch, used for the CMake
 check), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
@@ -403,7 +403,18 @@ in the user's 4-step plan:
    checked). Output: `.build/benchroot/run1.md`. **Found on the way:** no
    Swift.org license header in the 15 engine files and 37 of 40 collation
    test files, and no ICU / Unicode license entry in `NOTICE.txt` — both
-   new rows of Docs/31 section 8.
+   new rows of Docs/31 section 8. **Headers DONE the same day** (user:
+   "add the standard line"): `.build/l25/add_headers.py` gave 56 files the
+   standard header (2026; 15 engine, 37 tests, 4 generators — the Python one
+   in the `##` form after its `#!` line), made the damaged header of
+   `String+Collation.swift` and the 3 test headers without the CONTRIBUTORS
+   line standard; `code_unchanged.py`: 57 Swift files CODE UNCHANGED (run it
+   from the repository root: with a relative path from another folder it
+   reports "new:"). Module maps have no header upstream, so none was added.
+   **The ICU entry: deferred by the user** ("ignore ICU for now. our
+   algorithm is purely based on UCA and it is the same source as ICU");
+   Docs/31 records the user's view; do not raise it again unless the user
+   or a reviewer does.
 **At PR time (not now):** the split into small PRs (Docs/31 section 7), the
 target branch (upstream's merge-forward model: the earliest release branch
 that should get the change), the Evolution question (API parity with Darwin

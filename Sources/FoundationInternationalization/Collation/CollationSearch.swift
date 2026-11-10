@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Collation-aware substring search: finds the first occurrence of a pattern string within a target string, respecting collation strength (e.g., case-insensitive or accent-insensitive matching).
 //
 // Forward search uses lazy CE production — CEs are produced on demand and matched incrementally, stopping as soon as a match is found. Backwards search pre-produces all CEs then scans from the end.

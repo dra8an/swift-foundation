@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Sort key generation: a single-pass writer that produces the same keys as ICU's CollationKeys::writeSortKeyUpToQuaternary (i18n/collationkeys.{h,cpp}), and the BOCSU identical-level encoder (i18n/bocsu.{h,cpp}).
 //
 // Operates on a NO_CE-terminated CE array. Script reordering hooks are omitted (milestone 7). The invariant: byte-wise comparison of two sort keys equals compare() at the same options.

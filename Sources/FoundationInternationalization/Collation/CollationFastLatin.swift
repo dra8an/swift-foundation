@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Fast Latin comparison: a faithful port of CollationFastLatin (i18n/collationfastlatin.{h,cpp}, format version 2).
 //
 // The data files carry a precompiled table of 16-bit "mini CEs" for U+0000..U+017F plus general punctuation U+2000..U+203F, built by ICU's CollationFastLatinBuilder from the same collation data we read. compare() runs the full multi-level comparison directly on those packed words — no NFD front end, no CE expansion — and returns bailOutResult for anything it cannot prove correct (unsupported characters or mappings, digits under numeric collation, secondary differences under backwards-secondary), in which case the caller falls through to the regular pipeline.

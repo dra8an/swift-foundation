@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Owner of the immutable memory behind CollationData / NormalizationData.
 //
 // The data structs hold UnsafeBufferPointer views into this storage plus one reference to it, which makes copying them trivial (a single retain instead of one per internal array — the CE iterator copies its data struct on every lookup, so this is hot), and buffer reads are unchecked in release builds. Safety model: the views never outlive the owning struct, all offsets are validated at parse time, and the bundled data files are version-pinned and exercised by the conformance suites — the same trust ICU4C places in its own memory-mapped arrays. `Span` cannot replace the views: it is non-escapable, so a stored property of these structs cannot hold it, and the structs live as long as their collator.

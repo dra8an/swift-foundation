@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Incremental NFD: adapts a Unicode scalar stream into its canonical decomposition with canonical ordering applied — the "fused decomposition" front end of the ICU4X collator model.
 //
 // Each refill produces one reorderable unit: a starter (or the string-initial run of non-starters) plus all following combining marks, with the marks stably sorted by canonical combining class (the Canonical Ordering Algorithm, UAX #15).

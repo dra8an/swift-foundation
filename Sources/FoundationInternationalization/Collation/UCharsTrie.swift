@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Read-only UCharsTrie: matches strings of UTF-16 units against a serialized trie and yields 32-bit values. Ported from ICU4C common/unicode/ucharstrie.h and common/ucharstrie.cpp. Used for the collation contexts data (contraction suffixes and prefix conditions).
 //
 // This is a value type: copying the struct snapshots the traversal state, which replaces ICU's SkippedState save/restore in discontiguous contraction matching.

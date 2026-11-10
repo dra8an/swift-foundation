@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Produces the full 64-bit collation elements of a string, reading scalars through the incremental-NFD front end. CE32 tag dispatch mirrors CollationIterator::appendCEsFromCE32; contraction matching (including discontiguous contractions per UTS #10 S2.1) mirrors nextCE32FromContraction/nextCE32FromDiscontiguousContraction; prefix matching mirrors getCE32FromPrefix; numeric collation (CODAN) mirrors appendNumericCEs/appendNumericSegmentCEs.
 //
 // Because the scalar stream is already fully NFD-normalized and canonically ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and discontiguous matching operates on discrete combining marks exactly as UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state snapshots a struct copy, which replaces the TRIE half of ICU's SkippedState machinery; the POSITION half is still needed, because a discontiguous match consumes a non-contiguous set of scalars (see `spanStart`).

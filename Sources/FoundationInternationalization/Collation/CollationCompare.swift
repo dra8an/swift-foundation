@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift.org open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
+
 // Level-by-level CE comparison, a faithful port of CollationCompare::compareUpToQuaternary (i18n/collationcompare.cpp).
 //
 // Operates on lazily-filled CE buffers terminated by NO_CE (like ICU's CollationIterator/CEBuffer): the primary loop pulls CEs on demand and usually decides without generating the rest; the deeper levels run only when all primaries were equal, i.e. when the buffers are already complete. The primary loop may rewrite variable CEs in place (shifting them to the quaternary level). Script reordering is not yet supported (milestone 7); the corresponding hooks are omitted.
