@@ -100,16 +100,16 @@ import Testing
         var primary = CollationOptions()
         primary.strength = .primary
         // Swedish: ö sorts after z.
-        #expect(try Self.collators["sv"]!.compare("z", "ö") == .ascending)
+        #expect(try #require(Self.collators["sv"]).compare("z", "ö") == .ascending)
         // Danish: aa is primary-equal to å (tertiary differences remain),
         // so Aaron sorts after Zebra.
-        #expect(try Self.collators["da"]!.compare("aa", "å", options: primary) == .same)
-        #expect(try Self.collators["da"]!.compare("Aaron", "Zebra") == .descending)
+        #expect(try #require(Self.collators["da"]).compare("aa", "å", options: primary) == .same)
+        #expect(try #require(Self.collators["da"]).compare("Aaron", "Zebra") == .descending)
         // German phonebook: ü is primary-equal to ue.
-        #expect(try Self.collators["de-phonebook"]!.compare("Müller", "Mueller", options: primary) == .same)
+        #expect(try #require(Self.collators["de-phonebook"]).compare("Müller", "Mueller", options: primary) == .same)
         // Turkish: ı sorts before i.
-        #expect(try Self.collators["tr"]!.compare("ıb", "ib") == .ascending)
+        #expect(try #require(Self.collators["tr"]).compare("ıb", "ib") == .ascending)
         // fr-CA defaults compare accents from the end.
-        #expect(try Self.collators["fr-CA"]!.compare("cote", "côte") == .ascending)
+        #expect(try #require(Self.collators["fr-CA"]).compare("cote", "côte") == .ascending)
     }
 }

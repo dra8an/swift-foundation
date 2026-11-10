@@ -274,6 +274,8 @@ final class ScratchBuffers {
 /// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers instance, avoiding all locking, exclusivity checks, and ARC traffic on the take/give path. If a thread re-enters (e.g. compare inside compare, which doesn't happen in practice but is sound), `take()` returns nil and the caller allocates a fresh set.
 ///
 /// Implementation: a single pthread_key_t holds an UnsafeMutablePointer to a `ThreadLocalSlot` (which wraps the optional ScratchBuffers). The key's destructor frees the slot on thread exit.
+// @unchecked Sendable: `key` is created once in init and never changed; each thread reads and writes only its own slot of the key.
+// TODO: Move to a standard thread-local storage API once the standard library offers one, and drop @unchecked Sendable.
 final class ThreadLocalScratch: @unchecked Sendable {
     /// The slot stored in thread-local storage. Wrapping in a struct stored via UnsafeMutablePointer avoids ARC on the TLS read path entirely.
     struct Slot {
@@ -334,6 +336,7 @@ struct FastLatinSetup {
 /// Readers take NO lock and touch only shared read-only memory: one acquiring load of the current snapshot pointer, then a scan of at most `capacity` entries. A collator is shared across threads (CollatorCache, and the engine's own storage cache), and the old lock on this path made 4 threads on one shared collator with non-default options ~7 times slower per compare than 4 collators (1037 against 144 ns); a lock-free read of a CLASS snapshot would not fix that, because each reader's retain contends on the shared reference count. An earlier version also had one slot, so threads with different options evicted each other (technique log §51).
 ///
 /// Writers serialize on the lock, build a new snapshot (the old entries plus one) and publish it with a releasing store. Snapshots and primaries are never freed before the cache, so a reader's snapshot stays valid. After `capacity` distinct keys, a new key would get no setup and its compares would take the CE pipeline (the same results, more slowly); with at most 10 keys, that cannot happen.
+// @unchecked Sendable: readers see only published snapshots, which are never changed or freed while the cache exists; writers hold `lock`. Lock-free reads of published raw memory have no safe equivalent today, so no migration is planned.
 final class FastLatinCache: @unchecked Sendable {
     private let lock = PoolLock()
     /// Owns every snapshot and every primaries array; written only under the lock.

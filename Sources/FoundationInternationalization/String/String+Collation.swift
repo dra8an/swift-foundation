@@ -34,6 +34,7 @@ struct CollatorCache: Sendable {
         let generation: Int
     }
     /// Readers take NO lock: one acquiring load of the published slot. Writers serialize on `currentWriteLock`, put a new slot in memory and publish it with a releasing store. A published slot is never freed — a reader may still read it — so each locale change keeps one slot (16 bytes); collators are kept for the process anyway. A lock per read cost about 100 instructions of a ~520-instruction `localizedCompare` (technique log §51 (aj)).
+    // @unchecked Sendable: readers see only published slots, which are never changed or freed; writers are serialized by `currentWriteLock` and `lastLocaleSlots`. Lock-free reads of published raw memory have no safe equivalent today, so no migration is planned.
     private final class PublishedSlots: @unchecked Sendable {
         /// The current-locale slot, a `CurrentSlot`.
         let current = Atomic<UnsafeRawPointer?>(nil)
@@ -54,7 +55,10 @@ struct CollatorCache: Sendable {
     /// The collator field of a published slot. Slots are never freed, so the pointer is valid for the whole process.
     @inline(__always)
     private static func collatorPointer<Slot>(in slot: UnsafeRawPointer, _ field: KeyPath<Slot, RootCollator>) -> UnsafePointer<RootCollator> {
-        (slot + MemoryLayout<Slot>.offset(of: field)!).assumingMemoryBound(to: RootCollator.self)
+        guard let offset = MemoryLayout<Slot>.offset(of: field) else {
+            preconditionFailure("a slot's collator must be a stored property")
+        }
+        return (slot + offset).assumingMemoryBound(to: RootCollator.self)
     }
 
     /// The collator for the current locale, in place in its published slot (valid for the whole process). Callers call it through `pointee`, so a call needs no retain and release of the collator's storage: they were ~40 instructions of a ~430-instruction `localizedCompare`, on a reference count that every thread shares (technique log §51 (ak)). The lock-free read is force-inlined; the locked path is out of line, so the read can inline into the callers (technique log §51 (am)).

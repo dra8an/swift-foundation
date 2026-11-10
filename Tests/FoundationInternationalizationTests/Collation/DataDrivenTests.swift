@@ -68,7 +68,7 @@ import Testing
     }
 
     @Test func runCollationTestFile() throws {
-        let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
+        let url = try #require(Bundle.module.url(forResource: "Conformance", withExtension: nil))
             .appendingPathComponent("collationtest.txt")
         let lines = try String(contentsOf: url, encoding: .utf8)
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -355,7 +355,8 @@ import Testing
             if (0xd800...0xdbff).contains(u), j + 1 < units.count,
                (0xdc00...0xdfff).contains(units[j + 1]) {
                 let cp = 0x10000 + ((u - 0xd800) << 10) + (units[j + 1] - 0xdc00)
-                s.unicodeScalars.append(Unicode.Scalar(cp)!)
+                guard let scalar = Unicode.Scalar(cp) else { return nil }
+                s.unicodeScalars.append(scalar)
                 j += 2
                 continue
             }
@@ -374,7 +375,7 @@ import Testing
     @Test func riwords() throws {
         let collator = try RootCollator(tailoringNamed: "th")
         let options = collator.defaultOptions
-        let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
+        let url = try #require(Bundle.module.url(forResource: "Conformance", withExtension: nil))
             .appendingPathComponent("riwords.txt")
         let words = try String(contentsOf: url, encoding: .utf8)
             .split(separator: "\n")

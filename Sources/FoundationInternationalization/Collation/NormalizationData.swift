@@ -5,6 +5,7 @@
 import Foundation
 
 // @unchecked: the buffer views are immutable after init and their memory is owned by `storage`, which the struct retains.
+// TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
 package struct NormalizationData: @unchecked Sendable {
     /// Owns the memory behind the buffer views below.
     let storage: DataStorage

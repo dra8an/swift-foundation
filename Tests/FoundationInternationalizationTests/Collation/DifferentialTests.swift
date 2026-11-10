@@ -56,7 +56,7 @@ import Testing
         let (variant, collator) = try Self.collators[collatorIndex]
         let corpus = try Self.corpus
 
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
+        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
         let matrix = try String(
             contentsOf: golden.appendingPathComponent("matrix-\(optionSetName).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)

@@ -19,7 +19,7 @@ import Testing
     ]
 
     static func strings() throws -> [String] {
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
+        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
         var all = built
         for file in ["corpus.txt", "fuzz-corpus.txt"] {
             all += try String(contentsOf: golden.appendingPathComponent(file), encoding: .utf8)

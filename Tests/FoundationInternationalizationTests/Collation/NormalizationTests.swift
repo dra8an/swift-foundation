@@ -51,8 +51,8 @@ import Testing
             for m1 in marks {
                 for m2 in marks {
                     var s = base
-                    s.unicodeScalars.append(Unicode.Scalar(m1)!)
-                    s.unicodeScalars.append(Unicode.Scalar(m2)!)
+                    s.unicodeScalars.append(try #require(Unicode.Scalar(m1)))
+                    s.unicodeScalars.append(try #require(Unicode.Scalar(m2)))
                     let ours = try collator.nfd(s)
                     let foundations = s.decomposedStringWithCanonicalMapping
                     if ours != foundations {

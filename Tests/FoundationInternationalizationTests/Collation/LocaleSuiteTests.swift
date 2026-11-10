@@ -94,23 +94,23 @@ import Testing
     /// encoll.c: English (root). 38 tertiary + 5 primary + 6 secondary cases,
     /// pairwise bug list, and two full expected-order matrices.
     @Test func english() throws {
-        let s = try Self.suites["en"]!
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.single
+        let s = try #require(Self.suites["en"])
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).single
         var failures = 0
 
         let tertiary = options(.tertiary)
         for i in 0..<38 {
             try doTest(try Self.root, tertiary, src[i], tgt[i], order(results[i]), "en/ter", &failures)
         }
-        let bugs = s.arrays["testBugs"]!
+        let bugs = try #require(s.arrays["testBugs"])
         for i in 0..<bugs.count {
             for j in (i + 1)..<bugs.count {
                 try doTest(try Self.root, tertiary, bugs[i], bugs[j], .ascending, "en/bugs", &failures)
             }
         }
-        let more = s.arrays["testMore"]!
+        let more = try #require(s.arrays["testMore"])
         for i in 0..<more.count {
             for j in 0..<more.count {
                 try doTest(try Self.root, tertiary, more[i], more[j],
@@ -125,7 +125,7 @@ import Testing
         for i in 43..<49 {
             try doTest(try Self.root, secondary, src[i], tgt[i], order(results[i]), "en/sec", &failures)
         }
-        let acute = s.arrays["testAcute"]!
+        let acute = try #require(s.arrays["testAcute"])
         for i in 0..<acute.count {
             for j in 0..<acute.count {
                 try doTest(try Self.root, secondary, acute[i], acute[j],
@@ -138,10 +138,10 @@ import Testing
     /// cdetst.c: German standard (== root data). Two result columns:
     /// [0] primary, [1] tertiary.
     @Test func german() throws {
-        let s = try Self.suites["de"]!
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.pairs
+        let s = try #require(Self.suites["de"])
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).pairs
         var failures = 0
         for i in 0..<src.count {
             try doTest(try Self.root, options(.tertiary), src[i], tgt[i], order(results[i][1]), "de/ter", &failures)
@@ -152,11 +152,11 @@ import Testing
 
     /// cestst.c: Spanish. Cases 0..<5 tertiary, 5..<9 primary.
     @Test func spanish() throws {
-        let s = try Self.suites["es"]!
+        let s = try #require(Self.suites["es"])
         let coll = try RootCollator(tailoringNamed: "es")
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.single
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).single
         var failures = 0
         for i in 0..<5 {
             try doTest(coll, options(.tertiary, of: coll.defaultOptions), src[i], tgt[i],
@@ -172,18 +172,18 @@ import Testing
     /// cfrtst.c: Canadian French (backwards secondary). Tertiary cases run at
     /// shifted+quaternary; acute matrix at secondary; bug list at tertiary.
     @Test func canadianFrench() throws {
-        let s = try Self.suites["fr"]!
+        let s = try #require(Self.suites["fr"])
         let coll = try RootCollator(tailoringNamed: "fr_CA")
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.single
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).single
         var failures = 0
         let shifted4 = options(.quaternary, of: coll.defaultOptions, shifted: true)
         for i in 0..<src.count {
             try doTest(coll, shifted4, src[i], tgt[i], order(results[i]), "fr/ter", &failures)
         }
         let secondary = options(.secondary, of: coll.defaultOptions)
-        let acute = s.arrays["testAcute"]!
+        let acute = try #require(s.arrays["testAcute"])
         for i in 0..<acute.count {
             for j in 0..<acute.count {
                 try doTest(coll, secondary, acute[i], acute[j],
@@ -191,7 +191,7 @@ import Testing
             }
         }
         let tertiary = options(.tertiary, of: coll.defaultOptions)
-        let bugs = s.arrays["testBugs"]!
+        let bugs = try #require(s.arrays["testBugs"])
         for i in 0..<bugs.count {
             for j in (i + 1)..<bugs.count {
                 try doTest(coll, tertiary, bugs[i], bugs[j], .ascending, "fr/bugs", &failures)
@@ -203,11 +203,11 @@ import Testing
     /// cjaptst.c: Japanese. Source/target cases at tertiary+caseLevel, then
     /// four ascending sequences at various strengths.
     @Test func japanese() throws {
-        let s = try Self.suites["ja"]!
+        let s = try #require(Self.suites["ja"])
         let coll = try RootCollator(tailoringNamed: "ja")
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.single
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).single
         var failures = 0
         let ter = options(.tertiary, of: coll.defaultOptions, caseLevel: true)
         for i in 0..<src.count {
@@ -221,7 +221,7 @@ import Testing
             ("testChooonKigooCases", options(.quaternary, of: coll.defaultOptions, caseLevel: true)),
         ]
         for (name, opts) in sequences {
-            let cases = s.arrays[name]!
+            let cases = try #require(s.arrays[name])
             for i in 0..<(cases.count - 1) {
                 try doTest(coll, opts, cases[i], cases[i + 1], .ascending, "ja/\(name)", &failures)
             }
@@ -231,11 +231,11 @@ import Testing
 
     /// cturtst.c: Turkish. Cases 0..<8 tertiary, 8..<11 primary.
     @Test func turkish() throws {
-        let s = try Self.suites["tr"]!
+        let s = try #require(Self.suites["tr"])
         let coll = try RootCollator(tailoringNamed: "tr")
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.single
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).single
         var failures = 0
         for i in 0..<8 {
             try doTest(coll, options(.tertiary, of: coll.defaultOptions), src[i], tgt[i],
@@ -250,11 +250,11 @@ import Testing
 
     /// ficoll.cpp: Finnish. Cases 0..<4 tertiary, 4..<5 primary.
     @Test func finnish() throws {
-        let s = try Self.suites["fi"]!
+        let s = try #require(Self.suites["fi"])
         let coll = try RootCollator(tailoringNamed: "fi")
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.single
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).single
         var failures = 0
         for i in 0..<4 {
             try doTest(coll, options(.tertiary, of: coll.defaultOptions), src[i], tgt[i],
@@ -269,11 +269,11 @@ import Testing
 
     /// lcukocol.cpp: Korean, tertiary.
     @Test func korean() throws {
-        let s = try Self.suites["ko"]!
+        let s = try #require(Self.suites["ko"])
         let coll = try RootCollator(tailoringNamed: "ko")
-        let src = s.arrays["testSourceCases"]!
-        let tgt = s.arrays["testTargetCases"]!
-        let results = s.results["results"]!.single
+        let src = try #require(s.arrays["testSourceCases"])
+        let tgt = try #require(s.arrays["testTargetCases"])
+        let results = try #require(s.results["results"]).single
         var failures = 0
         for i in 0..<src.count {
             try doTest(coll, options(.tertiary, of: coll.defaultOptions), src[i], tgt[i],
@@ -285,8 +285,8 @@ import Testing
     /// currcoll.cpp: all currency symbols in collation order (root), full
     /// expected-order matrix.
     @Test func currency() throws {
-        let s = try Self.suites["currency"]!
-        let symbols = s.arrays["currency"]!
+        let s = try #require(Self.suites["currency"])
+        let symbols = try #require(s.arrays["currency"])
         var failures = 0
         let tertiary = options(.tertiary)
         for i in 0..<symbols.count {

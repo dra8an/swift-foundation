@@ -7,6 +7,7 @@
 // - root plus compiled tailorings with script reordering; works against both the regular root data (with canonical closure) and the NFD-only variant
 
 // @unchecked: the two stored views (fast Latin table, restart safety) point into the storage owned by `data`/`base`/`norm`, which the struct retains; everything is immutable after init.
+// TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
 package struct RootCollator: @unchecked Sendable {
     package enum Order: Int, Sendable {
         case ascending = -1
@@ -58,6 +59,8 @@ package struct RootCollator: @unchecked Sendable {
     }
 
     /// All stored state lives behind one class reference so a RootCollator value is a single pointer. As a flat struct the collator was ~768 bytes; every method call materialized that copy on the stack (and a throwing call in a loop re-copied it per iteration — the optimizer cannot hoist the copy across a throwing call). Everything is immutable after init.
+    // @unchecked Sendable: every stored property is a `let` set in init; the buffer views point into memory owned by the data (`DataStorage`), which this class retains.
+    // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
     final class Storage: @unchecked Sendable {
         let data: CollationData
         /// The base (root) data when `data` is a tailoring.
@@ -174,7 +177,7 @@ package struct RootCollator: @unchecked Sendable {
                 hasBase: base != nil,
                 baseTrie: base?.trie ?? data.trie,
                 baseCEs: base?.ces ?? data.ces,
-                reordering: reordering.map { ceStorage.store([ReorderingView($0, storage: ceStorage)]).baseAddress! },
+                reordering: reordering.flatMap { ceStorage.store([ReorderingView($0, storage: ceStorage)]).baseAddress },
                 maxVariableTop: scriptsData.lastPrimaryForGroup(
                     CollationData.reorderCodeFirst + CollationOptions.MaxVariable.currency.rawValue),
                 dataCE32s: data.ce32s, baseCE32s: base?.ce32s ?? data.ce32s)
@@ -345,6 +348,8 @@ package struct RootCollator: @unchecked Sendable {
     }
 
     /// The tailoring storages built so far, by name. At most one entry per bundled tailoring; a process usually uses one or two. The lock is NOT held during a build (~0.2 ms): two threads that miss at the same time may both build, and the first insert wins, so every caller gets the same storage. A name that fails to load throws and is not stored.
+    // @unchecked Sendable: `storages` is read and written only while `lock` is held.
+    // TODO: Use LockedState for the dictionary, as CollatorCache does, and drop @unchecked Sendable.
     private final class StorageCache: @unchecked Sendable {
         private let lock = PoolLock()
         private var storages: [String: Storage] = [:]

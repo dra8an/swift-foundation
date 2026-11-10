@@ -123,7 +123,7 @@ import Testing
         for m in starters {
             shiftedPairs += [("a b", "a " + m + "b"), ("a-b", "a-" + m + "b"), ("a ", "a " + m)]
             for k in stride(from: UInt32(0x300), through: 0x36F, by: 5) {
-                let mark = String(Character(Unicode.Scalar(k)!))
+                let mark = String(Character(try #require(Unicode.Scalar(k))))
                 backwardPairs += [("e" + mark, "e" + mark + m), ("e" + mark + "b", "e" + mark + "b" + m)]
             }
         }

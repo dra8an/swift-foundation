@@ -2,6 +2,7 @@
 //
 // The data structs hold UnsafeBufferPointer views into this storage plus one reference to it, which makes copying them trivial (a single retain instead of one per internal array — the CE iterator copies its data struct on every lookup, so this is hot), and buffer reads are unchecked in release builds. Safety model: the views never outlive the owning struct, all offsets are validated at parse time, and the bundled data files are version-pinned and exercised by the conformance suites — the same trust ICU4C places in its own memory-mapped arrays.
 
+// @unchecked Sendable: the memory is allocated and written only while the data is parsed, before the value is shared, and never changed afterwards; it is freed in deinit, when no view can exist any more. This class is the one owner of the raw memory; manually allocated memory has no Sendable alternative, so no migration is planned.
 final class DataStorage: @unchecked Sendable {
     private var allocations: [UnsafeMutableRawPointer] = []
 

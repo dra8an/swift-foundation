@@ -12,7 +12,7 @@ import Testing
         let (variant, collator) = try DifferentialTests.collators[collatorIndex]
         let corpus = try DifferentialTests.corpus
 
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
+        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
         let expected = try String(
             contentsOf: golden.appendingPathComponent("keys-\(optionSetName).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)

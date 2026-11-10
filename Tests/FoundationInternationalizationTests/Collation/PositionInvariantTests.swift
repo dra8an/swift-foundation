@@ -92,7 +92,7 @@ import Testing
     @Test(arguments: ["fuzz-corpus.txt", "corpus.txt"])
     func ceIteratorAccountsForEveryNFDScalarInGoldenCorpora(file: String) throws {
         let collator = try Self.collator
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
+        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
         let strings = try String(
             contentsOf: golden.appendingPathComponent(file), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
@@ -297,11 +297,11 @@ import Testing
         }
         var pairs: [(starter: UInt32, suffix: UInt32, suffixCCC: UInt8)] = []
         for s in starters {
-            let starterCEs = ces(String(Unicode.Scalar(s)!))
+            let starterCEs = ces(String(try #require(Unicode.Scalar(s))))
             for (m, cc) in marks {
-                var joint = String(Unicode.Scalar(s)!)
-                joint.unicodeScalars.append(Unicode.Scalar(m)!)
-                if ces(joint) != starterCEs + ces(String(Unicode.Scalar(m)!)) {
+                var joint = String(try #require(Unicode.Scalar(s)))
+                joint.unicodeScalars.append(try #require(Unicode.Scalar(m)))
+                if ces(joint) != starterCEs + ces(String(try #require(Unicode.Scalar(m)))) {
                     pairs.append((s, m, cc))
                 }
             }
@@ -317,9 +317,9 @@ import Testing
         var failCount = 0, failAfter = 0, failSelf = 0, failRoundTrip = 0
         for (starter, suffix, suffixCCC) in pairs {
             for (intervening, ivCCC) in marks where ivCCC < suffixCCC {
-                var text = String(Unicode.Scalar(starter)!)
-                text.unicodeScalars.append(Unicode.Scalar(intervening)!)
-                text.unicodeScalars.append(Unicode.Scalar(suffix)!)
+                var text = String(try #require(Unicode.Scalar(starter)))
+                text.unicodeScalars.append(try #require(Unicode.Scalar(intervening)))
+                text.unicodeScalars.append(try #require(Unicode.Scalar(suffix)))
                 triples += 1
 
                 // Scalar count == NFD scalar count.

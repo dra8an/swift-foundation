@@ -119,14 +119,14 @@ import Testing
     static func utf8Compare(
         _ a: String, _ b: String, table: UnsafeBufferPointer<UInt16>,
         primaries: [UInt16], packed: Int32
-    ) -> Int32 {
+    ) throws -> Int32 {
         var aa = a
         var bb = b
-        return aa.withUTF8 { lBytes in
-            bb.withUTF8 { rBytes in
-                primaries.withUnsafeBufferPointer { pBuf in
+        return try aa.withUTF8 { lBytes in
+            try bb.withUTF8 { rBytes in
+                try primaries.withUnsafeBufferPointer { pBuf in
                     CollationFastLatin.compareUTF8(
-                        table: table, primaries: pBuf.baseAddress!, options: packed,
+                        table: table, primaries: try #require(pBuf.baseAddress), options: packed,
                         left: lBytes, right: rBytes)
                 }
             }
@@ -150,7 +150,7 @@ import Testing
             let viaScalars = CollationFastLatin.compare(
                 table: table, primaries: primaries, options: packed,
                 left: Self.side(a), right: Self.side(b))
-            let viaBytes = Self.utf8Compare(a, b, table: table, primaries: primaries, packed: packed)
+            let viaBytes = try Self.utf8Compare(a, b, table: table, primaries: primaries, packed: packed)
             #expect(viaBytes == viaScalars, "\(a.debugDescription) vs \(b.debugDescription)")
         }
     }
@@ -162,12 +162,12 @@ import Testing
         #expect(!da.data.fastLatinTable.isEmpty)
         var primaries: [UInt16] = []
         let packed = CollationFastLatin.getOptions(
-            table: da.data.fastLatinTable, scriptsData: da.base!, reordering: nil,
+            table: da.data.fastLatinTable, scriptsData: try #require(da.base), reordering: nil,
             options: da.defaultOptions.icuOptions, primaries: &primaries)
         #expect(packed >= 0)
         // "aa" sorts as a separate letter after z in Danish.
         for (a, b, expected) in [("aa", "ab", Int32(1)), ("aa", "z", 1), ("ab", "ac", -1)] {
-            let got = Self.utf8Compare(a, b, table: da.data.fastLatinTable, primaries: primaries, packed: packed)
+            let got = try Self.utf8Compare(a, b, table: da.data.fastLatinTable, primaries: primaries, packed: packed)
             #expect(got == expected, "\(a) vs \(b)")
         }
         // Integrated, against sort keys (which never use fast Latin).

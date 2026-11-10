@@ -22,7 +22,7 @@ import Testing
     static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 
     static func parse(file: String) throws -> [String] {
-        let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)!
+        let url = try #require(Bundle.module.url(forResource: "Conformance", withExtension: nil))
             .appendingPathComponent(file)
         let content = try String(contentsOf: url, encoding: .utf8)
         var strings: [String] = []

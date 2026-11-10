@@ -391,7 +391,14 @@ upstream `main`; found 2026-11-10, the project had not known it; copies,
 identical to upstream `main`, at the repository root since the same day): the gaps
 of the branch are section 8 of Docs/31 (comments with history, Unsafe use,
 `@unchecked Sendable`, force unwraps in tests, `Benchmarks/` entries, the
-target branch, the Evolution question); to fix on the PR branch. How to build
+target branch, the Evolution question); to fix on the PR branch. **Step 1
+done 2026-11-10 (user's plan: 1 small fixes, 2 comments, 3 unsafe
+justification, 4 Benchmarks/):** no force unwraps in the collation tests
+(88 → `try #require`) or the sources (2), and every `@unchecked Sendable`
+has a reason and a TODO or a "no migration" note; suite 1576/140; the
+wrapper code identical instruction for instruction (33 functions). Next:
+step 2, the comments, file by file, with a check that the code outside the
+comments is unchanged. How to build
 with CMake on this Mac: Xcode's `cmake` / `ninja` in
 `/Applications/Xcode2.app/Contents/Developer/usr/local/bin`, `SDKROOT` set,
 `-D_SwiftFoundationICU_SourceDIR` / `-D_SwiftCollections_SourceDIR` pointing

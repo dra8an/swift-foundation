@@ -13,7 +13,7 @@ import Testing
         let (optionSetName, options) = DifferentialTests.optionSets[optionSetIndex]
         let (variant, collator) = try DifferentialTests.collators[collatorIndex]
 
-        let golden = Bundle.module.url(forResource: "Golden", withExtension: nil)!
+        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
         let corpus = try String(
             contentsOf: golden.appendingPathComponent("fuzz-corpus.txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true).map(String.init)

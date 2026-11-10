@@ -6,10 +6,9 @@ struct CollationSearchTests {
     let collator: RootCollator
     init() throws { collator = try RootCollator() }
 
-    @Test func exactMatch() {
-        let result = collator.search(for: "world", in: "hello world")
-        #expect(result != nil)
-        #expect("hello world"[result!] == "world")
+    @Test func exactMatch() throws {
+        let result = try #require(collator.search(for: "world", in: "hello world"))
+        #expect("hello world"[result] == "world")
     }
 
     @Test func noMatch() {
@@ -17,16 +16,14 @@ struct CollationSearchTests {
         #expect(result == nil)
     }
 
-    @Test func matchAtStart() {
-        let result = collator.search(for: "hello", in: "hello world")
-        #expect(result != nil)
-        #expect("hello world"[result!] == "hello")
+    @Test func matchAtStart() throws {
+        let result = try #require(collator.search(for: "hello", in: "hello world"))
+        #expect("hello world"[result] == "hello")
     }
 
-    @Test func emptyPattern() {
-        let result = collator.search(for: "", in: "hello")
-        #expect(result != nil)
-        #expect(result! == "hello".startIndex..<"hello".startIndex)
+    @Test func emptyPattern() throws {
+        let result = try #require(collator.search(for: "", in: "hello"))
+        #expect(result == "hello".startIndex..<"hello".startIndex)
     }
 
     @Test func emptyText() {
@@ -34,20 +31,18 @@ struct CollationSearchTests {
         #expect(result == nil)
     }
 
-    @Test func caseInsensitiveSearch() {
+    @Test func caseInsensitiveSearch() throws {
         var opts = CollationOptions()
         opts.strength = .secondary
-        let result = collator.search(for: "HELLO", in: "say hello world", options: opts)
-        #expect(result != nil)
-        #expect("say hello world"[result!] == "hello")
+        let result = try #require(collator.search(for: "HELLO", in: "say hello world", options: opts))
+        #expect("say hello world"[result] == "hello")
     }
 
-    @Test func accentInsensitiveSearch() {
+    @Test func accentInsensitiveSearch() throws {
         var opts = CollationOptions()
         opts.strength = .primary
-        let result = collator.search(for: "cafe", in: "the café is open", options: opts)
-        #expect(result != nil)
-        #expect("the café is open"[result!] == "café")
+        let result = try #require(collator.search(for: "cafe", in: "the café is open", options: opts))
+        #expect("the café is open"[result] == "café")
     }
 
     @Test func nfdEquivalence() {
@@ -62,10 +57,9 @@ struct CollationSearchTests {
         #expect(!collator.contains(pattern: "xyz", in: "hello world"))
     }
 
-    @Test func unicodeText() {
-        let result = collator.search(for: "日本", in: "東京は日本の首都")
-        #expect(result != nil)
-        #expect("東京は日本の首都"[result!] == "日本")
+    @Test func unicodeText() throws {
+        let result = try #require(collator.search(for: "日本", in: "東京は日本の首都"))
+        #expect("東京は日本の首都"[result] == "日本")
     }
 
     // MARK: - Ignorable skipping
@@ -147,14 +141,12 @@ struct CollationSearchTests {
 
     // MARK: - Backwards search
 
-    @Test func backwardsFindsLast() {
+    @Test func backwardsFindsLast() throws {
         let text = "abc abc abc"
-        let first = collator.search(for: "abc", in: text)
-        let last = collator.searchBackwards(for: "abc", in: text)
-        #expect(first != nil)
-        #expect(last != nil)
-        #expect(first!.lowerBound < last!.lowerBound, "Backwards should find last occurrence")
-        #expect(text[last!] == "abc")
+        let first = try #require(collator.search(for: "abc", in: text))
+        let last = try #require(collator.searchBackwards(for: "abc", in: text))
+        #expect(first.lowerBound < last.lowerBound, "Backwards should find last occurrence")
+        #expect(text[last] == "abc")
     }
 
     @Test func backwardsSingleOccurrence() {
@@ -169,22 +161,20 @@ struct CollationSearchTests {
         #expect(result == nil)
     }
 
-    @Test func backwardsCaseInsensitive() {
+    @Test func backwardsCaseInsensitive() throws {
         var opts = CollationOptions()
         opts.strength = .secondary
         let text = "Hello hello HELLO"
-        let last = collator.searchBackwards(for: "hello", in: text, options: opts)
-        #expect(last != nil)
-        #expect(text[last!] == "HELLO")
+        let last = try #require(collator.searchBackwards(for: "hello", in: text, options: opts))
+        #expect(text[last] == "HELLO")
     }
 
-    @Test func backwardsAccentInsensitive() {
+    @Test func backwardsAccentInsensitive() throws {
         var opts = CollationOptions()
         opts.strength = .primary
         let text = "cafe café CAFÉ"
-        let last = collator.searchBackwards(for: "cafe", in: text, options: opts)
-        #expect(last != nil)
-        #expect(text[last!] == "CAFÉ")
+        let last = try #require(collator.searchBackwards(for: "cafe", in: text, options: opts))
+        #expect(text[last] == "CAFÉ")
     }
 
     @Test func backwardsEmpty() {
@@ -225,13 +215,12 @@ struct CollationSearchTests {
         #expect(result != nil, "Shifted punctuation should be ignorable in search")
     }
 
-    @Test func shiftedBackwardsFindsLast() {
+    @Test func shiftedBackwardsFindsLast() throws {
         var opts = CollationOptions()
         opts.alternate = .shifted
         let text = "a b x a-b"
-        let last = collator.searchBackwards(for: "ab", in: text, options: opts)
-        #expect(last != nil)
-        #expect(last!.lowerBound > text.startIndex, "Backwards should find the later occurrence")
+        let last = try #require(collator.searchBackwards(for: "ab", in: text, options: opts))
+        #expect(last.lowerBound > text.startIndex, "Backwards should find the later occurrence")
     }
 
     @Test func shiftedPatternWithSpace() {
@@ -250,16 +239,15 @@ struct CollationSearchTests {
         #expect(result == nil, "Space is significant at alternate=nonIgnorable")
     }
 
-    @Test func forwardCrossNormalizationFindsFirst() {
+    @Test func forwardCrossNormalizationFindsFirst() throws {
         // The FIRST collation match is in NFC form (different bytes than the
         // pattern); a byte-identical NFD match appears later. The forward
         // byte scan must not return the later byte match as "first".
         let nfd = "e\u{0301}"
         let nfc = "\u{00E9}"
         let text = "x \(nfc) y \(nfd) z"
-        let first = collator.search(for: nfd, in: text)
-        #expect(first != nil)
-        #expect(text[first!] == nfc,
+        let first = try #require(collator.search(for: nfd, in: text))
+        #expect(text[first] == nfc,
                 "Forward must find the earlier NFC-form match, not the byte-identical NFD one")
     }
 
@@ -280,42 +268,37 @@ struct CollationSearchTests {
 
     // MARK: - Backwards byte-scan semantics
 
-    @Test func backwardsFindsLastLongASCII() {
+    @Test func backwardsFindsLastLongASCII() throws {
         // Long enough that the old <=32 reserve gate never fired; pure ASCII
         // so the backwards byte scan (if eligible) is definitive.
         let text = "start abc middle abc more filler text here abc end"
-        let last = collator.searchBackwards(for: "abc", in: text)
-        #expect(last != nil)
-        #expect(text[last!] == "abc")
-        let tail = text[last!.upperBound...]
+        let last = try #require(collator.searchBackwards(for: "abc", in: text))
+        #expect(text[last] == "abc")
+        let tail = text[last.upperBound...]
         #expect(!tail.contains("abc"), "Must be the last occurrence")
     }
 
-    @Test func backwardsCrossNormalizationFindsLast() {
+    @Test func backwardsCrossNormalizationFindsLast() throws {
         // The pattern in NFD form; the LAST collation match in the text is in
         // NFC form (different bytes). A backwards byte scan must not return
         // the earlier byte-identical NFD match.
         let nfd = "e\u{0301}"        // e + combining acute
         let nfc = "\u{00E9}"         // é precomposed
         let text = "x \(nfd) y \(nfc) z"
-        let first = collator.search(for: nfd, in: text)
-        let last = collator.searchBackwards(for: nfd, in: text)
-        #expect(first != nil)
-        #expect(last != nil)
-        #expect(last!.lowerBound > first!.lowerBound,
+        let first = try #require(collator.search(for: nfd, in: text))
+        let last = try #require(collator.searchBackwards(for: nfd, in: text))
+        #expect(last.lowerBound > first.lowerBound,
                 "Backwards must find the later NFC-form match, not the byte-identical NFD one")
     }
 
     // MARK: - CJK byte-scan eligibility (offset/implicit scalars)
 
-    @Test func cjkBackwardsFindsLast() {
+    @Test func cjkBackwardsFindsLast() throws {
         let text = "日本 と 日本"
-        let first = collator.search(for: "日本", in: text)
-        let last = collator.searchBackwards(for: "日本", in: text)
-        #expect(first != nil)
-        #expect(last != nil)
-        #expect(first!.lowerBound < last!.lowerBound)
-        #expect(text[last!] == "日本")
+        let first = try #require(collator.search(for: "日本", in: text))
+        let last = try #require(collator.searchBackwards(for: "日本", in: text))
+        #expect(first.lowerBound < last.lowerBound)
+        #expect(text[last] == "日本")
     }
 
     @Test func cjkNoMatch() {
@@ -330,13 +313,12 @@ struct CollationSearchTests {
         #expect(result == nil)
     }
 
-    @Test func cjkAfterIneligiblePrefixStillFound() {
+    @Test func cjkAfterIneligiblePrefixStillFound() throws {
         // An accented character before the match makes the fast path bail;
         // the CE path must still find it.
         let text = "café 日本 x"
-        let result = collator.search(for: "日本", in: text)
-        #expect(result != nil)
-        #expect(text[result!] == "日本")
+        let result = try #require(collator.search(for: "日本", in: text))
+        #expect(text[result] == "日本")
     }
 
     // MARK: - Cross-starter contractions
