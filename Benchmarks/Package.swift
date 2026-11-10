@@ -104,6 +104,7 @@ let package = Package(
             name: "InternationalizationBenchmarks",
             dependencies: targetDependency,
             path: "Benchmarks/Internationalization",
+            resources: [.process("Resources")],
             swiftSettings: swiftSettings,
             plugins: [
                 .plugin(name: "BenchmarkPlugin", package: "package-benchmark")

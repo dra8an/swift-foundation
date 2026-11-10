@@ -41,18 +41,20 @@ three file parsers, creation only; §51 (av)).
 matrix recorded 2026-11-06, see "Current numbers"). The work is the
 **upstream preparation** of the port for swift-foundation: the CMake build,
 the compiled-in data, the maintainer summary (`Collation/Docs/31-maintainer-summary.md`)
-and the compliance with upstream's contribution guide (a 4-step plan; steps
-1, 2 and 3 done, step 4 not started, see NEXT TASK).
+and the compliance with upstream's contribution guide (a 4-step plan; all
+four steps done on 2026-11-10, see NEXT TASK; two new gaps found: license
+headers and the ICU entry in `NOTICE.txt`, Docs/31 section 8).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-10, afternoon): HEAD = `abcdac47` (the
-handoff docs of 2026-11-10) on `a5d42d78` (guide step 2, the comments) on
-`c2f87de9` (guide step 1) — **3 commits ahead of
-`origin/port/collation` = `dd24f0ba`, not pushed** — plus the guide step 3
-commit if the user made it (else 4 sources with comment-only changes —
-`DataStorage`, `NFDIterator`, `SortKey`, `RootCollator` — and `HANDOFF.md`,
-`31-maintainer-summary.md` are modified: give the add / commit lines). The
-working tree has no code changes (comments only). The worktree `../collation-baseline` is
+paragraph).** Expected (2026-11-10, afternoon): HEAD = `893ae795` (guide
+step 3) on `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
+and `c2f87de9` (step 1) — **4 commits ahead of
+`origin/port/collation` = `dd24f0ba`, not pushed** — plus the guide step 4
+commit if the user made it (else the `Benchmarks/` changes of step 4 —
+three modified files, `BenchmarkCollation.swift`, `CollationCorpora.swift`
+and `Resources/` new — and `HANDOFF.md`, `31-maintainer-summary.md` are
+modified: give the add / commit lines). The
+working tree has no engine code changes. The worktree `../collation-baseline` is
 detached at `dbacc677` (the fork point of the branch, used for the CMake
 check), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
 before the next A/B (the block below). The main tree's builds: default
@@ -370,13 +372,38 @@ in the user's 4-step plan:
    the safe form, and its measured cost at the time of the change (sources:
    Docs/11 round 6, §22, §46 (a), §50 (d), §51 (b), (h), (k), (y), (aj),
    (ak)); section 8 row 2 says done.
-4. **Not started:** `swift-benchmark` entries in upstream's `Benchmarks/`
-   (e.g. `Benchmarks/Benchmarks/Internationalization/BenchmarkCollation.swift`,
-   in the form of their `BenchmarkLocale.swift`): `localizedCompare`,
-   `localizedStandardCompare`, `compare(_:locale:)`, contains, a sort, on our
-   corpora. Risk: the package needs `package-benchmark` from GitHub, and the
-   network proxy blocked a GitHub fetch over HTTPS on 2026-11-09 (SSH over
-   443 works) — test the fetch first.
+4. **DONE (2026-11-10 afternoon):** `swift-benchmark` entries in upstream's
+   `Benchmarks/` — `Internationalization/BenchmarkCollation.swift` (the 14
+   Foundation APIs of Table 2 on 5 corpora, 70 entries `Collation-<API>-<corpus>`),
+   `CollationCorpora.swift` (the `Bundle.module` lookup, in its own file:
+   its `import Foundation` would let the collation calls resolve to the
+   system implementation), the corpora in `Internationalization/Resources/`
+   (user's choice: resource files; Thai = the first 200 lines of
+   `bench-thai-shuffled.txt`), `resources: [.process("Resources")]` in
+   `Benchmarks/Package.swift`, the call in `InternationalizationBenchmark.swift`.
+   `BenchmarkTimeZone.swift` got upstream's own fix of PR #1958 (it did not
+   build at our fork point). The GitHub fetch worked (package-benchmark
+   1.38.1). **How to run:** `SWIFTCI_USE_LOCAL_DEPS=1` would use
+   `../../swift-foundation` = `~/Projects/dra8an/swift-foundation`, an OLD
+   checkout — wrong code, no error. Use the symlink folder
+   `.build/benchroot/` (`swift-foundation` → this repository, plus
+   `swift-collections`, `swift-foundation-icu`, `swift-syntax` →
+   `.build/checkouts/`): `cd Benchmarks && SWIFTCI_USE_LOCAL_DEPS=$R/.build/benchroot
+   $X build -c release --product InternationalizationBenchmarks`, then
+   `python3 $R/.build/benchroot/run_collation.py
+   .build/out/Products/Release/InternationalizationBenchmarks
+   Benchmarks/Internationalization/Resources` (runs the executable directly
+   and prints ns per call; about 70 s). `swift package benchmark` FAILS on
+   this Mac: the plugin's own `BenchmarkTool` build stops with "unable to
+   resolve module dependency: '_FoundationCShims'" (the SDK's Foundation
+   finds the package's FoundationEssentials in the shared build folder).
+   First run (12:36, load 9): compare and search rows agree with Docs/21
+   WMO (`localizedCompare` ascii 13.4 against 12, `range(of:locale:)` ascii
+   38.6 against 37); the sort rows are near the `-no-WMO` column (cause not
+   checked). Output: `.build/benchroot/run1.md`. **Found on the way:** no
+   Swift.org license header in the 15 engine files and 37 of 40 collation
+   test files, and no ICU / Unicode license entry in `NOTICE.txt` — both
+   new rows of Docs/31 section 8.
 **At PR time (not now):** the split into small PRs (Docs/31 section 7), the
 target branch (upstream's merge-forward model: the earliest release branch
 that should get the change), the Evolution question (API parity with Darwin

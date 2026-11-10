@@ -6,5 +6,6 @@ let benchmarks = {
     calendarBenchmarks()
     localeBenchmarks()
     timeZoneBenchmarks()
+    collationBenchmarks()
 }
 #endif

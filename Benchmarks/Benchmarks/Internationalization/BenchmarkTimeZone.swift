@@ -55,14 +55,14 @@ func timeZoneBenchmarks() {
     }
 
     Benchmark("creatingTimeZones", configuration: .init(scalingFactor: .mega)) { benchmark in
-        for name in NSTimeZone.knownTimeZoneNames {
+        for name in TimeZone.knownTimeZoneIdentifiers {
             let t = TimeZone(identifier: name)
             blackHole(t)
         }
     }
 
     Benchmark("secondsFromGMT_manyTimeZones", configuration: .init(scalingFactor: .mega)) { benchmark in
-        for name in NSTimeZone.knownTimeZoneNames {
+        for name in TimeZone.knownTimeZoneIdentifiers {
             let t = TimeZone(identifier: name)!
             for d in testDates {
                 let s = t.secondsFromGMT(for: d)
