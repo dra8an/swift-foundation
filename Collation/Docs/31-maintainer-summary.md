@@ -173,3 +173,23 @@ The port can go in as one PR or in steps. The steps of Docs/26 still apply in
 outline: the core compare with the root data and a few tailorings, then sort
 keys, the fast paths, search, the Foundation wiring, and the remaining
 tailorings. The build changes of section 5 belong to the first step.
+
+## 8. Gaps against the upstream contribution guide (to fix on the PR branch)
+
+Upstream `main` has `CONTRIBUTING.md` and `CONTRIBUTION_GUIDELINE.md`
+(added after this branch's fork point, upstream PR #2012). Counted on
+2026-11-10 in the engine and its Foundation wiring:
+
+| rule | state of the branch | what the PR branch needs |
+|---|---|---|
+| No comments that only explain what the code does, or that refer to the history of a change; no manual wrapping | 182 references to the technique log or a § number, 59 comment lines with measurements (ns, instructions, %), in 964 comment lines | keep only the non-obvious "why"; the history stays in `Collation/Docs` and goes into the PR descriptions |
+| Avoid `Unsafe…Pointer` APIs unless no safe alternative exists; isolate them in small helpers | 254 uses (data views, pinned UTF-8 bytes, scratch buffers) | a short justification per kind of use (performance, measured); keep them inside small helpers; expect review discussion |
+| `@unchecked Sendable` and `nonisolated(unsafe)`: a comment why it is safe, and a `// TODO:` migration path | 9 uses of `@unchecked Sendable`; some with a why-comment, none with a TODO | a why-comment and a TODO each |
+| No force unwraps (`!`, `as!`) in sources or tests; `try` / `#require` in tests | about 40 places in the tests, a few in the sources | replace them |
+| Performance through `swift-benchmark` entries under `Benchmarks/` | the benchmarks live in `Collation/` (not part of the PR) | `Benchmarks/` entries for the numbers the PR claims |
+| Small PRs, one task each; squashed commits; tests that fail before and pass after | the sequence of section 7 fits | one PR per step, each with its tests |
+| DocC documentation for new methods | the new `StringProtocol` collation methods follow the Darwin signatures; their DocC is partly there | complete DocC on every method that the PR adds |
+| Merge-forward branching: target the earliest release branch that should get the change | not decided | choose `main` or a `release/6.x` branch; this also decides how open point 2 (#1683) is met |
+| Public API through the Foundation Evolution process | the engine types are `package` (open point 1); the `StringProtocol` methods add Darwin's existing API to the other platforms | ask the workgroup whether API parity with Darwin needs a proposal (the guide has a shorter path for small API additions) |
+| No `print` in tests | none | — |
+
