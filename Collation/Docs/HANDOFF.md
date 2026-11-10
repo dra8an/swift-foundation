@@ -382,8 +382,10 @@ data update): `extract_tailoring.c`, `gen_norm_data.swift`, `gen_golden.c`,
 library has no resources and no resource bundle; the file lookup exists only
 `#if !canImport(_FoundationCollationData)` (the tools); the 7 tool build
 scripts no longer copy the file.
-Also open: a Linux build (no Docker or Linux machine here), the big-endian
-path of §51 (bd) (untested), a summary for the maintainers. How to build
+A Linux build and the big-endian path are open points 3 and 4 of
+`Collation/Docs/31-maintainer-summary.md`; this Mac cannot do either (no
+Docker, no Linux, no big-endian machine). **User decision, 2026-11-10: keep
+them only in that list — do not offer them as next steps.** How to build
 with CMake on this Mac: Xcode's `cmake` / `ninja` in
 `/Applications/Xcode2.app/Contents/Developer/usr/local/bin`, `SDKROOT` set,
 `-D_SwiftFoundationICU_SourceDIR` / `-D_SwiftCollections_SourceDIR` pointing

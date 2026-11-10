@@ -136,10 +136,12 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    flag simply stays off), or does it need a FoundationEssentials change?
    That decision belongs to the owner of the branch and the maintainers.
 3. **Not yet built or tested on Linux or Windows.** The CMake build was
-   checked on macOS only.
+   checked on macOS only. Needs another machine (Linux, Windows) or
+   Docker; not possible on the development Mac.
 4. **Big-endian hosts:** the data parsers have a byte-swapping path for
    big-endian hosts (`DataStorage.storeLittleEndian`), not yet run on such a
-   host.
+   host. Needs a big-endian machine or an emulator; not possible on the
+   development Mac.
 5. **Test-only data: in the test target (done 2026-11-09).** The ICU4X
    variant of the root data (`ucadata-icu4x.icu`, 585 KB, used only by the
    conformance and differential tests) moved to
