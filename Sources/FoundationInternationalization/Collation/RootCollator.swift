@@ -29,27 +29,27 @@ package struct RootCollator: @unchecked Sendable {
         let baseCEs: UnsafeBufferPointer<Int64>
         /// Script reordering, applied to both primaries at the decision (compareReordered), as CollationCompare applies it at the first primary difference; nil without reordering.
         let reordering: UnsafePointer<ReorderingView>?
-        /// The last primary of the highest variable group (maxVariable = currency). Every primary that quickCJKPrimary returns is above it — ideographs are never variable, so a primary difference decides under alternate=shifted too; `QuickCJKTests` checks it for every ideograph of every bundled collator, and quickCJKPrimary asserts it in debug builds. Not tested in the release hot path: the guard cost root's CJK compare +13 instructions of spills.
+        /// The last primary of the highest variable group (maxVariable = currency). Every primary that quickCJKPrimary returns is above it — ideographs are never variable, so a primary difference decides under alternate=shifted too; `QuickCJKTests` checks it for every ideograph of every bundled collator, and quickCJKPrimary asserts it in debug builds. The release hot path does not test it: the check would cost every CJK compare register spills.
         let maxVariableTop: UInt32
-        /// The CE32 arrays of the data and the base: the first CE of an EXPANSION32 (ko's hanja, technique log §51 (ba)). Declared last, so that the older fields keep their offsets.
+        /// The CE32 arrays of the data and the base, for the first CE of an EXPANSION32 (ko's hanja). Declared last, so that the fields that the default path reads keep their offsets.
         let dataCE32s: UnsafeBufferPointer<UInt32>
         let baseCE32s: UnsafeBufferPointer<UInt32>
     }
 
-    /// The default-options fast-Latin setup, resolved at init and heap-boxed, so that compareFastPath reads its setup through ONE pointer instead of separate fields of the storage object. The compare ladder (technique log §50) put the entry's guard and those field loads at ~2.7 ns of a ~15 ns ascii compare, and the core it feeds at ~9 ns.
+    /// The default-options fast-Latin setup, resolved at init and heap-boxed, so that compareFastPath reads its setup through one pointer instead of separate fields of the storage object: the entry's field loads are a noticeable part of a short compare.
     ///
-    /// RestartSafety is deliberately NOT a field of this box. It is a large struct (~190 bytes), and read here as a VALUE (`setup.pointee.safety`) it has to be copied before every use, because the memory behind the pointer could change — that variant cost paths compare +2.7%, 5 of 5 rounds. It has its own box instead (Storage.restartSafetyPtr), and the fast-Latin path passes a POINTER to it and calls `isUnsafe` on `pointee` in place, so its fields are read only where the core consults them: after a shared prefix (technique log §50).
+    /// RestartSafety is deliberately not a field of this box. It is a large struct (~190 bytes); read as a value through the pointer, it would be copied before every use, because the memory behind the pointer could change. It has its own box instead (Storage.restartSafetyPtr): the fast-Latin path passes a pointer to it and calls `isUnsafe` on `pointee` in place, so its fields are read only after a shared prefix, where the core consults them.
     struct DefaultFastLatinSetup {
         /// The facts the entry guard needs that are fixed at init — packed options >= 0 (the options are fast-Latin-compatible), a non-empty table, and a default strength other than identical — folded into one flag.
         let eligible: Bool
-        /// The default options as a bit pattern (see `bits(of:)`): the guard compares the caller's options with it in one masked 64-bit compare, 6 instructions, where computing and comparing the options word cost 22 per call (technique log §51).
+        /// The default options as a bit pattern (see `bits(of:)`): the guard compares the caller's options with it in one masked 64-bit compare, cheaper than computing and comparing the options word.
         let optionBits: UInt64
         let packedOptions: Int32
         let table: UnsafeBufferPointer<UInt16>
         let primaries: UnsafeBufferPointer<UInt16>
     }
 
-    /// The non-default option sets of the Foundation wrappers, resolved at init: `localizedStandardCompare` (secondary + numeric), `localizedCaseInsensitiveCompare` (secondary), the options compare with case and diacritic insensitivity (primary) and `.localizedStandard` (identical + numeric), each on the collator's other defaults; last the defaults themselves (a default compare that bails reaches `compareSlowPath` too: every Thai compare). For each: the bit pattern of the options (see `bits(of:)`), the options word, and the fast-Latin setup that `resolveFastLatinSetup` gives for that word. `compareSlowPath` compares the pattern of its options with these first: a hit skips the options word (`icuOptions`, ~27 instructions) and the setup lookup (~18) — the same result on every call for a given option set (technique log §51 (az)). Heap-boxed behind one pointer, like the other setups.
+    /// The non-default option sets of the Foundation wrappers, resolved at init: `localizedStandardCompare` (secondary + numeric), `localizedCaseInsensitiveCompare` (secondary), the options compare with case and diacritic insensitivity (primary) and `.localizedStandard` (identical + numeric), each on the collator's other defaults; last the defaults themselves (a default compare that bails reaches `compareSlowPath` too: every Thai compare). For each: the bit pattern of the options (see `bits(of:)`), the options word, and the fast-Latin setup that `resolveFastLatinSetup` gives for that word. `compareSlowPath` compares the pattern of its options with these first: a hit skips the options word (`icuOptions`) and the setup lookup, whose results are the same on every call for a given option set. Heap-boxed behind one pointer, like the other setups.
     struct OptionPresets {
         let bits: (UInt64, UInt64, UInt64, UInt64, UInt64)
         let words: (Int32, Int32, Int32, Int32, Int32)
@@ -58,7 +58,7 @@ package struct RootCollator: @unchecked Sendable {
                         UnsafeBufferPointer<UInt16>, UnsafeBufferPointer<UInt16>)
     }
 
-    /// All stored state lives behind one class reference so a RootCollator value is a single pointer. As a flat struct the collator was ~768 bytes; every method call materialized that copy on the stack (and a throwing call in a loop re-copied it per iteration — the optimizer cannot hoist the copy across a throwing call). Everything is immutable after init.
+    /// All stored state lives behind one class reference, so a RootCollator value is a single pointer: a large struct would be copied on the stack at every method call, and per iteration around a throwing call, which the optimizer cannot hoist the copy across. Everything is immutable after init.
     // @unchecked Sendable: every stored property is a `let` set in init; the buffer views point into memory owned by the data (`DataStorage`), which this class retains.
     // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
     final class Storage: @unchecked Sendable {
@@ -86,7 +86,7 @@ package struct RootCollator: @unchecked Sendable {
         /// The same two tables with DIGIT-tag characters resolved to the CE they produce when numeric collation is off. Only valid for numeric=off, so the CE iterator selects between the variants per reset; digit-bearing text (paths, filenames, version strings) then takes the table instead of the full pipeline.
         let simpleCEsWithDigits: UnsafeBufferPointer<Int64>
         let thaiCEsWithDigits: UnsafeBufferPointer<Int64>
-        /// Combining marks and Greek (U+0300–037F): the one simple CE of a mark, else 0. A mark that reaches the CE iterator on its own (no contraction consumed it with its starter) takes this instead of the full pipeline — the second half of every decomposed accented letter (technique log §51).
+        /// Combining marks and Greek (U+0300–037F): the one simple CE of a mark, else 0. A mark that reaches the CE iterator on its own (no contraction consumed it with its starter) takes this instead of the full pipeline — the second half of every decomposed accented letter.
         let markCEs: UnsafeBufferPointer<Int64>
         let simpleCEsStorage: DataStorage
         /// The fast Latin table: the tailoring's own, or the base's when the tailoring has none (CollationDataReader aliases the same way). Stored: rebuilding it per compare would retain `base` each time.
@@ -95,7 +95,7 @@ package struct RootCollator: @unchecked Sendable {
         let restartSafety: RestartSafety
         /// Owns the memory behind restartSafety's latin table.
         let restartSafetyStorage: DataStorage
-        /// The same RestartSafety, heap-boxed so the fast-Latin path can take ONE pointer to it and read its fields only where it consults them. Passed by value (or read from the `let` above inside the closures), the compiler loaded all its fields at the top of compareFastPath on EVERY call — about 18 loads and the stores to spill them — although the core consults it only when the two strings share a prefix (technique log §50).
+        /// The same RestartSafety, heap-boxed, so that the fast-Latin path can take one pointer to it and read its fields only where it consults them (after a shared prefix); passed by value, all its fields would be loaded at the top of every compare.
         let restartSafetyPtr: UnsafeMutablePointer<RestartSafety>
         /// Script-starts data: the root's when the tailoring omits it (resolved once — callers pass the same value used for the fast-Latin setup).
         let scriptsData: CollationData
@@ -105,7 +105,7 @@ package struct RootCollator: @unchecked Sendable {
         let quickCJKSetupPtr: UnsafeMutablePointer<QuickCJKSetup>
         /// The default-options fast-Latin setup in one box; see DefaultFastLatinSetup.
         let defaultFLSetupPtr: UnsafeMutablePointer<DefaultFastLatinSetup>
-        /// The fast-Latin primaries key (CollationFastLatin.primariesKey) of the default options, and of its numeric twin (the default key with numeric toggled), each with its packed options (the low 16 bits are replaced per word) and primaries, resolved at init. Declared last, so that every older field keeps its offset (in the middle, they moved the pointers that the default path reads, and `compare(_:locale:)` ran 6–8% slower with the same code; technique log §51 (ar)). They serve every options word with one of these two keys — strength, case and backward-secondary changes and `.numeric`, so every option set that the Foundation wrappers build — without the shared cache (technique log §51 (ar)).
+        /// The fast-Latin primaries key (CollationFastLatin.primariesKey) of the default options, and of its numeric twin (the default key with numeric toggled), each with its packed options (the low 16 bits are replaced per word) and primaries, resolved at init. Declared last: fields inserted in the middle move the pointers that the default path reads, which slows it. They serve every options word with one of these two keys — strength, case and backward-secondary changes and `.numeric`, so every option set that the Foundation wrappers build — without the shared cache.
         let defaultFLKey: Int32
         let twinFLKey: Int32
         let twinFLPackedOptions: Int32
@@ -161,7 +161,7 @@ package struct RootCollator: @unchecked Sendable {
             let twinPrimaries = flStorage.store(twinPrims)
             self.twinFLPrimaries = twinPrimaries
             self.defaultFLStorage = flStorage
-            // Pre-compute simple-CE tables: ASCII, and the Thai block (U+0E00–0E7F — the one non-Latin script whose hot scalars are mostly single simple CEs; profiling put ~200 ns of Thai compares in CE production). Same exclusion rules for both: specials (contractions, prefixes, digits) stay 0 and take the full path.
+            // Pre-compute simple-CE tables: ASCII, and the Thai block (U+0E00–0E7F — the one non-Latin script whose hot scalars are mostly single simple CEs). Same exclusion rules for both: specials (contractions, prefixes, digits) stay 0 and take the full path.
             let ceStorage = DataStorage()
             self.simpleCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage)
             self.thaiCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage, from: 0x0E00)
@@ -171,7 +171,7 @@ package struct RootCollator: @unchecked Sendable {
                 data: data, base: base, storage: ceStorage, from: 0x0E00, resolvingDigits: true)
             self.markCEs = RootCollator.buildSimpleCEs(data: data, base: base, storage: ceStorage, from: 0x0300)
             self.simpleCEsStorage = ceStorage
-            // Quick-CJK dispatch setup, for every collator: the reordering is applied to the two primaries, and both must be above every possible variable top (technique log §51 (ap); before, collators with reordering — ja, zh, ko, th … — or a shifted default had it off).
+            // Quick-CJK dispatch setup, for every collator: the reordering is applied to the two primaries, and both must be above every possible variable top.
             let setup = QuickCJKSetup(
                 dataTrie: data.trie, dataCEs: data.ces,
                 hasBase: base != nil,
@@ -242,7 +242,7 @@ package struct RootCollator: @unchecked Sendable {
 
     private init(storage: Storage) { self.storage = storage }
 
-    /// Runs `body` on the collator at `collator` with no retain and release of its storage: a copy out of the pointer retained the storage, a reference count that every thread shares (technique log §51 (ak)). The collator must stay alive during the call — the CollatorCache slots, which are never freed. RootCollator is one class reference, so the reference is read as a raw word (a trivial load). Private: callers in other files use the non-generic entries below — in a `-no-WMO` build a generic with a closure, called from another file, runs unspecialized with a closure context (+3 retain / release pairs per options compare).
+    /// Runs `body` on the collator at `collator` with no retain and release of its storage (a copy out of the pointer retains it, on a reference count that every thread shares). The collator must stay alive during the call — the CollatorCache slots, which are never freed. RootCollator is one class reference, so the reference is read as a raw word (a trivial load). Private: callers in other files use the non-generic entries below; a generic with a closure, called from another file in a build without whole-module optimization, would run unspecialized with a closure context.
     @inline(__always)
     private static func withCollator<R>(at collator: UnsafePointer<RootCollator>, _ body: (RootCollator) throws -> R) rethrows -> R {
         assert(MemoryLayout<RootCollator>.size == MemoryLayout<UnsafeRawPointer>.size)
@@ -301,7 +301,7 @@ package struct RootCollator: @unchecked Sendable {
         self.storage = Self.makeRootStorage(data: data, norm: norm)
     }
 
-    /// The root collator. Its storage is built once per process and shared (it is immutable; the per-thread scratch buffers stay per thread), as ICU builds its root collator once. Building it took ~490 µs on every call (technique log §51).
+    /// The root collator. Its storage is built once per process and shared (it is immutable; the per-thread scratch buffers stay per thread), as ICU builds its root collator once.
     package init() throws {
         self.storage = try Self.rootStorage.get()
     }
@@ -372,13 +372,13 @@ package struct RootCollator: @unchecked Sendable {
 
     /// Compares two strings. When `options` is nil, the collator's own default options apply — the tailoring's settings (fr_CA backwards secondary, da upper-first, ...), plain tertiary defaults for root — matching a collator opened by ucol_open.
     ///
-    /// Hot/cold split: the default-options fast-Latin byte path lives in a non-throwing function (it cannot fail), so the error-handling ABI is only paid when the CE pipeline actually runs. Measured on Intel: `throws` alone cost 10 ns/call on the fast path — two thirds of the entire mini-CE comparison.
+    /// Hot/cold split: the default-options fast-Latin byte path lives in a non-throwing function (it cannot fail), so the error-handling ABI is only paid when the CE pipeline actually runs.
     @inline(__always)
     package func compare(_ left: String, _ right: String) throws -> Order {
         try compare(left, right, options: defaultOptions)
     }
 
-    /// Explicit-options variant; the no-options overload above forwards with the collator's defaults. Overloads, not an optional default parameter: the Optional wrap plus nil-resolution branch cost +2..3 ns on the hot entry (measured, EngineBench A/B).
+    /// Explicit-options variant; the no-options overload above forwards with the collator's defaults. Overloads, not an optional default parameter: the Optional wrap and its nil test would cost the hot entry.
     package func compare(
         _ left: String, _ right: String, options: CollationOptions
     ) throws -> Order {
@@ -389,7 +389,7 @@ package struct RootCollator: @unchecked Sendable {
         return try compareSlowPath(left, right, options: options, restart: restart)
     }
 
-    /// `compare(_:_:)` for callers in this module that always use the collator's default options (the `localizedCompare` wrapper). The options are the defaults by construction, so the caller does not pack them into an argument (7 byte loads and selects) and the guard does not compare them again; the slow path reads them from the storage (technique log §51 (ak)).
+    /// `compare(_:_:)` for callers in this module that always use the collator's default options (the `localizedCompare` wrapper). The options are the defaults by construction, so the caller does not pack them into an argument and the guard does not compare them again; the slow path reads them from the storage.
     func compareWithDefaultOptions(_ left: String, _ right: String) throws -> Order {
         var restart = -1
         if let fast = compareFastPath(left, right, options: storage.defaultOptions, optionsAreDefault: true, restart: &restart) {
@@ -398,21 +398,21 @@ package struct RootCollator: @unchecked Sendable {
         return try compareSlowPath(left, right, options: storage.defaultOptions, restart: restart)
     }
 
-    /// The Order of a fast-path result (-1, 0 or 1), without a branch. `Order` is a simple enum, so its cases are stored as the tags 0, 1 and 2 in declaration order (ascending, same, descending): the tag is the result plus 1. Written as `fast < 0 ? .ascending : fast == 0 ? .same : .descending`, the compiler sometimes made it a branch on the result's sign — random for adjacent pairs, so it mispredicted on about every second compare (13% of the cycles in CPU Counters; technique log §51 (ah)). `FastResultOrderTests` checks the mapping.
+    /// The Order of a fast-path result (-1, 0 or 1), without a branch. `Order` is a simple enum, so its cases are stored as the tags 0, 1 and 2 in declaration order (ascending, same, descending): the tag is the result plus 1. Written as `fast < 0 ? .ascending : fast == 0 ? .same : .descending`, the compiler can make it a branch on the result's sign, which is random for adjacent pairs and mispredicts often. `FastResultOrderTests` checks the mapping.
     @inline(__always)
     static func order(fromFastResult r: Int32) -> Order {
         assert(r >= -1 && r <= 1, "not a fast-path result")
         return unsafeBitCast(UInt8(truncatingIfNeeded: r &+ 1), to: Order.self)
     }
 
-    /// The bytes of `options`, padded with a zero byte to 64 bits. Two option values are equal exactly when their patterns are equal: all seven fields are one byte (enum tags and Bools, which the compiler keeps canonical), so the 7-byte struct has no padding. A field-by-field `==` compiled to 13 more instructions than the options word, because the compiler rebuilt the stored value byte by byte. `CollationOptionsBitsTests` checks the claim over all 960 option combinations.
+    /// The bytes of `options`, padded with a zero byte to 64 bits. Two option values are equal exactly when their patterns are equal: all seven fields are one byte (enum tags and Bools, which the compiler keeps canonical), so the 7-byte struct has no padding. A field-by-field `==` compiles to more instructions, because the compiler rebuilds the stored value byte by byte. `CollationOptionsBitsTests` checks the claim over all 960 option combinations.
     @inline(__always)
     static func bits(of options: CollationOptions) -> UInt64 {
         var padded: (CollationOptions, UInt8) = (options, 0)
         return withUnsafeBytes(of: &padded) { $0.loadUnaligned(as: UInt64.self) }
     }
 
-    /// The same buffer, through an integer round trip of its address (free in machine code). For a small string, `withContiguousStorageIfAvailable` hands out a pointer to a stack copy of its bytes, made without stack protection; when the optimizer traces our indexing back to that stack copy, Swift 6.5 gives the whole function a stack protector (a guard value stored at the entry and checked before the return: 10 instructions per compare). The round trip hides the origin, so the indexing stays unprotected, as the standard library's own access to the copy is (technique log §51 (av)).
+    /// The same buffer, through an integer round trip of its address (free in machine code). For a small string, `withContiguousStorageIfAvailable` hands out a pointer to a stack copy of its bytes, made without stack protection; when the optimizer traces our indexing back to that stack copy, the compiler (since Swift 6.5) gives the whole function a stack protector, a guard value stored at the entry and checked before the return. The round trip hides the origin, so the indexing stays unprotected, as the standard library's own access to the copy is.
     @inline(__always)
     static func untraced(_ bytes: UnsafeBufferPointer<UInt8>) -> UnsafeBufferPointer<UInt8> {
         UnsafeBufferPointer(start: UnsafePointer<UInt8>(bitPattern: UInt(bitPattern: bytes.baseAddress)), count: bytes.count)
@@ -423,7 +423,7 @@ package struct RootCollator: @unchecked Sendable {
 
     /// The default-options UTF-8 fast-Latin byte path (the byte-level identical-prefix scan of ICU's UTF-8 doCompare + CollationFastLatin::compareUTF8): native Swift strings expose contiguous UTF-8, so characters are read as raw bytes with no scalar decoding. Returns nil when the options don't match the pre-baked default setup or the byte path bails (non-Latin text, unsafe restart, non-contiguous storage) — the caller then runs the throwing pipeline.
     ///
-    /// Force-inlined into `compare(_:_:options:)`: out of line, it was a second frame that saved and restored 12 registers on every call, with the restart flag passed through the stack and the `Order?` result tested again by the caller — 9 to 16 instructions per compare. Inlining `compareUTF8` as well was 2–3 instructions worse (more spills) (technique log §51).
+    /// Force-inlined into `compare(_:_:options:)`: out of line, it is a second frame that saves and restores registers on every call, with the restart flag passed through the stack and the `Order?` result tested again by the caller. Inlining `compareUTF8` as well is worse (more spills).
     ///
     /// When it returns nil after the byte scan, `restart` holds the number of leading scalars that the CE pipeline may skip (see restartScalarCount), or -1 when the scan gave no position.
     @inline(__always)
@@ -460,7 +460,7 @@ package struct RootCollator: @unchecked Sendable {
                     setup: cjkSetup,
                     numeric: options.numeric, safety: safety)
                 if q != RootCollator.fastLatinBailOut { return q }
-                // Headed for the pipeline: decide here — while the bytes are pinned — where compareBody may restart CE iteration, so it needs no identical-prefix walk of its own. STATIC helper with trivial parameters — instance methods or fat arguments called from these pinned-buffer closures regress every corpus.
+                // Headed for the pipeline: decide here — while the bytes are pinned — where compareBody may restart CE iteration, so it needs no identical-prefix walk of its own. A static helper with trivial parameters: instance methods or large arguments called from these pinned-buffer closures make every compare slower.
                 restartScalars = RootCollator.restartScalarCount(
                     lBytes, rBytes, at: mismatch,
                     safety: safety, numeric: options.numeric)
@@ -476,9 +476,9 @@ package struct RootCollator: @unchecked Sendable {
 
     /// The number of leading scalars that the CE pipeline may skip, from the byte scan's mismatch offset — ICU's backup rule (RuleBasedCollator::doCompare): if either first-differing scalar is unsafe to restart at, step back over the shared prefix while the scalar at the new position is unsafe. The scalar at the restart point is then safe, so no contraction, prefix match or canonical reordering crosses it — the same argument that already allows a restart at a safe mismatch. A mismatch at the end of one string counts the other string's next scalar only. Returns -1 when the scan gave no position (the Latin path's own unsafe reset); compareBody then walks the prefix itself.
     ///
-    /// Before this, an unsafe mismatch restarted at 0, and a mismatch at a string end (one word a prefix of the next) went through compareBody's String-iterator walk and then usually restarted at 0 too: on the thai dictionary, ICU's rule restarts later on 39% of adjacent pairs (mean restart 1.15 against 0.40 scalars), and 20% of the pairs paid the walk (technique log §51). STATIC with trivial parameters, like every helper called from the pinned-buffer closures.
+    /// This restarts later than a restart at 0 for many adjacent pairs of text with combining marks (Thai words often share a prefix), and a mismatch at a string end no longer needs compareBody's String-iterator walk. Static with trivial parameters, like every helper called from the pinned-buffer closures.
     ///
-    /// Out of line on purpose: it runs only after the fast path bails, so its body may inline the scalar decode and the restart-safety table lookup (one step back cost two out-of-line calls) without adding register pressure to compareFastPath.
+    /// Out of line on purpose: it runs only after the fast path bails, so its body may inline the scalar decode and the restart-safety table lookup without adding register pressure to compareFastPath.
     @inline(never)
     private static func restartScalarCount(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
@@ -492,7 +492,7 @@ package struct RootCollator: @unchecked Sendable {
         }
         var q = mismatch
         if q > 0, (q < lBytes.count && unsafe(lBytes, q)) || (q < rBytes.count && unsafe(rBytes, q)) {
-            // while (--equalPrefixLength > 0 && isUnsafeBackward(left[equalPrefixLength])). Backwards, as ICU does: a forward pass that finds the last safe scalar and counts in one go measured 24 instructions worse per compare on thai (it must walk the whole prefix; this stops at the first safe scalar).
+            // while (--equalPrefixLength > 0 && isUnsafeBackward(left[equalPrefixLength])). Backwards, as ICU does: this stops at the first safe scalar, where a forward pass would have to walk the whole prefix.
             repeat {
                 q -= 1
                 while q > 0, lBytes[q] & 0xc0 == 0x80 { q -= 1 }
@@ -503,9 +503,9 @@ package struct RootCollator: @unchecked Sendable {
         return scalars
     }
 
-    /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called only after fastLatinUTF8 bails (CJK/Thai text) — Latin-resolved compares never evaluate it or its arguments. When both first-differing scalars are CJK ideographs with distinct single-CE primaries — the dominant case for CJK text — this decides the compare right here, skipping compareBody's fresh scalar iterators and re-decode (~21 ns against ~200 ns of machinery).
+    /// Quick-primary CJK dispatch at the byte-scan's mismatch offset, called only after fastLatinUTF8 bails (CJK/Thai text) — Latin-resolved compares never evaluate it or its arguments. When both first-differing scalars are CJK ideographs with distinct single-CE primaries — the dominant case for CJK text — this decides the compare right here, without compareBody's fresh scalar iterators and re-decode.
     ///
-    /// STATIC with trivial parameters, deliberately: calling an instance method inside the contiguous-storage closures measurably degrades codegen for every corpus (+17-22% — measured twice, 07-06 and 07-13); the setup travels as one pointer for the same reason. The safety gate mirrors compareBody's: a mismatch at offset 0 has no preceding prefix, so restart safety is trivially met; deeper mismatches require both restart scalars to be safe.
+    /// Static with trivial parameters, deliberately: an instance method called inside the contiguous-storage closures makes the generated code of every compare worse; the setup travels as one pointer for the same reason. The safety gate mirrors compareBody's: a mismatch at offset 0 has no preceding prefix, so restart safety is trivially met; deeper mismatches require both restart scalars to be safe.
     private static func quickCJKDispatch(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
         at mismatch: Int,
@@ -538,7 +538,7 @@ package struct RootCollator: @unchecked Sendable {
         return RootCollator.fastLatinBailOut
     }
 
-    /// The order of two different quick CJK primaries under script reordering: a lead-byte permutation that keeps the order inside each group, so different primaries stay different (technique log §51 (ap)).
+    /// The order of two different quick CJK primaries under script reordering: a lead-byte permutation that keeps the order inside each group, so different primaries stay different.
     @inline(never)
     private static func compareReordered(_ lp: UInt32, _ rp: UInt32, _ reordering: UnsafePointer<ReorderingView>) -> Int32 {
         reordering.pointee.reorder(lp) < reordering.pointee.reorder(rp) ? -1 : 1
@@ -546,7 +546,7 @@ package struct RootCollator: @unchecked Sendable {
 
     /// quickPrimary against the trivial init-resolved views (the static twin of the instance method below; the differential suites keep them in agreement). Returns 0 when the full pipeline must decide.
     ///
-    /// The setup comes BY POINTER and its fields are read in place. Passed by value out of the box (`setup.pointee`), the compiler copied all 144 bytes of QuickCJKSetup to the stack before each of the two calls — 20 instructions per CJK compare — because the memory behind the pointer could change (technique log §51).
+    /// The setup comes by pointer and its fields are read in place: passed by value out of the box (`setup.pointee`), the whole struct would be copied to the stack before each call, because the memory behind the pointer could change.
     private static func quickCJKPrimary(_ c: UInt32, _ q: UnsafePointer<QuickCJKSetup>) -> UInt32 {
         var ce32 = q.pointee.dataTrie.get(c)
         var ces = q.pointee.dataCEs
@@ -555,7 +555,7 @@ package struct RootCollator: @unchecked Sendable {
             ce32 = q.pointee.baseTrie.get(c)
             ces = q.pointee.baseCEs
         }
-        // A normal CE32 is one CE whose primary is the top 16 bits (ICU's ceFromSimpleCE32): the form of the ideographs that ja and zh tailor (6355 and 21005 of them). The caller decides only for CJK unified ideographs with different primaries, so non-common secondary or tertiary weights do not matter (technique log §51 (ap)).
+        // A normal CE32 is one CE whose primary is the top 16 bits (ICU's ceFromSimpleCE32): the form of the ideographs that ja and zh tailor. The caller decides only for CJK unified ideographs with different primaries, so non-common secondary or tertiary weights do not matter.
         guard CollationConstants.isSpecialCE32(ce32) else { return ce32 & 0xffff_0000 }
         switch CollationConstants.tagFromCE32(ce32) {
         case .longPrimary:
@@ -568,12 +568,12 @@ package struct RootCollator: @unchecked Sendable {
         case .implicit:
             return CollationConstants.unassignedPrimaryFromCodePoint(c)
         default:
-            // Expansions (ko's hanja) and every other form, in the helper: the cases above keep the decision tree they had before §51 (ba) — with the expansion cases in this switch, the long-primary path of the root data got ~2.5 instructions longer per call (root cjk compare +5), also with a separate test before the switch.
+            // Expansions (ko's hanja) and every other form, in the helper: cases added to this switch (or a test before it) lengthen the decision tree of the root data's long-primary path.
             return quickCJKExpansionPrimary(c, ce32, q)
         }
     }
 
-    /// The primary of an expansion's first CE, 0 for any other form (ko tailors its 7476 hanja as 2- and 3-CE expansions: reading consonant, vowel, final). The caller decides only on DIFFERENT primaries, and different first primaries decide the primary level there; equal ones fall through to the pipeline. 0 (bail) when the first CE has no primary (technique log §51 (ba)). Out of line, so that the root data's paths keep their registers; it looks up again whether the CE32 came from the base, instead of a flag on the hot path.
+    /// The primary of an expansion's first CE, 0 for any other form (ko tailors its hanja as 2- and 3-CE expansions: reading consonant, vowel, final). The caller decides only on different primaries, and different first primaries decide the primary level there; equal ones fall through to the pipeline. 0 (bail) when the first CE has no primary. Out of line, so that the root data's paths keep their registers; it looks up again whether the CE32 came from the base, instead of a flag on the hot path.
     @inline(never)
     private static func quickCJKExpansionPrimary(_ c: UInt32, _ ce32: UInt32, _ q: UnsafePointer<QuickCJKSetup>) -> UInt32 {
         let tag = CollationConstants.tagFromCE32(ce32)
@@ -602,7 +602,7 @@ package struct RootCollator: @unchecked Sendable {
         _ left: String, _ right: String, options: CollationOptions,
         restart: Int = -1
     ) throws -> Order {
-        // The options word and, for the option sets of the Foundation wrappers, the fast-Latin setup: from the presets resolved at init when the pattern matches (technique log §51 (az)), else computed once for the whole slow path (compareBody used to compute it again — technique log §51).
+        // The options word and, for the option sets of the Foundation wrappers, the fast-Latin setup: from the presets resolved at init when the pattern matches, else computed once for the whole slow path.
         let optionBits = Self.bits(of: options)
         let presets = storage.optionPresetsPtr
         let word: Int32
@@ -610,7 +610,7 @@ package struct RootCollator: @unchecked Sendable {
         var presetPrimaries = UnsafeBufferPointer<UInt16>(start: nil, count: 0)
         var hasPreset = true
         if restart >= 0 {
-            // Only the default fast path sets a restart, after its guard matched the default options: so these are the defaults (every Thai default compare comes this way; four preset tests cost it +7 instructions in WMO).
+            // Only the default fast path sets a restart, after its guard matched the default options: so these are the defaults (every Thai default compare comes this way), without the preset tests.
             word = defaultFLWord
             hasPreset = false
         } else if optionBits == presets.pointee.bits.0 {
@@ -628,14 +628,14 @@ package struct RootCollator: @unchecked Sendable {
             hasPreset = false
         }
         var triedFastLatin = false
-        // The gate is checked here, before the call: computing the setup and pinning the strings first cost CJK sorts +2–4% for a pass that always bails on them.
+        // The gate is checked here, before the call: computing the setup and pinning the strings first would cost the CJK and Thai compares, for whom the pass always bails.
         if options.hasIdenticalStrength {
             if (left.utf8.first ?? 0) <= RootCollator.latinMaxLead,
                (right.utf8.first ?? 0) <= RootCollator.latinMaxLead,
                let decided = identicalStrengthTertiaryPass(left, right, options: options) {
                 return decided
             }
-            // Not decided at tertiary (non-Latin text, a tie, a bail-out): the bytes path, as for a bailed options pass — compareAfterOptionsPass places the restart and compareFromRestart compares the CEs and then the identical level from that restart. compareBody's String-iterator walk cost CJK ~2× and Thai +21% in instructions (technique log §51 (ao)). A call of its own, not an assignment to `restart`: the assignment changed the register allocation of the whole function (+1 instruction on every Latin identical compare).
+            // Not decided at tertiary (non-Latin text, a tie, a bail-out): the bytes path, as for a bailed options pass — compareAfterOptionsPass places the restart and compareFromRestart compares the CEs and then the identical level from that restart, much cheaper than compareBody's String-iterator walk. A call of its own, not an assignment to `restart`: the assignment changes the register allocation of the whole function.
             return try compareBody(
                 left, right, options: options, word: word, triedFastLatin: false,
                 restart: Self.optionsPassBailed)
@@ -648,7 +648,7 @@ package struct RootCollator: @unchecked Sendable {
                    setup.packedOptions >= 0 {
                     let safety = restartSafetyPtr
                     let numeric = options.numeric
-                    // The pinned bytes go through `untraced`, as on the default fast path: else Swift 6.5 gives compareSlowPath a stack protector, 10 instructions on every options compare (technique log §51 (av), (ay)).
+                    // The pinned bytes go through `untraced`, as on the default fast path, so that compareSlowPath gets no stack protector.
                     let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lPinned in
                         right.utf8.withContiguousStorageIfAvailable { rPinned in
                             var mismatch = -1
@@ -665,7 +665,7 @@ package struct RootCollator: @unchecked Sendable {
                         }
                         triedFastLatin = true
                         assert(Int(RootCollator.fastLatinBailOut) == Self.optionsPassBailed, "a plain bail must be the marker without a mismatch")
-                        // The restart is placed later, in compareAfterOptionsPass: this pass decides the Latin compares, and any more code here made compareSlowPath too large to inline into `compare` (+76 instructions per ascii options compare in the `-no-WMO` build; technique log §51 (ac)). The marker carries the pass's mismatch, so compareAfterOptionsPass does not scan the prefix again; called from here, not through compareBody, whose frame cost ~39 instructions per call (technique log §51 (aq)).
+                        // The restart is placed later, in compareAfterOptionsPass: this pass decides the Latin compares, and more code here makes compareSlowPath too large to inline into `compare`. The marker carries the pass's mismatch, so compareAfterOptionsPass does not scan the prefix again; it is called from here, not through compareBody, to save that frame.
                         if let decided = try compareAfterOptionsPass(
                             left, right, options: options, word: word, mismatch: Self.optionsPassMismatch(Int(fast))) {
                             return decided
@@ -679,9 +679,9 @@ package struct RootCollator: @unchecked Sendable {
             restart: restart)
     }
 
-    /// Identical strength — `.forcedOrdering`, and so `String.StandardComparator.localizedStandard` — skips the byte fast-Latin path. The levels are compared in order and the first difference decides, so a non-zero result at tertiary strength IS the identical-strength result; only ties need the quaternary and identical levels. This byte fast-Latin pass at tertiary settles almost every compare of distinct Latin strings; nil (a tie, a bail-out, no contiguous UTF-8) sends the caller on to the bytes path (compareAfterOptionsPass). (`.localizedStandard` compares were ~22 ns and ~220 instructions slower than `localizedStandardCompare`; technique log §51.)
+    /// Identical strength — `.forcedOrdering`, and so `String.StandardComparator.localizedStandard` — skips the byte fast-Latin path. The levels are compared in order and the first difference decides, so a non-zero result at tertiary strength IS the identical-strength result; only ties need the quaternary and identical levels. This byte fast-Latin pass at tertiary settles almost every compare of distinct Latin strings; nil (a tie, a bail-out, no contiguous UTF-8) sends the caller on to the bytes path (compareAfterOptionsPass).
     ///
-    /// Out of line, with its own fastLatinUTF8 call site: merged into compareSlowPath's byte pass, it changed the code of every non-default-options compare (+1–3% on `localizedStandardCompare` and the options compares). The caller runs it only when both strings start with a fast-Latin lead byte: CJK and Thai text always bailed here and paid for the attempt; a non-Latin start loses only this optimization.
+    /// Out of line, with its own fastLatinUTF8 call site: merged into compareSlowPath's byte pass, it changes the code of every non-default-options compare. The caller runs it only when both strings start with a fast-Latin lead byte: CJK and Thai text would always bail here; a non-Latin start loses only this optimization.
     @inline(never)
     private func identicalStrengthTertiaryPass(_ left: String, _ right: String, options: CollationOptions) -> Order? {
         let table = fastLatinTable
@@ -691,7 +691,7 @@ package struct RootCollator: @unchecked Sendable {
         guard let setup = resolveFastLatinSetup(tertiary.icuOptions), setup.packedOptions >= 0 else { return nil }
         let safety = restartSafetyPtr
         let numeric = options.numeric
-        // `untraced`: no stack protector for this function (technique log §51 (ay)).
+        // `untraced`: no stack protector for this function.
         let fast: Int32? = left.utf8.withContiguousStorageIfAvailable { lPinned in
             right.utf8.withContiguousStorageIfAvailable { rPinned in
                 var mismatch = -1
@@ -710,7 +710,7 @@ package struct RootCollator: @unchecked Sendable {
         _ left: String, _ right: String, options: CollationOptions, word: Int32, triedFastLatin: Bool,
         restart: Int = -1
     ) throws -> Order {
-        // No `if left == right` shortcut here. Swift's String == is canonical equivalence, which for non-binary-equal strings runs NFC normalization to prove (in)equality — measured at ~250–400 ns per call on text with combining marks (Thai, etc.), on *every* non-equal compare. Canonical equivalence is already handled correctly by the CE pipeline below (the NFD front end yields equal CEs for equivalent strings), so the shortcut was pure cost on the non-Latin path. The byte fast path above still settles binary equality cheaply for non-identical strengths.
+        // No `if left == right` shortcut here. Swift's String == is canonical equivalence, which for non-binary-equal strings runs NFC normalization to prove (in)equality — expensive on text with combining marks (Thai, etc.), on every non-equal compare. Canonical equivalence is already handled correctly by the CE pipeline below (the NFD front end yields equal CEs for equivalent strings), so the shortcut would be pure cost on the non-Latin path. The byte fast path above still settles binary equality cheaply for non-identical strengths.
 
         if restart >= 0 {
             return try compareFromRestart(left, right, options: options, word: word, restart: restart)
@@ -832,16 +832,16 @@ package struct RootCollator: @unchecked Sendable {
     @inline(__always)
     static func optionsPassMismatch(_ restart: Int) -> Int { optionsPassBailed &- 1 &- restart }
 
-    /// The rest of compareSlowPath's options byte pass after a bail, as compareFastPath does it for the default options: the quick CJK primary compare, else the restart (ICU's backup rule, `restartScalarCount`) and compareFromRestart (the bytes path), not compareBody's String-iterator walk. Sound for every option set: the restart scalar is safe, the CE compare reports the two settings where the skipped prefix still matters (CollationCompare.prefixDependent; technique log §51 (z)), a primary difference (the quick CJK compare) decides at any strength, and at identical strength the identical level skips the same safe prefix, as compareBody's walk does with its own (technique log §51 (ao)). `mismatch` is the options pass's own scan result, so the identical prefix is not scanned again (-1: scan here). nil only if the strings are not contiguous (compareBody then walks).
+    /// The rest of compareSlowPath's options byte pass after a bail, as compareFastPath does it for the default options: the quick CJK primary compare, else the restart (ICU's backup rule, `restartScalarCount`) and compareFromRestart (the bytes path), not compareBody's String-iterator walk. Sound for every option set: the restart scalar is safe, the CE compare reports the two settings where the skipped prefix still matters (CollationCompare.prefixDependent), a primary difference (the quick CJK compare) decides at any strength, and at identical strength the identical level skips the same safe prefix, as compareBody's walk does with its own. `mismatch` is the options pass's own scan result, so the identical prefix is not scanned again (-1: scan here). nil only if the strings are not contiguous (compareBody then walks).
     ///
-    /// Apart from the options pass on purpose: the pass decides the Latin compares, and this work inside it made compareSlowPath too large to inline into `compare` (+76 instructions per ascii options compare in the `-no-WMO` build, ascii / latin / paths +4..+8%). Here the bailed compares pay a second pinning instead (technique log §51 (ac), (aq)).
+    /// Apart from the options pass on purpose: the pass decides the Latin compares, and this work inside it makes compareSlowPath too large to inline into `compare`. Here the bailed compares pay a second pinning instead.
     @inline(never)
     private func compareAfterOptionsPass(
         _ left: String, _ right: String, options: CollationOptions, word: Int32, mismatch: Int
     ) throws -> Order? {
         let safety = UnsafePointer(restartSafetyPtr)
         let numeric = options.numeric
-        // The quick CJK primary compare decides at the primary level, which comes first for any options; it is exact under shifted options too (its primaries are above every variable top; technique log §51 (ap)).
+        // The quick CJK primary compare decides at the primary level, which comes first for any options; it is exact under shifted options too (its primaries are above every variable top).
         let cjkSetup: UnsafePointer<QuickCJKSetup>? = UnsafePointer(storage.quickCJKSetupPtr)
         let scanned = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
@@ -1013,7 +1013,7 @@ package struct RootCollator: @unchecked Sendable {
     ) throws {
         let scratch = takeScratch()
         defer { giveScratch(scratch) }
-        // One access scope for reset + CE production + the writer; see resetCollectAndWriteKey. The writer is single-pass: one traversal of the CE array, beyond-primary levels accumulated in one temporary region. Two reference writers in Collation/Tools/sk-ladder/ReferenceWriters.swift do not ship; the sk-ladder probe checks byte identity against them across the option matrix.
+        // One access scope for reset + CE production + the writer; see resetCollectAndWriteKey. The writer is single-pass: one traversal of the CE array, beyond-primary levels accumulated in one temporary region.
         let numeric = options.numeric
         let word = options.icuOptions
         let vt = variableTopValue(options)
@@ -1042,7 +1042,7 @@ package struct RootCollator: @unchecked Sendable {
         }
     }
 
-    /// The body of `sortKey` on pinned bytes, out of line with plain parameters: inside the `withContiguousStorageIfAvailable` closure, the CE loop (`collectAll`) did not inline and the call cost ~30 instructions per key (technique log §51).
+    /// The body of `sortKey` on pinned bytes, out of line with plain parameters: inside the `withContiguousStorageIfAvailable` closure, the CE loop (`collectAll`) does not inline.
     @inline(never)
     private static func sortKey(
         _ scratch: ScratchBuffers, utf8: UnsafeBufferPointer<UInt8>, numeric: Bool,
@@ -1138,7 +1138,7 @@ package struct RootCollator: @unchecked Sendable {
         return lFinal < rFinal ? -1 : 1
     }
 
-    /// Returns the primary weight of the first CE of a scalar: a single CE (simple, LONG_PRIMARY, OFFSET, or IMPLICIT) or an expansion (its first CE, §51 (ba)). Returns 0 for anything that needs the full pipeline (contractions, prefixes, an expansion that starts without a primary, etc.).
+    /// Returns the primary weight of the first CE of a scalar: a single CE (simple, LONG_PRIMARY, OFFSET, or IMPLICIT) or an expansion (its first CE). Returns 0 for anything that needs the full pipeline (contractions, prefixes, an expansion that starts without a primary, etc.).
     @inline(__always)
     private func quickPrimary(_ c: UInt32) -> UInt32 {
         var ce32 = data.trie.get(c)
@@ -1150,7 +1150,7 @@ package struct RootCollator: @unchecked Sendable {
             cesSource = b.ces
             ce32sSource = b.ce32s
         }
-        // Forms whose FIRST CE has a known primary: one CE (a normal CE32 — primary = the top 16 bits — is the form of the tailored ideographs of ja and zh) or, since §51 (ba), an expansion (ko's hanja). The callers use this only for CJK unified ideographs and decide only on different primaries, so case variants or non-common secondary / tertiary weights do not matter (technique log §51 (ap)).
+        // Forms whose first CE has a known primary: one CE (a normal CE32 — primary = the top 16 bits — is the form of the tailored ideographs of ja and zh) or an expansion (ko's hanja). The callers use this only for CJK unified ideographs and decide only on different primaries, so case variants or non-common secondary / tertiary weights do not matter.
         guard CollationConstants.isSpecialCE32(ce32) else { return ce32 & 0xffff_0000 }
         switch CollationConstants.tagFromCE32(ce32) {
         case .longPrimary:
@@ -1164,7 +1164,7 @@ package struct RootCollator: @unchecked Sendable {
         case .implicit:
             return CollationConstants.unassignedPrimaryFromCodePoint(c)
         case .expansion32:
-            // An expansion's first CE, as in quickCJKPrimary (technique log §51 (ba)).
+            // An expansion's first CE, as in quickCJKPrimary.
             let idx = CollationConstants.indexFromCE32(ce32)
             guard idx < ce32sSource.count else { return 0 }
             return Self.firstPrimary(ofCE32: ce32sSource[idx])
@@ -1187,7 +1187,7 @@ package struct RootCollator: @unchecked Sendable {
 
     /// The fast-Latin setup for an options word. The two keys resolved at init (the default key and its numeric twin; see Storage.defaultFLKey) are read from the storage; the shared cache holds one entry per other primaries key (see CollationFastLatin.primariesKey), computed and published on a miss. The packed options for this word are the entry's miniVarTop (bits 31..16) with this word in bits 15..0 — exactly what getOptions returns for the word itself. nil only if the cache is full, which 10 possible keys never make it (the caller would take the CE pipeline).
     ///
-    /// The two init-resolved keys come first: through the cache, every non-default options compare paid a call, an acquiring load and a scan of the snapshot (53 instructions with this function's frame; technique log §51 (ar)). Force-inlined: with the cache call out of line the body is small, and as a function of its own it cost a frame in the `-no-WMO` build, where the old body had been inlined.
+    /// The two init-resolved keys come first, without the cache's call, acquiring load and scan of the snapshot. Force-inlined: with the cache call out of line the body is small, and as a function of its own it would cost a frame in a build without whole-module optimization.
     @inline(__always)
     private func resolveFastLatinSetup(_ word: Int32) -> (packedOptions: Int32, primaries: UnsafeBufferPointer<UInt16>)? {
         let key = RootCollator.fastLatinPrimariesKey(word)
@@ -1224,7 +1224,7 @@ package struct RootCollator: @unchecked Sendable {
     /// `restart` result of sharedPrefixRestart: the strings are equal byte for byte.
     static var prefixBinaryEqual: Int { -2 }
 
-    /// fastLatinUTF8 for two strings whose first bytes are equal: the identical-prefix scan, then the restart for the fast-Latin core. Returns `(restart, mismatch)`: `restart` is the byte offset where compareUTF8 starts, -1 to bail out (the caller's regular path must run), or `prefixBinaryEqual`; `mismatch` is the scan's offset for the caller's quick-CJK dispatch and restart count, or -1 when restarting there is known to be unsafe. Out of line on purpose (technique log §51 (ag)).
+    /// fastLatinUTF8 for two strings whose first bytes are equal: the identical-prefix scan, then the restart for the fast-Latin core. Returns `(restart, mismatch)`: `restart` is the byte offset where compareUTF8 starts, -1 to bail out (the caller's regular path must run), or `prefixBinaryEqual`; `mismatch` is the scan's offset for the caller's quick-CJK dispatch and restart count, or -1 when restarting there is known to be unsafe. Out of line on purpose: inline, its loop's register pressure spills into the hot entry.
     @inline(never)
     private static func sharedPrefixRestart(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
@@ -1263,7 +1263,7 @@ package struct RootCollator: @unchecked Sendable {
         return (i, mismatch)
     }
 
-    /// The length of the identical prefix of two UTF-8 buffers whose first bytes are equal, up to `minLength`: 8 bytes at a time, then byte-wise. It runs inside sharedPrefixRestart, which is out of line: inlined into `compare`, the loop's pointers and counters raised the register pressure of the whole entry, and the call arguments of `compareUTF8` went to the stack (technique log §51 (af), (ag)).
+    /// The length of the identical prefix of two UTF-8 buffers whose first bytes are equal, up to `minLength`: 8 bytes at a time, then byte-wise. It runs inside sharedPrefixRestart, which is out of line: inlined into `compare`, the loop's pointers and counters raise the register pressure of the whole entry, and the call arguments of `compareUTF8` go to the stack.
     @inline(__always)
     private static func sharedPrefixLength(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>, _ minLength: Int
@@ -1294,7 +1294,7 @@ package struct RootCollator: @unchecked Sendable {
 
     /// The byte fast path: identical-prefix scan on raw UTF-8, safety check, then CollationFastLatin.compareUTF8 from the restart offset. Returns -1/0/1, or bailOutResult when the regular path must run. Static with trivial parameters: it runs inside the contiguous-storage closures. (RuleBasedCollator::doCompare, UTF-8 variant.)
     ///
-    /// `marksPrefixBail` (a constant at each call site): when true, a bail at the end of a shared prefix — before the fast-Latin core runs; Thai and CJK text — returns `optionsPassMarker(mismatch:)` (-2 or less) instead of bailOutResult, so the caller gets the mismatch in the result register (compareSlowPath's options pass). Through `mismatch`, the value lived across the core call on every Latin compare (+2..+3 instructions per ascii options compare; technique log §51 (aq)).
+    /// `marksPrefixBail` (a constant at each call site): when true, a bail at the end of a shared prefix — before the fast-Latin core runs; Thai and CJK text — returns `optionsPassMarker(mismatch:)` (-2 or less) instead of bailOutResult, so the caller gets the mismatch in the result register (compareSlowPath's options pass); a separate value would have to live across the core call on every Latin compare.
     private static func fastLatinUTF8(
         _ lBytes: UnsafeBufferPointer<UInt8>, _ rBytes: UnsafeBufferPointer<UInt8>,
         table: UnsafeBufferPointer<UInt16>, primaries: UnsafeBufferPointer<UInt16>,
@@ -1306,9 +1306,9 @@ package struct RootCollator: @unchecked Sendable {
         // The identical-prefix scan (sharedPrefixLength: 8 bytes at a time, then byte-wise) runs only when the first bytes are equal, inside sharedPrefixRestart.
         let lLength = lBytes.count
         let rLength = rBytes.count
-        // Most adjacent pairs of words differ in their first byte (ascii 96%, latin 99% in the bench corpora): one byte compare settles the prefix, as in ICU's doCompare (technique log §51 (ae)).
+        // Most adjacent pairs of words differ in their first byte: one byte compare settles the prefix, as in ICU's doCompare.
         if lLength != 0, rLength != 0, lBytes[0] == rBytes[0] {
-            // A shared prefix: the scan, the backup and the restart-safety check run out of line, with their own registers. Inline, they raised the register pressure of the whole entry, and every change to the entry moved spills into this path (paths compare +46..+51 instructions; technique log §51 (af), (ag)).
+            // A shared prefix: the scan, the backup and the restart-safety check run out of line, with their own registers. Inline, they raise the register pressure of the whole entry, and every change to the entry moves spills into this path.
             let (restart, m) = sharedPrefixRestart(lBytes, rBytes, numeric: numeric, safety: safety)
             mismatch = m
             if restart < 0 {
@@ -1323,7 +1323,7 @@ package struct RootCollator: @unchecked Sendable {
                 right: UnsafeBufferPointer(start: rBytes.baseAddress.map { $0 + restart }, count: rLength &- restart))
         }
         if lLength == 0 && rLength == 0 { return 0 }  // binary equal: both empty
-        // The strings differ in their first byte, or one is empty: no shared prefix, so no backup and no restart question. On its own path: merged with the shared-prefix path, the moves of `i` and `mismatch` cost ~6 instructions per compare (technique log §51 (ag)).
+        // The strings differ in their first byte, or one is empty: no shared prefix, so no backup and no restart question. On its own path: merged with the shared-prefix path, `i` and `mismatch` would need extra moves on every compare.
         mismatch = 0
         guard lLength == 0 || lBytes[0] <= RootCollator.latinMaxLead,
               rLength == 0 || rBytes[0] <= RootCollator.latinMaxLead
@@ -1398,10 +1398,10 @@ struct RestartSafety {
     let dataTrie: UTrie2
     let baseTrie: UTrie2?
     let norm: NormalizationDataView
-    /// The answer of `isUnsafe` for every code point below `latinTableLimit`, resolved at init: bit 0 with numeric off, bit 1 with numeric on. Replaces a "safe below" threshold, which root data set at U+0034 — the first unsafe code point ("4", in the unsafe-backward list; "L", U+00A0 and U+00B7 follow) — so every letter took the slow path: two binary searches over the boundary lists, a ccc lookup and a trie lookup. An instruction count put that at ~100 instructions per checked character, against ICU's Latin-1 table (BMPSet) (technique log §50).
+    /// The answer of `isUnsafe` for every code point below `latinTableLimit`, resolved at init: bit 0 with numeric off, bit 1 with numeric on. A "safe below" threshold would sit at U+0034 in root data — the first unsafe code point ("4", in the unsafe-backward list; "L", U+00A0 and U+00B7 follow) — so every letter would take the slow path (two binary searches over the boundary lists, a ccc lookup and a trie lookup); ICU has a Latin-1 table for the same reason (BMPSet).
     let latinTable: UnsafeBufferPointer<UInt8>
     static let latinTableLimit: UInt32 = 0x0300
-    /// The answer of `isUnsafe` for the rest of the BMP (from `latinTableLimit` to U+FFFF), resolved at init, in two levels: `bmpBlocks` has one entry per 64 code points, the number of that block's two words in `bmpWords` (numeric off, then numeric on; bit `c & 63`). Block 0 is all zero and stands for every block with no unsafe code point — 905 of the 1024 in root data. Without it, every check at or above U+0300 (Thai, CJK, Cyrillic, ... after a shared prefix) took the slow path: ~180 instructions per thai compare (technique log §51).
+    /// The answer of `isUnsafe` for the rest of the BMP (from `latinTableLimit` to U+FFFF), resolved at init, in two levels: `bmpBlocks` has one entry per 64 code points, the number of that block's two words in `bmpWords` (numeric off, then numeric on; bit `c & 63`). Block 0 is all zero and stands for every block with no unsafe code point — most blocks in root data. Without it, every check at or above U+0300 (Thai, CJK, Cyrillic, ... after a shared prefix) would take the slow path.
     let bmpBlocks: UnsafeBufferPointer<UInt16>
     let bmpWords: UnsafeBufferPointer<UInt64>
 
@@ -1433,7 +1433,7 @@ struct RestartSafety {
         bmpWords = storage.store(words)
     }
 
-    /// Builds the BMP table from the structures that `slowIsUnsafe` reads, not one code point at a time: calling `slowIsUnsafe` for all 2 × 64,768 code points costs ~1.7 ms, against ~0.02 ms for the whole root collator init. Each part below is the union term of `slowIsUnsafe`; `RestartSafetyTests` checks the result against it for every BMP code point.
+    /// Builds the BMP table from the structures that `slowIsUnsafe` reads, not one code point at a time: calling `slowIsUnsafe` for all 2 × 64,768 code points would cost more than the rest of collator creation. Each part below is the union term of `slowIsUnsafe`; `RestartSafetyTests` checks the result against it for every BMP code point.
     private static func buildBMPTable(
         dataUnsafe: UnsafeBufferPointer<UInt32>, baseUnsafe: UnsafeBufferPointer<UInt32>,
         dataTrie: UTrie2, baseTrie: UTrie2?, norm: NormalizationDataView
@@ -1537,7 +1537,7 @@ struct RestartSafety {
         return isUnsafeAboveLatin(c, numeric: numeric)
     }
 
-    /// `isUnsafe` for a caller that holds the value BY POINTER (the fast-Latin path). It reads only the fields it needs through the pointer. A method call on `pointee` copies the whole struct to the stack before each call instead — the memory behind the pointer could change during the call — and that copy ran twice in every shared-prefix compare (all of paths), before AND after this table (technique log §51).
+    /// `isUnsafe` for a caller that holds the value by pointer (the fast-Latin path). It reads only the fields it needs through the pointer. A method call on `pointee` would copy the whole struct to the stack before each call instead, because the memory behind the pointer could change during the call.
     @inline(__always)
     static func isUnsafe(_ s: UnsafePointer<RestartSafety>, _ c: UInt32, numeric: Bool) -> Bool {
         if c < latinTableLimit {
@@ -1570,7 +1570,7 @@ struct RestartSafety {
                             dataTrie: s.pointee.dataTrie, baseTrie: s.pointee.baseTrie, norm: s.pointee.norm)
     }
 
-    /// `isUnsafe` from `latinTableLimit` up. Out of line on purpose: inlined, the BMP lookup grew compareFastPath enough that the inliner left `min` there as a call, with extra spills — paths compare +3.2% (technique log §51). Here, `self` is passed by address.
+    /// `isUnsafe` from `latinTableLimit` up. Out of line on purpose: inlined, the BMP lookup grows compareFastPath enough that the inliner leaves `min` there as a call, with extra spills. Here, `self` is passed by address.
     @inline(never)
     func isUnsafeAboveLatin(_ c: UInt32, numeric: Bool) -> Bool {
         if c < 0x10000 {
@@ -1583,7 +1583,7 @@ struct RestartSafety {
 }
 
 extension CollationOptions {
-    /// `strength == .identical` and `alternate == .shifted` for the compare paths, by pattern matching. `==` on these enums (declared in CollationOptions.swift) called the generic `Equatable` witness in the `-no-WMO` build — a metadata access, two stack stores and a thunk, ~30 instructions per test; a case match is a byte compare in both build modes. Fileprivate: a helper in this file inlines here (technique log §51 (as)).
+    /// `strength == .identical` and `alternate == .shifted` for the compare paths, by pattern matching. `==` on these enums (declared in CollationOptions.swift) calls the generic `Equatable` witness in a build without whole-module optimization; a case match is a byte compare in both build modes. Fileprivate: a helper in this file inlines here.
     @inline(__always)
     fileprivate var hasIdenticalStrength: Bool {
         if case .identical = strength { return true }
@@ -1598,7 +1598,7 @@ extension CollationOptions {
 }
 
 extension RootCollator {
-    /// Same-file copies of values from other files that the compare paths read on every call. In the `-no-WMO` build each file compiles alone, and a constant or a small function from another file is a call there — also with `@inlinable` or `@_transparent` (an accessor call and a load, ~6 instructions per constant; `primariesKey` with its three `Bits` accessors ~26); a `static let` in this file folds to an immediate (technique log §51 (as)). `SameFileCopiesTests` checks each copy against its original.
+    /// Same-file copies of values from other files that the compare paths read on every call. In a build without whole-module optimization each file compiles alone, and a constant or a small function from another file is a call there — also with `@inlinable` or `@_transparent`; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original.
     /// CollationFastLatin.bailOutResult.
     static let fastLatinBailOut: Int32 = -2
     /// CollationFastLatin.latinMaxUTF8Lead.

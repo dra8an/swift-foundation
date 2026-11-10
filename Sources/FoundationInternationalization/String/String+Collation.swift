@@ -33,7 +33,7 @@ struct CollatorCache: Sendable {
         let collator: RootCollator
         let generation: Int
     }
-    /// Readers take NO lock: one acquiring load of the published slot. Writers serialize on `currentWriteLock`, put a new slot in memory and publish it with a releasing store. A published slot is never freed — a reader may still read it — so each locale change keeps one slot (16 bytes); collators are kept for the process anyway. A lock per read cost about 100 instructions of a ~520-instruction `localizedCompare` (technique log §51 (aj)).
+    /// Readers take NO lock: one acquiring load of the published slot. Writers serialize on `currentWriteLock`, put a new slot in memory and publish it with a releasing store. A published slot is never freed — a reader may still read it — so each locale change keeps one slot (16 bytes); collators are kept for the process anyway. A lock per read would be a large part of a short `localizedCompare`.
     // @unchecked Sendable: readers see only published slots, which are never changed or freed; writers are serialized by `currentWriteLock` and `lastLocaleSlots`. Lock-free reads of published raw memory have no safe equivalent today, so no migration is planned.
     private final class PublishedSlots: @unchecked Sendable {
         /// The current-locale slot, a `CurrentSlot`.
@@ -46,7 +46,7 @@ struct CollatorCache: Sendable {
     private let published = PublishedSlots()
     private let currentWriteLock = LockedState(initialState: ())
 
-    /// One-slot cache for the most recent explicit-locale resolution. Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes — profiled at ~2/3 of the whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in one load + compare + return. Lock-free for readers, like the current-locale slot. Callers may switch between locales, so a new slot per miss would grow without limit: each identifier gets ONE slot, kept in `PublishedSlots.lastLocaleSlots` under its lock and published again when it comes back. The memory grows only with the number of distinct identifiers, like the collator dictionary.
+    /// One-slot cache for the most recent explicit-locale resolution. Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes, most of a whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in one load + compare + return. Lock-free for readers, like the current-locale slot. Callers may switch between locales, so a new slot per miss would grow without limit: each identifier gets ONE slot, kept in `PublishedSlots.lastLocaleSlots` under its lock and published again when it comes back. The memory grows only with the number of distinct identifiers, like the collator dictionary.
     private struct LastLocale {
         let identifier: String
         let collator: RootCollator
@@ -61,7 +61,7 @@ struct CollatorCache: Sendable {
         return (slot + offset).assumingMemoryBound(to: RootCollator.self)
     }
 
-    /// The collator for the current locale, in place in its published slot (valid for the whole process). Callers call it through `pointee`, so a call needs no retain and release of the collator's storage: they were ~40 instructions of a ~430-instruction `localizedCompare`, on a reference count that every thread shares (technique log §51 (ak)). The lock-free read is force-inlined; the locked path is out of line, so the read can inline into the callers (technique log §51 (am)).
+    /// The collator for the current locale, in place in its published slot (valid for the whole process). Callers call it through `pointee`, so a call needs no retain and release of the collator's storage, on a reference count that every thread shares. The lock-free read is force-inlined; the locked path is out of line, so the read can inline into the callers.
     @inline(__always)
     func currentLocaleCollator() -> UnsafePointer<RootCollator>? {
         // Generation first, resolution second: if a locale reset lands between the two, the fresh collator is stored under the OLD generation and the next call re-resolves — converging, never stale. The reverse order could pin a stale collator under the new generation.

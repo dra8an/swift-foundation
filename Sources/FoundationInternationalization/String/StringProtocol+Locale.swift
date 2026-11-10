@@ -89,7 +89,7 @@ extension StringProtocol {
     }
 }
 
-// The collation wrappers below are generic and not `@inlinable`, so a caller in another module runs their unspecialized code. Each one converts its arguments with `_collationString` and calls a non-generic `String` method, so the collator work runs as specialized code. `@_specialize(where Self == String, T == String)` (as AttributedStringProtocol uses it in FoundationEssentials) adds a type check at the entry of the generic code that jumps to a specialized copy: two Strings then reach the worker in registers, with no copy (`_specialize` returned +1 copies — a retain and a release per string, atomic for heap strings) and no generic frame (technique log §51 (an)). It adds no public symbol.
+// The collation wrappers below are generic and not `@inlinable`, so a caller in another module runs their unspecialized code. Each one converts its arguments with `_collationString` and calls a non-generic `String` method, so the collator work runs as specialized code. `@_specialize(where Self == String, T == String)` (as AttributedStringProtocol uses it in FoundationEssentials) adds a type check at the entry of the generic code that jumps to a specialized copy: two Strings then reach the worker in registers, with no copy (`_specialize` returns +1 copies — a retain and a release per string, atomic for heap strings) and no generic frame. It adds no public symbol.
 @available(macOS 10.10, iOS 8.0, watchOS 2.0, tvOS 9.0, *)
 extension StringProtocol {
     /// `String(self)` without the generic `String.init` in unspecialized code: a metatype compare finds a `String` (no copy) or a `Substring` first.
@@ -125,7 +125,7 @@ extension StringProtocol {
         return _localizedStandardCompareConverting(aString)
     }
 
-    // The paths for arguments that are not both `String` (Substring and other StringProtocol types), out of line: inside the public functions, the `String(self)` fallback made every call reserve stack space for a `Self` and a `T` value and save more registers (technique log §51 (am)).
+    // The paths for arguments that are not both `String` (Substring and other StringProtocol types), out of line: inside the public functions, the `String(self)` fallback would make every call reserve stack space for a `Self` and a `T` value and save more registers.
     @inline(never)
     fileprivate func _localizedCompareConverting<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         _collationString._localizedCompare(aString._collationString)
@@ -274,7 +274,7 @@ private func _rebase<UTF8: Collection>(_ range: Range<String.Index>, from source
     return start..<end
 }
 
-/// The collator work of the wrappers above, on concrete strings. The collators are used in place in the cache's slots, through RootCollator's pointer entries (`compare(at:…)` …), with no retain and release per call (technique log §51 (ak)).
+/// The collator work of the wrappers above, on concrete strings. The collators are used in place in the cache's slots, through RootCollator's pointer entries (`compare(at:…)` …), with no retain and release per call.
 extension String {
     fileprivate func _localizedCompare(_ other: String) -> ComparisonResult {
         if let collator = CollatorCache.shared.currentLocaleCollator(),
@@ -310,7 +310,7 @@ extension String {
     /// nil if the locale has no collator or the compare throws; the caller then uses the literal comparison.
     fileprivate func _compare(_ other: String, options mask: String.CompareOptions, locale: Locale) -> ComparisonResult? {
         guard let collator = CollatorCache.shared.collator(in: locale) else { return nil }
-        // No options: the collator's defaults, so the default-options entry (technique log §51 (ak)).
+        // No options: the collator's defaults, so the default-options entry.
         let result = mask.rawValue == 0
             ? try? RootCollator.compareWithDefaultOptions(at: collator, self, other)
             : try? RootCollator.compare(at: collator, self, other, options: CollationOptions.from(foundationOptions: mask, base: RootCollator.defaultOptions(at: collator)))

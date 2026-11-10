@@ -396,9 +396,13 @@ done 2026-11-10 (user's plan: 1 small fixes, 2 comments, 3 unsafe
 justification, 4 Benchmarks/):** no force unwraps in the collation tests
 (88 → `try #require`) or the sources (2), and every `@unchecked Sendable`
 has a reason and a TODO or a "no migration" note; suite 1576/140; the
-wrapper code identical instruction for instruction (33 functions). Next:
-step 2, the comments, file by file, with a check that the code outside the
-comments is unchanged. How to build
+wrapper code identical instruction for instruction (33 functions). **Step 2
+done the same day:** 121 comment lines in 17 files without history (no §
+or technique-log references, no measurements, no `Collation/Tools`
+references); `.build/l24/code_unchanged.py <file> [rev]` checked that the
+code without comments is identical, file by file. Next: step 3, a
+why-comment per kind of unsafe use and isolation in small helpers, then
+step 4, `Benchmarks/` entries. How to build
 with CMake on this Mac: Xcode's `cmake` / `ninja` in
 `/Applications/Xcode2.app/Contents/Developer/usr/local/bin`, `SDKROOT` set,
 `-D_SwiftFoundationICU_SourceDIR` / `-D_SwiftCollections_SourceDIR` pointing

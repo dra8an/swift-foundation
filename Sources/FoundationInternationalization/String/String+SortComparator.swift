@@ -167,7 +167,7 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // currentLocaleCollator, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
+                // currentLocaleCollator, not collator(for: .current): the Locale.current accessor is expensive per comparison, and a sort multiplies it by n·log n. Same cached resolution the localized* String APIs use.
                 if let collator = CollatorCache.shared.currentLocaleCollator(),
                    let result = options.rawValue == 0
                     ? try? RootCollator.compareWithDefaultOptions(at: collator, lhs, rhs)
@@ -185,7 +185,7 @@ extension String {
                 if options.contains(.literal) {
                     return lhs.compare(rhs, options: options).withOrder(order)
                 }
-                // currentLocaleCollator, NOT collator(for: .current): the Locale.current accessor costs ~90 ns PER COMPARISON here — and sorts multiply it by n·log n. Same cached resolution the localized* String APIs use.
+                // currentLocaleCollator, not collator(for: .current): the Locale.current accessor is expensive per comparison, and a sort multiplies it by n·log n. Same cached resolution the localized* String APIs use.
                 if let collator = CollatorCache.shared.currentLocaleCollator(),
                    let result = options.rawValue == 0
                     ? try? RootCollator.compareWithDefaultOptions(at: collator, lhs, rhs)

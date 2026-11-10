@@ -29,7 +29,7 @@ struct PoolLock {
 
 /// One set of buffers: everything a single compare() or sortKey() call needs.
 final class ScratchBuffers {
-    /// The two CE iterators, in memory this object allocates and frees, reached through `pointee`. As `var` stored properties of this class, every `inout` access to them opened a dynamically-checked access scope (swift_beginAccess, a thread-local lookup, AccessSet::insert, swift_endAccess — ~105 instructions per scope, a serial chain: one scope per sortKey, two per slow-path compare). The check cannot fire here: a ScratchBuffers belongs to one thread at a time (ThreadLocalScratch.take removes it from the thread's slot, so even a nested call gets a different one). Memory behind a pointer has no dynamic exclusivity check; the compile-time checks still apply to each statement (technique log §51).
+    /// The two CE iterators, in memory this object allocates and frees, reached through `pointee`. As `var` stored properties of this class, every `inout` access to them would open a dynamically-checked access scope (swift_beginAccess, a thread-local lookup, AccessSet::insert, swift_endAccess — a serial chain on every sortKey and slow-path compare). The check cannot fire here: a ScratchBuffers belongs to one thread at a time (ThreadLocalScratch.take removes it from the thread's slot, so even a nested call gets a different one). Memory behind a pointer has no dynamic exclusivity check; the compile-time checks still apply to each statement.
     let left: UnsafeMutablePointer<CEIterator>
     let right: UnsafeMutablePointer<CEIterator>
     /// sortKey: the key bytes under construction.
@@ -39,9 +39,9 @@ final class ScratchBuffers {
 
     /// The search family's buffers, bundled into ONE stored property.
     ///
-    /// Each of these was a separate stored property, and each mutating access to a stored property of a class opens a dynamically-enforced access scope — so an entry that touched three of them paid three `swift_beginAccess`/`endAccess` pairs on top of the one for `left` (search 5, searchBackwards 5, contains 4, measured in the object). Fusing the calls cannot merge those, because they are DIFFERENT properties; bundling can. One `inout` of this struct costs one scope, and reaching its fields from inside is statically enforced, hence free.
+    /// Each of these was a separate stored property, and each mutating access to a stored property of a class opens a dynamically-enforced access scope — so an entry that touched three of them paid three `swift_beginAccess`/`endAccess` pairs on top of the one for `left`. Fusing the calls cannot merge those, because they are DIFFERENT properties; bundling can. One `inout` of this struct costs one scope, and reaching its fields from inside is statically enforced, hence free.
     ///
-    /// This is more §37-aligned, not less: that rule's cost was three separate `inout` parameters at an entry whose byte-scan fast path never touched them. The bundle is one parameter, still passed only after the byte scan bails.
+    /// An entry should not take several `inout` parameters that its byte-scan fast path never touches, because the caller pays their access scopes before the fast path runs. The bundle is one parameter, still passed only after the byte scan bails.
     struct SearchBuffers {
         /// Masked pattern CEs (rebuilt per call, allocation-free).
         var patternCEs: [Int64] = []
@@ -79,15 +79,15 @@ final class ScratchBuffers {
     ///
     /// `left` is a stored property of a class, so each mutating access to it opens a dynamically-enforced access scope — a real `swift_beginAccess`/`swift_endAccess` pair. Written as two statements (`left.reset(…)` then `left.collectAll()`) that is two pairs, because the optimizer's access merging gives up across a throwing call: `collectAll` throws, so the pairs stay split (visible in the shipping object as two scopes on `+0x10`, one around the out-of-line `reset` and one around the whole inlined `collectAll` loop).
     ///
-    /// Routing both through a single `inout` argument opens the scope once at that argument and closes it on return. Merely moving the two statements into a method here does NOT help — the throwing call still splits them, measured.
+    /// Routing both through a single `inout` argument opens the scope once at that argument and closes it on return. Merely moving the two statements into a method here does NOT help — the throwing call still splits them.
     ///
-    /// This is not the §37 anti-pattern: that rule is about `inout` parameters on an entry whose common case bails before touching them, so the caller pays the scope ahead of the bail. `sortKey` has no fast path — it always produces CEs — so the scope is opened exactly where the work happens.
+    /// This does not contradict the rule above about `inout` parameters on an entry whose common case bails before touching them: `sortKey` has no fast path — it always produces CEs — so the scope is opened exactly where the work happens.
     @inline(__always)
     func resetAndCollectLeft(numeric: Bool, scalars: String.UnicodeScalarView) throws {
         try ScratchBuffers.resetAndCollect(&left.pointee, numeric: numeric, scalars: scalars)
     }
 
-    /// sortKey's whole body under ONE access scope to `left`: reset, CE production, then the writer. With CEBuffer noncopyable, passing `left.ces` to the writer borrows a class property for the whole writer call, which is a second dynamically-checked scope (~80 instructions per sortKey: swift_beginAccess, AccessSet::insert, swift_endAccess); routing the writer through the same `inout` argument as the reset removes it (technique log §51). The writer replaces the key only after CE production succeeds, so a throw leaves it unchanged, as before.
+    /// sortKey's whole body under ONE access scope to `left`: reset, CE production, then the writer. With CEBuffer noncopyable, passing `left.ces` to the writer borrows a class property for the whole writer call, which is a second dynamically-checked scope; routing the writer through the same `inout` argument as the reset removes it. The writer replaces the key only after CE production succeeds, so a throw leaves it unchanged.
     @inline(__always)
     func resetCollectAndWriteKey(
         numeric: Bool, scalars: String.UnicodeScalarView,
@@ -153,7 +153,7 @@ final class ScratchBuffers {
     ///
     /// The pipeline path used to touch `left`/`right` three times each in source order — reset, reset, then the two `inout` arguments of `compareUpToQuaternary` — which is four dynamic scopes per compare (confirmed in the object: two around the out-of-line resets, then two NESTED around the single call). Routing everything through one static helper opens one scope per iterator, at the arguments, covering the resets AND the comparison.
     ///
-    /// Two overloads rather than one with a mode flag or closure: the skip-walk path hands over already-positioned iterators, and a closure at this call site is the §33 shape that costs paths sortKey +8%. Both are called only from inside the pipeline branch, i.e. after the fast-Latin bail, so §37's rule about paying scopes ahead of a bail does not apply.
+    /// Two overloads rather than one with a mode flag or closure: the skip-walk path hands over already-positioned iterators, and a closure at this call site makes the sort key path slower. Both are called only from inside the pipeline branch, i.e. after the fast-Latin bail, so the rule about paying scopes ahead of a bail does not apply.
     @inline(__always)
     func resetBothAndCompare(
         numeric: Bool,
@@ -333,7 +333,7 @@ struct FastLatinSetup {
 
 /// The fast-Latin setups for non-default options, keyed by `CollationFastLatin.primariesKey` (at most 10 keys), so bail-free compares need no scratch buffers at all.
 ///
-/// Readers take NO lock and touch only shared read-only memory: one acquiring load of the current snapshot pointer, then a scan of at most `capacity` entries. A collator is shared across threads (CollatorCache, and the engine's own storage cache), and the old lock on this path made 4 threads on one shared collator with non-default options ~7 times slower per compare than 4 collators (1037 against 144 ns); a lock-free read of a CLASS snapshot would not fix that, because each reader's retain contends on the shared reference count. An earlier version also had one slot, so threads with different options evicted each other (technique log §51).
+/// Readers take NO lock and touch only shared read-only memory: one acquiring load of the current snapshot pointer, then a scan of at most `capacity` entries. A collator is shared across threads (CollatorCache, and the engine's own storage cache): a lock on this path makes threads on one shared collator with non-default options many times slower than threads on separate collators, and a lock-free read of a class snapshot would not fix that, because each reader's retain contends on the shared reference count. Several entries, so that threads with different options do not evict each other.
 ///
 /// Writers serialize on the lock, build a new snapshot (the old entries plus one) and publish it with a releasing store. Snapshots and primaries are never freed before the cache, so a reader's snapshot stays valid. After `capacity` distinct keys, a new key would get no setup and its compares would take the CE pipeline (the same results, more slowly); with at most 10 keys, that cannot happen.
 // @unchecked Sendable: readers see only published snapshots, which are never changed or freed while the cache exists; writers hold `lock`. Lock-free reads of published raw memory have no safe equivalent today, so no migration is planned.

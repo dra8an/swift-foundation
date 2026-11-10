@@ -2,7 +2,7 @@
 //
 // Because the scalar stream is already fully NFD-normalized and canonically ordered, ICU's FCD16 lead/trail-ccc checks reduce to plain ccc checks, and discontiguous matching operates on discrete combining marks exactly as UTS #10 S2.1 describes. UCharsTrie being a value type makes trie-state snapshots a struct copy, which replaces the TRIE half of ICU's SkippedState machinery; the POSITION half is still needed, because a discontiguous match consumes a non-contiguous set of scalars (see `spanStart`).
 
-/// The collation elements of one iteration: a growable buffer with an explicit count, like ICU's CEBuffer. An append is a capacity test and a store, and `removeAll()` sets the count to 0. As a Swift `Array`, every append called the runtime's uniqueness check out of line (13 times for a 12-letter key; the compiler cannot hoist it out of the per-character loop), and every clear ran the general `replaceSubrange` (~85 instructions) — together ~10% of a short sortKey's instructions (technique log §51).
+/// The collation elements of one iteration: a growable buffer with an explicit count, like ICU's CEBuffer. An append is a capacity test and a store, and `removeAll()` sets the count to 0. As a Swift `Array`, every append would call the runtime's uniqueness check out of line (the compiler cannot hoist it out of the per-character loop), and every clear would run the general `replaceSubrange` — a noticeable part of a short sortKey.
 ///
 /// Noncopyable: it owns its memory and frees it in `deinit`, so a copy would be a second owner. The compiler rejects copies; owners pass it `inout` or `borrowing`. Reads keep the bounds check that `Array` has.
 struct CEBuffer: ~Copyable {
@@ -204,7 +204,7 @@ struct CEIterator: ~Copyable {
 
     /// The one primary of a CJK ideograph whose CE is computed from it — a long primary, or the OFFSET or IMPLICIT tag — or 0 when it needs the full path. The same cases as RootCollator.quickCJKPrimary (compare's fast path), and the same CE as `appendCEs` gives them: `makeCE(p)`.
     ///
-    /// `mutating` only so that it gets the iterator's address: as a plain method, out of line, it received a copy of the data views per call (~220 bytes per CJK character, technique log §51 (v)).
+    /// `mutating` only so that it gets the iterator's address: as a plain method, out of line, it would receive a copy of the data views per call.
     @inline(__always)
     private mutating func quickCJKPrimary(_ c: UInt32) -> UInt32 {
         var ce32 = dataView.trie.get(c)
@@ -392,7 +392,7 @@ struct CEIterator: ~Copyable {
                 return true
             }
         }
-        // Fast path: pre-computed CE for simple Thai-block scalars — consonants, sara aa, tone/vowel marks (profiling attributed ~200 ns of Thai compares to CE production). Prefix-vowel contractions and digits are 0 sentinels and take the full path, identical to the ASCII table's exclusion rules. ASCII returns above and never reaches this; other scripts pay one wrapped-subtract compare.
+        // Fast path: pre-computed CE for simple Thai-block scalars — consonants, sara aa, tone/vowel marks. Prefix-vowel contractions and digits are 0 sentinels and take the full path, identical to the ASCII table's exclusion rules. ASCII returns above and never reaches this; other scripts pay one wrapped-subtract compare.
         if (c &- 0x0E00) < 128, !thaiCEs.isEmpty {
             let ce = thaiCEs[Int(c &- 0x0E00)]
             if ce != 0 {
@@ -402,7 +402,7 @@ struct CEIterator: ~Copyable {
             }
         }
         // Fast path: a combining mark (U+0300–037F) with one simple CE — the second half of a decomposed accented letter. A mark that reaches this point on its own was not consumed by a contraction of its starter, so the full path would give exactly this CE. Tailored or contracting marks are 0 in the table.
-        // Whole-string production only (sortKey): in the lazy compare, the extra test cost Thai — our weakest compare row — +0.5..+0.8% (technique log §51 (w)).
+        // Whole-string production only (sortKey): in the lazy compare, the extra test would slow Thai compares.
         if wholeString, (c &- 0x0300) < 128, !markCEs.isEmpty {
             let ce = markCEs[Int(c &- 0x0300)]
             if ce != 0 {
@@ -603,7 +603,7 @@ struct CEIterator: ~Copyable {
 
     /// Collects the digit run starting with `firstCE32` and appends numeric CEs. (CollationIterator::appendNumericCEs, forward direction.)
     private mutating func appendNumericCEs(d: CollationDataView, firstCE32: UInt32) throws {
-        // First pass over the run (through the lookahead buffer, nothing consumed yet): accumulate the value and count significant digits. Runs of <= 7 significant digits — practically every digit run in real text — encode as a single dense CE straight from the value: no digits array, no slice copy (profiling showed the two per-run array allocations were most of numeric mode's cost).
+        // First pass over the run (through the lookahead buffer, nothing consumed yet): accumulate the value and count significant digits. Runs of <= 7 significant digits — practically every digit run in real text — encode as a single dense CE straight from the value: no digits array, no slice copy (per-run array allocations would dominate numeric mode).
         var value = CollationConstants.digitFromCE32(firstCE32)
         var significant = value == 0 ? 0 : 1
         var count = 0

@@ -27,7 +27,7 @@ package struct NormalizationData: @unchecked Sendable {
         self = try file.withUnsafeBytes { try NormalizationData(raw: $0) }
     }
 
-    /// Parses nfd.bin from the raw bytes of the file: each array is checked against the file size and copied once, in bulk, into the storage (technique log §51, START HERE item 7).
+    /// Parses nfd.bin from the raw bytes of the file: each array is checked against the file size and copied once, in bulk, into the storage.
     init(raw bytes: UnsafeRawBufferPointer) throws {
         var pos = 0
         func u32() throws -> UInt32 {
@@ -68,7 +68,7 @@ package struct NormalizationData: @unchecked Sendable {
         buffer = buf
     }
 
-    /// The bundled normalization data (Unicode 17, from ICU's nfc.txt), parsed once per process and shared: the value is immutable, and a copy is one retain. Parsing it took ~135 µs on every collator creation (technique log §51).
+    /// The bundled normalization data (Unicode 17, from ICU's nfc.txt), parsed once per process and shared: the value is immutable, and a copy is one retain.
     package static func standard() throws -> NormalizationData {
         try bundled.get()
     }

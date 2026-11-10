@@ -21,7 +21,7 @@ final class DataStorage: @unchecked Sendable {
         return UnsafeBufferPointer(start: typed, count: values.count)
     }
 
-    /// Copies `count` little-endian values of `T` from `raw`, starting at `byteOffset`, into freshly allocated storage owned by this object and returns a view of it: one bulk copy of a part of a data file (a per-value loop on a big-endian host). The caller checks that the bytes are inside `raw` (technique log §51, START HERE item 7).
+    /// Copies `count` little-endian values of `T` from `raw`, starting at `byteOffset`, into freshly allocated storage owned by this object and returns a view of it: one bulk copy of a part of a data file (a per-value loop on a big-endian host). The caller checks that the bytes are inside `raw`.
     func storeLittleEndian<T: FixedWidthInteger>(
         _ raw: UnsafeRawBufferPointer, at byteOffset: Int, count: Int, as type: T.Type
     ) -> UnsafeBufferPointer<T> {

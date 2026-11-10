@@ -51,7 +51,7 @@ struct CollationSearch {
             scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses the caller's thread-local scratch (iterator + CE buffers) — no per-call allocations at all (the per-call pattern and window arrays were once the largest cost of CJK searches). The scratch travels as ONE class reference so the byte-scan fast path — which never touches it — pays no exclusivity scopes at the call boundary (three inout parameters here measured +30..40 ns on searches the byte scan resolves).
+    /// Reuses the caller's thread-local scratch (iterator + CE buffers) — no per-call allocations at all. The scratch travels as ONE class reference so the byte-scan fast path — which never touches it — pays no exclusivity scopes at the call boundary, as several inout parameters would.
     func search(
         for pattern: String, in text: String, scratch: ScratchBuffers
     ) -> Range<String.Index>? {
@@ -117,7 +117,7 @@ struct CollationSearch {
             scratch: ScratchBuffers(data: data, base: base, norm: norm))
     }
 
-    /// Reuses the caller's thread-local scratch for both the pattern and the text — no per-call allocations. `localizedStandardContains` over many strings reuses one scratch set across all calls (profiling showed fresh per-call iterators and arrays dominated `contains`).
+    /// Reuses the caller's thread-local scratch for both the pattern and the text — no per-call allocations. `localizedStandardContains` over many strings reuses one scratch set across all calls.
     func contains(
         pattern: String, in text: String, scratch: ScratchBuffers
     ) -> Bool {
@@ -132,7 +132,7 @@ struct CollationSearch {
         }
     }
 
-    /// Runs `body` with the pinned UTF-8 bytes of both strings when both are contiguous, else with (nil, nil): the scans then read their input through a bytes ScalarSource instead of a String iterator, which retains its string and costs a branch per scalar in the fallback (technique log §51 (y)).
+    /// Runs `body` with the pinned UTF-8 bytes of both strings when both are contiguous, else with (nil, nil): the scans then read their input through a bytes ScalarSource instead of a String iterator, which retains its string and costs a branch per scalar in the fallback.
     @inline(__always)
     private static func withPinnedUTF8<R>(
         _ a: String, _ b: String,
@@ -156,7 +156,7 @@ struct CollationSearch {
         }
     }
 
-    /// Out of line on purpose: inlined into its caller (as the WMO build did after §51 (y)), the caller grew so large that `CEIterator.appendMore` — `@inline(__always)` — stayed an out-of-line call per character in the scan loop (+4.8% instructions per ascii contains). Technique log §51 (ab).
+    /// Out of line on purpose: inlined into its caller, the caller grows so large that `CEIterator.appendMore` — `@inline(__always)` — stays an out-of-line call per character in the scan loop.
     @inline(never)
     private func containsScan(
         pattern: String, in text: String, textBytes: UnsafeBufferPointer<UInt8>?, mask: Int64, patternCEs: [Int64],
@@ -308,8 +308,8 @@ struct CollationSearch {
 
     // MARK: - Forward search (lazy CE production)
 
-    /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match (profiling showed the upfront index table and NFD map were most of `localizedStandardRange`, and the window's per-call malloc/free most of CJK searches).
-    /// Out of line on purpose: inlined into its caller (as the WMO build did after §51 (y)), the caller grew so large that `CEIterator.appendMore` — `@inline(__always)` — stayed an out-of-line call per character in the scan loop (+4.8% instructions per ascii contains). Technique log §51 (ab).
+    /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match.
+    /// Out of line on purpose: inlined into its caller, the caller grows so large that `CEIterator.appendMore` — `@inline(__always)` — stays an out-of-line call per character in the scan loop.
     @inline(never)
     private func searchForward(
         patternCEs: [Int64], in text: String, textBytes: UnsafeBufferPointer<UInt8>?, mask: Int64,
@@ -389,7 +389,7 @@ struct CollationSearch {
         text: String, sawDecomposition: Bool,
         nfdMap: inout [Int], nfdMapBuilt: inout Bool
     ) -> Range<String.Index>? {
-        // Hot head — runs at EVERY candidate position; the fail-fast CE comparison must inline into the scan loops. The once-per-match range construction lives in the @inline(never) tail below: with it inline, the whole function grew past WMO's inlining threshold and the scan loops paid an 11-argument call per candidate (measured +9% on no-match scans).
+        // Hot head — runs at EVERY candidate position; the fail-fast CE comparison must inline into the scan loops. The once-per-match range construction lives in the @inline(never) tail below: with it inline, the whole function grows past the inlining threshold and the scan loops pay an 11-argument call per candidate.
         for patIx in 0..<patternCEs.count {
             if buffer[start + patIx].ce != patternCEs[patIx] {
                 return nil
@@ -448,7 +448,7 @@ struct CollationSearch {
             endScalar = max(srcEnd, lastSrcStart + 1)
         }
 
-        // Boundary validation fused with index construction — ONE bounded walk to startScalar plus the short hop to endScalar. The old shape (separate isValidStart/EndBoundary helpers) walked to each offset separately AND paid a whole-string `scalars.count` walk per confirmed match — the top match-confirmation cost in profiles. A boundary is valid when the scalar at it is a starter (ccc 0) or it sits at the text's edge, so the match never splits a combining sequence.
+        // Boundary validation fused with index construction — ONE bounded walk to startScalar plus the short hop to endScalar. Separate walks to each offset, and a whole-string `scalars.count` walk per confirmed match, would dominate the match confirmation. A boundary is valid when the scalar at it is a starter (ccc 0) or it sits at the text's edge, so the match never splits a combining sequence.
         let scalars = text.unicodeScalars
         guard let startIdx = scalars.index(
             scalars.startIndex, offsetBy: startScalar, limitedBy: scalars.endIndex
@@ -549,7 +549,7 @@ struct CollationSearch {
         if !result.isEmpty { result.removeAll(keepingCapacity: true) }
         var afterVariable = false
         do {
-            // A pattern is short: one character at a time is cheaper than the ASCII run (technique log §51 (t)).
+            // A pattern is short: one character at a time is cheaper than the ASCII run.
             try iter.collectAll(wholeString: false)
             for i in 0..<iter.ces.count {
                 let ce = iter.ces[i]
@@ -565,7 +565,7 @@ struct CollationSearch {
 
     // MARK: - Annotated CE production (full, for backwards search)
 
-    /// Out of line on purpose: inlined into its caller (as the WMO build did after §51 (y)), the caller grew so large that `CEIterator.appendMore` — `@inline(__always)` — stayed an out-of-line call per character in the scan loop (+4.8% instructions per ascii contains). Technique log §51 (ab).
+    /// Out of line on purpose: inlined into its caller, the caller grows so large that `CEIterator.appendMore` — `@inline(__always)` — stays an out-of-line call per character in the scan loop.
     @inline(never)
     private func produceAnnotatedCEs(
         for text: String, bytes: UnsafeBufferPointer<UInt8>?, mask: Int64, iter: inout CEIterator,

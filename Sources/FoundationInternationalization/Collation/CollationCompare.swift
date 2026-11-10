@@ -8,7 +8,7 @@ enum CollationCompare {
 
     /// Returns -1 / 0 / +1. `variableTopValue` is the highest variable primary (used only when options has alternate=shifted).
     ///
-    /// `prefixSkipped`: the iterators start after an identical prefix at a safe scalar (the restart of RuleBasedCollator::doCompare). Two settings carry state from the prefix into the rest of the string, and ICU's doCompare does not check them (ICU 79.1: its compare then disagrees with its own sort keys). (1) alternate=shifted ignores primary-ignorable CEs after a variable CE: if a side starts with a primary-ignorable CE, the result depends on the last CEs of the prefix. (2) A backward secondary level compares from the end: if one side has no more secondary weights in the first segment while the other side has, the next weight is in the prefix. In these two cases the function returns `prefixDependent`. Technique log §51 (z).
+    /// `prefixSkipped`: the iterators start after an identical prefix at a safe scalar (the restart of RuleBasedCollator::doCompare). Two settings carry state from the prefix into the rest of the string, and ICU's doCompare does not check them (in ICU 79.1 its compare then disagrees with its own sort keys). (1) alternate=shifted ignores primary-ignorable CEs after a variable CE: if a side starts with a primary-ignorable CE, the result depends on the last CEs of the prefix. (2) A backward secondary level compares from the end: if one side has no more secondary weights in the first segment while the other side has, the next weight is in the prefix. In these two cases the function returns `prefixDependent`.
     static func compareUpToQuaternary(
         _ left: inout CEIterator, _ right: inout CEIterator,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
@@ -314,7 +314,7 @@ enum CollationCompare {
 }
 
 extension CollationCompare {
-    /// Same-file copies of values from other files that the CE compare reads (CollationConstants.swift, CollationOptions.swift). In the `-no-WMO` build each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate (technique log §51 (as), (ax)). `SameFileCopiesTests` checks each copy against its original.
+    /// Same-file copies of values from other files that the CE compare reads (CollationConstants.swift, CollationOptions.swift). In a build without whole-module optimization each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original.
     /// CollationConstants.noCEPrimary.
     static let noCEPrimary: UInt32 = 1
     /// CollationConstants.noCEWeight16.

@@ -2,7 +2,7 @@
 //
 // Each refill produces one reorderable unit: a starter (or the string-initial run of non-starters) plus all following combining marks, with the marks stably sorted by canonical combining class (the Canonical Ordering Algorithm, UAX #15).
 
-/// The NFD front end's UTF-8 input: the bytes of a pinned contiguous string through a pointer. A trivial struct (no reference), so a reset assigns it with plain stores. A String iterator holds a strong reference to its string, so storing one in the scratch iterators retained and released both strings of every slow-path compare (~8 atomic operations; technique log §51); the bytes need none. Valid only while the string's storage is pinned (`withContiguousStorageIfAvailable`): the caller resets the iterator inside that scope and does not read it after. `bytes == nil` means "read the String iterator instead" (NFDIterator.fallback).
+/// The NFD front end's UTF-8 input: the bytes of a pinned contiguous string through a pointer. A trivial struct (no reference), so a reset assigns it with plain stores. A String iterator holds a strong reference to its string, so storing one in the scratch iterators would retain and release both strings of every slow-path compare; the bytes need none. Valid only while the string's storage is pinned (`withContiguousStorageIfAvailable`): the caller resets the iterator inside that scope and does not read it after. `bytes == nil` means "read the String iterator instead" (NFDIterator.fallback).
 struct ScalarSource {
     private(set) var bytes: UnsafePointer<UInt8>? = nil
     private var position = 0

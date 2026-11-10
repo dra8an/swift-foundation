@@ -1,4 +1,4 @@
-// Sort key generation: a single-pass writer that produces the same keys as ICU's CollationKeys::writeSortKeyUpToQuaternary (i18n/collationkeys.{h,cpp}), and the BOCSU identical-level encoder (i18n/bocsu.{h,cpp}). Two reference writers, which do not ship, live in Collation/Tools/sk-ladder/ReferenceWriters.swift.
+// Sort key generation: a single-pass writer that produces the same keys as ICU's CollationKeys::writeSortKeyUpToQuaternary (i18n/collationkeys.{h,cpp}), and the BOCSU identical-level encoder (i18n/bocsu.{h,cpp}).
 //
 // Operates on a NO_CE-terminated CE array. Script reordering hooks are omitted (milestone 7). The invariant: byte-wise comparison of two sort keys equals compare() at the same options.
 
@@ -166,7 +166,7 @@ enum CollationKeys {
         }
     }
 
-    /// The common-run compression flush, for a level accumulating into the single-pass writer's region: emit full maxCount runs as middle bytes, then the directional boundary byte (low + remainder below the common weight, high - remainder above). The direct reference writer in the sk-ladder tool has the same helper; unifying these blocks was A/B-verified performance-neutral (technique log §46 / dcd82a5).
+    /// The common-run compression flush, for a level accumulating into the single-pass writer's region: emit full maxCount runs as middle bytes, then the directional boundary byte (low + remainder below the common weight, high - remainder above).
     @inline(__always)
     private static func flushCommon(
         _ count: inout Int, weight: UInt32, threshold: UInt32,
@@ -189,9 +189,9 @@ enum CollationKeys {
     private static let tertiaryBytesPerCE = 3
     private static let quaternaryBytesPerCE = 6
 
-    /// Writes the sort key for levels up to the strength in `options` — byte-identical to ICU's ucol_getSortKey (the key suites check that against ICU reference answers), produced in ONE traversal of the CE array with the beyond-primary levels accumulated in slices of a single temporary region (stack-allocated at the sizes real strings produce, heap above that — ICU's MaybeStackArray shape). The sk-ladder tool also checks it byte for byte against two reference writers.
+    /// Writes the sort key for levels up to the strength in `options` — byte-identical to ICU's ucol_getSortKey (the key suites check that against ICU reference answers), produced in ONE traversal of the CE array with the beyond-primary levels accumulated in slices of a single temporary region (stack-allocated at the sizes real strings produce, heap above that — ICU's MaybeStackArray shape).
     ///
-    /// This is the third point in the writer design space: the buffered writer is single-pass with heap level buffers, the direct writer is multi-pass with none, and this one is single-pass with region level buffers. At the default tertiary strength the direct writer traverses the CE array three times and re-runs the variable-CE skip on each pass; this traverses once. Nothing is fused with CE production — the CE array is still materialized first (that fusion is rejected, technique log §15).
+    /// This writer is single-pass with level buffers in one temporary region: at the default tertiary strength a multi-pass writer would traverse the CE array three times and re-run the variable-CE skip on each pass. Nothing is fused with CE production — the CE array is still materialized first, which keeps CE production and the writer each simple and fast.
     static func writeSortKeyUpToQuaternarySingle(
         ces: borrowing CEBuffer, compressibleBytes: UnsafeBufferPointer<Bool>,
         options: Int32, variableTopValue: UInt32, reordering: Reordering? = nil,
@@ -213,7 +213,7 @@ enum CollationKeys {
         }
     }
 
-    /// The single-pass writer, generic over its option switches. The default options get a specialization in which the switches are constants, so the levels they leave unused (case, quaternary), their run counters, the variable-CE branch and the reordering do not exist in the loop, and it keeps fewer values live (technique log §51 (s)).
+    /// The single-pass writer, generic over its option switches. The default options get a specialization in which the switches are constants, so the levels they leave unused (case, quaternary), their run counters, the variable-CE branch and the reordering do not exist in the loop, and it keeps fewer values live.
     private static func writeSinglePass<Config: SinglePassConfig>(
         ces: borrowing CEBuffer, compressibleBytes: UnsafeBufferPointer<Bool>,
         config: Config, terminate: Bool, into key: inout [UInt8]
@@ -496,7 +496,7 @@ enum CollationKeys {
 
             // Assemble the whole key in the region, then write it to `key` in ONE operation. The primary level already starts at the head of the region; the beyond-primary levels compact down right behind it — gaps closed, each one's trailing 01 from NO_CE dropped, separators inserted — and the terminator follows unless the caller adds an identical level. Every move is downward: level i's data begins at sum(cap_j + 1) for j < i and lands at sum(actual_j + 1), and actual_j <= cap_j, which the one byte of slack per level buys and `compactTo` asserts.
             //
-            // One `replaceSubrange` replaces the old contents, where the caller's clear plus two appends plus the terminator's append each paid the general Array code and a uniqueness check (~260 instructions per short key; technique log §51).
+            // One `replaceSubrange` replaces the old contents, where the caller's clear plus two appends plus the terminator's append would each pay the general Array code and a uniqueness check.
             let tailStart = primaries.count
             var w = tailStart
             if (levels & secondaryFlag) != 0 {
@@ -710,7 +710,7 @@ extension CollationKeys {
 }
 
 extension CollationKeys {
-    /// Same-file copies of values from other files that the sort key writer reads (CollationConstants.swift, CollationOptions.swift). In the `-no-WMO` build each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate (technique log §51 (as), (ax)). `SameFileCopiesTests` checks each copy against its original.
+    /// Same-file copies of values from other files that the sort key writer reads (CollationConstants.swift, CollationOptions.swift). In a build without whole-module optimization each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original.
     /// CollationConstants.noCEPrimary.
     static let noCEPrimary: UInt32 = 1
     /// CollationConstants.noCEWeight16.

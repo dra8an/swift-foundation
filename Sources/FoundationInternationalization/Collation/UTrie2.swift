@@ -32,7 +32,7 @@ struct UTrie2 {
         case unexpectedValueWidth
     }
 
-    /// Parses a serialized 32-bit UTrie2 from `raw` starting at `offset`, spanning at most `length` bytes, into `storage` (one bulk copy of the index and the data; technique log §51, START HERE item 7).
+    /// Parses a serialized 32-bit UTrie2 from `raw` starting at `offset`, spanning at most `length` bytes, into `storage` (one bulk copy of the index and the data).
     init(raw: UnsafeRawBufferPointer, offset: Int, length: Int, storage: DataStorage) throws {
         guard length >= 16, offset >= 0, offset + length <= raw.count else { throw ParseError.tooShort }
         func u16(_ at: Int) -> UInt16 {

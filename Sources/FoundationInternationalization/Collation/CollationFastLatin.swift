@@ -77,7 +77,7 @@ enum CollationFastLatin {
         }
     }
 
-    /// The bits of an options word that `getOptions` reads: alternate (shifted or not), maxVariable (only when shifted) and numeric. Its primaries and its miniVarTop depend on nothing else, and its result is `(miniVarTop << 16) | options`, so one computation serves every word with the same key: the setup cache is keyed by this, at most 10 keys per collator, where a cache keyed by the whole word filled up when callers used many option sets (technique log §51).
+    /// The bits of an options word that `getOptions` reads: alternate (shifted or not), maxVariable (only when shifted) and numeric. Its primaries and its miniVarTop depend on nothing else, and its result is `(miniVarTop << 16) | options`, so one computation serves every word with the same key: the setup cache is keyed by this, at most 10 keys per collator, where a cache keyed by the whole word fills up when callers use many option sets.
     static func primariesKey(_ options: Int32) -> Int32 {
         let shifted = options & CollationOptions.Bits.alternateMask
         let maxVariable = shifted != 0 ? options & (7 << CollationOptions.Bits.maxVariableShift) : 0
@@ -511,7 +511,7 @@ enum CollationFastLatin {
 
     /// Compares two well-formed UTF-8 byte streams on the mini-CE table. Returns -1/0/1, or bailOutResult if the regular comparison must be used. The byte variant reads characters as raw bytes — ASCII is one load, U+0080..U+017F assemble from a 0xC2..0xC5 lead + trail — which is what makes this the fastest path. (CollationFastLatin::compareUTF8; kept in sync with compare() above, like ICU keeps compareUTF16 and compareUTF8 in sync.)
     ///
-    /// The strings start at the caller's restart offset (the bytes before it are equal). Eight machine words of arguments, all in registers on arm64: with `primaries` as a buffer and a separate start for each string it was eleven, three of them passed through the stack (technique log §51 (af)).
+    /// The strings start at the caller's restart offset (the bytes before it are equal). Eight machine words of arguments, all in registers on arm64; more arguments would go through the stack.
     static func compareUTF8(
         table fullTable: UnsafeBufferPointer<UInt16>, primaries: UnsafePointer<UInt16>, options optionsIn: Int32,
         left: UnsafeBufferPointer<UInt8>, right: UnsafeBufferPointer<UInt8>

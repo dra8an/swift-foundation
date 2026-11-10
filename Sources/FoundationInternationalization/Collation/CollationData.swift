@@ -77,7 +77,7 @@ package struct CollationData: @unchecked Sendable {
         self = try bytes.withUnsafeBytes { try CollationData(raw: $0) }
     }
 
-    /// Parses the data from the raw bytes of the file: every part that is read is checked against the file size, and each part is copied once, in bulk, into the storage (technique log §51, START HERE item 7; it decoded byte by byte into arrays and copied them again before).
+    /// Parses the data from the raw bytes of the file: every part that is read is checked against the file size, and each part is copied once, in bulk, into the storage.
     init(raw bytes: UnsafeRawBufferPointer) throws {
         guard bytes.count >= 24 else { throw ParseError.tooShort }
         guard bytes[2] == 0xda && bytes[3] == 0x27 else { throw ParseError.badMagic }
@@ -271,7 +271,7 @@ package struct CollationData: @unchecked Sendable {
         (UInt32(contexts[index]) << 16) | UInt32(contexts[index + 1])
     }
 
-    /// The bundled CLDR root collation data (ucadata.icu, ICU 79 / "UCol" v5), parsed once per process and shared — ICU's CollationRoot::getRoot (umtx_initOnce) does the same. The value is immutable, and a copy is one retain. Reading and parsing it took ~260 µs on every collator creation, tailorings included (technique log §51).
+    /// The bundled CLDR root collation data (ucadata.icu, ICU 79 / "UCol" v5), parsed once per process and shared — ICU's CollationRoot::getRoot (umtx_initOnce) does the same. The value is immutable, and a copy is one retain.
     package static func root() throws -> CollationData {
         try bundledRoot.get()
     }
@@ -300,7 +300,7 @@ package struct CollationData: @unchecked Sendable {
         try bytes.withUnsafeBytes { try tailoring(raw: $0) }
     }
 
-    /// The tailoring parse on the raw bytes of the file; the parts it reads are checked against the file size (technique log §51, START HERE item 7).
+    /// The tailoring parse on the raw bytes of the file; the parts it reads are checked against the file size.
     static func tailoring(raw bytes: UnsafeRawBufferPointer) throws -> Tailoring {
         guard bytes.count >= 24, bytes[2] == 0xda, bytes[3] == 0x27 else {
             throw ParseError.badMagic
@@ -361,7 +361,7 @@ package struct CollationData: @unchecked Sendable {
         return [UInt8](try tailoringFile(named: name))
     }
 
-    /// The bundled tailoring, parsed in place from its compiled-in bytes (or its file) — no copy into an array (technique log §51, START HERE item 7).
+    /// The bundled tailoring, parsed in place from its compiled-in bytes (or its file) — no copy into an array.
     static func bundledTailoring(named name: String) throws -> Tailoring {
         if let bytes = collationResourceBytes("tailorings/\(name)") { return try tailoring(raw: bytes) }
         return try tailoringFile(named: name).withUnsafeBytes { try tailoring(raw: $0) }
@@ -375,7 +375,7 @@ package struct CollationData: @unchecked Sendable {
     }
 }
 
-/// The URL of a bundled collation resource: the file in the bundle's resource folder, found by path. The first `url(forResource:)` of a process resolves the preferred localizations (~3.4 ms when it is a tool's first lookup) and every lookup on a new bundle reads its index (~0.4 ms); the resources are not localized, so the path is the same answer. The lookup stays as the fallback for other bundle layouts.
+/// The URL of a bundled collation resource: the file in the bundle's resource folder, found by path. The first `url(forResource:)` of a process resolves the preferred localizations and every lookup on a new bundle reads its index, both slow; the resources are not localized, so the path is the same answer. The lookup stays as the fallback for other bundle layouts.
 ///
 /// Since 2026-11-09 the data is compiled in (`collationResourceBytes`), and swift-foundation ships no resource bundle: the files are read only when the engine is built outside swift-foundation (the bench tools copy the sources and the files into a package of their own, with resources).
 func collationResourceURL(_ name: String, _ ext: String, subdirectory: String? = nil) -> URL? {
@@ -470,7 +470,7 @@ struct Reordering: Sendable {
     }
 }
 
-/// `Reordering` as plain data, for hot code that reads it through a pointer (the quick CJK compare): the table and the ranges are buffers owned by the collator's storage, so a read copies no array and retains nothing. The same mapping as `Reordering.reorder` (technique log §51 (ap)).
+/// `Reordering` as plain data, for hot code that reads it through a pointer (the quick CJK compare): the table and the ranges are buffers owned by the collator's storage, so a read copies no array and retains nothing. The same mapping as `Reordering.reorder`.
 struct ReorderingView {
     let table: UnsafeBufferPointer<UInt8>
     let ranges: UnsafeBufferPointer<UInt32>

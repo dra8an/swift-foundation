@@ -42,7 +42,7 @@ enum CollationConstants {
 
     @inline(__always)
     static func tagFromCE32(_ ce32: UInt32) -> Tag {
-        // An explicit switch, not `Tag(rawValue:)`: the synthesized init stayed an out-of-line call at some call sites (quickCJKPrimary: ~12 instructions per CJK compare, technique log §51), and an attribute cannot force a synthesized init inline. The mask leaves 0...15, so the default is dead.
+        // An explicit switch, not `Tag(rawValue:)`: the synthesized init can stay an out-of-line call at some call sites (the quick CJK compare among them), and an attribute cannot force a synthesized init inline. The mask leaves 0...15, so the default is dead.
         switch ce32 & 0xf {
         case 0: return .fallback
         case 1: return .longPrimary
@@ -186,7 +186,7 @@ enum CollationConstants {
         return incThreeBytePrimaryByOffset(p, isCompressible, offset)
     }
 
-    /// Ported from Collation::incThreeBytePrimaryByOffset(). `offset` is never negative here (a code point is at or after the start of its OFFSET range), so the arithmetic is unsigned: the signed form compiled to three divisions with sign fix-ups and two overflow checks, 44 instructions per CJK ideograph in OFFSET form — about one per CJK compare (technique log §51 (bb)). `OffsetPrimaryTests` checks it against the signed original.
+    /// Ported from Collation::incThreeBytePrimaryByOffset(). `offset` is never negative here (a code point is at or after the start of its OFFSET range), so the arithmetic is unsigned: the signed form compiles to divisions with sign fix-ups and overflow checks, on about one CJK ideograph per compare. `OffsetPrimaryTests` checks it against the signed original.
     static func incThreeBytePrimaryByOffset(
         _ basePrimary: UInt32, _ isCompressible: Bool, _ offset: Int32
     ) -> UInt32 {
