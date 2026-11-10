@@ -128,7 +128,13 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    `compare(_:options:range:locale:)` only; it opens and closes an ICU
    collator per call. This branch starts from `upstream/release/6.3`
    (`dbacc677`); a PR to `main` must replace or reconcile it (rebase plan:
-   Docs/24).
+   Docs/24). **Open question:** that change also adds a stub in
+   FoundationEssentials (`String/StringProtocol+Stub.swift`, behind the same
+   flag). Docs/24 proposes to remove it; the port so far makes no
+   FoundationEssentials change. Before the PR branch is made on a fresh
+   upstream `main`: can our PR leave that file untouched (for example, the
+   flag simply stays off), or does it need a FoundationEssentials change?
+   That decision belongs to the owner of the branch and the maintainers.
 3. **Not yet built or tested on Linux or Windows.** The CMake build was
    checked on macOS only.
 4. **Big-endian hosts:** the data parsers have a byte-swapping path for
