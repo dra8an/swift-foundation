@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The official UCA/CLDR conformance suite (UTS #10 / TR35 Root Data Files):
 /// CollationTest_CLDR_*_SHORT.txt list strings in root-collation order; for
@@ -34,7 +38,7 @@ import Testing
     static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 
     static func parse(file: String) throws -> [String] {
-        let url = try #require(Bundle.module.url(forResource: "Conformance", withExtension: nil))
+        let url = try #require(collationTestFolder("Conformance"))
             .appendingPathComponent(file)
         let content = try String(contentsOf: url, encoding: .utf8)
         var strings: [String] = []

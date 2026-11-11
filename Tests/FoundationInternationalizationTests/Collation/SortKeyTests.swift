@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Sort key tests: byte-for-byte identity with ICU's ucol_getSortKey
 /// (Golden/keys-<option-set>.txt), and the defining invariant that byte-wise
@@ -24,7 +28,7 @@ import Testing
         let (variant, collator) = try DifferentialTests.collators[collatorIndex]
         let corpus = try DifferentialTests.corpus
 
-        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
+        let golden = try #require(collationTestFolder("Golden"))
         let expected = try String(
             contentsOf: golden.appendingPathComponent("keys-\(optionSetName).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)
@@ -33,7 +37,7 @@ import Testing
         var failures = 0
         for (i, expectedHex) in expected.enumerated() {
             let key = try collator.sortKey(for: corpus[i], options: options)
-            let hex = key.map { String(format: "%02x", $0) }.joined()
+            let hex = key.lowercaseHex
             if hex != expectedHex {
                 failures += 1
                 if failures <= 5 {

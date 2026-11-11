@@ -12,6 +12,7 @@ ENGINE_SRC="$REPO/Sources/FoundationInternationalization/Collation"
 
 mkdir -p "$OUT/Sources/CollEngine/Resources" "$OUT/Sources/EngineBench"
 cp "$ENGINE_SRC"/*.swift "$OUT/Sources/CollEngine/"
+cp "$SCRIPT_DIR/shims/LockedState.swift" "$OUT/Sources/CollEngine/"
 cp "$ENGINE_SRC/Resources/ucadata.icu" \
    "$ENGINE_SRC/Resources/nfd.bin" "$OUT/Sources/CollEngine/Resources/"
 rsync -a --delete "$ENGINE_SRC/Resources/tailorings/" "$OUT/Sources/CollEngine/Resources/tailorings/"

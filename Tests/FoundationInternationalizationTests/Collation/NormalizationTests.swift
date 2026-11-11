@@ -10,14 +10,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 @Suite struct NormalizationTests {
     private static let _collator = Result { try RootCollator() }
     var collator: RootCollator { get throws { try Self._collator.get() } }
 
+    // The reference is the NFD of the system Foundation, which these tests can import only on macOS: on the other platforms, Foundation is built on top of this package.
+    #if os(macOS)
     /// Differential test of the fused NFD front end against Foundation's
     /// decomposedStringWithCanonicalMapping (NFD), single scalars.
     ///
@@ -41,7 +47,7 @@ import Testing
                 guard let scalar = Unicode.Scalar(v) else { continue }
                 let s = String(scalar)
                 let ours = try collator.nfd(s)
-                let foundations = s.decomposedStringWithCanonicalMapping
+                let foundations = systemNFD(s)
                 if ours != foundations {
                     mismatches += 1
                     if mismatches <= 10 {
@@ -66,7 +72,7 @@ import Testing
                     s.unicodeScalars.append(try #require(Unicode.Scalar(m1)))
                     s.unicodeScalars.append(try #require(Unicode.Scalar(m2)))
                     let ours = try collator.nfd(s)
-                    let foundations = s.decomposedStringWithCanonicalMapping
+                    let foundations = systemNFD(s)
                     if ours != foundations {
                         mismatches += 1
                         if mismatches <= 10 {
@@ -78,6 +84,7 @@ import Testing
         }
         #expect(mismatches == 0)
     }
+    #endif
 
     @Test func knownDecompositions() throws {
         // Recursive expansion: ạ + circumflex, precomposed, all orders.

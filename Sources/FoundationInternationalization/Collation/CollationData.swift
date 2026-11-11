@@ -24,7 +24,11 @@
 //                                  spans [indexes[i], indexes[i+1]).
 // data parts (trie, ces, ce32s, contexts, ...)
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 #if canImport(_FoundationCollationData)
 internal import _FoundationCollationData
 #endif

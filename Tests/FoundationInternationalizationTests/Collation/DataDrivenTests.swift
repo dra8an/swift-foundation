@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Runner for ICU's data-driven collation test file
 /// (test/testdata/collationtest.txt), following CollationTest::TestDataDriven:
@@ -80,7 +84,7 @@ import Testing
     }
 
     @Test func runCollationTestFile() throws {
-        let url = try #require(Bundle.module.url(forResource: "Conformance", withExtension: nil))
+        let url = try #require(collationTestFolder("Conformance"))
             .appendingPathComponent("collationtest.txt")
         let lines = try String(contentsOf: url, encoding: .utf8)
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -109,7 +113,7 @@ import Testing
             if line.isEmpty { continue }
 
             if line.hasPrefix("** test:") {
-                testName = String(line.dropFirst(8)).trimmingCharacters(in: .whitespaces)
+                testName = String(line.dropFirst(8)).trimmingWhitespace()
                 continue
             }
             if line.hasPrefix("@ rules") {
@@ -126,7 +130,7 @@ import Testing
             }
             if line.hasPrefix("@ locale ") {
                 skippingRules = false
-                let tag = String(line.dropFirst(9)).trimmingCharacters(in: .whitespaces)
+                let tag = String(line.dropFirst(9)).trimmingWhitespace()
                 if let (c, o) = try Self.collator(forLocale: tag) {
                     collator = c
                     options = o
@@ -137,7 +141,7 @@ import Testing
                 continue
             }
             if line.hasPrefix("%") {
-                let attr = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
+                let attr = String(line.dropFirst()).trimmingWhitespace()
                 if !apply(attribute: attr, to: &options) {
                     collator = nil
                     skippedAttrSections += 1
@@ -171,7 +175,7 @@ import Testing
                     failures += 1
                     if failures <= 5 {
                         Issue.record(
-                            "[\(testName)] line \(lineNumber): \(rawLine.trimmingCharacters(in: .whitespaces))"
+                            "[\(testName)] line \(lineNumber): \(rawLine.trimmingWhitespace())"
                         )
                     }
                 }
@@ -387,7 +391,7 @@ import Testing
     @Test func riwords() throws {
         let collator = try RootCollator(tailoringNamed: "th")
         let options = collator.defaultOptions
-        let url = try #require(Bundle.module.url(forResource: "Conformance", withExtension: nil))
+        let url = try #require(collationTestFolder("Conformance"))
             .appendingPathComponent("riwords.txt")
         let words = try String(contentsOf: url, encoding: .utf8)
             .split(separator: "\n")
@@ -395,7 +399,7 @@ import Testing
                 if let hash = line.firstIndex(of: "#") { return line[..<hash] }
                 return line
             }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.trimmingWhitespace() }
             .filter { !$0.isEmpty }
         try #require(words.count > 30000)
 

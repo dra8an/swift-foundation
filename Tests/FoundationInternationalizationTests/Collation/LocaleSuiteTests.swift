@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Ports of ICU4C's classic per-locale collation suites (cintltst/encoll.c,
 /// cdetst.c, cestst.c, cfrtst.c, cjaptst.c, cturtst.c; intltest/ficoll.cpp,
@@ -55,7 +59,7 @@ import Testing
     }
 
     private static let _suites = Result {
-        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+        guard let dir = collationTestFolder("Conformance") else {
             throw CocoaError(.fileReadNoSuchFile)
         }
         let url = dir.appendingPathComponent("locale-suites.json")

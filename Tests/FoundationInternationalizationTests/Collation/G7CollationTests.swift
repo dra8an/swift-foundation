@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Port of ICU4C's G7CollationTest::TestG7Locales (intltest/g7coll.cpp): a
 /// fixed set of 15 strings with their expected order for each of the eight
@@ -37,7 +41,7 @@ import Testing
     }
 
     private static let _fixture = Result {
-        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+        guard let dir = collationTestFolder("Conformance") else {
             throw CocoaError(.fileReadNoSuchFile)
         }
         let url = dir.appendingPathComponent("g7coll.json")

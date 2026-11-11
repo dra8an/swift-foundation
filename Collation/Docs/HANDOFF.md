@@ -46,15 +46,13 @@ four steps done on 2026-11-10, see NEXT TASK; then the license headers
 and the ICU entry in `NOTICE.txt`, the same day, Docs/31 section 8).
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-10, afternoon): HEAD = `bc8c65f8` (guide
-step 4) on `893ae795` (step 3), `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
-and `c2f87de9` (step 1) — **5 commits ahead of
-`origin/port/collation` = `dd24f0ba`, not pushed** — plus the license-header
-commit and the ICU-notice commit if the user made them (check git; if
-`NOTICE.txt` is modified, give the add / commit lines). The
-working tree has no engine code changes. The worktree `../collation-baseline` is
-detached at `dbacc677` (the fork point of the branch, used for the CMake
-check), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
+paragraph).** Expected (2026-11-10, afternoon): HEAD = `b403e953` (ICU
+notice) on `147ebdc1` (headers), `bc8c65f8` (step 4), `893ae795` (step 3), `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
+and `c2f87de9` (step 1) — **equal to
+`origin/port/collation` = `b403e953` (pushed 2026-11-10)** — plus the gap-5
+commit (platforms) if the user made it (check git; else give the add /
+commit lines). The worktree `../collation-baseline` is
+detached at `b403e953` (moved there 2026-11-10 for the TSan check of gap 5), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
 before the next A/B (the block below). The main tree's builds: default
 `.build` (SwiftPM release, BenchFoundation) at HEAD's code; EngineBench
 `.build`/`.build-al`/`.build-g` at the code of `b30a9e66` (the same engine
@@ -422,6 +420,32 @@ in the user's 4-step plan:
    `CollationTestData.rootNFDOnly()`, test label "nfd-only". Suite
    1576/140. The working folder `Collation/` (e.g. Docs/02's file name)
    still has them; it is not for the PR.
+**After the 4 steps (2026-11-10 afternoon): a full check against every rule
+of the guide** found five more gaps (Docs/31 section 8): (1) history
+references in the TEST comments (27 lines, 22 files; step 2 did the sources
+only), (2) manually wrapped comments (tests ~177 lines in 21 files, sources
+3), (3) no exit tests for the 9 preconditions, (4) no DocC on 3 new public
+methods, (5) platform support. **Gap 5 DONE (uncommitted at writing):**
+engine imports `FoundationEssentials`, not `Foundation`; `ScratchBuffers`
+has upstream's import list and a thread-local slot per platform (pthread;
+`FlsAlloc` on Windows; one slot on WASI); `PoolLock` → `LockedState`
+(`FastLatinCache`, `StorageCache`, which drops its `@unchecked Sendable`);
+the cache insert split into `insertFastLatinSetup` (else every cache hit got
+a larger stack frame); our June `#if compiler(<6.2)` around
+`FloatingPointRoundingRule: Codable` removed (it hid the system-Foundation
+leak; upstream's file is identical to the fork point again); 21 test files
+with upstream's 3-way import, `collationTestFolder` (form of upstream's
+`ResourceUtilities`), standard-library `trimmingWhitespace` /
+`lowercaseHex`, `SystemFoundation.swift` (system NFD reference and bridged
+strings, macOS only); tools: `Collation/Tools/shims/LockedState.swift`,
+copied by all 7 build scripts. Checks: suite 1576/140; TSan 95 tests clean
+after `currentWriteLock` got an `Int` state (upstream's `LockedState<Void>`
+alone gives a TSan "Swift access race", also at HEAD and in a minimal probe;
+FoundationEssentials unchanged); machine code: `.build/l26/cmp_functions.py
+base/BenchFoundation new/BenchFoundation` (base = HEAD `b403e953`) — every
+hot function identical; only cold paths changed. The worktree
+`../collation-baseline` is at `b403e953` with a TSan build in
+`.build/tsan`. Gaps 1–4: ask the user.
 **At PR time (not now):** the split into small PRs (Docs/31 section 7), the
 target branch (upstream's merge-forward model: the earliest release branch
 that should get the change), the Evolution question (API parity with Darwin

@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The CJK fast path of CE production (technique log §51 (v)) against the full path: an iterator with the fast tables takes the fast path, one without them takes `lookup` + `appendCEs`. For every code point of the CJK unified ranges — alone, and followed by its two successors — both must give the same CEs, on root and on the CJK tailorings (where some ideographs are tailored and must leave the fast path).
 @Suite struct CJKFastPathTests {

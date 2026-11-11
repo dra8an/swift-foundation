@@ -11,8 +11,12 @@
 //===----------------------------------------------------------------------===//
 
 import Testing
-import Foundation
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The data parsers copy each part of a file once, in bulk, and check every part they read against the file size (technique log §51, START HERE item 7). The copies must equal a byte-by-byte little-endian decode, and a cut file must throw, never read past its end.
 @Suite struct DataParseTests {

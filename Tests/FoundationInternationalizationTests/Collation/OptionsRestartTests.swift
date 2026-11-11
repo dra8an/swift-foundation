@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The identical-prefix restart under NON-default options (technique log §51 (z)). Two option settings carry state from the skipped prefix into the rest of the string: alternate=shifted (primary-ignorable CEs after a variable CE are ignored) and a backward secondary level (the secondary weights are compared from the end). The CE compare detects the cases where the prefix can change the result, and the caller compares again from the start (`CollationCompare.prefixDependent`). ICU 79.1's doCompare has no such check: its compare disagrees with its own sort keys on these pairs.
 ///

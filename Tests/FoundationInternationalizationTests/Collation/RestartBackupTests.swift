@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The compare entry restarts CE iteration after a shared prefix at the point the byte scan chooses — ICU's backup rule: when either first-differing scalar is unsafe to restart at, step back while the scalar at the new position is unsafe (RootCollator.restartScalarCount, technique log §51). These pairs put the difference right after scalars that are safe or unsafe in every way the data has — Thai consonants (contraction suffixes), prefix vowels, tone marks, combining marks, the middle-dot prefix context, kana voicing marks, digits — and one word a prefix of the next.
 ///
@@ -25,7 +29,7 @@ import Testing
     }
 
     static let riwords: [String] = {
-        guard let url = Bundle.module.url(forResource: "Conformance", withExtension: nil)?
+        guard let url = collationTestFolder("Conformance")?
             .appendingPathComponent("riwords.txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         return text.split(separator: "\n")
@@ -33,12 +37,12 @@ import Testing
                 if let hash = line.firstIndex(of: "#") { return line[..<hash] }
                 return line
             }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.trimmingWhitespace() }
             .filter { !$0.isEmpty }
     }()
 
     static let fuzz: [String] = {
-        guard let url = Bundle.module.url(forResource: "Golden", withExtension: nil)?
+        guard let url = collationTestFolder("Golden")?
             .appendingPathComponent("fuzz-corpus.txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         return text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)

@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Ports of the non-rule test cases from ICU4C's cintltst/cmsccoll.c
 /// (miscellaneous collation regressions), extracted by
@@ -38,7 +42,7 @@ import Testing
     }
 
     private static let _cases = Result {
-        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+        guard let dir = collationTestFolder("Conformance") else {
             throw CocoaError(.fileReadNoSuchFile)
         }
         let url = dir.appendingPathComponent("cmsccoll.json")

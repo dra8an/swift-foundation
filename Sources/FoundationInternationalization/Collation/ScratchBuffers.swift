@@ -12,32 +12,27 @@
 
 // Reusable per-call buffers. Building the CE and NFD iterators afresh costs several heap allocations per compare()/sortKey() call; a RootCollator instead keeps a thread-local buffer set and resets it, so repeated calls run allocation-free once the buffers have grown to the working size. (ICU4C reaches the same goal with stack buffers, which Swift arrays cannot express.) The public API stays thread-safe: each thread owns its own buffer set, with no locking or reference counting on the checkout path.
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 internal import Synchronization
 #if canImport(Darwin)
 import Darwin
-#else
-import Glibc
+#elseif canImport(Android)
+@preconcurrency import Android
+#elseif canImport(Bionic)
+@preconcurrency import Bionic
+#elseif canImport(Glibc)
+@preconcurrency import Glibc
+#elseif canImport(Musl)
+@preconcurrency import Musl
+#elseif canImport(WinSDK)
+import WinSDK
+#elseif os(WASI)
+@preconcurrency import WASILibc
 #endif
-
-/// Minimal mutual exclusion: os_unfair_lock on Darwin (a few ns uncontended, vs NSLock's objc dispatch), NSLock elsewhere. The unfair lock must live at a stable address, hence the allocation.
-struct PoolLock {
-    #if canImport(Darwin)
-    private let lock: UnsafeMutablePointer<os_unfair_lock>
-    init() {
-        lock = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
-        lock.initialize(to: os_unfair_lock())
-    }
-    func deallocate() { lock.deinitialize(count: 1); lock.deallocate() }
-    @inline(__always) func acquire() { os_unfair_lock_lock(lock) }
-    @inline(__always) func release() { os_unfair_lock_unlock(lock) }
-    #else
-    private let lock = NSLock()
-    func deallocate() {}
-    @inline(__always) func acquire() { lock.lock() }
-    @inline(__always) func release() { lock.unlock() }
-    #endif
-}
 
 /// One set of buffers: everything a single compare() or sortKey() call needs.
 final class ScratchBuffers {
@@ -285,8 +280,8 @@ final class ScratchBuffers {
 
 /// Thread-local scratch buffer stash. Each thread caches one ScratchBuffers instance, avoiding all locking, exclusivity checks, and ARC traffic on the take/give path. If a thread re-enters (e.g. compare inside compare, which doesn't happen in practice but is sound), `take()` returns nil and the caller allocates a fresh set.
 ///
-/// Implementation: a single pthread_key_t holds an UnsafeMutablePointer to a `ThreadLocalSlot` (which wraps the optional ScratchBuffers). The key's destructor frees the slot on thread exit.
-// @unchecked Sendable: `key` is created once in init and never changed; each thread reads and writes only its own slot of the key.
+/// Implementation: a thread-local key holds a pointer to a `Slot` (which wraps the optional ScratchBuffers): a pthread key on Darwin, Linux, Android and Musl, a fiber-local storage index on Windows. The key's destructor frees the slot on thread exit. WASI is single-threaded, so there the class keeps its one slot itself.
+// @unchecked Sendable: `key` is created once in init and never changed; each thread reads and writes only its own slot of the key. On WASI there is only one thread.
 // TODO: Move to a standard thread-local storage API once the standard library offers one, and drop @unchecked Sendable.
 final class ThreadLocalScratch: @unchecked Sendable {
     /// The slot stored in thread-local storage. Wrapping in a struct stored via UnsafeMutablePointer avoids ARC on the TLS read path entirely.
@@ -294,28 +289,73 @@ final class ThreadLocalScratch: @unchecked Sendable {
         var buffers: ScratchBuffers?
     }
 
+    #if canImport(WinSDK)
+    private let key: DWORD
+    #elseif os(WASI)
+    private var wasiSlot: UnsafeMutableRawPointer? = nil
+    #else
     private var key: pthread_key_t
+    #endif
 
     init() {
+        #if canImport(WinSDK)
+        // The callback runs at thread exit, like the pthread destructor below.
+        key = FlsAlloc { ThreadLocalScratch.freeSlot($0) }
+        #elseif os(WASI)
+        #else
         var k = pthread_key_t()
         pthread_key_create(&k) { raw in
             // Destructor: called on thread exit. Release the slot.
-            let slot = raw.assumingMemoryBound(to: Slot.self)
-            slot.deinitialize(count: 1)
-            slot.deallocate()
+            ThreadLocalScratch.freeSlot(raw)
         }
         key = k
+        #endif
     }
 
     deinit {
         // Note: any thread-local slots still alive at this point will be cleaned up by their thread's exit destructor. We just destroy the key itself.
+        #if canImport(WinSDK)
+        FlsFree(key)
+        #elseif os(WASI)
+        Self.freeSlot(wasiSlot)
+        #else
         pthread_key_delete(key)
+        #endif
+    }
+
+    /// Frees one thread's slot. The parameter is optional because the destructor's pointer is optional on some platforms.
+    private static func freeSlot(_ raw: UnsafeMutableRawPointer?) {
+        guard let slot = raw?.assumingMemoryBound(to: Slot.self) else { return }
+        slot.deinitialize(count: 1)
+        slot.deallocate()
+    }
+
+    /// This thread's slot, or nil before the first `give` on this thread.
+    @inline(__always)
+    private func currentSlot() -> UnsafeMutableRawPointer? {
+        #if canImport(WinSDK)
+        FlsGetValue(key)
+        #elseif os(WASI)
+        wasiSlot
+        #else
+        pthread_getspecific(key)
+        #endif
+    }
+
+    private func setCurrentSlot(_ slot: UnsafeMutableRawPointer) {
+        #if canImport(WinSDK)
+        FlsSetValue(key, slot)
+        #elseif os(WASI)
+        wasiSlot = slot
+        #else
+        pthread_setspecific(key, slot)
+        #endif
     }
 
     /// Takes the cached buffer set for this thread, or nil if none is stashed (first call on this thread, or re-entrant call).
     @inline(__always)
     func take() -> ScratchBuffers? {
-        guard let raw = pthread_getspecific(key) else { return nil }
+        guard let raw = currentSlot() else { return nil }
         let slot = raw.assumingMemoryBound(to: Slot.self)
         let buffers = slot.pointee.buffers
         slot.pointee.buffers = nil
@@ -325,13 +365,13 @@ final class ThreadLocalScratch: @unchecked Sendable {
     /// Stashes a buffer set back into the thread-local slot. If the slot doesn't exist yet (first give on this thread), creates it.
     @inline(__always)
     func give(_ buffers: ScratchBuffers) {
-        if let raw = pthread_getspecific(key) {
+        if let raw = currentSlot() {
             let slot = raw.assumingMemoryBound(to: Slot.self)
             slot.pointee.buffers = buffers
         } else {
             let slot = UnsafeMutablePointer<Slot>.allocate(capacity: 1)
             slot.initialize(to: Slot(buffers: buffers))
-            pthread_setspecific(key, UnsafeRawPointer(slot))
+            setCurrentSlot(UnsafeMutableRawPointer(slot))
         }
     }
 }
@@ -348,15 +388,14 @@ struct FastLatinSetup {
 /// Readers take NO lock and touch only shared read-only memory: one acquiring load of the current snapshot pointer, then a scan of at most `capacity` entries. A collator is shared across threads (CollatorCache, and the engine's own storage cache): a lock on this path makes threads on one shared collator with non-default options many times slower than threads on separate collators, and a lock-free read of a class snapshot would not fix that, because each reader's retain contends on the shared reference count. Several entries, so that threads with different options do not evict each other.
 ///
 /// Writers serialize on the lock, build a new snapshot (the old entries plus one) and publish it with a releasing store. Snapshots and primaries are never freed before the cache, so a reader's snapshot stays valid. After `capacity` distinct keys, a new key would get no setup and its compares would take the CE pipeline (the same results, more slowly); with at most 10 keys, that cannot happen.
-// @unchecked Sendable: readers see only published snapshots, which are never changed or freed while the cache exists; writers hold `lock`. Lock-free reads of published raw memory have no safe equivalent today, so no migration is planned.
+// @unchecked Sendable: readers see only published snapshots, which are never changed or freed while the cache exists; writers hold the lock of `entries`. Lock-free reads of published raw memory have no safe equivalent today, so no migration is planned.
 final class FastLatinCache: @unchecked Sendable {
-    private let lock = PoolLock()
-    /// Owns every snapshot and every primaries array; written only under the lock.
+    /// The entries of the current snapshot, behind the writers' lock.
+    private let entries = LockedState(initialState: [FastLatinSetup]())
+    /// Owns every snapshot and every primaries array; written only under the lock of `entries`.
     private let storage = DataStorage()
     /// The base address of the current snapshot (an `UnsafeBufferPointer<FastLatinSetup>` stored in `storage`), or nil before the first insert.
     private let current = Atomic<UnsafeRawPointer?>(nil)
-    /// The entries of the current snapshot; read and written only under the lock.
-    private var entries: [FastLatinSetup] = []
     static let capacity = 16
 
     func setup(for word: Int32) -> FastLatinSetup? {
@@ -368,20 +407,16 @@ final class FastLatinCache: @unchecked Sendable {
 
     /// The setup for `word`, computing it with `make` (packed options and primaries) and publishing it if it is new; nil when the cache is full.
     func insert(word: Int32, _ make: () -> (packedOptions: Int32, primaries: [UInt16])) -> FastLatinSetup? {
-        lock.acquire()
-        defer { lock.release() }
-        // Another thread may have inserted it since this one missed.
-        for setup in entries where setup.word == word { return setup }
-        guard entries.count < Self.capacity else { return nil }
-        let made = make()
-        let setup = FastLatinSetup(word: word, packedOptions: made.packedOptions, primaries: storage.store(made.primaries))
-        entries.append(setup)
-        let snapshot = storage.store([storage.store(entries)])
-        current.store(UnsafeRawPointer(snapshot.baseAddress), ordering: .releasing)
-        return setup
-    }
-
-    deinit {
-        lock.deallocate()
+        entries.withLockUnchecked { entries in
+            // Another thread may have inserted it since this one missed.
+            for setup in entries where setup.word == word { return setup }
+            guard entries.count < Self.capacity else { return nil }
+            let made = make()
+            let setup = FastLatinSetup(word: word, packedOptions: made.packedOptions, primaries: storage.store(made.primaries))
+            entries.append(setup)
+            let snapshot = storage.store([storage.store(entries)])
+            current.store(UnsafeRawPointer(snapshot.baseAddress), ordering: .releasing)
+            return setup
+        }
     }
 }

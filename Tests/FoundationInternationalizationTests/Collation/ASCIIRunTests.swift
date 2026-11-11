@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The bulk ASCII run of `CEIterator.collectAll` (technique log §51 (t); the Thai strings also cover the rejected Thai run of §51 (u)) against the one-character-per-call path it shortcuts: for every input, collator and numeric mode, both must produce the same CEs and leave the same scalar count and decomposition flag. The run reads the source directly and hands the first scalar it cannot use back to the NFD front end, so the risky inputs are the boundaries: an ASCII run followed by combining marks, contraction starters, digits, prefix contexts, other scripts, and the end of the string.
 @Suite struct ASCIIRunTests {
@@ -31,7 +35,7 @@ import Testing
     ]
 
     static func strings() throws -> [String] {
-        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
+        let golden = try #require(collationTestFolder("Golden"))
         var all = built
         for file in ["corpus.txt", "fuzz-corpus.txt"] {
             all += try String(contentsOf: golden.appendingPathComponent(file), encoding: .utf8)

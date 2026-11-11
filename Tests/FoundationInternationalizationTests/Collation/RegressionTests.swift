@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Ports of ICU4C's CollationRegressionTest (intltest/regcoll.cpp): the 13
 /// cases that exercise the root (en_US) collator with strength settings over
@@ -37,7 +41,7 @@ import Testing
     }
 
     private static let _cases = Result {
-        guard let dir = Bundle.module.url(forResource: "Conformance", withExtension: nil) else {
+        guard let dir = collationTestFolder("Conformance") else {
             throw CocoaError(.fileReadNoSuchFile)
         }
         let url = dir.appendingPathComponent("regcoll.json")

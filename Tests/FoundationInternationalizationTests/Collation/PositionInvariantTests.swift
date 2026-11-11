@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Position-reporting gate.
 ///
@@ -104,7 +108,7 @@ import Testing
     @Test(arguments: ["fuzz-corpus.txt", "corpus.txt"])
     func ceIteratorAccountsForEveryNFDScalarInGoldenCorpora(file: String) throws {
         let collator = try Self.collator
-        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
+        let golden = try #require(collationTestFolder("Golden"))
         let strings = try String(
             contentsOf: golden.appendingPathComponent(file), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true).map(String.init)

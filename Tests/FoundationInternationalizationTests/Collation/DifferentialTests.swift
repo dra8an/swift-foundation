@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Differential tests against ICU4C: utils/collation/gen_golden.c produced
 /// Golden/matrix-<option-set>.txt by running ucol_strcollUTF8 over every ordered
@@ -53,7 +57,7 @@ import Testing
     }()
 
     private static let _corpus = Result {
-        guard let golden = Bundle.module.url(forResource: "Golden", withExtension: nil) else {
+        guard let golden = collationTestFolder("Golden") else {
             throw CocoaError(.fileReadNoSuchFile)
         }
         return try String(contentsOf: golden.appendingPathComponent("corpus.txt"), encoding: .utf8)
@@ -68,7 +72,7 @@ import Testing
         let (variant, collator) = try Self.collators[collatorIndex]
         let corpus = try Self.corpus
 
-        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
+        let golden = try #require(collationTestFolder("Golden"))
         let matrix = try String(
             contentsOf: golden.appendingPathComponent("matrix-\(optionSetName).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)

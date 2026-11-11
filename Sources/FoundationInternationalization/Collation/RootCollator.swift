@@ -18,6 +18,10 @@
 // - full context-dependent mappings: contraction (suffix) matching including discontiguous contractions per UTS #10 S2.1, and prefix matching over the two preceding scalars (sufficient for all CLDR prefixes)
 // - root plus compiled tailorings with script reordering; works against both the regular root data (with canonical closure) and the NFD-only variant
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#endif
+
 // @unchecked: the two stored views (fast Latin table, restart safety) point into the storage owned by `data`/`base`/`norm`, which the struct retains; everything is immutable after init.
 // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
 package struct RootCollator: @unchecked Sendable {
@@ -360,23 +364,17 @@ package struct RootCollator: @unchecked Sendable {
     }
 
     /// The tailoring storages built so far, by name. At most one entry per bundled tailoring; a process usually uses one or two. The lock is NOT held during a build (~0.2 ms): two threads that miss at the same time may both build, and the first insert wins, so every caller gets the same storage. A name that fails to load throws and is not stored.
-    // @unchecked Sendable: `storages` is read and written only while `lock` is held.
-    // TODO: Use LockedState for the dictionary, as CollatorCache does, and drop @unchecked Sendable.
-    private final class StorageCache: @unchecked Sendable {
-        private let lock = PoolLock()
-        private var storages: [String: Storage] = [:]
+    private final class StorageCache: Sendable {
+        private let storages = LockedState(initialState: [String: Storage]())
 
         func storage(named name: String) throws -> Storage {
-            lock.acquire()
-            let cached = storages[name]
-            lock.release()
-            if let cached { return cached }
+            if let cached = storages.withLock({ $0[name] }) { return cached }
             let built = try RootCollator.makeTailoringStorage(named: name)
-            lock.acquire()
-            defer { lock.release() }
-            if let winner = storages[name] { return winner }
-            storages[name] = built
-            return built
+            return storages.withLock { storages in
+                if let winner = storages[name] { return winner }
+                storages[name] = built
+                return built
+            }
         }
     }
 
@@ -1224,7 +1222,13 @@ package struct RootCollator: @unchecked Sendable {
     /// The cache entry for a primaries key that init did not resolve. Out of line, so that the two init-resolved keys need no frame for the cache call.
     @inline(never)
     private func resolveFastLatinSetupFromCache(_ key: Int32) -> FastLatinSetup? {
-        fastLatinCache.setup(for: key) ?? fastLatinCache.insert(word: key, {
+        fastLatinCache.setup(for: key) ?? insertFastLatinSetup(key)
+    }
+
+    /// The miss of `resolveFastLatinSetupFromCache`, out of line: the closure context of the insert would give every cache hit a larger stack frame.
+    @inline(never)
+    private func insertFastLatinSetup(_ key: Int32) -> FastLatinSetup? {
+        fastLatinCache.insert(word: key, {
             var primaries: [UInt16] = []
             let packed = CollationFastLatin.getOptions(
                 table: fastLatinTable, scriptsData: storage.scriptsData, reordering: reordering,

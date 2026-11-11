@@ -14,7 +14,11 @@
 //
 // Single-trie format (nfd.bin v2): one lookup per scalar — a flat index of deduplicated 64-value blocks — yields a packed value with ccc (bits 0..7), lead ccc (8..15), decomposition length (16..18; 7 = Hangul sentinel) and buffer offset (19..31). Value 0 means inert: ccc 0, no decomposition. Layout details in utils/collation/gen_norm_data.swift.
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 // @unchecked: the buffer views are immutable after init and their memory is owned by `storage`, which the struct retains.
 // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.

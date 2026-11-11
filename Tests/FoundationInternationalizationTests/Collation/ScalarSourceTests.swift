@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The two inputs of the NFD front end (technique log §51 (y)): a contiguous native string is read through its pinned UTF-8 bytes (`ScalarSource`), a non-contiguous one — here a lazily bridged `NSString` — through a String iterator. Both must give the same compare results, sort keys and search results, also where the compare restarts after a shared prefix (where the bytes source skips by lead bytes).
 @Suite struct ScalarSourceTests {
@@ -23,13 +27,16 @@ import Testing
         "ภาษาไทย", "ภาษาไทยดี", "ὀδυσσεύς", "ὈΔΥΣΣΕΎΣ", "한국어", "한국인",
     ]
 
-    /// A bridged copy of `s`: an NSString-backed String whose UTF-8 is not contiguous.
-    static func bridged(_ s: String) -> String { NSString(string: s) as String }
+    /// A bridged copy of `s` (see `bridgedCopy`).
+    static func bridged(_ s: String) -> String { bridgedCopy(s) }
 
+    // Only with the Objective-C bridge is there a String whose UTF-8 is not contiguous.
+    #if os(macOS)
     @Test func bridgedInputIsNotContiguous() {
         let b = Self.bridged("กรรเกด")
         #expect(b.utf8.withContiguousStorageIfAvailable { _ in true } == nil, "the test needs a non-contiguous string")
     }
+    #endif
 
     @Test(arguments: ["root", "th", "ja", "sv", "fr_CA"])
     func bothInputsAgree(name: String) throws {

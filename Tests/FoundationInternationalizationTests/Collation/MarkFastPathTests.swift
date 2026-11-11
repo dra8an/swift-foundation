@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// The combining-mark fast path of CE production (technique log §51 (w)) against the full path: an iterator with the fast tables takes the mark table, one without tables takes `lookup` + `appendCEs`. For every code point U+0300–037F after a set of base letters, alone, and followed by a second mark (which NFD may reorder), both must give the same CEs and scalar count — on root and on every bundled tailoring, where some marks are tailored or start contractions.
 @Suite struct MarkFastPathTests {

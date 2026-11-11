@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Randomized differential testing: Golden/fuzz-corpus.txt holds 2000 seeded
 /// random strings weighted toward collation trouble spots (see
@@ -25,7 +29,7 @@ import Testing
         let (optionSetName, options) = DifferentialTests.optionSets[optionSetIndex]
         let (variant, collator) = try DifferentialTests.collators[collatorIndex]
 
-        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
+        let golden = try #require(collationTestFolder("Golden"))
         let corpus = try String(
             contentsOf: golden.appendingPathComponent("fuzz-corpus.txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
@@ -38,7 +42,7 @@ import Testing
         var failures = 0
         for (i, expectedHex) in expected.enumerated() {
             let key = try collator.sortKey(for: corpus[i], options: options)
-            let hex = key.map { String(format: "%02x", $0) }.joined()
+            let hex = key.lowercaseHex
             if hex != expectedHex {
                 failures += 1
                 if failures <= 5 {

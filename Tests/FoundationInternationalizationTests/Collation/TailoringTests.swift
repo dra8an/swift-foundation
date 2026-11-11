@@ -10,9 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import Testing
+#if canImport(FoundationEssentials)
+@testable import FoundationEssentials
 @testable import FoundationInternationalization
+#elseif FOUNDATION_FRAMEWORK
+@testable import Foundation
+#endif
 
 /// Locale tailoring tests: each locale collator is built from the bundled
 /// %%CollationBin extracted from ICU's compiled resources, runs with the
@@ -43,7 +47,7 @@ import Testing
         let options = collator.defaultOptions
         let corpus = try DifferentialTests.corpus
 
-        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
+        let golden = try #require(collationTestFolder("Golden"))
         let matrix = try String(
             contentsOf: golden.appendingPathComponent("matrix-\(name).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)
@@ -78,7 +82,7 @@ import Testing
         let options = collator.defaultOptions
         let corpus = try DifferentialTests.corpus
 
-        let golden = try #require(Bundle.module.url(forResource: "Golden", withExtension: nil))
+        let golden = try #require(collationTestFolder("Golden"))
         let expected = try String(
             contentsOf: golden.appendingPathComponent("keys-\(name).txt"), encoding: .utf8
         ).split(separator: "\n", omittingEmptySubsequences: true)
@@ -87,7 +91,7 @@ import Testing
         var failures = 0
         for (i, expectedHex) in expected.enumerated() {
             let key = try collator.sortKey(for: corpus[i], options: options)
-            let hex = key.map { String(format: "%02x", $0) }.joined()
+            let hex = key.lowercaseHex
             if hex != expectedHex {
                 failures += 1
                 if failures <= 5 {

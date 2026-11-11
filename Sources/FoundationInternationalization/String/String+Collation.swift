@@ -46,7 +46,8 @@ struct CollatorCache: Sendable {
         let lastLocaleSlots = LockedState(initialState: [String: UnsafeMutablePointer<LastLocale>]())
     }
     private let published = PublishedSlots()
-    private let currentWriteLock = LockedState(initialState: ())
+    /// The writers' lock of the current-locale slot; its state counts the published slots. Not a `LockedState<Void>`: for a state of size zero, the Thread Sanitizer reports a "Swift access race" inside `LockedState.withLockUnchecked` when two threads take the lock.
+    private let currentWriteLock = LockedState(initialState: 0)
 
     /// One-slot cache for the most recent explicit-locale resolution. Full resolution walks locale.identifier through prefix scans, a substring, and 2–3 string-keyed dictionary probes, most of a whole compare(_:locale:) call. Callers overwhelmingly pass the same Locale repeatedly; comparing its identifier against the slot is a pointer-equality fast path when the backing storage is shared, so a repeat resolves in one load + compare + return. Lock-free for readers, like the current-locale slot. Callers may switch between locales, so a new slot per miss would grow without limit: each identifier gets ONE slot, kept in `PublishedSlots.lastLocaleSlots` under its lock and published again when it comes back. The memory grows only with the number of distinct identifiers, like the collator dictionary.
     private struct LastLocale {
@@ -77,7 +78,7 @@ struct CollatorCache: Sendable {
 
     @inline(never)
     private func publishCurrentLocaleCollator(generation: Int) -> UnsafePointer<RootCollator>? {
-        currentWriteLock.withLock { _ in
+        currentWriteLock.withLock { publishedSlots in
             // Another thread may have published this generation since this one missed.
             if let raw = published.current.load(ordering: .acquiring),
                raw.assumingMemoryBound(to: CurrentSlot.self).pointee.generation == generation {
@@ -88,6 +89,7 @@ struct CollatorCache: Sendable {
             let slot = UnsafeMutablePointer<CurrentSlot>.allocate(capacity: 1)
             slot.initialize(to: CurrentSlot(collator: c, generation: generation))
             published.current.store(UnsafeRawPointer(slot), ordering: .releasing)
+            publishedSlots += 1
             return Self.collatorPointer(in: UnsafeRawPointer(slot), \CurrentSlot.collator)
         }
     }
