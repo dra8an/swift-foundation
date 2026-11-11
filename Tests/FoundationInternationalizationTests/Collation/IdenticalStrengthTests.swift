@@ -14,7 +14,7 @@ import Testing
 import FoundationEssentials
 @testable import FoundationInternationalization
 
-/// Identical-strength compares (`.forcedOrdering`, and so `String.StandardComparator.localizedStandard`) first take a byte fast-Latin pass at tertiary strength: the levels are compared in order, so a non-zero tertiary result is the identical-strength result, and only ties go on to the quaternary and identical levels (technique log §51). The referee is byte-wise sort-key order at identical strength: the sort key always carries every level.
+/// Identical-strength compares (`.forcedOrdering`, and so `String.StandardComparator.localizedStandard`) first take a byte fast-Latin pass at tertiary strength: the levels are compared in order, so a non-zero tertiary result is the identical-strength result, and only ties go on to the quaternary and identical levels. The referee is byte-wise sort-key order at identical strength: the sort key always carries every level.
 @Suite struct IdenticalStrengthTests {
     static func identical(_ base: CollationOptions) -> CollationOptions {
         var o = base

@@ -56,7 +56,7 @@ final class ScratchBuffers {
         var annotatedCEs: [AnnotatedCE] = []
         /// contains: masked text CEs.
         var maskedTextCEs: [Int64] = []
-        /// NFD-position → source-scalar-index map, built lazily by confirmMatch only for a full CE match on decomposing text. Its per-call allocation (plus per-scalar temporaries) was ~half the cost of every matching search on accented text.
+        /// NFD-position → source-scalar-index map, built lazily by confirmMatch only for a full CE match on decomposing text. Scratch-owned, so a matching search on accented text allocates no map.
         var nfdSourceMap: [Int] = []
     }
 
@@ -94,7 +94,7 @@ final class ScratchBuffers {
         try ScratchBuffers.resetAndCollect(&left.pointee, numeric: numeric, scalars: scalars)
     }
 
-    /// sortKey's whole body under ONE access scope to `left`: reset, CE production, then the writer. With CEBuffer noncopyable, passing `left.ces` to the writer borrows a class property for the whole writer call, which is a second dynamically-checked scope; routing the writer through the same `inout` argument as the reset removes it. The writer replaces the key only after CE production succeeds, so a throw leaves it unchanged.
+    /// sortKey's whole body on one `inout` iterator: reset, CE production, then the writer, which reads the CEs through the same argument. The writer replaces the key only after CE production succeeds, so a throw leaves it unchanged.
     @inline(__always)
     func resetCollectAndWriteKey(
         numeric: Bool, scalars: String.UnicodeScalarView,
@@ -156,9 +156,7 @@ final class ScratchBuffers {
         try iter.collectAll()
     }
 
-    /// Resets both iterators and runs the comparison under TWO access scopes instead of four.
-    ///
-    /// The pipeline path used to touch `left`/`right` three times each in source order — reset, reset, then the two `inout` arguments of `compareUpToQuaternary` — which is four dynamic scopes per compare (confirmed in the object: two around the out-of-line resets, then two NESTED around the single call). Routing everything through one static helper opens one scope per iterator, at the arguments, covering the resets AND the comparison.
+    /// Resets both iterators and runs the comparison, with each iterator passed `inout` once for the resets and the comparison.
     ///
     /// Two overloads rather than one with a mode flag or closure: the skip-walk path hands over already-positioned iterators, and a closure at this call site makes the sort key path slower. Both are called only from inside the pipeline branch, i.e. after the fast-Latin bail, so the rule about paying scopes ahead of a bail does not apply.
     @inline(__always)

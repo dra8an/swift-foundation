@@ -18,15 +18,9 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Ports of ICU4C's classic per-locale collation suites (cintltst/encoll.c,
-/// cdetst.c, cestst.c, cfrtst.c, cjaptst.c, cturtst.c; intltest/ficoll.cpp,
-/// lcukocol.cpp, currcoll.cpp). The test-case arrays are extracted
-/// mechanically by Tools/extract_locale_suites.py into locale-suites.json;
-/// the per-suite loop logic (which cases at which strength/options) is
-/// reimplemented here from the C sources.
+/// Ports of ICU4C's classic per-locale collation suites (cintltst/encoll.c, cdetst.c, cestst.c, cfrtst.c, cjaptst.c, cturtst.c; intltest/ficoll.cpp, lcukocol.cpp, currcoll.cpp). The test-case arrays are extracted mechanically by utils/collation/extract_locale_suites.py into locale-suites.json; the per-suite loop logic (which cases at which strength/options) is reimplemented here from the C sources.
 ///
-/// Each case checks both comparison directions and sort-key order, like
-/// ICU's doTest.
+/// Each case checks both comparison directions and sort-key order, like ICU's doTest.
 @Suite struct LocaleSuiteTests {
     struct SuiteData: Decodable {
         let source: String
@@ -107,8 +101,7 @@ import Testing
         return o
     }
 
-    /// encoll.c: English (root). 38 tertiary + 5 primary + 6 secondary cases,
-    /// pairwise bug list, and two full expected-order matrices.
+    /// encoll.c: English (root). 38 tertiary + 5 primary + 6 secondary cases, pairwise bug list, and two full expected-order matrices.
     @Test func english() throws {
         let s = try #require(Self.suites["en"])
         let src = try #require(s.arrays["testSourceCases"])
@@ -151,8 +144,7 @@ import Testing
         #expect(failures == 0)
     }
 
-    /// cdetst.c: German standard (== root data). Two result columns:
-    /// [0] primary, [1] tertiary.
+    /// cdetst.c: German standard (== root data). Two result columns: [0] primary, [1] tertiary.
     @Test func german() throws {
         let s = try #require(Self.suites["de"])
         let src = try #require(s.arrays["testSourceCases"])
@@ -185,8 +177,7 @@ import Testing
         #expect(failures == 0)
     }
 
-    /// cfrtst.c: Canadian French (backwards secondary). Tertiary cases run at
-    /// shifted+quaternary; acute matrix at secondary; bug list at tertiary.
+    /// cfrtst.c: Canadian French (backwards secondary). Tertiary cases run at shifted+quaternary; acute matrix at secondary; bug list at tertiary.
     @Test func canadianFrench() throws {
         let s = try #require(Self.suites["fr"])
         let coll = try RootCollator(tailoringNamed: "fr_CA")
@@ -216,8 +207,7 @@ import Testing
         #expect(failures == 0)
     }
 
-    /// cjaptst.c: Japanese. Source/target cases at tertiary+caseLevel, then
-    /// four ascending sequences at various strengths.
+    /// cjaptst.c: Japanese. Source/target cases at tertiary+caseLevel, then four ascending sequences at various strengths.
     @Test func japanese() throws {
         let s = try #require(Self.suites["ja"])
         let coll = try RootCollator(tailoringNamed: "ja")
@@ -298,8 +288,7 @@ import Testing
         #expect(failures == 0)
     }
 
-    /// currcoll.cpp: all currency symbols in collation order (root), full
-    /// expected-order matrix.
+    /// currcoll.cpp: all currency symbols in collation order (root), full expected-order matrix.
     @Test func currency() throws {
         let s = try #require(Self.suites["currency"])
         let symbols = try #require(s.arrays["currency"])

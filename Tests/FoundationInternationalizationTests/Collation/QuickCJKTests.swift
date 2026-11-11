@@ -18,7 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The quick CJK compare (compareFastPath, compareAfterOptionsPass: two different CJK ideographs at the first difference are decided by their primaries) for every collator: with script reordering (ja, zh, zh-stroke, ko, th), the tailored ideographs' normal CE32 (ja, zh), and alternate=shifted (th's default; explicit shifted options) — technique log §51 (ap). Before, it was off for collators with reordering or a shifted default. The referee is byte-wise sort-key order, which never takes the quick path; bridged strings take compareBody's walk and its instance twin `quickPrimaryCompare`.
+/// The quick CJK compare (compareFastPath, compareAfterOptionsPass: two different CJK ideographs at the first difference are decided by their primaries) for every collator: with script reordering (ja, zh, zh-stroke, ko, th), the tailored ideographs' normal CE32 (ja, zh), and alternate=shifted (th's default; explicit shifted options). The referee is byte-wise sort-key order, which never takes the quick path; bridged strings take compareBody's walk and its instance twin `quickPrimaryCompare`.
 @Suite struct QuickCJKTests {
     static let collatorNames = ["", "ja", "zh", "zh-stroke", "th", "ko"]
 

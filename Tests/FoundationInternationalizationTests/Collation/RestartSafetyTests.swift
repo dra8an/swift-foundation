@@ -13,7 +13,7 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// The restart-safety tables (the latin table below U+0300 and the two-level BMP table above it) against the full check they replace. The latin table is filled by calling that check, but the BMP table is built from the data structures directly, so it is equal only if the build is right: this compares every BMP code point in both numeric modes, for root and for every bundled tailoring (technique log §51).
+/// The restart-safety tables (the latin table below U+0300 and the two-level BMP table above it) against the full check they replace. The latin table is filled by calling that check, but the BMP table is built from the data structures directly, so it is equal only if the build is right: this compares every BMP code point in both numeric modes, for root and for every bundled tailoring.
 @Suite struct RestartSafetyTests {
     static let tailorings = [
         "af", "am", "ar", "as", "az", "be", "bg", "bn", "bo", "bs", "cs", "cy", "da", "de-phonebook",

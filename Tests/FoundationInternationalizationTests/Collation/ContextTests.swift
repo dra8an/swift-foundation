@@ -13,9 +13,7 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// Targeted tests that the context-dependent paths (prefix and contraction
-/// matching) actually fire — the reference matrices prove agreement with ICU,
-/// these prove the mappings are context-sensitive at all.
+/// Targeted tests that the context-dependent paths (prefix and contraction matching) actually fire — the reference matrices prove agreement with ICU, these prove the mappings are context-sensitive at all.
 @Suite struct ContextTests {
     private static let _collators = Result {
         [("regular", try RootCollator()),
@@ -23,11 +21,7 @@ import Testing
     }
     static var collators: [(String, RootCollator)] { get throws { try _collators.get() } }
 
-    /// Root data has exactly four prefix entries: U+00B7 (and U+0387) after
-    /// l/L gets a secondary-only CE (Catalan l·l support). After any other
-    /// character, U+00B7 keeps its default punctuation CE.
-    /// (The vowel-dependent kana prolonged sound mark is a Japanese tailoring,
-    /// not root data — milestone 7.)
+    /// Root data has exactly four prefix entries: U+00B7 (and U+0387) after l/L gets a secondary-only CE (Catalan l·l support). After any other character, U+00B7 keeps its default punctuation CE. (The vowel-dependent kana prolonged sound mark is a Japanese tailoring, not root data.)
     @Test(arguments: [0, 1]) func middleDotDependsOnPrefix(collatorIndex: Int) throws {
         let (name, collator) = try Self.collators[collatorIndex]
         let afterL = try collator.collationElements(of: "l·")[1]
@@ -41,10 +35,7 @@ import Testing
         #expect(try collator.collationElements(of: "l\u{0387}")[1] == afterL)
     }
 
-    /// Tibetan U+0F71+U+0F72 is a contraction in root data equal to the
-    /// composite vowel U+0F73 (which decomposes to that very sequence).
-    /// The contraction must consume the second mark: one CE pair, not two
-    /// independent mark CEs.
+    /// Tibetan U+0F71+U+0F72 is a contraction in root data equal to the composite vowel U+0F73 (which decomposes to that very sequence). The contraction must consume the second mark: one CE pair, not two independent mark CEs.
     @Test(arguments: [0, 1]) func tibetanVowelContraction(collatorIndex: Int) throws {
         let (name, collator) = try Self.collators[collatorIndex]
         let composite = try collator.collationElements(of: "\u{0F73}")
@@ -52,9 +43,7 @@ import Testing
         #expect(composite == sequence, "[\(name)] 0F71+0F72 must yield identical CEs to 0F73")
     }
 
-    /// Blocking (UTS #10 S2.1.2): U+0F80 (ccc 130) between U+0F71 and U+0F72
-    /// (also ccc 130) blocks the discontiguous match; 0F71+0F80 matches as a
-    /// contraction instead, and the result differs from the unblocked order.
+    /// Blocking (UTS #10 S2.1.2): U+0F80 (ccc 130) between U+0F71 and U+0F72 (also ccc 130) blocks the discontiguous match; 0F71+0F80 matches as a contraction instead, and the result differs from the unblocked order.
     @Test(arguments: [0, 1]) func equalCCCBlocksDiscontiguousMatch(collatorIndex: Int) throws {
         let (name, collator) = try Self.collators[collatorIndex]
         let blocked = try collator.collationElements(of: "\u{0F71}\u{0F80}\u{0F72}")

@@ -13,12 +13,7 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// Unit tests for the fast Latin path (CollationFastLatin). The end-to-end
-/// correctness evidence is the existing suites — the differential matrices
-/// and the key-agreement tests run every compare() through the integrated
-/// fast path — so what is pinned here is the machinery itself: that the fast
-/// path actually engages (returns real results, not bail-outs) where it
-/// should, and bails out where it must.
+/// Unit tests for the fast Latin path (CollationFastLatin). The end-to-end correctness evidence is the existing suites — the differential matrices and the key-agreement tests run every compare() through the integrated fast path — so what is pinned here is the machinery itself: that the fast path actually engages (returns real results, not bail-outs) where it should, and bails out where it must.
 @Suite struct FastLatinTests {
     private static let _root = Result { try RootCollator() }
     static var root: RootCollator { get throws { try _root.get() } }
@@ -28,8 +23,7 @@ import Testing
         return CollationFastLatin.Side(next: iterator.next()?.value, rest: iterator)
     }
 
-    /// Computes (table, primaries, packed options) for an option set, like
-    /// RootCollator's per-scratch cache does.
+    /// Computes (table, primaries, packed options) for an option set, like RootCollator's per-scratch cache does.
     static func setup(_ options: CollationOptions) throws -> (UnsafeBufferPointer<UInt16>, [UInt16], Int32) {
         let table = try Self.root.data.fastLatinTable
         var primaries: [UInt16] = []
@@ -46,8 +40,7 @@ import Testing
         let (_, primaries, packed) = try Self.setup(CollationOptions())
         #expect(packed >= 0)
         #expect(primaries.count == CollationFastLatin.latinLimit)
-        // Letters have short primaries; with alternate=non-ignorable nothing
-        // is variable, so space and punctuation keep nonzero primaries too.
+        // Letters have short primaries; with alternate=non-ignorable nothing is variable, so space and punctuation keep nonzero primaries too.
         #expect(primaries[Int(UnicodeScalar("a").value)] != 0)
         #expect(primaries[0x20] != 0)
     }
@@ -72,8 +65,7 @@ import Testing
 
     @Test func bailsOutWhereItMust() throws {
         let (table, primaries, packed) = try Self.setup(CollationOptions())
-        // Out-of-range characters bail (the integration layer normally
-        // pre-checks the first scalars; mid-string ones bail here).
+        // Out-of-range characters bail (the integration layer normally pre-checks the first scalars; mid-string ones bail here).
         #expect(CollationFastLatin.compare(
             table: table, primaries: primaries, options: packed,
             left: Self.side("a\u{4E00}"), right: Self.side("ab")) == CollationFastLatin.bailOutResult)
@@ -113,8 +105,7 @@ import Testing
         shifted.alternate = .shifted
         let (table, primaries, packed) = try Self.setup(shifted)
         #expect(packed >= 0)
-        // Punctuation is variable under shifted: primary zeroed in the
-        // precomputed table, and "black-bird" == "blackbird" up to tertiary.
+        // Punctuation is variable under shifted: primary zeroed in the precomputed table, and "black-bird" == "blackbird" up to tertiary.
         #expect(primaries[Int(UnicodeScalar("-").value)] == 0)
         #expect(CollationFastLatin.compare(
             table: table, primaries: primaries, options: packed,
@@ -145,9 +136,7 @@ import Testing
         }
     }
 
-    /// The UTF-8 variant agrees with the scalar variant and handles the
-    /// byte-level cases: two-byte Latin assembly, the three-byte punctuation
-    /// block, and bail-outs for unsupported lead bytes.
+    /// The UTF-8 variant agrees with the scalar variant and handles the byte-level cases: two-byte Latin assembly, the three-byte punctuation block, and bail-outs for unsupported lead bytes.
     @Test func utf8VariantMatchesScalarVariant() throws {
         let (table, primaries, packed) = try Self.setup(CollationOptions())
         for (a, b) in [
@@ -167,8 +156,7 @@ import Testing
         }
     }
 
-    /// The contraction lookahead consumes multi-byte characters correctly:
-    /// da tailors "aa" (a contraction with its own fast Latin table).
+    /// The contraction lookahead consumes multi-byte characters correctly: da tailors "aa" (a contraction with its own fast Latin table).
     @Test func utf8ContractionLookahead() throws {
         let da = try RootCollator(tailoringNamed: "da")
         #expect(!da.data.fastLatinTable.isEmpty)
@@ -193,9 +181,7 @@ import Testing
         }
     }
 
-    /// The integrated path agrees with sort keys (which never use fast
-    /// Latin) for pairs chosen to traverse every level loop and the
-    /// punctuation/contraction handling, across option sets.
+    /// The integrated path agrees with sort keys (which never use fast Latin) for pairs chosen to traverse every level loop and the punctuation/contraction handling, across option sets.
     @Test func integrationAgreesWithSortKeys() throws {
         let pairs = [
             ("ab", "ac"), ("ab", "Ab"), ("ab", "ab"), ("p\u{E9}ch\u{E9}", "p\u{EA}che"),

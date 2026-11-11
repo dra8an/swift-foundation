@@ -18,10 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Locale tailoring tests: each locale collator is built from the bundled
-/// %%CollationBin extracted from ICU's compiled resources, runs with the
-/// locale's default options (decoded from the binary), and must reproduce
-/// ICU's comparison matrix and sort keys for that locale.
+/// Locale tailoring tests: each locale collator is built from the bundled %%CollationBin extracted from ICU's compiled resources, runs with the locale's default options (decoded from the binary), and must reproduce ICU's comparison matrix and sort keys for that locale.
 @Suite struct TailoringTests {
     /// (option-set name in golden files, bundled tailoring resource name)
     static let locales: [(String, String)] = [
@@ -102,8 +99,7 @@ import Testing
         #expect(failures == 0, "[\(name)] \(failures) of \(corpus.count) keys differ from ICU")
     }
 
-    /// Sanity checks that the locale defaults decoded from the binaries are
-    /// what CLDR specifies.
+    /// Sanity checks that the locale defaults decoded from the binaries are what CLDR specifies.
     @Test func localeDefaultsDecoded() throws {
         let collators = try Self.collators
         #expect(try #require(collators["fr-CA"]).defaultOptions.backwardSecondary)
@@ -117,8 +113,7 @@ import Testing
         primary.strength = .primary
         // Swedish: ö sorts after z.
         #expect(try #require(Self.collators["sv"]).compare("z", "ö") == .ascending)
-        // Danish: aa is primary-equal to å (tertiary differences remain),
-        // so Aaron sorts after Zebra.
+        // Danish: aa is primary-equal to å (tertiary differences remain), so Aaron sorts after Zebra.
         #expect(try #require(Self.collators["da"]).compare("aa", "å", options: primary) == .same)
         #expect(try #require(Self.collators["da"]).compare("Aaron", "Zebra") == .descending)
         // German phonebook: ü is primary-equal to ue.

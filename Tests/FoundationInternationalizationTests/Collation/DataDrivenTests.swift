@@ -18,25 +18,16 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Runner for ICU's data-driven collation test file
-/// (test/testdata/collationtest.txt), following CollationTest::TestDataDriven:
+/// Runner for ICU's data-driven collation test file (test/testdata/collationtest.txt), following CollationTest::TestDataDriven:
 ///
-/// - `@ root` / `@ locale <id>` select a collator; `% attribute=value` lines
-///   modify options; `* compare` blocks list strings with relations
-///   `=`, `<`, `<1`, `<2`, `<c`, `<3`, `<4`, `<i` against the previous string.
-/// - Each line is checked in both directions, by sort keys (including the
-///   level of the first difference, counted by 01 separators), and again with
-///   NFD-normalized inputs.
+/// - `@ root` / `@ locale <id>` select a collator; `% attribute=value` lines modify options; `* compare` blocks list strings with relations `=`, `<`, `<1`, `<2`, `<c`, `<3`, `<4`, `<i` against the previous string.
+/// - Each line is checked in both directions, by sort keys (including the level of the first difference, counted by 01 separators), and again with NFD-normalized inputs.
 ///
 /// Sections this port cannot run are skipped and counted:
-/// - `@ rules` (109 sections): requires the runtime rule builder, which is
-///   deliberately not ported (tailorings are compiled offline).
-/// - `% reorder ...`: requires generating reorder tables from reorder codes
-///   (only data-supplied reorderings are supported).
-/// - locales not bundled, and locale tags with unsupported keywords
-///   (e.g. kk-false: normalization cannot be turned off in this design).
-/// - lines whose strings contain unpaired surrogates (not representable in
-///   Swift Strings).
+/// - `@ rules` (109 sections): requires the runtime rule builder, which is deliberately not ported (tailorings are compiled offline).
+/// - `% reorder ...`: requires generating reorder tables from reorder codes (only data-supplied reorderings are supported).
+/// - locales not bundled, and locale tags with unsupported keywords (e.g. kk-false: normalization cannot be turned off in this design).
+/// - lines whose strings contain unpaired surrogates (not representable in Swift Strings).
 @Suite struct DataDrivenTests {
     enum Relation {
         case equal
@@ -46,8 +37,7 @@ import Testing
     private static let _root = Result { try RootCollator() }
     static var root: RootCollator { get throws { try _root.get() } }
 
-    /// Locale tags appearing in collationtest.txt, mapped to bundled
-    /// tailorings (with optional option overrides) or nil (skip section).
+    /// Locale tags appearing in collationtest.txt, mapped to bundled tailorings (with optional option overrides) or nil (skip section).
     static func collator(forLocale tag: String) throws -> (RootCollator, CollationOptions)? {
         func tailored(_ name: String) throws -> (RootCollator, CollationOptions)? {
             let c = try RootCollator(tailoringNamed: name)
@@ -186,9 +176,7 @@ import Testing
         }
 
         #expect(failures == 0, "\(failures) of \(checkedLines) checked lines failed")
-        // Coverage accounting: the file has 109 rules sections and a handful
-        // of unsupported locale/attribute sections.
-        // Skip accounting stays visible on failure (the guideline bans print in tests): the counts ride the assertion message.
+        // Coverage accounting: the file has 109 rules sections and a handful of unsupported locale/attribute sections. Skip accounting stays visible on failure (the guideline bans print in tests): the counts ride the assertion message.
         #expect(checkedLines >= 300, "ran only \(checkedLines) lines (skipped \(skippedSections) rules/locale sections, \(skippedAttrSections) attribute sections, \(skippedSurrogateLines) unpaired-surrogate lines) — parsing regression?")
     }
 
@@ -238,9 +226,7 @@ import Testing
         return true
     }
 
-    /// Level of the first sort key difference: 1 + number of 01 separators
-    /// before the first differing byte; the case level slot is skipped when
-    /// caseLevel is off. (getDifferenceLevel.)
+    /// Level of the first sort key difference: 1 + number of 01 separators before the first differing byte; the case level slot is skipped when caseLevel is off. (getDifferenceLevel.)
     private func differenceLevel(_ k1: [UInt8], _ k2: [UInt8], caseLevel: Bool) -> Int {
         var level = 1
         for i in 0..<min(k1.count, k2.count) {
@@ -323,9 +309,7 @@ import Testing
         return true
     }
 
-    /// ICU UnicodeString::unescape subset: \uXXXX, \UXXXXXXXX, \xHH, \\, \t.
-    /// Combines surrogate pairs from consecutive \u escapes; returns nil for
-    /// unpaired surrogates (not representable in Swift Strings).
+    /// ICU UnicodeString::unescape subset: \uXXXX, \UXXXXXXXX, \xHH, \\, \t. Combines surrogate pairs from consecutive \u escapes; returns nil for unpaired surrogates (not representable in Swift Strings).
     private func unescape(_ token: Substring) -> String? {
         var units: [UInt32] = []  // code points, possibly UTF-16 units from \u
         var i = token.startIndex
@@ -384,9 +368,7 @@ import Testing
     }
 }
 
-/// Thai dictionary order test (CollationThaiTest::TestDictionary): riwords.txt
-/// lists ~31k Thai words in dictionary order; each adjacent pair must compare
-/// ascending (or equal) under the th tailoring.
+/// Thai dictionary order test (CollationThaiTest::TestDictionary): riwords.txt lists ~31k Thai words in dictionary order; each adjacent pair must compare ascending (or equal) under the th tailoring.
 @Suite struct ThaiDictionaryTests {
     @Test func riwords() throws {
         let collator = try RootCollator(tailoringNamed: "th")

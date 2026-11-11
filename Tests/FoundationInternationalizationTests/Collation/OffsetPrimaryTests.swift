@@ -13,9 +13,9 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// `CollationConstants.incThreeBytePrimaryByOffset` uses unsigned arithmetic since technique log §51 (bb). These tests check it against the signed original of ICU's Collation::incThreeBytePrimaryByOffset over the inputs that the data can produce: every third byte, the edges of the second byte, both compressibility settings, and offsets from 0.
+/// `CollationConstants.incThreeBytePrimaryByOffset` uses unsigned arithmetic. These tests check it against the signed original of ICU's Collation::incThreeBytePrimaryByOffset over the inputs that the data can produce: every third byte, the edges of the second byte, both compressibility settings, and offsets from 0.
 @Suite struct OffsetPrimaryTests {
-    /// The signed original, as ported before §51 (bb).
+    /// The signed original, as in ICU.
     private static func reference(_ basePrimary: UInt32, _ isCompressible: Bool, _ offset: Int32) -> UInt32 {
         var offset = offset + (Int32(bitPattern: basePrimary >> 8) & 0xff) - 2
         var primary = UInt32(bitPattern: (offset % 254) + 2) << 8

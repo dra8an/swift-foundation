@@ -13,12 +13,8 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// Numeric collation (CODAN) edge cases around the digit-run encodings:
-/// the dense single-CE encoding covers values up to 1_042_489 (74 + 40*254
-/// + 16*254*254); larger values — including 7-digit values past that
-/// capacity — use the digit-pair encoding. These pin the boundary and the
-/// invariants the encodings must preserve (added with the digit-run fast
-/// path that accumulates small runs into a value without a digits array).
+/// Numeric collation (CODAN) edge cases around the digit-run encodings: the dense single-CE encoding covers values up to 1_042_489 (74 + 40*254
+/// + 16*254*254); larger values — including 7-digit values past that capacity — use the digit-pair encoding. These pin the boundary and the invariants the encodings must preserve (added with the digit-run fast path that accumulates small runs into a value without a digits array).
 @Suite("Numeric collation")
 struct NumericTests {
     let collator: RootCollator
@@ -45,8 +41,7 @@ struct NumericTests {
     }
 
     @Test func denseEncodingBoundary() throws {
-        // 1_042_489 is the last value in the dense encoding; 1_042_490 is the
-        // first in the pair encoding. Ordering must be seamless across it.
+        // 1_042_489 is the last value in the dense encoding; 1_042_490 is the first in the pair encoding. Ordering must be seamless across it.
         let ordered = ["1042488", "1042489", "1042490", "1042491"]
         for i in 1..<ordered.count {
             #expect(try cmp(ordered[i - 1], ordered[i]) < 0, "\(ordered[i-1]) < \(ordered[i])")
@@ -76,8 +71,7 @@ struct NumericTests {
     }
 
     @Test func trailingZeroPairs() throws {
-        // The pair encoding trims trailing 00 pairs; equal numbers with
-        // different textual lengths via leading zeros must stay equal.
+        // The pair encoding trims trailing 00 pairs; equal numbers with different textual lengths via leading zeros must stay equal.
         #expect(try cmp("1200000000", "01200000000") == 0)
         #expect(try cmp("1200000000", "1200000001") < 0)
     }
@@ -90,8 +84,7 @@ struct NumericTests {
     }
 
     @Test func numericSearchStillMatches() throws {
-        // Digit runs produce one CE per run: the pattern's run must match
-        // the text's run as a unit.
+        // Digit runs produce one CE per run: the pattern's run must match the text's run as a unit.
         var opts = numericOpts
         opts.strength = .primary
         #expect(collator.contains(pattern: "42", in: "answer 42 found", options: opts))

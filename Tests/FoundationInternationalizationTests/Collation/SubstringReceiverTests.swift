@@ -19,10 +19,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Substring receivers must get ranges back in THEIR OWN index space —
-/// a Substring's indices are base-string-relative, so mapping offsets into
-/// a fresh String copy (0-based) misaligns every result by the substring's
-/// start offset (§26/§39 wrapper audit).
+/// Substring receivers must get ranges back in THEIR OWN index space — a Substring's indices are base-string-relative, so mapping offsets into a fresh String copy (0-based) misaligns every result by the substring's start offset.
 @Suite("Substring receiver index spaces")
 private struct SubstringReceiverTests {
     @Test func localizedStandardRangeOnSubstring() {
@@ -101,7 +98,7 @@ private struct SubstringReceiverTests {
         }
     }
 
-    /// The compare and contains wrappers take a fast path only for two `String` arguments; Substring receivers and arguments take the out-of-line converting path (technique log §51 (am)). Both must give the String answers.
+    /// The compare and contains wrappers take a fast path only for two `String` arguments; Substring receivers and arguments take the out-of-line converting path. Both must give the String answers.
     @Test func substringReceiversAndArgumentsMatchStrings() {
         let en = Locale(identifier: "en")
         let words = ["résumé", "resume", "Resume", "co-op", "coop", "item10", "item9", "straße", "strasse", "東京", "กา", ""]

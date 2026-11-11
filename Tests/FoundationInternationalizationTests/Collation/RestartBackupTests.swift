@@ -18,7 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The compare entry restarts CE iteration after a shared prefix at the point the byte scan chooses — ICU's backup rule: when either first-differing scalar is unsafe to restart at, step back while the scalar at the new position is unsafe (RootCollator.restartScalarCount, technique log §51). These pairs put the difference right after scalars that are safe or unsafe in every way the data has — Thai consonants (contraction suffixes), prefix vowels, tone marks, combining marks, the middle-dot prefix context, kana voicing marks, digits — and one word a prefix of the next.
+/// The compare entry restarts CE iteration after a shared prefix at the point the byte scan chooses — ICU's backup rule: when either first-differing scalar is unsafe to restart at, step back while the scalar at the new position is unsafe (RootCollator.restartScalarCount). These pairs put the difference right after scalars that are safe or unsafe in every way the data has — Thai consonants (contraction suffixes), prefix vowels, tone marks, combining marks, the middle-dot prefix context, kana voicing marks, digits — and one word a prefix of the next.
 ///
 /// The referee is byte-wise sort-key order: sortKey() never skips a prefix, and its order equals compare() at the same options. Only each collator's own default options reach the byte-scan restart, so each collator runs with those.
 @Suite struct RestartBackupTests {

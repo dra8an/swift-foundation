@@ -18,15 +18,9 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Ports of ICU4C's CollationRegressionTest (intltest/regcoll.cpp): the 13
-/// cases that exercise the root (en_US) collator with strength settings over
-/// compareArray triplet tables, extracted mechanically by
-/// Tools/extract_regcoll.py into regcoll.json. The skipped cases (rule-string
-/// collators, CollationElementIterator API, object identity) are counted in
-/// the extractor's output.
+/// Ports of ICU4C's CollationRegressionTest (intltest/regcoll.cpp): the 13 cases that exercise the root (en_US) collator with strength settings over compareArray triplet tables, extracted mechanically by utils/collation/extract_regcoll.py into regcoll.json. The skipped cases (rule-string collators, CollationElementIterator API, object identity) are counted in the extractor's output.
 ///
-/// Each triplet is (source, relation, target) with relation "<", "=", ">",
-/// checked in both directions plus sort-key order.
+/// Each triplet is (source, relation, target) with relation "<", "=", ">", checked in both directions plus sort-key order.
 @Suite struct RegressionTests {
     struct File: Decodable {
         let cases: [Case]
@@ -69,8 +63,7 @@ import Testing
             case ("UCOL_NORMALIZATION_MODE", "UCOL_ON"):
                 break  // always on in this implementation
             case ("UCOL_NORMALIZATION_MODE", "UCOL_OFF"):
-                // Test4114077: the extractor selected the normalization-ON
-                // array; the OFF phase's array is excluded.
+                // Test4114077: the extractor selected the normalization-ON array; the OFF phase's array is excluded.
                 break
             case ("UCOL_STRENGTH", "UCOL_SECONDARY"):
                 options.strength = .secondary

@@ -14,7 +14,7 @@ import Testing
 import FoundationEssentials
 @testable import FoundationInternationalization
 
-/// The entries that the Foundation wrappers use (technique log §51 (ak)): the collators of CollatorCache in place in their slots, through a pointer, and the default-options compare. Each must give the same answers as the plain instance methods.
+/// The entries that the Foundation wrappers use: the collators of CollatorCache in place in their slots, through a pointer, and the default-options compare. Each must give the same answers as the plain instance methods.
 @Suite struct CollatorCacheTests {
     static let strings: [String] = CollationConcurrencyTests.strings
 

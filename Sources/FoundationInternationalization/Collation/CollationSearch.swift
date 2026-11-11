@@ -229,10 +229,8 @@ struct CollationSearch {
     }
 
     /// Direct UTF-8 byte scan (see `byteScanEligible` for the option gates). Within a clean-ASCII region, byte equality is equivalent to collation equality (each clean byte maps to exactly one nonzero CE), so:
-    /// - a byte match lying entirely inside the clean *prefix* of the text is
-    /// definitively the FIRST collation match;
-    /// - "no byte match" over an entirely clean text and pattern is a
-    /// definitive no-match. Everything else falls through to the CE path — including byte matches past the first non-clean byte: such a match is real, but an *earlier* occurrence can hide in a different normalization form, so it is not provably first.
+    /// - a byte match lying entirely inside the clean *prefix* of the text is definitively the FIRST collation match;
+    /// - "no byte match" over an entirely clean text and pattern is a definitive no-match. Everything else falls through to the CE path — including byte matches past the first non-clean byte: such a match is real, but an *earlier* occurrence can hide in a different normalization form, so it is not provably first.
     private func byteScanSearch(for pattern: String, in text: String) -> Range<String.Index>?? {
         guard text.isContiguousUTF8, pattern.isContiguousUTF8 else { return nil }
 
@@ -320,8 +318,7 @@ struct CollationSearch {
 
     // MARK: - Forward search (lazy CE production)
 
-    /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match.
-    /// Out of line on purpose: inlined into its caller, the caller grows so large that `CEIterator.appendMore` — `@inline(__always)` — stays an out-of-line call per character in the scan loop.
+    /// Lazy CE scan with lazy position reporting. No per-call arrays at all: CEs are annotated with raw NFD offsets as they are produced into the caller-owned `window`, and the NFD→source conversion, boundary validation, and String.Index construction all happen in `confirmMatch`, only for candidates whose CEs already match. Out of line on purpose: inlined into its caller, the caller grows so large that `CEIterator.appendMore` — `@inline(__always)` — stays an out-of-line call per character in the scan loop.
     @inline(never)
     private func searchForward(
         patternCEs: [Int64], in text: String, textBytes: UnsafeBufferPointer<UInt8>?, mask: Int64,
@@ -331,7 +328,7 @@ struct CollationSearch {
         let patCount = patternCEs.count
 
         reset(&iter, text, bytes: textBytes)
-        // Reserve for the whole text (capped so huge inputs don't over- allocate): growth reallocs of the 24-byte AnnotatedCE elements were measurable on long lines (paths corpus), where the old <=32 gate never fired. reserveCapacity on the retained-capacity buffer is a no-op once warm.
+        // Reserve for the whole text (capped, so that huge inputs do not over-allocate): else a long line grows the buffer of 24-byte AnnotatedCE elements several times. reserveCapacity on the retained-capacity buffer is a no-op once warm.
         let textUTF8Count = text.utf8.count
         let reserve = min(textUTF8Count, 1024)
         iter.ces.reserveCapacity(reserve + 1)
@@ -616,7 +613,7 @@ struct CollationSearch {
         }
     }
 
-    /// Fills `map` with each NFD scalar position's original source scalar index. Allocation-free: the expansion counts come straight from the trie (`fullDecompositionCount`, the count-only twin of `appendDecomposition`) and the map is a scratch-owned buffer — the old per-call map plus two `[UInt32]` temporaries PER DECOMPOSING SCALAR were ~half of every matching search on accented text. The utf8 reserve replaces a `unicodeScalars.count` walk, which cost its own O(n) pass.
+    /// Fills `map` with each NFD scalar position's original source scalar index. Allocation-free: the expansion counts come straight from the trie (`fullDecompositionCount`, the count-only twin of `appendDecomposition`) and the map is a scratch-owned buffer, so a matching search on accented text allocates nothing, per call or per decomposing scalar. The reserve uses the UTF-8 count, not `unicodeScalars.count`, which would walk the whole string.
     private func buildNFDSourceMap(for text: String, into map: inout [Int]) {
         if !map.isEmpty { map.removeAll(keepingCapacity: true) }
         map.reserveCapacity(min(text.utf8.count, 1024))

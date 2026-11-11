@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+##===----------------------------------------------------------------------===//
+##
+## This source file is part of the Swift.org open source project
+##
+## Copyright (c) 2026 Apple Inc. and the Swift project authors
+## Licensed under Apache License v2.0 with Runtime Library Exception
+##
+## See https://swift.org/LICENSE.txt for license information
+## See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+##
+##===----------------------------------------------------------------------===//
+
 """Extracts the rule-free TestG7Locales data from ICU4C's intltest/g7coll.cpp
 into g7coll.json, consumed by G7CollationTests.swift. The strings and the
 per-locale expected-order rows come out of the C source mechanically (no hand

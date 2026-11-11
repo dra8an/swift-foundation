@@ -19,7 +19,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The current-locale collator cache revalidates against Foundation's locale generation count (LocaleNotifications), so a mid-process system locale change is picked up by the next localized call — matching the Darwin contract (design record: Collation/Docs/29).
+/// The current-locale collator cache revalidates against Foundation's locale generation count (LocaleNotifications), so a mid-process system locale change is picked up by the next localized call — matching the Darwin contract.
 @Suite("Current-locale collator invalidation")
 private struct CurrentLocaleInvalidationTests {
     /// Swedish sorts "ä" as a separate letter after "z" while root groups it with "a" — the canonical sv-vs-root discriminator, exercised by the sv locale suite. The locale flips are driven through the same internal hooks the platform notification paths use — LocaleNotifications.cache.reset() bumps the generation, resetCurrent(to:) installs the new current locale.

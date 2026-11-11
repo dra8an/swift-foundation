@@ -15,7 +15,7 @@ import Testing
 import FoundationEssentials
 @testable import FoundationInternationalization
 
-/// Collators are shared across threads: CollatorCache hands the same RootCollator to every thread. These tests run compare, sortKey and search on shared collators from many threads at once — with the threads using different option sets in different orders, so the single-slot fast-Latin cache for non-default options changes under them — and check every answer against one computed on a single thread first. They also create collators concurrently. Run them under Thread Sanitizer too: `swift test --sanitize=thread --filter CollationConcurrencyTests` (technique log §51).
+/// Collators are shared across threads: CollatorCache hands the same RootCollator to every thread. These tests run compare, sortKey and search on shared collators from many threads at once — with the threads using different option sets in different orders, so the single-slot fast-Latin cache for non-default options changes under them — and check every answer against one computed on a single thread first. They also create collators concurrently. Run them under Thread Sanitizer too: `swift test --sanitize=thread --filter CollationConcurrencyTests`.
 @Suite struct CollationConcurrencyTests {
     /// One failure counter per iteration; each iteration writes only its own slot.
     final class Counters: @unchecked Sendable {
@@ -113,7 +113,7 @@ import FoundationEssentials
         #expect(failures.total == 0, "\(Array(failures.slots)) failures per thread")
     }
 
-    /// The explicit-locale slot of CollatorCache is lock-free for readers and switches to another identifier's slot on a miss (technique log §51 (aj)). Threads ask for collators of different locales in different orders, so the published slot changes under them all the time; every compare must still use the collator of its own locale.
+    /// The explicit-locale slot of CollatorCache is lock-free for readers and switches to another identifier's slot on a miss. Threads ask for collators of different locales in different orders, so the published slot changes under them all the time; every compare must still use the collator of its own locale.
     @Test func explicitLocaleCacheGivesEachLocaleItsOwnCollator() throws {
         let identifiers = ["en_US", "sv_SE", "de_DE", "fr_CA", "th_TH", "ja_JP", "da_DK", "en_GB"]
         // Pairs whose order depends on the tailoring: å/ä/ö after z (sv, da), backward secondary (fr_CA), Thai prefix vowels, kana.

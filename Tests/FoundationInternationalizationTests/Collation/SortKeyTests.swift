@@ -18,9 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Sort key tests: byte-for-byte identity with ICU's ucol_getSortKey
-/// (Golden/keys-<option-set>.txt), and the defining invariant that byte-wise
-/// key comparison equals compare() for every corpus pair.
+/// Sort key tests: byte-for-byte identity with ICU's ucol_getSortKey (Golden/keys-<option-set>.txt), and the defining invariant that byte-wise key comparison equals compare() for every corpus pair.
 @Suite struct SortKeyTests {
     @Test(arguments: 0..<13, [0, 1])
     func keysMatchICUByteForByte(optionSetIndex: Int, collatorIndex: Int) throws {
@@ -50,8 +48,7 @@ import Testing
         #expect(failures == 0, "[\(optionSetName)/\(variant)] \(failures) of \(corpus.count) keys differ from ICU")
     }
 
-    /// The defining invariant: byte-comparing sort keys must order exactly
-    /// like compare() with the same options.
+    /// The defining invariant: byte-comparing sort keys must order exactly like compare() with the same options.
     @Test(arguments: 0..<13)
     func keyComparisonEqualsCompare(optionSetIndex: Int) throws {
         let (optionSetName, options) = DifferentialTests.optionSets[optionSetIndex]

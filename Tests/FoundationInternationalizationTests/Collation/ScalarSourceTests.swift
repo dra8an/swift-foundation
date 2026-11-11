@@ -18,7 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The two inputs of the NFD front end (technique log §51 (y)): a contiguous native string is read through its pinned UTF-8 bytes (`ScalarSource`), a non-contiguous one — here a lazily bridged `NSString` — through a String iterator. Both must give the same compare results, sort keys and search results, also where the compare restarts after a shared prefix (where the bytes source skips by lead bytes).
+/// The two inputs of the NFD front end: a contiguous native string is read through its pinned UTF-8 bytes (`ScalarSource`), a non-contiguous one — here a lazily bridged `NSString` — through a String iterator. Both must give the same compare results, sort keys and search results, also where the compare restarts after a shared prefix (where the bytes source skips by lead bytes).
 @Suite struct ScalarSourceTests {
     static let words = [
         "", "a", "abc", "abd", "café", "cafe", "Straße", "strasse", "e\u{301}cole", "école",

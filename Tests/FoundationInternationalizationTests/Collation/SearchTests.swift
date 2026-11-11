@@ -197,8 +197,7 @@ struct CollationSearchTests {
     // MARK: - Byte-scan fast-path holes (ASCII ignorables, shifted)
 
     @Test func ignorableControlBetweenASCII() {
-        // U+0001 is completely ignorable (produces no CE), but it is an ASCII
-        // byte — the byte scan must not claim a conclusive no-match for it.
+        // U+0001 is completely ignorable (produces no CE), but it is an ASCII byte — the byte scan must not claim a conclusive no-match for it.
         let text = "a\u{0001}b"
         let result = collator.search(for: "ab", in: text)
         #expect(result != nil, "Completely ignorable ASCII control must not defeat the match")
@@ -211,9 +210,7 @@ struct CollationSearchTests {
     }
 
     @Test func shiftedSpaceIsIgnorable() {
-        // Under alternate=shifted at tertiary strength, the space is variable
-        // and drops below the mask — "ab" matches "a b". The byte scan must
-        // not claim a conclusive no-match when shifted is on.
+        // Under alternate=shifted at tertiary strength, the space is variable and drops below the mask — "ab" matches "a b". The byte scan must not claim a conclusive no-match when shifted is on.
         var opts = CollationOptions()
         opts.alternate = .shifted
         let result = collator.search(for: "ab", in: "a b", options: opts)
@@ -236,8 +233,7 @@ struct CollationSearchTests {
     }
 
     @Test func shiftedPatternWithSpace() {
-        // The pattern's own variable characters drop out too: "a b" as a
-        // pattern reduces to the CEs of "ab".
+        // The pattern's own variable characters drop out too: "a b" as a pattern reduces to the CEs of "ab".
         var opts = CollationOptions()
         opts.alternate = .shifted
         let result = collator.search(for: "a b", in: "xxabxx", options: opts)
@@ -245,16 +241,13 @@ struct CollationSearchTests {
     }
 
     @Test func nonShiftedSpaceStaysSignificant() {
-        // Default alternate=nonIgnorable: the space keeps its primary weight
-        // and "ab" must NOT match "a b".
+        // Default alternate=nonIgnorable: the space keeps its primary weight and "ab" must NOT match "a b".
         let result = collator.search(for: "ab", in: "a b")
         #expect(result == nil, "Space is significant at alternate=nonIgnorable")
     }
 
     @Test func forwardCrossNormalizationFindsFirst() throws {
-        // The FIRST collation match is in NFC form (different bytes than the
-        // pattern); a byte-identical NFD match appears later. The forward
-        // byte scan must not return the later byte match as "first".
+        // The FIRST collation match is in NFC form (different bytes than the pattern); a byte-identical NFD match appears later. The forward byte scan must not return the later byte match as "first".
         let nfd = "e\u{0301}"
         let nfc = "\u{00E9}"
         let text = "x \(nfc) y \(nfd) z"
@@ -264,11 +257,7 @@ struct CollationSearchTests {
     }
 
     @Test func markAfterMatchEndRejected() {
-        // The end boundary of a match must not split a combining sequence:
-        // in "ab\u{0301}" the accent belongs to 'b', so bare "ab" must not
-        // match. The CE path rejects this via end-boundary validation; the
-        // byte scan must not accept it either (the mark sits just past the
-        // match window, where the clean-prefix rule used not to look).
+        // The end boundary of a match must not split a combining sequence: in "ab\u{0301}" the accent belongs to 'b', so bare "ab" must not match. The CE path rejects this via end-boundary validation; the byte scan must not accept it either (the mark sits just past the match window, where the clean-prefix rule used not to look).
         let result = collator.search(for: "ab", in: "ab\u{0301}")
         #expect(result == nil, "Match ending before a combining mark must be rejected")
     }
@@ -281,8 +270,7 @@ struct CollationSearchTests {
     // MARK: - Backwards byte-scan semantics
 
     @Test func backwardsFindsLastLongASCII() throws {
-        // Long enough that the old <=32 reserve gate never fired; pure ASCII
-        // so the backwards byte scan (if eligible) is definitive.
+        // Longer than 32 scalars, so that the search reserves for the whole text; pure ASCII so the backwards byte scan (if eligible) is definitive.
         let text = "start abc middle abc more filler text here abc end"
         let last = try #require(collator.searchBackwards(for: "abc", in: text))
         #expect(text[last] == "abc")
@@ -291,9 +279,7 @@ struct CollationSearchTests {
     }
 
     @Test func backwardsCrossNormalizationFindsLast() throws {
-        // The pattern in NFD form; the LAST collation match in the text is in
-        // NFC form (different bytes). A backwards byte scan must not return
-        // the earlier byte-identical NFD match.
+        // The pattern in NFD form; the LAST collation match in the text is in NFC form (different bytes). A backwards byte scan must not return the earlier byte-identical NFD match.
         let nfd = "e\u{0301}"        // e + combining acute
         let nfc = "\u{00E9}"         // é precomposed
         let text = "x \(nfd) y \(nfc) z"
@@ -319,15 +305,13 @@ struct CollationSearchTests {
     }
 
     @Test func cjkMarkAfterMatchEndRejected() {
-        // Combining mark directly after the matched ideograph: the end
-        // boundary would split the combining sequence.
+        // Combining mark directly after the matched ideograph: the end boundary would split the combining sequence.
         let result = collator.search(for: "日本", in: "日本\u{0301}")
         #expect(result == nil)
     }
 
     @Test func cjkAfterIneligiblePrefixStillFound() throws {
-        // An accented character before the match makes the fast path bail;
-        // the CE path must still find it.
+        // An accented character before the match makes the fast path bail; the CE path must still find it.
         let text = "café 日本 x"
         let result = try #require(collator.search(for: "日本", in: text))
         #expect(text[result] == "日本")
@@ -336,8 +320,7 @@ struct CollationSearchTests {
     // MARK: - Cross-starter contractions
 
     @Test func koreanSyllableSearch() {
-        // 가 (U+AC00) = Jamo L ㄱ (U+1100) + V ㅏ (U+1161), composed Hangul
-        // Search for the syllable in text containing the composed form
+        // 가 (U+AC00) = Jamo L ㄱ (U+1100) + V ㅏ (U+1161), composed Hangul Search for the syllable in text containing the composed form
         let result = collator.search(for: "가", in: "나는 가수입니다")
         #expect(result != nil, "Should find composed Hangul syllable")
     }
@@ -412,8 +395,7 @@ struct CollationSearchTests {
         let cs = try RootCollator(tailoringNamed: "cs")
         // š and s are different letters in Czech — search in a word without plain s
         let result = cs.search(for: "s", in: "šílenství")
-        // "šílenství" has 's' at position 5 (š-í-l-e-n-s-t-v-í), so this WILL match
-        // Instead test that š itself doesn't match s
+        // "šílenství" has 's' at position 5 (š-í-l-e-n-s-t-v-í), so this WILL match Instead test that š itself doesn't match s
         let result2 = cs.search(for: "s", in: "ší")
         #expect(result2 == nil, "š and s are different letters in Czech — 's' should NOT match 'š'")
     }
@@ -485,13 +467,7 @@ struct CollationSearchTests {
         }
     }
 
-    /// A discontiguous contraction (UTS #10 S2.1.3) must advance the scalar
-    /// count by the scalar it removes, or every position reported after it is
-    /// short by one. Root contracts Cyrillic и + U+0306 (combining breve, ccc
-    /// 230); with U+0334 (ccc 1) between them the breve is not blocked, so S
-    /// is replaced by S+C and the breve is removed from the lookahead. The
-    /// text is already canonically ordered, so nothing decomposes and the NFD
-    /// offsets are used as source offsets directly.
+    /// A discontiguous contraction (UTS #10 S2.1.3) must advance the scalar count by the scalar it removes, or every position reported after it is short by one. Root contracts Cyrillic и + U+0306 (combining breve, ccc 230); with U+0334 (ccc 1) between them the breve is not blocked, so S is replaced by S+C and the breve is removed from the lookahead. The text is already canonically ordered, so nothing decomposes and the NFD offsets are used as source offsets directly.
     @Test func discontiguousContractionKeepsPositionsAligned() {
         let text = "и\u{0334}\u{0306}abc"
         let expected = trailingRange(of: 3, in: text)
@@ -500,8 +476,7 @@ struct CollationSearchTests {
         #expect(result == expected, "match after a discontiguous contraction must report its true range")
     }
 
-    /// The same shape with the marks in the other canonical order, with the
-    /// precomposed й spelled out, and uppercase — all reach the S2.1.3 branch.
+    /// The same shape with the marks in the other canonical order, with the precomposed й spelled out, and uppercase — all reach the S2.1.3 branch.
     @Test func discontiguousContractionPositionsAcrossOrderings() {
         for text in ["и\u{0306}\u{0334}abc", "\u{0439}\u{0334}abc", "И\u{0334}\u{0306}abc"] {
             let expected = trailingRange(of: 3, in: text)
@@ -511,8 +486,7 @@ struct CollationSearchTests {
         }
     }
 
-    /// The range of the last `scalars` scalars of `text` (no Foundation
-    /// string search, so the expectation is independent of the API under test).
+    /// The range of the last `scalars` scalars of `text` (no Foundation string search, so the expectation is independent of the API under test).
     private func trailingRange(of scalars: Int, in text: String) -> Range<String.Index> {
         let start = text.unicodeScalars.index(
             text.unicodeScalars.startIndex, offsetBy: text.unicodeScalars.count - scalars)

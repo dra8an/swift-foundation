@@ -12,7 +12,7 @@
 
 // Sort key generation: a single-pass writer that produces the same keys as ICU's CollationKeys::writeSortKeyUpToQuaternary (i18n/collationkeys.{h,cpp}), and the BOCSU identical-level encoder (i18n/bocsu.{h,cpp}).
 //
-// Operates on a NO_CE-terminated CE array. Script reordering hooks are omitted (milestone 7). The invariant: byte-wise comparison of two sort keys equals compare() at the same options.
+// Operates on a NO_CE-terminated CE array. With script reordering, the writer writes reordered primaries and tests compressibility on the original primary. The invariant: byte-wise comparison of two sort keys equals compare() at the same options.
 
 enum CollationKeys {
     // Secondary level: Compress up to 33 common weights as 05..25 or 25..45.
@@ -723,8 +723,7 @@ extension CollationKeys {
 }
 
 extension CollationKeys {
-    /// Same-file copies of values from other files that the sort key writer reads (CollationConstants.swift, CollationOptions.swift). In a build without whole-module optimization each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original.
-    /// CollationConstants.noCEPrimary.
+    /// Same-file copies of values from other files that the sort key writer reads (CollationConstants.swift, CollationOptions.swift). In a build without whole-module optimization each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original. CollationConstants.noCEPrimary.
     static let noCEPrimary: UInt32 = 1
     /// CollationConstants.noCEWeight16.
     static let noCEWeight16: UInt32 = 0x0100

@@ -18,18 +18,11 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The official UCA/CLDR conformance suite (UTS #10 / TR35 Root Data Files):
-/// CollationTest_CLDR_*_SHORT.txt list strings in root-collation order; for
-/// every pair of consecutive lines, compare(prev, cur) must not be
-/// "descending", and sort keys must order the same way.
+/// The official UCA/CLDR conformance suite (UTS #10 / TR35 Root Data Files): CollationTest_CLDR_*_SHORT.txt list strings in root-collation order; for every pair of consecutive lines, compare(prev, cur) must not be "descending", and sort keys must order the same way.
 ///
-/// Mirrors ICU's UCAConformanceTest: strength=identical, normalization on,
-/// caseFirst/caseLevel off; alternate per file (non-ignorable vs shifted).
+/// Mirrors ICU's UCAConformanceTest: strength=identical, normalization on, caseFirst/caseLevel off; alternate per file (non-ignorable vs shifted).
 ///
-/// Lines containing unpaired surrogates are skipped: Swift Strings cannot
-/// represent them.
-/// Skipping a line compares its neighbors directly, which the files' total
-/// order permits.
+/// Lines containing unpaired surrogates are skipped: Swift Strings cannot represent them. Skipping a line compares its neighbors directly, which the files' total order permits.
 @Suite struct ConformanceTests {
     private static let _collators = Result {
         [("regular", try RootCollator()),

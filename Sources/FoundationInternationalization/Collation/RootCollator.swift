@@ -1476,8 +1476,7 @@ struct RestartSafety {
             }
         }
 
-        // 2. Lead ccc != 0, one normalization data block (64 code points, the same blocking) at a time, each block computed once.
-        // The cache is an array indexed by norm block (113 distinct in the BMP), not a dictionary: dictionary operations made the build cost several times the rest of the root collator init.
+        // 2. Lead ccc != 0, one normalization data block (64 code points, the same blocking) at a time, each block computed once. The cache is an array indexed by norm block (113 distinct in the BMP), not a dictionary: dictionary operations made the build cost several times the rest of the root collator init.
         var leadMasks = [UInt64?](repeating: nil, count: norm.data.count >> 6)
         for b in firstBlock..<blockCount {
             let normBlock = Int(norm.index[b])
@@ -1616,8 +1615,7 @@ extension CollationOptions {
 }
 
 extension RootCollator {
-    /// Same-file copies of values from other files that the compare paths read on every call. In a build without whole-module optimization each file compiles alone, and a constant or a small function from another file is a call there — also with `@inlinable` or `@_transparent`; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original.
-    /// CollationFastLatin.bailOutResult.
+    /// Same-file copies of values from other files that the compare paths read on every call. In a build without whole-module optimization each file compiles alone, and a constant or a small function from another file is a call there — also with `@inlinable` or `@_transparent`; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original. CollationFastLatin.bailOutResult.
     static let fastLatinBailOut: Int32 = -2
     /// CollationFastLatin.latinMaxUTF8Lead.
     static let latinMaxLead: UInt8 = 0xc5

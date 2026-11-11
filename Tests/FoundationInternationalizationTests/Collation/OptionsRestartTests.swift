@@ -18,7 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The identical-prefix restart under NON-default options (technique log §51 (z)). Two option settings carry state from the skipped prefix into the rest of the string: alternate=shifted (primary-ignorable CEs after a variable CE are ignored) and a backward secondary level (the secondary weights are compared from the end). The CE compare detects the cases where the prefix can change the result, and the caller compares again from the start (`CollationCompare.prefixDependent`). ICU 79.1's doCompare has no such check: its compare disagrees with its own sort keys on these pairs.
+/// The identical-prefix restart under NON-default options. Two option settings carry state from the skipped prefix into the rest of the string: alternate=shifted (primary-ignorable CEs after a variable CE are ignored) and a backward secondary level (the secondary weights are compared from the end). The CE compare detects the cases where the prefix can change the result, and the caller compares again from the start (`CollationCompare.prefixDependent`). ICU 79.1's doCompare has no such check: its compare disagrees with its own sort keys on these pairs.
 ///
 /// The referee is byte-wise sort-key order (sortKey() never skips a prefix), as in RestartBackupTests, but for many option sets: the Foundation ones (secondary; secondary + numeric; primary), case first, case level, backward secondary, shifted, and identical strength (`.forcedOrdering`, `.localizedStandard`). Inputs: native strings (the byte scan's restart and compareFromRestart) and bridged strings (compareBody's skip walk).
 @Suite struct OptionsRestartTests {
@@ -37,7 +37,7 @@ import Testing
         o = d; o.alternate = .shifted; o.strength = .quaternary; sets.append(("shifted quaternary", o))
         o = d; o.alternate = .shifted; o.maxVariable = .symbol; o.strength = .secondary; sets.append(("shifted symbol secondary", o))
         o = d; o.alternate = .shifted; o.backwardSecondary = true; o.strength = .quaternary; sets.append(("shifted backward", o))
-        // Identical strength takes the bytes path too since §51 (ao): the CEs and the identical level from the same restart.
+        // Identical strength takes the bytes path too: the CEs and the identical level from the same restart.
         o = d; o.strength = .identical; sets.append(("identical", o))
         o.numeric = true; sets.append(("identical numeric", o))
         o = d; o.strength = .identical; o.alternate = .shifted; sets.append(("identical shifted", o))

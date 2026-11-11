@@ -18,12 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Differential tests against ICU4C: utils/collation/gen_golden.c produced
-/// Golden/matrix-<option-set>.txt by running ucol_strcollUTF8 over every ordered
-/// pair of Golden/corpus.txt strings, for each option set (a named combination of collator settings). Our
-/// compare() must agree on all pairs, for every option set — against both
-/// the regular data and the NFD-only root data (ICU's verdict does not
-/// depend on which data *we* read; correct results must be identical).
+/// Differential tests against ICU4C: utils/collation/gen_golden.c produced Golden/matrix-<option-set>.txt by running ucol_strcollUTF8 over every ordered pair of Golden/corpus.txt strings, for each option set (a named combination of collator settings). Our compare() must agree on all pairs, for every option set — against both the regular data and the NFD-only root data (ICU's verdict does not depend on which data *we* read; correct results must be identical).
 @Suite struct DifferentialTests {
     private static let _collators = Result {
         [("regular", try RootCollator()),

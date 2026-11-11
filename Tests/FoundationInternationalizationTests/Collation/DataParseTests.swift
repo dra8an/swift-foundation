@@ -18,14 +18,14 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The data parsers copy each part of a file once, in bulk, and check every part they read against the file size (technique log §51, START HERE item 7). The copies must equal a byte-by-byte little-endian decode, and a cut file must throw, never read past its end.
+/// The data parsers copy each part of a file once, in bulk, and check every part they read against the file size. The copies must equal a byte-by-byte little-endian decode, and a cut file must throw, never read past its end.
 @Suite struct DataParseTests {
     /// The compiled-in bytes of a bundled resource ("ucadata", "nfd", "tailorings/<name>").
     static func file(_ name: String) throws -> [UInt8] {
         [UInt8](try #require(collationResourceBytes(name), "\(name) is compiled in"))
     }
 
-    /// The byte-by-byte decode of the old parser: the part `ix` of a "UCol" file as little-endian values of `width` bytes.
+    /// A byte-by-byte decode, the reference for the bulk copies: the part `ix` of a "UCol" file as little-endian values of `width` bytes.
     static func decodedPart(_ bytes: [UInt8], _ ix: Int, width: Int) -> [UInt64] {
         let headerSize = Int(bytes[0]) | (Int(bytes[1]) << 8)
         func i32(_ at: Int) -> Int {

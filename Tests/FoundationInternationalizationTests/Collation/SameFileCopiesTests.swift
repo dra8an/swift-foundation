@@ -13,7 +13,7 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// RootCollator.swift, CollationCompare.swift and SortKey.swift keep same-file copies of values from other files, so that the `-no-WMO` build reads them as immediates (technique log §51 (as), (ax)). Each copy must equal its original.
+/// RootCollator.swift, CollationCompare.swift and SortKey.swift keep same-file copies of values from other files, so that the `-no-WMO` build reads them as immediates. Each copy must equal its original.
 @Suite struct SameFileCopiesTests {
     @Test func constantsEqualTheirOriginals() {
         #expect(RootCollator.fastLatinBailOut == CollationFastLatin.bailOutResult)
@@ -31,7 +31,7 @@ import Testing
         }
     }
 
-    /// The copies of the CE compare (CollationCompare) and of the sort key writer (CollationKeys), technique log §51 (ax).
+    /// The copies of the CE compare (CollationCompare) and of the sort key writer (CollationKeys).
     @Test func compareAndKeyWriterConstantsEqualTheirOriginals() {
         #expect(CollationCompare.noCEPrimary == CollationConstants.noCEPrimary)
         #expect(CollationCompare.noCEWeight16 == CollationConstants.noCEWeight16)

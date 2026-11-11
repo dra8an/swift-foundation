@@ -18,7 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// The CJK fast path of CE production (technique log §51 (v)) against the full path: an iterator with the fast tables takes the fast path, one without them takes `lookup` + `appendCEs`. For every code point of the CJK unified ranges — alone, and followed by its two successors — both must give the same CEs, on root and on the CJK tailorings (where some ideographs are tailored and must leave the fast path).
+/// The CJK fast path of CE production against the full path: an iterator with the fast tables takes the fast path, one without them takes `lookup` + `appendCEs`. For every code point of the CJK unified ranges — alone, and followed by its two successors — both must give the same CEs, on root and on the CJK tailorings (where some ideographs are tailored and must leave the fast path).
 @Suite struct CJKFastPathTests {
     static let ranges: [ClosedRange<UInt32>] = [0x3400...0x4DBF, 0x4E00...0x9FFF, 0x20000...0x2A6DF]
 

@@ -12,7 +12,7 @@
 
 // Level-by-level CE comparison, a faithful port of CollationCompare::compareUpToQuaternary (i18n/collationcompare.cpp).
 //
-// Operates on lazily-filled CE buffers terminated by NO_CE (like ICU's CollationIterator/CEBuffer): the primary loop pulls CEs on demand and usually decides without generating the rest; the deeper levels run only when all primaries were equal, i.e. when the buffers are already complete. The primary loop may rewrite variable CEs in place (shifting them to the quaternary level). Script reordering is not yet supported (milestone 7); the corresponding hooks are omitted.
+// Operates on lazily-filled CE buffers terminated by NO_CE (like ICU's CollationIterator/CEBuffer): the primary loop pulls CEs on demand and usually decides without generating the rest; the deeper levels run only when all primaries were equal, i.e. when the buffers are already complete. The primary loop may rewrite variable CEs in place (shifting them to the quaternary level). With script reordering, the primary and quaternary differences are compared after `Reordering.reorder`.
 
 enum CollationCompare {
     /// The result of compareUpToQuaternary when `prefixSkipped` is true and the skipped prefix can change the result: the caller must compare again from the start of both strings.
@@ -326,8 +326,7 @@ enum CollationCompare {
 }
 
 extension CollationCompare {
-    /// Same-file copies of values from other files that the CE compare reads (CollationConstants.swift, CollationOptions.swift). In a build without whole-module optimization each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original.
-    /// CollationConstants.noCEPrimary.
+    /// Same-file copies of values from other files that the CE compare reads (CollationConstants.swift, CollationOptions.swift). In a build without whole-module optimization each file compiles alone, and every value from another file is a call there: a `static let`, an enum's `rawValue`, a small static function; a `static let` in this file folds to an immediate. `SameFileCopiesTests` checks each copy against its original. CollationConstants.noCEPrimary.
     static let noCEPrimary: UInt32 = 1
     /// CollationConstants.noCEWeight16.
     static let noCEWeight16: UInt32 = 0x0100

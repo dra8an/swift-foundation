@@ -49,9 +49,9 @@ and the ICU entry in `NOTICE.txt`, the same day, Docs/31 section 8).
 paragraph).** Expected (2026-11-10, afternoon): HEAD = `b403e953` (ICU
 notice) on `147ebdc1` (headers), `bc8c65f8` (step 4), `893ae795` (step 3), `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
 and `c2f87de9` (step 1) — **equal to
-`origin/port/collation` = `b403e953` (pushed 2026-11-10)** — plus the gap-5
-commit (platforms) if the user made it (check git; else give the add /
-commit lines). The worktree `../collation-baseline` is
+`origin/port/collation` = `b403e953` (pushed 2026-11-10)** — plus `a7d684e3` (gap 5,
+platforms, committed 2026-11-10) and the commit of gaps 1–2 if the user
+made it (check git; else give the add / commit lines). The worktree `../collation-baseline` is
 detached at `b403e953` (moved there 2026-11-10 for the TSan check of gap 5), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
 before the next A/B (the block below). The main tree's builds: default
 `.build` (SwiftPM release, BenchFoundation) at HEAD's code; EngineBench
@@ -445,7 +445,22 @@ FoundationEssentials unchanged); machine code: `.build/l26/cmp_functions.py
 base/BenchFoundation new/BenchFoundation` (base = HEAD `b403e953`) — every
 hot function identical; only cold paths changed. The worktree
 `../collation-baseline` is at `b403e953` with a TSan build in
-`.build/tsan`. Gaps 1–4: ask the user.
+`.build/tsan`. Gap 5 committed as `a7d684e3`.
+**Gaps 1 and 2 DONE 2026-11-11 (uncommitted at writing):** the test comments
+without history (`.build/l27/gap1.py`: 34 replacements in 27 files; then 10
+more sentences found by wording — "the bug", "the old …", "oracle" — and 6
+in the sources: two false "reordering not supported (milestone 7)", two
+stale "dynamic access scopes" on the scratch iterators, two with history
+and measurements in `CollationSearch` / `ScratchBuffers`); no manual
+wrapping: `.build/l27/unwrap.py [--write] <files>` joined 252 lines in 44
+Swift files (keeps the license header, list items, code, tables, labels
+such as "Check:", and comment text indented by 2+ spaces — the layout table
+of `gen_norm_data.swift`); `code_unchanged.py`: 45 files CODE UNCHANGED.
+**User decision:** the 5 test-data scripts (`gen_fuzz_corpus.py`,
+`extract_cmsccoll.py`, `extract_g7coll.py`, `extract_locale_suites.py`,
+`extract_regcoll.py`) moved from `Collation/Tools` to `utils/collation`
+(license header, README rows; the fuzz corpus checked byte-identical for
+seed 42). Gaps 3 (exit tests) and 4 (DocC on 3 methods): ask the user.
 **At PR time (not now):** the split into small PRs (Docs/31 section 7), the
 target branch (upstream's merge-forward model: the earliest release branch
 that should get the change), the Evolution question (API parity with Darwin

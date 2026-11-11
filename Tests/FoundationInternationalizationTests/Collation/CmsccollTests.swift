@@ -18,16 +18,9 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Ports of the non-rule test cases from ICU4C's cintltst/cmsccoll.c
-/// (miscellaneous collation regressions), extracted by
-/// Tools/extract_cmsccoll.py into cmsccoll.json. Each case is a locale +
-/// options + a string list where every pair i<j must compare ascending
-/// (genericLocaleStarter), or equal for the one UCOL_EQUAL case — checked in
-/// both directions plus sort-key order, like ICU's doTest.
+/// Ports of the non-rule test cases from ICU4C's cintltst/cmsccoll.c (miscellaneous collation regressions), extracted by utils/collation/extract_cmsccoll.py into cmsccoll.json. Each case is a locale + options + a string list where every pair i<j must compare ascending (genericLocaleStarter), or equal for the one UCOL_EQUAL case — checked in both directions plus sort-key order, like ICU's doTest.
 ///
-/// The other ~88 call sites in cmsccoll.c build collators from rule strings
-/// (see Docs/12-rule-builder-decision.md); TestExtremeCompression is
-/// programmatic and reimplemented below.
+/// The other ~88 call sites in cmsccoll.c build collators from rule strings (the engine has no rule builder); TestExtremeCompression is programmatic and reimplemented below.
 @Suite struct CmsccollTests {
     struct File: Decodable {
         let cases: [Case]
@@ -111,9 +104,7 @@ import Testing
         #expect(failures == 0, "[\(c.name)] \(failures) pair failures")
     }
 
-    /// TestExtremeCompression (reimplemented; it generates its data):
-    /// for each length 20..<500, the four strings "aa…a" + {a,b,c,d} must
-    /// sort ascending — stressing primary lead-byte compression runs.
+    /// TestExtremeCompression (reimplemented; it generates its data): for each length 20..<500, the four strings "aa…a" + {a,b,c,d} must sort ascending — stressing primary lead-byte compression runs.
     @Test func extremeCompression() throws {
         var options = CollationOptions()
         options.strength = .tertiary

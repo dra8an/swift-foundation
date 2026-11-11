@@ -24,12 +24,9 @@ import Testing
 
     // The reference is the NFD of the system Foundation, which these tests can import only on macOS: on the other platforms, Foundation is built on top of this package.
     #if os(macOS)
-    /// Differential test of the fused NFD front end against Foundation's
-    /// decomposedStringWithCanonicalMapping (NFD), single scalars.
+    /// Differential test of the fused NFD front end against Foundation's decomposedStringWithCanonicalMapping (NFD), single scalars.
     ///
-    /// Ranges are limited to Unicode blocks whose normalization is stable, so
-    /// the system's (possibly older) Unicode version agrees with our
-    /// Unicode 17 tables.
+    /// Ranges are limited to Unicode blocks whose normalization is stable, so the system's (possibly older) Unicode version agrees with our Unicode 17 tables.
     @Test func singleScalarsMatchFoundationNFD() throws {
         let ranges: [ClosedRange<UInt32>] = [
             0x20...0x33ff,        // Latin..CJK symbols, incl. Greek, Cyrillic,
@@ -59,8 +56,7 @@ import Testing
         #expect(mismatches == 0)
     }
 
-    /// Same differential over base+marks combinations, exercising canonical
-    /// reordering of combining marks (including non-canonical input order).
+    /// Same differential over base+marks combinations, exercising canonical reordering of combining marks (including non-canonical input order).
     @Test func combiningSequencesMatchFoundationNFD() throws {
         let bases = ["a", "e", "o", "s", "d", "q", "α", "ι", "я", "ậ", "ơ", "ự"]
         let marks: [UInt32] = [0x0301, 0x0323, 0x0302, 0x0308, 0x031b, 0x030a]
@@ -103,9 +99,7 @@ import Testing
     }
 }
 
-/// Canonical equivalence at the collator level: all forms of the same text
-/// must compare equal, against both the regular (closure) data and the
-/// NFD-only root data.
+/// Canonical equivalence at the collator level: all forms of the same text must compare equal, against both the regular (closure) data and the NFD-only root data.
 @Suite struct CanonicalEquivalenceTests {
     private static let _collators = Result {
         [("regular", try RootCollator()),
@@ -130,8 +124,7 @@ import Testing
 
     @Test(arguments: [0, 1]) func equivalentFormsCompareEqual(collatorIndex: Int) throws {
         let (name, collator) = try Self.collators[collatorIndex]
-        // Canonical equivalents are equal at every strength — including
-        // identical, whose tiebreaker compares NFD forms.
+        // Canonical equivalents are equal at every strength — including identical, whose tiebreaker compares NFD forms.
         for strength in [CollationOptions.Strength.tertiary, .identical] {
             var options = CollationOptions()
             options.strength = strength

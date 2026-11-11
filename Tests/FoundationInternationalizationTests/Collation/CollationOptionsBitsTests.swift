@@ -13,7 +13,7 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// The compare entry's guard tests the caller's options against the collator's default options by bit pattern (`RootCollator.bits(of:)`). That is sound only if equal patterns mean equal options and different options give different patterns — checked here over every option combination (technique log §51).
+/// The compare entry's guard tests the caller's options against the collator's default options by bit pattern (`RootCollator.bits(of:)`). That is sound only if equal patterns mean equal options and different options give different patterns — checked here over every option combination.
 @Suite struct CollationOptionsBitsTests {
     static func allCombinations() -> [CollationOptions] {
         var all: [CollationOptions] = []

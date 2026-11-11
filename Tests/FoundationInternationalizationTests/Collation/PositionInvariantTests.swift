@@ -20,29 +20,14 @@ import Testing
 
 /// Position-reporting gate.
 ///
-/// Every other collation suite compares CE bytes or sort-key bytes: the
-/// conformance files assert an ordering, the differential and fuzz suites
-/// assert key bytes against ICU reference answers. None of them looks at the
-/// OFFSETS the search APIs report, and four separate bugs have now been found
-/// in that channel by hand (a Substring index-space error in `rebaseRange`,
-/// tailoring default settings, and the discontiguous-contraction scalar count
-/// below). Each was invisible to every gate, and each was found by a
-/// throwaway probe that should have been a test.
+/// Every other collation suite compares CE bytes or sort-key bytes: the conformance files assert an ordering, the differential and fuzz suites assert key bytes against ICU reference answers. None of them looks at the OFFSETS the search APIs report, and four separate bugs have now been found in that channel by hand (a Substring index-space error in `rebaseRange`, tailoring default settings, and the discontiguous-contraction scalar count below). Each was invisible to every gate, and each was found by a throwaway probe that should have been a test.
 ///
-/// The core invariant here needs no reference implementation: the CE iterator
-/// must consume exactly as many scalars as the NFD front end produces for the
-/// same input. `scalarsConsumed` is what annotates every `AnnotatedCE` with
-/// `nfdStart`/`nfdEnd`, which `confirmMatch` converts into the returned
-/// `String.Index` range — so any drift in that counter silently corrupts every
-/// position the search APIs report, while leaving CEs and sort keys perfect.
-/// Running it over the conformance corpora turns "positions are reported by
-/// hand-checked example" into "positions are checked on every input we have".
+/// The core invariant here needs no reference implementation: the CE iterator must consume exactly as many scalars as the NFD front end produces for the same input. `scalarsConsumed` is what annotates every `AnnotatedCE` with `nfdStart`/`nfdEnd`, which `confirmMatch` converts into the returned `String.Index` range — so any drift in that counter silently corrupts every position the search APIs report, while leaving CEs and sort keys perfect. Running it over the conformance corpora turns "positions are reported by hand-checked example" into "positions are checked on every input we have".
 @Suite struct PositionInvariantTests {
     private static let _collator = Result { try RootCollator() }
     static var collator: RootCollator { get throws { try _collator.get() } }
 
-    /// Scalars the NFD front end yields for `s` — the number the CE iterator
-    /// must account for.
+    /// Scalars the NFD front end yields for `s` — the number the CE iterator must account for.
     private static func nfdScalarCount(_ s: String, norm: NormalizationData) -> Int {
         var nfd = NFDIterator(norm: norm, scalars: s.unicodeScalars)
         var n = 0
@@ -71,12 +56,7 @@ import Testing
         return iter.scalarsConsumed
     }
 
-    /// THE gate for the whole bug class: over both official conformance
-    /// corpora, the CE iterator's scalar count must equal the NFD scalar
-    /// count — for the plain pipeline, for the simple-CE table fast paths,
-    /// and for numeric mode (which consumes digit runs through a separate
-    /// path). A discontiguous contraction that forgets to count the scalar it
-    /// removes fails here on the first line that reaches the branch.
+    /// The main check of this suite: over both official conformance corpora, the CE iterator's scalar count must equal the NFD scalar count — for the plain pipeline, for the simple-CE table fast paths, and for numeric mode (which consumes digit runs through a separate path). A discontiguous contraction that forgets to count the scalar it removes fails here on the first line that reaches the branch.
     @Test(arguments: ["CollationTest_NON_IGNORABLE_SHORT.txt", "CollationTest_SHIFTED_SHORT.txt"])
     func ceIteratorAccountsForEveryNFDScalar(file: String) throws {
         let collator = try Self.collator
@@ -103,8 +83,7 @@ import Testing
         #expect(failures == 0, "[\(file)] \(failures) scalar-count mismatches")
     }
 
-    /// Same invariant over the seeded fuzz corpus and the golden corpus, which
-    /// carry option-set and script coverage the conformance files do not.
+    /// Same invariant over the seeded fuzz corpus and the golden corpus, which carry option-set and script coverage the conformance files do not.
     @Test(arguments: ["fuzz-corpus.txt", "corpus.txt"])
     func ceIteratorAccountsForEveryNFDScalarInGoldenCorpora(file: String) throws {
         let collator = try Self.collator
@@ -128,12 +107,7 @@ import Testing
 
     // MARK: API-level position invariants
 
-    /// Inputs that reach the UTS #10 S2.1.3 discontiguous branch in ROOT data,
-    /// discovered by instrumenting the "remove C" site and sweeping the UCA
-    /// corpus. Root contracts Cyrillic и/И + U+0306 (breve, ccc 230) and Arabic
-    /// forms with U+0653/U+0654; an intervening mark of LOWER ccc (U+0334, ccc
-    /// 1, or U+0591, ccc 220) does not block the match, so S is replaced by S+C
-    /// and C is removed from the lookahead out of order.
+    /// Inputs that reach the UTS #10 S2.1.3 discontiguous branch in ROOT data, discovered by instrumenting the "remove C" site and sweeping the UCA corpus. Root contracts Cyrillic и/И + U+0306 (breve, ccc 230) and Arabic forms with U+0653/U+0654; an intervening mark of LOWER ccc (U+0334, ccc 1, or U+0591, ccc 220) does not block the match, so S is replaced by S+C and C is removed from the lookahead out of order.
     static let discontiguousSequences = [
         "\u{0438}\u{0334}\u{0306}",           // и + tilde overlay + breve
         "\u{0438}\u{0306}\u{0334}",           // и + breve + tilde overlay
@@ -144,10 +118,7 @@ import Testing
         "\u{0622}\u{0334}",                   // Arabic alef with madda + tilde overlay
     ]
 
-    /// A match placed after a discontiguous contraction must be reported at its
-    /// true offset. This is the exact failure the bug produced: the range came
-    /// back one scalar short, and boundary validation then rejected it, so the
-    /// API returned nil — a missed match, not a shifted one.
+    /// A match placed after a discontiguous contraction must be reported at its true offset. If the count misses that scalar, the range comes back one scalar short, boundary validation rejects it, and the API returns nil — a missed match, not a shifted one.
     @Test func matchAfterDiscontiguousContractionIsReportedCorrectly() throws {
         let collator = try Self.collator
         for prefix in Self.discontiguousSequences {
@@ -163,9 +134,7 @@ import Testing
         }
     }
 
-    /// The same sequences with a decomposing character in front, so the NFD
-    /// offset → source offset map is exercised on top of the drifted count
-    /// (source scalars and NFD scalars no longer line up).
+    /// The same sequences with a decomposing character in front, so the NFD offset → source offset map is exercised on top of the drifted count (source scalars and NFD scalars no longer line up).
     @Test func matchAfterDiscontiguousContractionWithDecompositionInFront() throws {
         let collator = try Self.collator
         for core in Self.discontiguousSequences {
@@ -177,10 +146,7 @@ import Testing
         }
     }
 
-    /// Content round-trip: whatever range a search reports, the text at that
-    /// range must itself compare equal to the pattern. Oracle-free, and it
-    /// catches any misalignment regardless of cause — a range off by one
-    /// scalar cannot collate equal to the pattern.
+    /// Content round-trip: whatever range a search reports, the text at that range must itself compare equal to the pattern. It needs no reference answers, and it catches any misalignment regardless of cause — a range off by one scalar cannot collate equal to the pattern.
     @Test func reportedRangeContentsMatchThePattern() throws {
         let collator = try Self.collator
         var checked = 0
@@ -199,18 +165,10 @@ import Testing
         #expect(checked > 0, "no matches exercised the round-trip invariant")
     }
 
-    /// Searching a string for itself must report the whole string, whatever
-    /// contractions or discontiguous matches it contains.
+    /// Searching a string for itself must report the whole string, whatever contractions or discontiguous matches it contains.
     ///
     /// The hard case is a discontiguous match whose skipped mark is COMPLETELY
-    /// IGNORABLE: the mark is filtered out of both the pattern CEs and the text
-    /// buffer, so the match's last CE is the contraction itself — and that CE
-    /// consumed a NON-CONTIGUOUS scalar set (the base plus a scalar on the far
-    /// side of the skipped mark). Reporting the last CE's end as the match end
-    /// excluded the far-side scalar, landed mid-combining-sequence, and was
-    /// rejected by boundary validation, so the API returned nil. Fixed by
-    /// tracking per-CE NFD spans and taking the min start / max end over a
-    /// match's CEs; see CEIterator.spanStart and confirmedRange.
+    /// IGNORABLE: the mark is filtered out of both the pattern CEs and the text buffer, so the match's last CE is the contraction itself — and that CE consumed a NON-CONTIGUOUS scalar set (the base plus a scalar on the far side of the skipped mark). Reporting the last CE's end as the match end excluded the far-side scalar, landed mid-combining-sequence, and was rejected by boundary validation, so the API returned nil. Fixed by tracking per-CE NFD spans and taking the min start / max end over a match's CEs; see CEIterator.spanStart and confirmedRange.
     @Test func selfSearchCoversTheWholeString() throws {
         let collator = try Self.collator
         for s in Self.discontiguousSequences {
@@ -220,9 +178,7 @@ import Testing
         }
     }
 
-    /// The same, with the discontiguous contraction at the END of a longer
-    /// text: the match's own end is what the old first/last span arithmetic
-    /// got wrong, so exercise it both alone and after leading content.
+    /// The same, with the discontiguous contraction at the END of a longer text: the match's end must cover every scalar that its CEs consumed, so exercise it both alone and after leading content.
     @Test func matchEndingAtDiscontiguousContraction() throws {
         let collator = try Self.collator
         for core in Self.discontiguousSequences {
@@ -236,8 +192,7 @@ import Testing
         }
     }
 
-    /// The §39 class: a Substring receiver must produce indices in the
-    /// receiver's own index space, not the parent buffer's.
+    /// A Substring receiver must produce indices in the receiver's own index space, not the parent buffer's.
     @Test func substringReceiverReportsSelfRelativeIndices() throws {
         let collator = try Self.collator
         for core in Self.discontiguousSequences {
@@ -254,27 +209,14 @@ import Testing
 
     // MARK: Systematic discontiguous coverage, derived from the data
 
-    /// Every root contraction whose suffix is a non-starter, discovered from the
-    /// collation data rather than hardcoded, crossed with every intervening mark
-    /// that cannot block it — then checked with the same oracle-free invariants.
+    /// Every root contraction whose suffix is a non-starter, discovered from the collation data rather than hardcoded, crossed with every intervening mark that cannot block it — then checked with the same invariants, which need no reference answers.
     ///
-    /// The seven curated sequences above came from instrumenting the branch;
-    /// this covers the whole shape space. Derivation, all from data so it adapts
-    /// when CLDR does:
-    ///  1. starters whose CE32 is a contraction carrying `contractTrailingCCC`
-    ///     (the precondition for S2.1.3) — 12 of them in current root data;
-    ///  2. their REAL suffixes, found by comparing the CEs of `starter + mark`
-    ///     against `CEs(starter) + CEs(mark)` — 14 pairs, across Cyrillic,
-    ///     Arabic, Telugu, Sinhala, Tibetan and Vithkuqi;
-    ///  3. triples `[starter, intervening, suffix]` for every mark whose ccc is
-    ///     BELOW the suffix's, since the branch needs `prevCC < cc` for the
-    ///     suffix to be unblocked. Lower ccc first is also canonical order, so
-    ///     NFD does not reorder the triple out from under the test.
+    /// The seven curated sequences above came from instrumenting the branch; this covers the whole shape space. Derivation, all from data so it adapts when CLDR does:
+    ///  1. starters whose CE32 is a contraction carrying `contractTrailingCCC` (the precondition for S2.1.3) — 12 of them in current root data;
+    ///  2. their REAL suffixes, found by comparing the CEs of `starter + mark` against `CEs(starter) + CEs(mark)` — 14 pairs, across Cyrillic, Arabic, Telugu, Sinhala, Tibetan and Vithkuqi;
+    ///  3. triples `[starter, intervening, suffix]` for every mark whose ccc is BELOW the suffix's, since the branch needs `prevCC < cc` for the suffix to be unblocked. Lower ccc first is also canonical order, so NFD does not reorder the triple out from under the test.
     ///
-    /// Measured with `Tools/build_disc_probe.sh`: 2486 of 2490 generated triples
-    /// actually reach the branch (99.8%), against 100 of 14700 for a naive
-    /// one-mark-per-ccc-class sweep — which is why the suffixes are discovered
-    /// rather than guessed.
+    /// The suffixes are found from the data, not guessed: nearly every generated triple reaches the branch, but a naive one-mark-per-ccc-class sweep reaches it only rarely.
     @Test func discontiguousContractionSweep() throws {
         let collator = try Self.collator
         let norm = collator.norm
@@ -323,8 +265,7 @@ import Testing
             }
         }
 
-        // Guard against silently covering nothing — the trap Golden/fuzz-corpus.txt
-        // fell into, where the invariant passed because no input reached the branch.
+        // Guard against silently covering nothing — the trap Golden/fuzz-corpus.txt fell into, where the invariant passed because no input reached the branch.
         try #require(starters.count >= 10, "found only \(starters.count) contraction starters — derivation broke")
         try #require(pairs.count >= 10, "found only \(pairs.count) contraction pairs — derivation broke")
 

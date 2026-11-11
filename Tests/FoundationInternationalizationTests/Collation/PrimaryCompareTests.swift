@@ -13,15 +13,14 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// Behavioral tests at primary strength (the milestone-1 suite).
+/// Behavioral tests at primary strength.
 @Suite struct PrimaryCompareTests {
     private static let _collator = Result { try RootCollator() }
     var collator: PrimaryStrengthCollator {
         get throws { PrimaryStrengthCollator(base: try Self._collator.get()) }
     }
 
-    /// Wrapper fixing options at primary strength, preserving the original
-    /// shape of these tests (written when compare() was primary-only).
+    /// Wrapper fixing options at primary strength, preserving the original shape of these tests (written when compare() was primary-only).
     struct PrimaryStrengthCollator {
         let base: RootCollator
         func compare(_ l: String, _ r: String) throws -> RootCollator.Order {
@@ -84,8 +83,7 @@ import Testing
     }
 
     @Test func hangul() throws {
-        // Hangul syllables decompose to Jamo; syllable order follows code point order
-        // in the root for these.
+        // Hangul syllables decompose to Jamo; syllable order follows code point order in the root for these.
         #expect(try collator.compare("가", "나") == .ascending)
         #expect(try collator.compare("가", "가") == .same)
         #expect(try collator.compare("a", "가") == .ascending)

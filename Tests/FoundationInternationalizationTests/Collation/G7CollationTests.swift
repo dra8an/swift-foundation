@@ -18,21 +18,9 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Port of ICU4C's G7CollationTest::TestG7Locales (intltest/g7coll.cpp): a
-/// fixed set of 15 strings with their expected order for each of the eight
-/// G7 locales, checked pairwise. The demo tests and the remaining result
-/// rows build collators from rule strings — out of scope until a rule
-/// builder exists (Docs/12-rule-builder-decision.md). Data extracted
-/// mechanically by Tools/extract_g7coll.py into g7coll.json (which is
-/// faithful to the C values, including the spots where ICU's own character
-/// comments disagree with the code units, e.g. "blabkbirds").
+/// Port of ICU4C's G7CollationTest::TestG7Locales (intltest/g7coll.cpp): a fixed set of 15 strings with their expected order for each of the eight G7 locales, checked pairwise. The demo tests and the remaining result rows build collators from rule strings — out of scope, because the engine has no rule builder. Data extracted mechanically by utils/collation/extract_g7coll.py into g7coll.json (which is faithful to the C values, including the spots where ICU's own character comments disagree with the code units, e.g. "blabkbirds").
 ///
-/// Options: ICU's test sets quaternary+shifted but then *replaces* the
-/// collator with one rebuilt from its rule string, which resets the
-/// attributes — the known issue ICU-10671 ("TestG7Locales does not test
-/// ignore-punctuation"). The expected orders therefore encode each locale's
-/// default options (e.g. "blabk-birds" < "blabkbird" needs a primary-visible
-/// hyphen), and that is what we run with.
+/// Options: ICU's test sets quaternary+shifted but then *replaces* the collator with one rebuilt from its rule string, which resets the attributes — the known issue ICU-10671 ("TestG7Locales does not test ignore-punctuation"). The expected orders therefore encode each locale's default options (e.g. "blabk-birds" < "blabkbird" needs a primary-visible hyphen), and that is what we run with.
 @Suite struct G7CollationTests {
     struct Fixture: Decodable {
         let strings: [String]
@@ -49,8 +37,7 @@ import Testing
     }
     static var fixture: Fixture { get throws { try _fixture.get() } }
 
-    /// en/fr-FR/de/it have no tailoring relevant to these strings (ICU's
-    /// createInstance falls back to root); fr_CA and ja are bundled.
+    /// en/fr-FR/de/it have no tailoring relevant to these strings (ICU's createInstance falls back to root); fr_CA and ja are bundled.
     static func collator(for locale: String) throws -> RootCollator {
         switch locale {
         case "fr_CA": return try RootCollator(tailoringNamed: "fr_CA")

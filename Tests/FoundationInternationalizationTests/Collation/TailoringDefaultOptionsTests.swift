@@ -19,7 +19,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// A tailoring's default SETTINGS (fr_CA backwards secondary) must apply when no options are passed — engine entries resolve nil options to the collator's defaultOptions, and the CompareOptions translation merges onto that base (the bug §44's test found; fix decision in optimization-targets.md §45).
+/// A tailoring's default SETTINGS (fr_CA backwards secondary) must apply when no options are passed — engine entries resolve nil options to the collator's defaultOptions, and the CompareOptions translation merges onto that base.
 @Suite("Tailoring default options")
 private struct TailoringDefaultOptionsTests {
     /// French backwards secondary: "côte" sorts before "coté" (the last accent difference decides). A collator opened for fr_CA must apply it with NO options argument, like ucol_open + ucol_strcoll.
@@ -35,7 +35,7 @@ private struct TailoringDefaultOptionsTests {
         #expect(try root.compare("coté", "côte") == .ascending)
     }
 
-    /// The same pair through the Foundation wrapper with fr_CA as the current locale — the exact scenario the bug hid: character-data tailorings applied, settings tailorings silently did not.
+    /// The same pair through the Foundation wrapper with fr_CA as the current locale — the case in which the tailoring's character data could apply while its settings silently did not.
     @Test func wrapperAppliesTailoringDefaults() async {
         await usingCurrentInternationalizationPreferences {
             var en = LocalePreferences()

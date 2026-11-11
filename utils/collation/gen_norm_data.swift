@@ -10,16 +10,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-// Offline generator: parses ICU's norm2/nfc.txt (canonical decompositions and
-// canonical combining classes, the gennorm2 source format) and emits nfd.bin,
-// the normalization resource consumed by NormalizationData.swift.
+// Offline generator: parses ICU's norm2/nfc.txt (canonical decompositions and canonical combining classes, the gennorm2 source format) and emits nfd.bin, the normalization resource consumed by NormalizationData.swift.
 //
-// Decompositions are recursively expanded to full canonical (NFD) form.
-// Hangul syllables are not in nfc.txt and are decomposed arithmetically at
-// runtime; this tool asserts that assumption.
+// Decompositions are recursively expanded to full canonical (NFD) form. Hangul syllables are not in nfc.txt and are decomposed arithmetically at runtime; this tool asserts that assumption.
 //
-// nfd.bin layout (little-endian), version 2 — a single-trie
-// design: one lookup per scalar yields ccc + lead-ccc + decomposition.
+// nfd.bin layout (little-endian), version 2 — a single-trie design: one lookup per scalar yields ccc + lead-ccc + decomposition.
 //   u32 magic "SNFD" (0x44464e53)
 //   u32 version (2)
 //   u32 indexCount (0x110000 >> 6 = 17408)
@@ -40,8 +35,7 @@
 // Usage (from the repo root; a plain script, no package):
 //   swift utils/collation/gen_norm_data.swift <path/to/nfc.txt> Sources/FoundationInternationalization/Collation/Resources/nfd.bin
 // then regenerate the compiled-in data: python3 utils/collation/gen_collation_data.py
-// Check: for the same Unicode version, the output must equal the old file byte for byte (2026-11-09: ICU's
-// nfc.txt of tag release-78.3, Unicode 17.0.0, gives the bundled nfd.bin exactly).
+// Check: for the same Unicode version, the output must equal the old file byte for byte (2026-11-09: ICU's nfc.txt of tag release-78.3, Unicode 17.0.0, gives the bundled nfd.bin exactly).
 
 import Foundation
 
@@ -86,8 +80,7 @@ for rawLine in text.split(separator: "\n") {
             cccMap[hex(range)] = value
         }
     } else if let sep = trimmed.firstIndex(where: { $0 == "=" || $0 == ">" }) {
-        // Canonical mapping: "HEX=HEX HEX..." (round trip) or "HEX>..." (one way).
-        // Both are canonical decompositions for NFD purposes.
+        // Canonical mapping: "HEX=HEX HEX..." (round trip) or "HEX>..." (one way). Both are canonical decompositions for NFD purposes.
         let source = trimmed[..<sep]
         guard !source.contains(" ") else { fatalError("multi-code-point source: \(trimmed)") }
         let targets = trimmed[trimmed.index(after: sep)...].split(separator: " ").map(hex)
@@ -122,8 +115,7 @@ for (c, ccc) in cccMap {
 }
 var buffer: [UInt32] = []
 for (c, d) in fullDecomp.sorted(by: { $0.key < $1.key }) {
-    // Length 7 is the Hangul sentinel; real lengths must stay below it, and
-    // the offset must fit its 13 bits.
+    // Length 7 is the Hangul sentinel; real lengths must stay below it, and the offset must fit its 13 bits.
     precondition(d.count <= 6, "decomposition too long for the value format")
     precondition(buffer.count < (1 << 13), "buffer offset overflows the value format")
     let lccc = cccMap[d[0]] ?? 0

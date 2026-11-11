@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
+##===----------------------------------------------------------------------===//
+##
+## This source file is part of the Swift.org open source project
+##
+## Copyright (c) 2026 Apple Inc. and the Swift project authors
+## Licensed under Apache License v2.0 with Runtime Library Exception
+##
+## See https://swift.org/LICENSE.txt for license information
+## See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+##
+##===----------------------------------------------------------------------===//
+
 """Generates the fuzz corpus: random strings weighted toward collation
 trouble spots (combining marks, contraction bases, digits, Hangul, kana,
 Tibetan, format controls, supplementary planes).
 
-Deterministic for a given seed. Regenerate with:
-    python3 gen_fuzz_corpus.py 42 2000 ../Tests/CollationTests/Golden/fuzz-corpus.txt
+Deterministic for a given seed. Regenerate with (from the repository root):
+    python3 utils/collation/gen_fuzz_corpus.py 42 2000 Tests/FoundationInternationalizationTests/Collation/Golden/fuzz-corpus.txt
 then regenerate the reference keys with gen_golden (keys-only mode):
     DYLD_LIBRARY_PATH=$ICU_BUILD/lib ./gen_golden \
-        ../Tests/CollationTests/Golden/fuzz-corpus.txt \
-        ../Tests/CollationTests/Golden/fuzz --keys-only
+        Tests/FoundationInternationalizationTests/Collation/Golden/fuzz-corpus.txt \
+        Tests/FoundationInternationalizationTests/Collation/Golden/fuzz --keys-only
 """
 import random
 import sys

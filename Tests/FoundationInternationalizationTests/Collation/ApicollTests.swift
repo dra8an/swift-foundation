@@ -13,19 +13,12 @@
 import Testing
 @testable import FoundationInternationalization
 
-/// Ports of the behavioral parts of ICU4C's CollationAPITest
-/// (intltest/apicoll.cpp). Most of that suite exercises the C++ API surface
-/// — constructors, clone/operators, registry and display names, rule-string
-/// access, collation element iterators, subclassing — which has no
-/// counterpart here. What carries over is comparison and sort-key behavior:
-/// TestProperty's comparisons, TestCompare's strength behavior,
-/// TestCollationKey/TestSortKey's key properties, and TestMaxVariable.
+/// Ports of the behavioral parts of ICU4C's CollationAPITest (intltest/apicoll.cpp). Most of that suite exercises the C++ API surface — constructors, clone/operators, registry and display names, rule-string access, collation element iterators, subclassing — which has no counterpart here. What carries over is comparison and sort-key behavior: TestProperty's comparisons, TestCompare's strength behavior, TestCollationKey/TestSortKey's key properties, and TestMaxVariable.
 @Suite struct ApicollTests {
     private static let _root = Result { try RootCollator() }
     static var root: RootCollator { get throws { try _root.get() } }
 
-    /// TestProperty: basic comparisons at default (tertiary) strength under
-    /// the en collator (root-equivalent for these strings).
+    /// TestProperty: basic comparisons at default (tertiary) strength under the en collator (root-equivalent for these strings).
     @Test func propertyComparisons() throws {
         let c = try Self.root
         #expect(try c.compare("ab", "abc") == .ascending)
@@ -48,9 +41,7 @@ import Testing
         #expect(try Self.root.compare("Abcda", "abcda", options: options) == .same)
     }
 
-    /// TestCollationKey: the empty string's key has empty levels (exactly
-    /// 01 01 00 at tertiary strength), and a string of completely ignorable
-    /// characters (U+0001, U+034F CGJ) produces the same key.
+    /// TestCollationKey: the empty string's key has empty levels (exactly 01 01 00 at tertiary strength), and a string of completely ignorable characters (U+0001, U+034F CGJ) produces the same key.
     @Test func emptyAndIgnorableKeys() throws {
         let empty = try Self.root.sortKey(for: "")
         #expect(empty == [1, 1, 0])
@@ -59,9 +50,7 @@ import Testing
         #expect(try Self.root.compare("\u{01}\u{34F}", "") == .same)
     }
 
-    /// TestCollationKey/TestSortKey: keys order like compare() at each
-    /// strength, and a lower-strength key is a prefix of the higher-strength
-    /// key (minus the terminator) for strings without higher-level data.
+    /// TestCollationKey/TestSortKey: keys order like compare() at each strength, and a lower-strength key is a prefix of the higher-strength key (minus the terminator) for strings without higher-level data.
     @Test func sortKeyStrengths() throws {
         var identical = CollationOptions()
         identical.strength = .identical
@@ -75,14 +64,11 @@ import Testing
         let keyLowerS = try Self.root.sortKey(for: "abcda", options: secondary)
         #expect(keyUpperS == keyLowerS)
 
-        // The secondary key without its 00 terminator prefixes the
-        // identical-strength key of the same string.
+        // The secondary key without its 00 terminator prefixes the identical-strength key of the same string.
         #expect(Array(keyLowerI.prefix(keyLowerS.count - 1)) == keyLowerS.dropLast())
     }
 
-    /// TestMaxVariable: with maxVariable=currency and alternate=shifted,
-    /// currency symbols become variable (ignorable below quaternary) while
-    /// digits stay regular.
+    /// TestMaxVariable: with maxVariable=currency and alternate=shifted, currency symbols become variable (ignorable below quaternary) while digits stay regular.
     @Test func maxVariableCurrency() throws {
         var options = CollationOptions()
         options.alternate = .shifted

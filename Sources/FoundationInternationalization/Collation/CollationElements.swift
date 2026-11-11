@@ -413,8 +413,7 @@ struct CEIterator: ~Copyable {
                 return true
             }
         }
-        // Fast path: a combining mark (U+0300–037F) with one simple CE — the second half of a decomposed accented letter. A mark that reaches this point on its own was not consumed by a contraction of its starter, so the full path would give exactly this CE. Tailored or contracting marks are 0 in the table.
-        // Whole-string production only (sortKey): in the lazy compare, the extra test would slow Thai compares.
+        // Fast path: a combining mark (U+0300–037F) with one simple CE — the second half of a decomposed accented letter. A mark that reaches this point on its own was not consumed by a contraction of its starter, so the full path would give exactly this CE. Tailored or contracting marks are 0 in the table. Whole-string production only (sortKey): in the lazy compare, the extra test would slow Thai compares.
         if wholeString, (c &- 0x0300) < 128, !markCEs.isEmpty {
             let ce = markCEs[Int(c &- 0x0300)]
             if ce != 0 {

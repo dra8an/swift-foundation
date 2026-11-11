@@ -18,11 +18,7 @@ import Testing
 @testable import Foundation
 #endif
 
-/// Randomized differential testing: Golden/fuzz-corpus.txt holds 2000 seeded
-/// random strings weighted toward collation trouble spots (see
-/// Tools/gen_fuzz_corpus.py); Golden/fuzz-keys-<option-set>.txt holds ICU's
-/// sort keys for them. Byte-identical keys imply identical ordering for all
-/// pairs, so this is a complete order check without a pairwise matrix.
+/// Randomized differential testing: Golden/fuzz-corpus.txt holds 2000 seeded random strings weighted toward collation trouble spots (see utils/collation/gen_fuzz_corpus.py); Golden/fuzz-keys-<option-set>.txt holds ICU's sort keys for them. Byte-identical keys imply identical ordering for all pairs, so this is a complete order check without a pairwise matrix.
 @Suite struct FuzzTests {
     @Test(arguments: 0..<13, [0, 1])
     func fuzzKeysMatchICU(optionSetIndex: Int, collatorIndex: Int) throws {
