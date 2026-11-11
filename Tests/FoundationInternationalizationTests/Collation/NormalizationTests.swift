@@ -82,20 +82,16 @@ import Testing
     }
     #endif
 
-    @Test func knownDecompositions() throws {
-        // Recursive expansion: ạ + circumflex, precomposed, all orders.
-        let nfd = try collator.nfd("ậ").unicodeScalars.map(\.value)
-        #expect(nfd == [0x61, 0x323, 0x302])
-        // Hangul arithmetic.
-        #expect(try collator.nfd("각").unicodeScalars.map(\.value) == [0x1100, 0x1161, 0x11a8])
-        // One-way (Å angstrom sign).
-        #expect(try collator.nfd("\u{212B}").unicodeScalars.map(\.value) == [0x41, 0x30a])
-        // Compatibility-only ligature does NOT decompose canonically.
-        #expect(try collator.nfd("ﬁ").unicodeScalars.map(\.value) == [0xfb01])
-        // Tibetan composite vowel: starter-less decomposition to two non-starters.
-        #expect(try collator.nfd("\u{0F73}").unicodeScalars.map(\.value) == [0x0f71, 0x0f72])
-        // Canonical reordering of out-of-order marks (ccc 230 before ccc 220).
-        #expect(try collator.nfd("a\u{0302}\u{0323}").unicodeScalars.map(\.value) == [0x61, 0x323, 0x302])
+    @Test(arguments: [
+        ("ậ", [UInt32(0x61), 0x323, 0x302]),          // recursive expansion: ạ + circumflex, precomposed
+        ("각", [0x1100, 0x1161, 0x11a8]),               // Hangul arithmetic
+        ("\u{212B}", [0x41, 0x30a]),                    // one-way mapping (Å angstrom sign)
+        ("ﬁ", [0xfb01]),                                 // a compatibility-only ligature does NOT decompose canonically
+        ("\u{0F73}", [0x0f71, 0x0f72]),                 // Tibetan composite vowel: starter-less decomposition to two non-starters
+        ("a\u{0302}\u{0323}", [0x61, 0x323, 0x302]),    // canonical reordering of out-of-order marks (ccc 230 before ccc 220)
+    ])
+    func knownDecompositions(input: String, expected: [UInt32]) throws {
+        #expect(try collator.nfd(input).unicodeScalars.map(\.value) == expected)
     }
 }
 

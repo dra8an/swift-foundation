@@ -108,19 +108,22 @@ import Testing
     }
 
     /// Classic per-locale orderings, as a readable smoke test.
-    @Test func classicOrderings() throws {
-        var primary = CollationOptions()
-        primary.strength = .primary
-        // Swedish: ö sorts after z.
-        #expect(try #require(Self.collators["sv"]).compare("z", "ö") == .ascending)
-        // Danish: aa is primary-equal to å (tertiary differences remain), so Aaron sorts after Zebra.
-        #expect(try #require(Self.collators["da"]).compare("aa", "å", options: primary) == .same)
-        #expect(try #require(Self.collators["da"]).compare("Aaron", "Zebra") == .descending)
-        // German phonebook: ü is primary-equal to ue.
-        #expect(try #require(Self.collators["de-phonebook"]).compare("Müller", "Mueller", options: primary) == .same)
-        // Turkish: ı sorts before i.
-        #expect(try #require(Self.collators["tr"]).compare("ıb", "ib") == .ascending)
-        // fr-CA defaults compare accents from the end.
-        #expect(try #require(Self.collators["fr-CA"]).compare("cote", "côte") == .ascending)
+    @Test(arguments: [
+        ("sv", "z", "ö", false, RootCollator.Order.ascending),          // Swedish: ö sorts after z
+        ("da", "aa", "å", true, .same),                                 // Danish: aa is primary-equal to å (tertiary differences remain) …
+        ("da", "Aaron", "Zebra", false, .descending),                   // … so Aaron sorts after Zebra
+        ("de-phonebook", "Müller", "Mueller", true, .same),             // German phonebook: ü is primary-equal to ue
+        ("tr", "ıb", "ib", false, .ascending),                          // Turkish: ı sorts before i
+        ("fr-CA", "cote", "côte", false, .ascending),                   // fr-CA defaults compare accents from the end
+    ])
+    func classicOrderings(tailoring: String, left: String, right: String, atPrimary: Bool, expected: RootCollator.Order) throws {
+        let collator = try #require(Self.collators[tailoring])
+        if atPrimary {
+            var primary = CollationOptions()
+            primary.strength = .primary
+            #expect(try collator.compare(left, right, options: primary) == expected)
+        } else {
+            #expect(try collator.compare(left, right) == expected)
+        }
     }
 }

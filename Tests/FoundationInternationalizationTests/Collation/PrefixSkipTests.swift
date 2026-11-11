@@ -61,63 +61,59 @@ import Testing
         }
     }
 
-    @Test func numericDigitRunsSpanningTheBoundary() throws {
+    /// The shared prefix ends inside a digit run; restarting there without backing up would compare "2" against "0" instead of 2 against 10.
+    @Test(arguments: [("a12", "a2", RootCollator.Order.descending), ("x12", "x13", .ascending), ("12", "123", .ascending)])
+    func numericDigitRunsSpanningTheBoundary(left: String, right: String, expected: RootCollator.Order) throws {
         var options = CollationOptions()
         options.numeric = true
-        // The shared prefix ends inside a digit run; restarting there without backing up would compare "2" against "0" instead of 2 against 10.
-        #expect(try Self.root.compare("a12", "a2", options: options) == .descending)
-        #expect(try Self.root.compare("x12", "x13", options: options) == .ascending)
-        #expect(try Self.root.compare("12", "123", options: options) == .ascending)
-        for (a, b) in [("a12", "a2"), ("x12", "x13"), ("12", "123"), ("a02", "a2"), ("b10x", "b10y")] {
-            try expectKeyAgreementAtAllStrengths(try Self.root, a, b, numeric: true)
-        }
+        #expect(try Self.root.compare(left, right, options: options) == expected)
     }
 
-    @Test func prolongedSoundMarkNeedsTheSkippedKana() throws {
-        // ja: U+30FC's mapping has kana prefix (precontext) conditions; the shared prefix must back up so the mark still sees its base kana.
-        for (a, b) in [("カー", "カア"), ("ミー", "ミア"), ("カアー", "カアア"), ("ピーチ", "ピアノ")] {
-            try expectKeyAgreementAtAllStrengths(try Self.ja, a, b, a == "カー" ? "prolonged sound mark" : nil)
-        }
+    @Test(arguments: [("a12", "a2"), ("x12", "x13"), ("12", "123"), ("a02", "a2"), ("b10x", "b10y")])
+    func numericDigitRunsAgreeWithSortKeys(a: String, b: String) throws {
+        try expectKeyAgreementAtAllStrengths(try Self.root, a, b, numeric: true)
     }
 
-    @Test func combiningMarksAtTheBoundary() throws {
-        // First difference lands on a combining mark (lccc != 0): the mark may reorder or contract with what precedes it.
-        for (a, b) in [
-            ("cote\u{0301}", "cote"),                 // é decomposed vs plain
-            ("cot\u{0302}e", "cote\u{0301}"),         // marks on different bases
-            ("a\u{0301}\u{0327}", "a\u{0327}\u{0301}"),  // canonically equivalent mark order
-            ("\u{0418}\u{0306}x", "\u{0418}y"),       // Cyrillic И + breve (root contraction)
-        ] {
-            try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
-            try expectKeyAgreementAtAllStrengths(try Self.root, a, b, backwardSecondary: true)
-        }
+    /// ja: U+30FC's mapping has kana prefix (precontext) conditions; the shared prefix must back up so the mark still sees its base kana.
+    @Test(arguments: [("カー", "カア"), ("ミー", "ミア"), ("カアー", "カアア"), ("ピーチ", "ピアノ")])
+    func prolongedSoundMarkNeedsTheSkippedKana(a: String, b: String) throws {
+        try expectKeyAgreementAtAllStrengths(try Self.ja, a, b, a == "カー" ? "prolonged sound mark" : nil)
     }
 
-    @Test func thaiPrevowelContractions() throws {
-        // th: prevowel + consonant pairs are contractions; consonants are contraction trailers, so a difference right after a shared prevowel must back up over it.
-        for (a, b) in [("เก", "เข"), ("เกา", "เขา"), ("แกะ", "แกๆ")] {
-            try expectKeyAgreementAtAllStrengths(try Self.th, a, b)
-        }
+    /// The first difference lands on a combining mark (lccc != 0): the mark may reorder or contract with what precedes it.
+    @Test(arguments: [
+        ("cote\u{0301}", "cote"),                 // é decomposed vs plain
+        ("cot\u{0302}e", "cote\u{0301}"),         // marks on different bases
+        ("a\u{0301}\u{0327}", "a\u{0327}\u{0301}"),  // canonically equivalent mark order
+        ("\u{0418}\u{0306}x", "\u{0418}y"),       // Cyrillic И + breve (root contraction)
+    ])
+    func combiningMarksAtTheBoundary(a: String, b: String) throws {
+        try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
+        try expectKeyAgreementAtAllStrengths(try Self.root, a, b, backwardSecondary: true)
     }
 
-    @Test func hangulAndSupplementaryBoundaries() throws {
-        for (a, b) in [
-            ("가나", "가다"),                          // syllables (arithmetic decomposition)
-            ("가\u{1100}", "가\u{1161}"),              // syllable then raw Jamo
-            ("\u{1D400}b", "\u{1D400}c"),             // supplementary-plane shared prefix
-        ] {
-            try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
-        }
+    /// th: prevowel + consonant pairs are contractions; consonants are contraction trailers, so a difference right after a shared prevowel must back up over it.
+    @Test(arguments: [("เก", "เข"), ("เกา", "เขา"), ("แกะ", "แกๆ")])
+    func thaiPrevowelContractions(a: String, b: String) throws {
+        try expectKeyAgreementAtAllStrengths(try Self.th, a, b)
     }
 
-    @Test func prefixOfTheOtherAndIgnorableTails() throws {
-        for (a, b) in [
-            ("ab", "abc"),
-            ("ab", "ab\u{0001}"),    // completely ignorable tail: equal below identical
-            ("ab", "ab\u{0301}"),    // secondary-only tail
-        ] {
-            try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
-        }
+    @Test(arguments: [
+        ("가나", "가다"),                          // syllables (arithmetic decomposition)
+        ("가\u{1100}", "가\u{1161}"),              // syllable then raw Jamo
+        ("\u{1D400}b", "\u{1D400}c"),             // supplementary-plane shared prefix
+    ])
+    func hangulAndSupplementaryBoundaries(a: String, b: String) throws {
+        try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
+    }
+
+    @Test(arguments: [
+        ("ab", "abc"),
+        ("ab", "ab\u{0001}"),    // completely ignorable tail: equal below identical
+        ("ab", "ab\u{0301}"),    // secondary-only tail
+    ])
+    func prefixOfTheOtherAndIgnorableTails(a: String, b: String) throws {
+        try expectKeyAgreementAtAllStrengths(try Self.root, a, b)
     }
 
     @Test func unsafeBackwardSetParses() throws {

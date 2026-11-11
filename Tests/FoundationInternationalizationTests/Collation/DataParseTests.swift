@@ -57,24 +57,33 @@ import Testing
         #expect(data.trie.data.map { UInt64($0) } == decodedData)
     }
 
-    @Test func cutFilesThrow() throws {
-        let uca = try Self.file("ucadata")
-        // The data ends at indexes[19] (IX_TOTAL_SIZE); the file has padding after it, which the parser does not read.
-        let headerSize = Int(uca[0]) | (Int(uca[1]) << 8)
-        let dataEnd = headerSize + (Int(uca[headerSize + 76]) | (Int(uca[headerSize + 77]) << 8) | (Int(uca[headerSize + 78]) << 16))
-        #expect(dataEnd <= uca.count)
-        for length in [0, 23, 100, uca.count / 2, dataEnd - 300, dataEnd - 1] {
-            #expect(throws: (any Error).self, "ucadata cut to \(length) bytes") { try CollationData(bytes: Array(uca[..<length])) }
+    @Test(arguments: ["ucadata", "nfd", "tailorings/ja"])
+    func cutFilesThrow(name: String) throws {
+        let file = try Self.file(name)
+        let lengths: [Int]
+        switch name {
+        case "ucadata":
+            // The data ends at indexes[19] (IX_TOTAL_SIZE); the file has padding after it, which the parser does not read.
+            let headerSize = Int(file[0]) | (Int(file[1]) << 8)
+            let dataEnd = headerSize + (Int(file[headerSize + 76]) | (Int(file[headerSize + 77]) << 8) | (Int(file[headerSize + 78]) << 16))
+            #expect(dataEnd <= file.count)
+            lengths = [0, 23, 100, file.count / 2, dataEnd - 300, dataEnd - 1]
+        case "nfd":
+            lengths = [0, 7, 100, file.count / 2, file.count - 1]
+        default:
+            lengths = [0, 23, 100, file.count / 2, file.count - 1]
         }
-        let nfd = try Self.file("nfd")
-        for length in [0, 7, 100, nfd.count / 2, nfd.count - 1] {
-            #expect(throws: (any Error).self, "nfd.bin cut to \(length) bytes") {
-                try Array(nfd[..<length]).withUnsafeBytes { try NormalizationData(raw: $0) }
-            }
+        for length in lengths {
+            #expect(throws: (any Error).self, "\(name) cut to \(length) bytes") { try Self.parse(name, Array(file[..<length])) }
         }
-        let ja = try Self.file("tailorings/ja")
-        for length in [0, 23, 100, ja.count / 2, ja.count - 1] {
-            #expect(throws: (any Error).self, "ja.bin cut to \(length) bytes") { try CollationData.tailoring(bytes: Array(ja[..<length])) }
+    }
+
+    /// The parser of each file of `cutFilesThrow`.
+    static func parse(_ name: String, _ bytes: [UInt8]) throws {
+        switch name {
+        case "ucadata": _ = try CollationData(bytes: bytes)
+        case "nfd": _ = try bytes.withUnsafeBytes { try NormalizationData(raw: $0) }
+        default: _ = try CollationData.tailoring(bytes: bytes)
         }
     }
 }

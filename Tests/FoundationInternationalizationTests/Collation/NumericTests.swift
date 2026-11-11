@@ -57,10 +57,9 @@ struct NumericTests {
         try keysOrderedSame(["9999998", "9999999", "10000000", "10000001"])
     }
 
-    @Test func leadingZerosAreEqual() throws {
-        #expect(try cmp("00012", "12") == 0)
-        #expect(try cmp("0", "000") == 0)
-        #expect(try cmp("a001042490z", "a1042490z") == 0)
+    @Test(arguments: [("00012", "12"), ("0", "000"), ("a001042490z", "a1042490z")])
+    func leadingZerosAreEqual(a: String, b: String) throws {
+        #expect(try cmp(a, b) == 0)
     }
 
     @Test func longDigitRuns() throws {
@@ -76,11 +75,10 @@ struct NumericTests {
         #expect(try cmp("1200000000", "1200000001") < 0)
     }
 
-    @Test func digitRunsInContext() throws {
-        // Runs embedded in text (the Finder file-name case).
-        #expect(try cmp("file9.txt", "file10.txt") < 0)
-        #expect(try cmp("IMG_20240115.jpg", "IMG_20240116.jpg") < 0)
-        #expect(try cmp("v1.9.9", "v1.10.0") < 0)
+    /// Runs embedded in text (the Finder file-name case).
+    @Test(arguments: [("file9.txt", "file10.txt"), ("IMG_20240115.jpg", "IMG_20240116.jpg"), ("v1.9.9", "v1.10.0")])
+    func digitRunsInContext(smaller: String, larger: String) throws {
+        #expect(try cmp(smaller, larger) < 0)
     }
 
     @Test func numericSearchStillMatches() throws {

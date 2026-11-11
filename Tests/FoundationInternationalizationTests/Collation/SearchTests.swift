@@ -477,13 +477,12 @@ struct CollationSearchTests {
     }
 
     /// The same shape with the marks in the other canonical order, with the precomposed й spelled out, and uppercase — all reach the S2.1.3 branch.
-    @Test func discontiguousContractionPositionsAcrossOrderings() {
-        for text in ["и\u{0306}\u{0334}abc", "\u{0439}\u{0334}abc", "И\u{0334}\u{0306}abc"] {
-            let expected = trailingRange(of: 3, in: text)
-            let result = collator.search(for: "abc", in: text)
-            #expect(result != nil, "no match in \(text.debugDescription)")
-            #expect(result == expected, "wrong range in \(text.debugDescription)")
-        }
+    @Test(arguments: ["и\u{0306}\u{0334}abc", "\u{0439}\u{0334}abc", "И\u{0334}\u{0306}abc"])
+    func discontiguousContractionPositionsAcrossOrderings(text: String) {
+        let expected = trailingRange(of: 3, in: text)
+        let result = collator.search(for: "abc", in: text)
+        #expect(result != nil, "no match in \(text.debugDescription)")
+        #expect(result == expected, "wrong range in \(text.debugDescription)")
     }
 
     /// The range of the last `scalars` scalars of `text` (no Foundation string search, so the expectation is independent of the API under test).

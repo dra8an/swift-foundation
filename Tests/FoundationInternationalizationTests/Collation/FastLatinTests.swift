@@ -45,22 +45,21 @@ import Testing
         #expect(primaries[0x20] != 0)
     }
 
-    @Test func engagesForPlainText() throws {
+    /// Real results, not bail-outs, for plain ASCII and Latin-1 text.
+    @Test(arguments: [
+        ("ab", "ac", Int32(-1)),
+        ("ab", "ab", 0),
+        ("b", "a", 1),
+        ("côte", "côte", 0),       // U+00F4 is in the table
+        ("ab", "abc", -1),
+        ("Hello", "hello", 1),
+    ])
+    func engagesForPlainText(a: String, b: String, expected: Int32) throws {
         let (table, primaries, packed) = try Self.setup(CollationOptions())
-        // Real results, not bail-outs, for plain ASCII and Latin-1 text.
-        for (a, b, expected) in [
-            ("ab", "ac", Int32(-1)),
-            ("ab", "ab", 0),
-            ("b", "a", 1),
-            ("côte", "côte", 0),       // U+00F4 is in the table
-            ("ab", "abc", -1),
-            ("Hello", "hello", 1),
-        ] {
-            let got = CollationFastLatin.compare(
-                table: table, primaries: primaries, options: packed,
-                left: Self.side(a), right: Self.side(b))
-            #expect(got == expected, "\(a) vs \(b)")
-        }
+        let got = CollationFastLatin.compare(
+            table: table, primaries: primaries, options: packed,
+            left: Self.side(a), right: Self.side(b))
+        #expect(got == expected, "\(a) vs \(b)")
     }
 
     @Test func bailsOutWhereItMust() throws {
@@ -137,75 +136,83 @@ import Testing
     }
 
     /// The UTF-8 variant agrees with the scalar variant and handles the byte-level cases: two-byte Latin assembly, the three-byte punctuation block, and bail-outs for unsupported lead bytes.
-    @Test func utf8VariantMatchesScalarVariant() throws {
+    @Test(arguments: [
+        ("ab", "ac"), ("ab", "ab"), ("b", "a"), ("Hello", "hello"),
+        ("p\u{E9}ch\u{E9}", "p\u{EA}che"),       // 2-byte Latin-1 leads
+        ("\u{152}uf", "\u{153}uf"),              // Œ/œ: Latin Extended-A
+        ("a\u{2014}b", "a-b"),                   // em dash: E2 80 94
+        ("a\u{4E00}", "ab"),                     // CJK lead byte: bail
+        ("a\u{300}", "ab"),                      // combining mark: bail
+        ("ab", "abc"), ("", "a"),
+    ])
+    func utf8VariantMatchesScalarVariant(a: String, b: String) throws {
         let (table, primaries, packed) = try Self.setup(CollationOptions())
-        for (a, b) in [
-            ("ab", "ac"), ("ab", "ab"), ("b", "a"), ("Hello", "hello"),
-            ("p\u{E9}ch\u{E9}", "p\u{EA}che"),       // 2-byte Latin-1 leads
-            ("\u{152}uf", "\u{153}uf"),              // Œ/œ: Latin Extended-A
-            ("a\u{2014}b", "a-b"),                   // em dash: E2 80 94
-            ("a\u{4E00}", "ab"),                     // CJK lead byte: bail
-            ("a\u{300}", "ab"),                      // combining mark: bail
-            ("ab", "abc"), ("", "a"),
-        ] {
-            let viaScalars = CollationFastLatin.compare(
-                table: table, primaries: primaries, options: packed,
-                left: Self.side(a), right: Self.side(b))
-            let viaBytes = try Self.utf8Compare(a, b, table: table, primaries: primaries, packed: packed)
-            #expect(viaBytes == viaScalars, "\(a.debugDescription) vs \(b.debugDescription)")
-        }
+        let viaScalars = CollationFastLatin.compare(
+            table: table, primaries: primaries, options: packed,
+            left: Self.side(a), right: Self.side(b))
+        let viaBytes = try Self.utf8Compare(a, b, table: table, primaries: primaries, packed: packed)
+        #expect(viaBytes == viaScalars, "\(a.debugDescription) vs \(b.debugDescription)")
     }
 
-    /// The contraction lookahead consumes multi-byte characters correctly: da tailors "aa" (a contraction with its own fast Latin table).
-    @Test func utf8ContractionLookahead() throws {
-        let da = try RootCollator(tailoringNamed: "da")
+    private static let _da = Result { try RootCollator(tailoringNamed: "da") }
+    static var da: RootCollator { get throws { try _da.get() } }
+
+    /// The contraction lookahead consumes multi-byte characters correctly: da tailors "aa" (a contraction with its own fast Latin table), which sorts as a separate letter after z.
+    @Test(arguments: [("aa", "ab", Int32(1)), ("aa", "z", 1), ("ab", "ac", -1)])
+    func utf8ContractionLookahead(a: String, b: String, expected: Int32) throws {
+        let da = try Self.da
         #expect(!da.data.fastLatinTable.isEmpty)
         var primaries: [UInt16] = []
         let packed = CollationFastLatin.getOptions(
             table: da.data.fastLatinTable, scriptsData: try #require(da.base), reordering: nil,
             options: da.defaultOptions.icuOptions, primaries: &primaries)
         #expect(packed >= 0)
-        // "aa" sorts as a separate letter after z in Danish.
-        for (a, b, expected) in [("aa", "ab", Int32(1)), ("aa", "z", 1), ("ab", "ac", -1)] {
-            let got = try Self.utf8Compare(a, b, table: da.data.fastLatinTable, primaries: primaries, packed: packed)
-            #expect(got == expected, "\(a) vs \(b)")
+        let got = try Self.utf8Compare(a, b, table: da.data.fastLatinTable, primaries: primaries, packed: packed)
+        #expect(got == expected, "\(a) vs \(b)")
+    }
+
+    /// The same contraction through the integrated path, against sort keys (which never use fast Latin).
+    @Test(arguments: [("aa", "ab"), ("aa", "z"), ("haab", "hzb"), ("a\u{E5}", "aa")])
+    func danishContractionAgreesWithSortKeys(a: String, b: String) throws {
+        let da = try Self.da
+        let got = try da.compare(a, b)
+        let ka = try da.sortKey(for: a)
+        let kb = try da.sortKey(for: b)
+        let keyOrder: RootCollator.Order =
+            ka == kb ? .same : (ka.lexicographicallyPrecedes(kb) ? .ascending : .descending)
+        #expect(got == keyOrder, "\(a.debugDescription) vs \(b.debugDescription)")
+    }
+
+    /// The option sets of `integrationAgreesWithSortKeys`, by name.
+    static func integrationOptions(_ name: String) -> CollationOptions {
+        var o = CollationOptions()
+        switch name {
+        case "shifted": o.alternate = .shifted
+        case "quaternary-shifted": o.strength = .quaternary; o.alternate = .shifted
+        case "upperFirst": o.caseFirst = .upperFirst
+        case "caseLevel": o.caseLevel = true
+        case "primary": o.strength = .primary
+        case "identical": o.strength = .identical
+        default: break
         }
-        // Integrated, against sort keys (which never use fast Latin).
-        for (a, b) in [("aa", "ab"), ("aa", "z"), ("haab", "hzb"), ("a\u{E5}", "aa")] {
-            let got = try da.compare(a, b)
-            let ka = try da.sortKey(for: a)
-            let kb = try da.sortKey(for: b)
-            let keyOrder: RootCollator.Order =
-                ka == kb ? .same : (ka.lexicographicallyPrecedes(kb) ? .ascending : .descending)
-            #expect(got == keyOrder, "\(a.debugDescription) vs \(b.debugDescription)")
-        }
+        return o
     }
 
     /// The integrated path agrees with sort keys (which never use fast Latin) for pairs chosen to traverse every level loop and the punctuation/contraction handling, across option sets.
-    @Test func integrationAgreesWithSortKeys() throws {
-        let pairs = [
-            ("ab", "ac"), ("ab", "Ab"), ("ab", "ab"), ("p\u{E9}ch\u{E9}", "p\u{EA}che"),
-            ("black-bird", "blackbird"), ("black bird", "black-bird"),
-            ("a\u{2014}b", "a-b"),  // em dash: punctuation block lookup
-            ("Tt", "tT"), ("a", "a\u{1}"), ("ab", "abc"), ("", "a"),
-        ]
-        for (name, options) in [
-            ("default", CollationOptions()),
-            ("shifted", { var o = CollationOptions(); o.alternate = .shifted; return o }()),
-            ("quaternary-shifted", { var o = CollationOptions(); o.strength = .quaternary; o.alternate = .shifted; return o }()),
-            ("upperFirst", { var o = CollationOptions(); o.caseFirst = .upperFirst; return o }()),
-            ("caseLevel", { var o = CollationOptions(); o.caseLevel = true; return o }()),
-            ("primary", { var o = CollationOptions(); o.strength = .primary; return o }()),
-            ("identical", { var o = CollationOptions(); o.strength = .identical; return o }()),
-        ] {
-            for (a, b) in pairs {
-                let got = try Self.root.compare(a, b, options: options)
-                let ka = try Self.root.sortKey(for: a, options: options)
-                let kb = try Self.root.sortKey(for: b, options: options)
-                let keyOrder: RootCollator.Order =
-                    ka == kb ? .same : (ka.lexicographicallyPrecedes(kb) ? .ascending : .descending)
-                #expect(got == keyOrder, "[\(name)] \(a.debugDescription) vs \(b.debugDescription)")
-            }
-        }
+    @Test(arguments: ["default", "shifted", "quaternary-shifted", "upperFirst", "caseLevel", "primary", "identical"], [
+        ("ab", "ac"), ("ab", "Ab"), ("ab", "ab"), ("p\u{E9}ch\u{E9}", "p\u{EA}che"),
+        ("black-bird", "blackbird"), ("black bird", "black-bird"),
+        ("a\u{2014}b", "a-b"),  // em dash: punctuation block lookup
+        ("Tt", "tT"), ("a", "a\u{1}"), ("ab", "abc"), ("", "a"),
+    ])
+    func integrationAgreesWithSortKeys(optionSet: String, pair: (String, String)) throws {
+        let options = Self.integrationOptions(optionSet)
+        let (a, b) = pair
+        let got = try Self.root.compare(a, b, options: options)
+        let ka = try Self.root.sortKey(for: a, options: options)
+        let kb = try Self.root.sortKey(for: b, options: options)
+        let keyOrder: RootCollator.Order =
+            ka == kb ? .same : (ka.lexicographicallyPrecedes(kb) ? .ascending : .descending)
+        #expect(got == keyOrder, "[\(optionSet)] \(a.debugDescription) vs \(b.debugDescription)")
     }
 }

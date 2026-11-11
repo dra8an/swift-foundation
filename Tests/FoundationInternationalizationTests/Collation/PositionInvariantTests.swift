@@ -119,48 +119,45 @@ import Testing
     ]
 
     /// A match placed after a discontiguous contraction must be reported at its true offset. If the count misses that scalar, the range comes back one scalar short, boundary validation rejects it, and the API returns nil — a missed match, not a shifted one.
-    @Test func matchAfterDiscontiguousContractionIsReportedCorrectly() throws {
+    @Test(arguments: Self.discontiguousSequences)
+    func matchAfterDiscontiguousContractionIsReportedCorrectly(prefix: String) throws {
         let collator = try Self.collator
-        for prefix in Self.discontiguousSequences {
-            let text = prefix + "abc"
-            let expected = Self.trailingRange(of: 3, in: text)
-            let forward = collator.search(for: "abc", in: text)
-            #expect(forward != nil, "forward search missed 'abc' in \(text.debugDescription)")
-            #expect(forward == expected, "forward range wrong in \(text.debugDescription)")
+        let text = prefix + "abc"
+        let expected = Self.trailingRange(of: 3, in: text)
+        let forward = collator.search(for: "abc", in: text)
+        #expect(forward != nil, "forward search missed 'abc' in \(text.debugDescription)")
+        #expect(forward == expected, "forward range wrong in \(text.debugDescription)")
 
-            let backward = collator.searchBackwards(for: "abc", in: text)
-            #expect(backward != nil, "backward search missed 'abc' in \(text.debugDescription)")
-            #expect(backward == expected, "backward range wrong in \(text.debugDescription)")
-        }
+        let backward = collator.searchBackwards(for: "abc", in: text)
+        #expect(backward != nil, "backward search missed 'abc' in \(text.debugDescription)")
+        #expect(backward == expected, "backward range wrong in \(text.debugDescription)")
     }
 
     /// The same sequences with a decomposing character in front, so the NFD offset → source offset map is exercised on top of the drifted count (source scalars and NFD scalars no longer line up).
-    @Test func matchAfterDiscontiguousContractionWithDecompositionInFront() throws {
+    @Test(arguments: Self.discontiguousSequences)
+    func matchAfterDiscontiguousContractionWithDecompositionInFront(core: String) throws {
         let collator = try Self.collator
-        for core in Self.discontiguousSequences {
-            let text = "caf\u{00e9} " + core + "abc"   // é precomposed: NFD expands it
-            let expected = Self.trailingRange(of: 3, in: text)
-            let result = collator.search(for: "abc", in: text)
-            #expect(result != nil, "missed 'abc' in \(text.debugDescription)")
-            #expect(result == expected, "wrong range in \(text.debugDescription)")
-        }
+        let text = "caf\u{00e9} " + core + "abc"   // é precomposed: NFD expands it
+        let expected = Self.trailingRange(of: 3, in: text)
+        let result = collator.search(for: "abc", in: text)
+        #expect(result != nil, "missed 'abc' in \(text.debugDescription)")
+        #expect(result == expected, "wrong range in \(text.debugDescription)")
     }
 
     /// Content round-trip: whatever range a search reports, the text at that range must itself compare equal to the pattern. It needs no reference answers, and it catches any misalignment regardless of cause — a range off by one scalar cannot collate equal to the pattern.
-    @Test func reportedRangeContentsMatchThePattern() throws {
+    @Test(arguments: Self.discontiguousSequences)
+    func reportedRangeContentsMatchThePattern(core: String) throws {
         let collator = try Self.collator
         var checked = 0
-        for core in Self.discontiguousSequences {
-            for pattern in ["abc", "XY", core] {
-                let text = "pre " + core + "mid" + pattern + " post"
-                guard let r = collator.search(for: pattern, in: text) else { continue }
-                checked += 1
-                let matched = String(text[r])
-                #expect(
-                    try collator.compare(matched, pattern) == .same,
-                    "reported range \(matched.debugDescription) does not collate equal to pattern \(pattern.debugDescription) in \(text.debugDescription)"
-                )
-            }
+        for pattern in ["abc", "XY", core] {
+            let text = "pre " + core + "mid" + pattern + " post"
+            guard let r = collator.search(for: pattern, in: text) else { continue }
+            checked += 1
+            let matched = String(text[r])
+            #expect(
+                try collator.compare(matched, pattern) == .same,
+                "reported range \(matched.debugDescription) does not collate equal to pattern \(pattern.debugDescription) in \(text.debugDescription)"
+            )
         }
         #expect(checked > 0, "no matches exercised the round-trip invariant")
     }
@@ -169,42 +166,34 @@ import Testing
     ///
     /// The hard case is a discontiguous match whose skipped mark is COMPLETELY
     /// IGNORABLE: the mark is filtered out of both the pattern CEs and the text buffer, so the match's last CE is the contraction itself — and that CE consumed a NON-CONTIGUOUS scalar set (the base plus a scalar on the far side of the skipped mark). Reporting the last CE's end as the match end excluded the far-side scalar, landed mid-combining-sequence, and was rejected by boundary validation, so the API returned nil. Fixed by tracking per-CE NFD spans and taking the min start / max end over a match's CEs; see CEIterator.spanStart and confirmedRange.
-    @Test func selfSearchCoversTheWholeString() throws {
+    @Test(arguments: Self.discontiguousSequences)
+    func selfSearchCoversTheWholeString(s: String) throws {
         let collator = try Self.collator
-        for s in Self.discontiguousSequences {
-            let r = collator.search(for: s, in: s)
-            #expect(r != nil, "self-search missed \(s.debugDescription)")
-            #expect(r == s.startIndex..<s.endIndex, "self-search range wrong for \(s.debugDescription)")
-        }
+        let r = collator.search(for: s, in: s)
+        #expect(r != nil, "self-search missed \(s.debugDescription)")
+        #expect(r == s.startIndex..<s.endIndex, "self-search range wrong for \(s.debugDescription)")
     }
 
     /// The same, with the discontiguous contraction at the END of a longer text: the match's end must cover every scalar that its CEs consumed, so exercise it both alone and after leading content.
-    @Test func matchEndingAtDiscontiguousContraction() throws {
+    @Test(arguments: Self.discontiguousSequences, ["", "abc ", "caf\u{00e9} "])
+    func matchEndingAtDiscontiguousContraction(core: String, lead: String) throws {
         let collator = try Self.collator
-        for core in Self.discontiguousSequences {
-            for lead in ["", "abc ", "caf\u{00e9} "] {
-                let text = lead + core
-                let expected = Self.trailingRange(of: core.unicodeScalars.count, in: text)
-                let r = collator.search(for: core, in: text)
-                #expect(r != nil, "missed \(core.debugDescription) in \(text.debugDescription)")
-                #expect(r == expected, "wrong range for \(core.debugDescription) in \(text.debugDescription)")
-            }
-        }
+        let text = lead + core
+        let expected = Self.trailingRange(of: core.unicodeScalars.count, in: text)
+        let r = collator.search(for: core, in: text)
+        #expect(r != nil, "missed \(core.debugDescription) in \(text.debugDescription)")
+        #expect(r == expected, "wrong range for \(core.debugDescription) in \(text.debugDescription)")
     }
 
     /// A Substring receiver must produce indices in the receiver's own index space, not the parent buffer's.
-    @Test func substringReceiverReportsSelfRelativeIndices() throws {
+    @Test(arguments: Self.discontiguousSequences)
+    func substringReceiverReportsSelfRelativeIndices(core: String) throws {
         let collator = try Self.collator
-        for core in Self.discontiguousSequences {
-            let parent = "IGNORE THIS PREFIX " + core + "abc"
-            let receiver = parent.dropFirst("IGNORE THIS PREFIX ".count)
-            guard let r = collator.search(for: "abc", in: String(receiver)) else {
-                Issue.record("missed 'abc' in substring receiver for \(core.debugDescription)")
-                continue
-            }
-            let asString = String(receiver)
-            #expect(asString[r] == "abc", "substring receiver range points at \(asString[r].debugDescription)")
-        }
+        let parent = "IGNORE THIS PREFIX " + core + "abc"
+        let receiver = parent.dropFirst("IGNORE THIS PREFIX ".count)
+        let r = try #require(collator.search(for: "abc", in: String(receiver)), "missed 'abc' in substring receiver for \(core.debugDescription)")
+        let asString = String(receiver)
+        #expect(asString[r] == "abc", "substring receiver range points at \(asString[r].debugDescription)")
     }
 
     // MARK: Systematic discontiguous coverage, derived from the data

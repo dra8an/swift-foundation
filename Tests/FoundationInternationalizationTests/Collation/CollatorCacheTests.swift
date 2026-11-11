@@ -18,43 +18,42 @@ import FoundationEssentials
 @Suite struct CollatorCacheTests {
     static let strings: [String] = CollationConcurrencyTests.strings
 
-    static func collators() throws -> [RootCollator] {
-        try [RootCollator()] + ["th", "sv", "ja", "fr_CA", "da"].map { try RootCollator(tailoringNamed: $0) }
+    static func collator(_ name: String) throws -> RootCollator {
+        name == "root" ? try RootCollator() : try RootCollator(tailoringNamed: name)
     }
 
     /// `compareWithDefaultOptions` skips the options compare of the entry guard; the results must not change.
-    @Test func defaultOptionsCompareMatchesCompare() throws {
+    @Test(arguments: ["root", "th", "sv", "ja", "fr_CA", "da"])
+    func defaultOptionsCompareMatchesCompare(name: String) throws {
         let s = Self.strings
-        for collator in try Self.collators() {
-            for i in s.indices {
-                for j in [(i + 1) % s.count, (i * 7 + 3) % s.count, i] {
-                    #expect(try collator.compareWithDefaultOptions(s[i], s[j]) == collator.compare(s[i], s[j]),
-                            "\(s[i].debugDescription) vs \(s[j].debugDescription)")
-                }
+        let collator = try Self.collator(name)
+        for i in s.indices {
+            for j in [(i + 1) % s.count, (i * 7 + 3) % s.count, i] {
+                #expect(try collator.compareWithDefaultOptions(s[i], s[j]) == collator.compare(s[i], s[j]),
+                        "\(s[i].debugDescription) vs \(s[j].debugDescription)")
             }
         }
     }
 
     /// The pointer entries against the instance methods, on the explicit-locale slots.
-    @Test func pointerEntriesMatchInstanceMethods() throws {
+    @Test(arguments: ["en_US", "sv_SE", "fr_CA", "th_TH", "ja_JP"])
+    func pointerEntriesMatchInstanceMethods(id: String) throws {
         let s = Self.strings
         var secondary = CollationOptions(); secondary.strength = .secondary
         var primaryNumeric = CollationOptions(); primaryNumeric.strength = .primary; primaryNumeric.numeric = true
-        for id in ["en_US", "sv_SE", "fr_CA", "th_TH", "ja_JP"] {
-            let p = try #require(CollatorCache.shared.collator(in: Locale(identifier: id)))
-            let c = p.pointee
-            #expect(RootCollator.defaultOptions(at: p) == c.defaultOptions)
-            for i in s.indices {
-                let a = s[i], b = s[(i + 1) % s.count]
-                #expect(try RootCollator.compareWithDefaultOptions(at: p, a, b) == c.compare(a, b))
-                for o in [secondary, primaryNumeric] {
-                    #expect(try RootCollator.compare(at: p, a, b, options: o) == c.compare(a, b, options: o))
-                }
-                let text = a + " " + b
-                #expect(RootCollator.contains(at: p, pattern: b, in: text, options: secondary) == c.contains(pattern: b, in: text, options: secondary))
-                #expect(RootCollator.search(at: p, for: b, in: text, options: secondary, backwards: false) == c.search(for: b, in: text, options: secondary))
-                #expect(RootCollator.search(at: p, for: b, in: text, options: secondary, backwards: true) == c.searchBackwards(for: b, in: text, options: secondary))
+        let p = try #require(CollatorCache.shared.collator(in: Locale(identifier: id)))
+        let c = p.pointee
+        #expect(RootCollator.defaultOptions(at: p) == c.defaultOptions)
+        for i in s.indices {
+            let a = s[i], b = s[(i + 1) % s.count]
+            #expect(try RootCollator.compareWithDefaultOptions(at: p, a, b) == c.compare(a, b))
+            for o in [secondary, primaryNumeric] {
+                #expect(try RootCollator.compare(at: p, a, b, options: o) == c.compare(a, b, options: o))
             }
+            let text = a + " " + b
+            #expect(RootCollator.contains(at: p, pattern: b, in: text, options: secondary) == c.contains(pattern: b, in: text, options: secondary))
+            #expect(RootCollator.search(at: p, for: b, in: text, options: secondary, backwards: false) == c.search(for: b, in: text, options: secondary))
+            #expect(RootCollator.search(at: p, for: b, in: text, options: secondary, backwards: true) == c.searchBackwards(for: b, in: text, options: secondary))
         }
     }
 

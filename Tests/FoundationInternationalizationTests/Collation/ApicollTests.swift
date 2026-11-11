@@ -19,26 +19,30 @@ import Testing
     static var root: RootCollator { get throws { try _root.get() } }
 
     /// TestProperty: basic comparisons at default (tertiary) strength under the en collator (root-equivalent for these strings).
-    @Test func propertyComparisons() throws {
-        let c = try Self.root
-        #expect(try c.compare("ab", "abc") == .ascending)
-        #expect(try c.compare("ab", "AB") == .ascending)
-        #expect(try c.compare("blackbird", "black-bird") == .descending)
-        #expect(try c.compare("black bird", "black-bird") == .ascending)
-        #expect(try c.compare("Hello", "hello") == .descending)
-        #expect(try c.compare("", "") == .same)
-        #expect(try c.compare("ab\u{E4}", "ab\u{DF}") == .ascending)  // ab-ä < ab-ß
+    @Test(arguments: [
+        ("ab", "abc", RootCollator.Order.ascending),
+        ("ab", "AB", .ascending),
+        ("blackbird", "black-bird", .descending),
+        ("black bird", "black-bird", .ascending),
+        ("Hello", "hello", .descending),
+        ("", "", .same),
+        ("ab\u{E4}", "ab\u{DF}", .ascending),  // ab-ä < ab-ß
+    ])
+    func propertyComparisons(left: String, right: String, expected: RootCollator.Order) throws {
+        #expect(try Self.root.compare(left, right) == expected)
     }
 
     /// TestCompare: "Abcda" vs "abcda" is a tertiary (case) difference only.
-    @Test func compareStrengths() throws {
+    @Test(arguments: [(CollationOptions.Strength.tertiary, RootCollator.Order.descending), (.secondary, .same), (.primary, .same)])
+    func compareStrengths(strength: CollationOptions.Strength, expected: RootCollator.Order) throws {
         var options = CollationOptions()
-        #expect(options.strength == .tertiary)  // ICU's default strength
-        #expect(try Self.root.compare("Abcda", "abcda", options: options) == .descending)
-        options.strength = .secondary
-        #expect(try Self.root.compare("Abcda", "abcda", options: options) == .same)
-        options.strength = .primary
-        #expect(try Self.root.compare("Abcda", "abcda", options: options) == .same)
+        options.strength = strength
+        #expect(try Self.root.compare("Abcda", "abcda", options: options) == expected)
+    }
+
+    /// ICU's default strength.
+    @Test func defaultStrengthIsTertiary() {
+        #expect(CollationOptions().strength == .tertiary)
     }
 
     /// TestCollationKey: the empty string's key has empty levels (exactly 01 01 00 at tertiary strength), and a string of completely ignorable characters (U+0001, U+034F CGJ) produces the same key.

@@ -117,20 +117,17 @@ import Testing
     }
 
     /// The release quick path does not test the variable top: every primary that quickCJKPrimary returns for a CJK unified ideograph must be above the highest variable top (maxVariable = currency), so that a primary difference decides under alternate=shifted too. Checked here for every ideograph of root and of all bundled tailorings.
-    @Test func quickPrimariesAreNeverVariable() throws {
-        let names = RestartSafetyTests.tailorings.sorted()
-        try #require(names.count > 90, "the bundled tailorings")
+    @Test(arguments: [""] + RestartSafetyTests.tailorings.sorted())
+    func quickPrimariesAreNeverVariable(name: String) throws {
         var failures = 0
-        for name in [""] + names {
-            let c = try RestartBackupTests.collator(name)
-            let maxVariableTop = c.quickCJKMaxVariableTopForTesting
-            for range in [UInt32(0x4E00)...0x9FFF, 0x3400...0x4DBF, 0x20000...0x2A6DF, 0x2A700...0x2EBEF, 0x30000...0x323AF] {
-                for cp in range {  // every code point of these ranges, stricter than the CJK-unified test of the hot path
-                    let p = c.quickCJKPrimaryForTesting(cp)
-                    if p != 0 && p <= maxVariableTop {
-                        failures += 1
-                        if failures <= 5 { Issue.record("[\(name.isEmpty ? "root" : name)] U+\(String(cp, radix: 16)): quick primary \(String(p, radix: 16)) <= variable top \(String(maxVariableTop, radix: 16))") }
-                    }
+        let c = try RestartBackupTests.collator(name)
+        let maxVariableTop = c.quickCJKMaxVariableTopForTesting
+        for range in [UInt32(0x4E00)...0x9FFF, 0x3400...0x4DBF, 0x20000...0x2A6DF, 0x2A700...0x2EBEF, 0x30000...0x323AF] {
+            for cp in range {  // every code point of these ranges, stricter than the CJK-unified test of the hot path
+                let p = c.quickCJKPrimaryForTesting(cp)
+                if p != 0 && p <= maxVariableTop {
+                    failures += 1
+                    if failures <= 5 { Issue.record("[\(name.isEmpty ? "root" : name)] U+\(String(cp, radix: 16)): quick primary \(String(p, radix: 16)) <= variable top \(String(maxVariableTop, radix: 16))") }
                 }
             }
         }
