@@ -29,7 +29,7 @@ follows, from a region-to-method table:
 
 | Regions | Method | Verified against |
 |---|---|---|
-| TR | Diyanet era rules + 5 named corrections | 707/707 published months, AH 1399–1457 |
+| TR | Diyanet era rules + 4 named corrections | 707/707 published months, AH 1399–1457 |
 | MY | MABIMS at the official reference point + 2 named corrections | 98/98 published months |
 | ID | MABIMS at Banda Aceh, geocentric altitude | 25/25 published months |
 | SA, KW, QA, BH, AE, YE, JO, PS, LB, SY, IQ, SD, DZ, TN, LY, EG, AF, SO, and any unlisted region | Umm al-Qura table (KACST, AH 1300–1600; rule + 1 correction beyond) | 131/131 published; 77% of the bloc's announcements (70–93% per country) |

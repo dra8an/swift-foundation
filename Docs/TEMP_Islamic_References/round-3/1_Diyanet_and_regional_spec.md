@@ -1,26 +1,36 @@
 # Diyanet (Türkiye) Hijri calendar: computation spec for the port
 
-Status 2026-11-09: reproduces all 707 published month starts AH 1399–1457 (1 Dec 1978 to about Feb 2036); verified by
-`Tests/CalendarAstronomicalTests/CrescentDiyanetPublishedTests.swift` in icu4swift (7 s). Reference implementation:
+Status 2026-11-11: reproduces all 707 published month starts AH 1399–1457 (1 Dec 1978 to about Feb 2036), 703 by the
+era rules alone and 4 by named corrections; verified by
+`Tests/CalendarAstronomicalTests/CrescentDiyanetPublishedTests.swift` in icu4swift (9 s). Reference implementation:
 `Sources/CalendarAstronomical/CrescentRules.swift` (`DiyanetEra`, `diyanetCorrections`, `diyanetMonthLength`,
 `diyanetStartsTomorrow`), astronomy in `Sources/AstronomicalEngine/CrescentAstronomy.swift` and `LunarSeriesTables.swift`.
-Background and every rejected hypothesis: `Docs/CRESCENT_RULES_RESULTS.md`. Not yet delivered to the port.
+Background and every rejected hypothesis: `Docs/CRESCENT_RULES_RESULTS.md`. Delivered to the port as round 3
+(2026-11-09). Changed on 2026-11-11 (results doc, Round 10; round 5 for the port): a separate rule for first days
+before 1980, and four corrections where there were five.
 
 ## 1. The decision, month by month
 
 A month that begins on day `start` has 29 days if the new month begins "tomorrow" as seen from the evening of
 `start + 28` (its 29th day), else 30. Let `midnight` be 00:00 UTC at the end of that evening's UTC date.
 
+0. **First days before 1 January 1980** (`before1980`, by the Gregorian date of the candidate first day `start + 29`):
+   the older test decides alone, and steps 1–4 are not used. At Mecca (21°25′21″ N, 39°49′32″ E; the elevation is not
+   used) take the sunset of that evening (sun's upper limb at the −50′ horizon) and the first moonset after
+   `sunset − 8 h` (moon's centre, seen from the surface, at −(34′ + 0.2725 × horizontal parallax), searched within
+   30 hours). If `moonset − sunset ≥ 18.5 minutes`: 29 days, else 30 (also 30 if the moon does not set in that time).
+   Any limit from 18.1 to 18.7 minutes gives the same published dates.
+
 1. **Conjunction.** `conjunction = newMoonBefore(midnight + 12 h)`. If `midnight + 12 h − conjunction ≥ 3 days`, the
    crescent is not new: 30 days.
 2. **Criterion at a place and moment** (`meets`): the moment is after the conjunction and less than 3 days after it;
    the moon's geocentric altitude ≥ 4° (pre-filter); apparent altitude = geocentric altitude − parallax in altitude +
    refraction ≥ **5°**; geocentric (true) elongation between the centres of moon and sun ≥ **8°**.
-3. **The 1978 rule (all eras).** Geocentric elongation at `midnight` ≥ 8°, and at `midnight` some point on the sunset
+3. **The 1978 rule (all eras from 1980).** Geocentric elongation at `midnight` ≥ 8°, and at `midnight` some point on the sunset
    line (sun's upper limb at the −50′ horizon) satisfies `meets`. Scan latitudes −88° … +88° in 0.1° steps; for each
    latitude the longitude where the sun sets at exactly `midnight` (`sunsetLongitude`). Any hit: 29 days.
 4. **Era extension**, by the Gregorian calendar year of the candidate first day `start + 29`:
-   - **≤ 2008** (`before2009`) and **2014–2016** (`years2014to2016`): none. 30 days.
+   - **1980–2008** (`years1980to2008`) and **2014–2016** (`years2014to2016`): none. 30 days.
    - **2009–2013** (`years2009to2013`): geocentric elongation at `midnight + 12 h` ≥ 8°, and at some latitude 10° N …
      88° N (0.25° steps) the sunset at longitude −179.999° on this evening is ≥ `midnight`, has elongation ≥ 8° and
      satisfies `meets`. Hit: 29 days, else 30.
@@ -28,11 +38,11 @@ A month that begins on day `start` has 29 days if the new month begins "tomorrow
      geometric centre, no margin) at Wellington (41.2865° S, 174.7762° E) on the local morning that follows the evening
      (the first dawn after `midnight − 18 h`), with `dawn − conjunction < 2 days`; and at some row of the American
      west-coast table the sunset on this evening is ≥ `midnight`, has elongation ≥ 8° and satisfies `meets`. Hit: 29.
-5. **Corrections.** If the *following* month is one of AH 1399-9, 1401-8, 1411-5, 1444-11, 1453-12, the month has 30
+5. **Corrections.** If the *following* month is one of AH 1401-8, 1411-5, 1444-11, 1453-12, the month has 30
    days regardless of steps 1–4.
 
-Era boundaries as rata die (RD 1 = 1 Jan 1 CE proleptic Gregorian): 2009-01-01 = 733408, 2014-01-01 = 735234,
-2017-01-01 = 736330.
+Era boundaries as rata die (RD 1 = 1 Jan 1 CE proleptic Gregorian): 1980-01-01 = 722815, 2009-01-01 = 733408,
+2014-01-01 = 735234, 2017-01-01 = 736330.
 
 ## 2. Conventions that matter (calibrated on Diyanet's own printed numbers)
 
@@ -60,26 +70,33 @@ Several published starts are decided by margins that a different ephemeris or co
 An implementation that reproduces the 707 published dates with these conventions is correct; one that uses another
 library must be re-validated against the same 707 dates (`crescent_official_dates.csv`, rows `diyanet,diyanet`).
 
-## 4. The five corrections, and why they are data
+## 4. The four corrections, and why they are data
 
-All five are "rule says 29 days, Diyanet printed 30", each with a started month that has equal or worse numbers:
+All four are "rule says 29 days, Diyanet printed 30". Each was re-examined on 2026-11-11 (results doc, Round 10):
 
 | Month given 30 days before | First day (published) | Reason |
 |---|---|---|
-| Şaban → **1 Ramazan 1399** | 26 Jul 1979 | last year before the computed rule was in force (van Gent: rule from 1 Muharrem 1400; AH 1393–1398 have 2–3 misses a year, 1400 none) |
-| **1 Şaban 1401** | 4 Jun 1981 | elongation reached 8° 13.9 min before the cut-off; Jul 1993 started at 13.8 min |
-| **1 Cemaziyelevvel 1411** | 19 Nov 1990 | 43 seconds before the cut-off |
-| **1 Zilkade 1444** | 21 May 2023 | mainland Alaska passes by +0.222°; May 2030 started on +0.083° at the same coast: the 2023–2027 computation run's mainland definition |
-| **1 Zilhicce 1453** | 13 Mar 2032 | +0.030° (3.6 min of sunset) at the tip of the Seward Peninsula; Jun 2021 started on 3.6 min the other way |
+| **1 Şaban 1401** | 4 Jun 1981 | the elongation reached 8° 14.1 minutes before the cut-off (13.9 with our series), yet July 1993 started with 13.8: the published list contradicts itself, and no clock offset or threshold gives both |
+| **1 Cemaziyelevvel 1411** | 19 Nov 1990 | 46 seconds before the cut-off in universal time (54 with our series), 12 seconds after it in dynamical time, the scale of the almanacs of the time. A program that used dynamical time before 2009 would refuse this month and change no other; one decision supports that, so it stays a correction |
+| **1 Zilkade 1444** | 21 May 2023 | mainland Alaska passes with +0.222°; May 2030 started with +0.083° on the same coast. No shift of the altitude and elongation thresholds refuses this month and keeps the others |
+| **1 Zilhicce 1453** | 13 Mar 2032 | +0.030° at the tip of the Seward Peninsula, about two minutes of sunset on the wrong side of June 2021 (started with +0.012°); the new moon is 16 minutes before dawn at Wellington, where the smallest margin of any start is 24 |
+
+Ramazan 1399 (26 Jul 1979) was the fifth correction until 2026-11-11. It is not an exception: the 1978 rule took effect
+with the 1980 calendar, and the older test of step 0 gives the published date (moonset 13.2 minutes after sunset at
+Mecca).
 
 ## 5. Range of validity
 
-- **AH 1399 onward:** computed as above. Diyanet publishes to AH 1457 (2035); later years follow from the `from2017`
-  rule until Diyanet publishes otherwise; any new deviation is one more entry in the correction list.
-- **Before AH 1399 (Dec 1978):** Diyanet used other methods (Fatin Gökmen's Morocco-observer system until 1974, the
-  1975–1978 practice undocumented; Keleş 2016 p. 375, van Gent). The 1978 rule reproduces only 617 of 971 months
-  1900–1978. The port should either state that the Diyanet calendar begins at AH 1399 or document the pre-1399 output
-  as an approximation.
+- **First days from 1 January 1980:** the 1978 rule and its later forms, as above. Diyanet publishes to AH 1457
+  (2035); later years follow from the `from2017` rule until Diyanet publishes otherwise; any new deviation is one more
+  entry in the correction list.
+- **First days from 1 December 1978 to 20 December 1979** (AH 1399-1 … 1400-2, 14 decisions): the older test of step 0.
+  All 14 are reproduced. The 1978 rule gives 13 of them; the one it misses is Ramazan 1399.
+- **Before AH 1399:** the older test is an approximation, not Diyanet's documented method (Fatin Gökmen's
+  Morocco-observer system until 1974, the 1975–1979 practice undocumented; Keleş 2016 p. 375, van Gent). Against
+  Diyanet's published list it gives 13 of 13 for first days in 1978, 234 of 247 for 1960–1979, about 93% for 1925–1959
+  with a limit near 22.5 minutes, and under 75% before 1925. The 1978 rule gives 617 of 971 for 1900–1978. The port
+  should either state that the Diyanet calendar begins at AH 1399 or document the earlier output as an approximation.
 
 ## 6. Test data
 
@@ -103,7 +120,7 @@ correction are the cross-check and the fallback beyond the table.
 
 | Calendar | Verified | Position |
 |---|---|---|
-| Diyanet | 707/707 (era rules + 5 corrections) | ship; §1–6 |
+| Diyanet | 707/707 (era rules 703 + 4 corrections) | ship; §1–6 |
 | Umm al-Qura | 131/131 (rule + 1 correction) | ship as ICU does (KACST table AH 1300–1600); rule as cross-check and fallback; §7 |
 | Malaysia (JAKIM) | 96/98 by rule; 98/98 with 2 corrections (AH 1443-10 Labuan sighting override; AH 1449-8, 0.015°) | ship with the two corrections; document that Ramadan, Syawal and Zulhijjah announcements may override the computed takwim |
 | Indonesia (Kemenag) | 25/25 | ship; same documentation as Malaysia (sidang isbat) |
@@ -149,7 +166,7 @@ computed authorities 26/29 (90%; the misses are compilation errors and Indonesia
 
 | Method | Verified range | Before the range | After the range |
 |---|---|---|---|
-| Diyanet era rules + corrections | AH 1399–1457 (Dec 1978 – ~Feb 2036), 707/707 | other methods were in use (Gökmen's Morocco observer to 1974; 1975–1978 undocumented); the 1978 rule matches 617 of 971 months 1900–1978 | the 2017+ rule continues; each new Diyanet publication is checked and, if needed, one correction added |
+| Diyanet era rules + corrections | AH 1399–1457 (Dec 1978 – ~Feb 2036), 707/707 | other methods were in use (Gökmen's Morocco observer to 1974; 1975–1979 undocumented); the older test of §1 step 0 matches 234 of 247 months of 1960–1979 and less before; the 1978 rule matches 617 of 971 months 1900–1978 | the 2017+ rule continues; each new Diyanet publication is checked and, if needed, one correction added |
 | Umm al-Qura table | AH 1300–1600 (the KACST table as ICU ships it); rule + correction verified AH 1440–1450, 131/131 | nothing published | rule (conjunction before sunset, moonset after sunset at the Kaaba) |
 | Malaysia | AH 1440–1460 published takwim, 98/98 with 2 corrections; the 1992 criterion is applied before the 2022 edition but is verified only inside this range | unverified | MABIMS 2021 at Pulau Perak continues |
 | Indonesia | AH 1440–1460, 25/25 | unverified (pre-2022 criterion applied) | MABIMS 2021 at Banda Aceh continues |

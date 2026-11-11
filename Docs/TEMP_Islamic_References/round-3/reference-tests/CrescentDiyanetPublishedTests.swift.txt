@@ -1,8 +1,8 @@
 // Diyanet's published calendar, AH 1399–1457 (December 1978 to about February 2036): every month start computed from
 // the era rules, compared with the published first days in crescent_official_dates.csv (rows rule=diyanet).
 //
-// Two facts are asserted. With the five named corrections the computation reproduces all 707 published decisions.
-// Without them the era rules alone reproduce exactly 702, and the five misses are exactly `diyanetCorrections`
+// Two facts are asserted. With the four named corrections the computation reproduces all 707 published decisions.
+// Without them the era rules alone reproduce exactly 703, and the four misses are exactly `diyanetCorrections`
 // (so neither the rule nor the data can drift unnoticed). Runs in a few minutes.
 
 import Testing
@@ -36,10 +36,13 @@ private func publishedDiyanetStarts() -> [Int: Int64] {
 
 @Suite struct CrescentDiyanetPublishedTests {
     @Test func eraBoundaries() {
+        #expect(rd(1980, 1, 1) == 722815)
         #expect(rd(2009, 1, 1) == 733408)
         #expect(rd(2014, 1, 1) == 735234)
         #expect(rd(2017, 1, 1) == 736330)
-        #expect(CrescentRules.DiyanetEra(firstDay: RataDie(rd(2008, 12, 31))) == .before2009)
+        #expect(CrescentRules.DiyanetEra(firstDay: RataDie(rd(1979, 12, 31))) == .before1980)
+        #expect(CrescentRules.DiyanetEra(firstDay: RataDie(rd(1980, 1, 1))) == .years1980to2008)
+        #expect(CrescentRules.DiyanetEra(firstDay: RataDie(rd(2008, 12, 31))) == .years1980to2008)
         #expect(CrescentRules.DiyanetEra(firstDay: RataDie(rd(2009, 1, 1))) == .years2009to2013)
         #expect(CrescentRules.DiyanetEra(firstDay: RataDie(rd(2014, 1, 1))) == .years2014to2016)
         #expect(CrescentRules.DiyanetEra(firstDay: RataDie(rd(2017, 1, 1))) == .from2017)
@@ -64,6 +67,6 @@ private func publishedDiyanetStarts() -> [Int: Int64] {
         print("DIYANET|published decisions \(total)|era rules \(ruleHits)|with corrections \(correctedHits)|rule misses: \(ruleMisses.joined(separator: " "))")
         #expect(total == 707)
         #expect(correctedHits == total, "months not reproduced: \(correctedMisses)")
-        #expect(ruleMisses == ["AH 1399-9", "AH 1401-8", "AH 1411-5", "AH 1444-11", "AH 1453-12"])
+        #expect(ruleMisses == ["AH 1401-8", "AH 1411-5", "AH 1444-11", "AH 1453-12"])
     }
 }

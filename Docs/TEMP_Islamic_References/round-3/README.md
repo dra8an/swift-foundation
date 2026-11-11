@@ -1,5 +1,8 @@
 # Round 3: the Hijri calendars, ready to port
 
+**Updated by round 5 (2026-11-11):** a separate rule for Diyanet's first days before 1980, and four Diyanet corrections
+where there were five. The six files that changed are listed in `../round-5/README.md`. Where this file says five, read four.
+
 Assembled 2026-11-09 from the icu4swift verification package (branch `islamic-crescent`). Everything here was computed
 and tested on the research machine; nothing has been changed in this repository's sources. Read in this order:
 

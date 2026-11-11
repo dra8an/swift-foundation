@@ -336,12 +336,17 @@ public enum CrescentRules {
     // MARK: - Diyanet's published calendar: the rule of each computation era, and the corrections
 
     /// How Diyanet decided month starts in each computation era, found by matching every published date AH 1399–1457
-    /// (`Docs/CRESCENT_RULES_RESULTS.md`, Rounds 4–6). The era is that of the Gregorian calendar year in which the new
-    /// month's first day falls, because Diyanet computes one calendar year at a time.
+    /// (`Docs/CRESCENT_RULES_RESULTS.md`, Rounds 4–6 and 10). The era is that of the Gregorian calendar year in which the
+    /// new month's first day falls, because Diyanet computes one calendar year at a time.
     public enum DiyanetEra: Sendable {
-        /// Through 2008: the month starts when the criterion (apparent altitude ≥ 5° and geocentric elongation ≥ 8°
+        /// Through 1979: the method in use before the 1978 Istanbul conference rule, which took effect with the 1980
+        /// calendar. The published months are reproduced by one test at Mecca: the moon sets at least
+        /// `diyanetOlderTestMinimumLagMinutes` after the sun. This describes the published list; it is not a
+        /// documented method (results doc, Round 10).
+        case before1980
+        /// 1980–2008: the month starts when the criterion (apparent altitude ≥ 5° and geocentric elongation ≥ 8°
         /// at sunset) is met somewhere on Earth at a sunset before 00:00 UTC (the 1978 Istanbul conference rule).
-        case before2009
+        case years1980to2008
         /// 2009–2013: as before, or, after 00:00 UTC, when the criterion is met at a sunset west of 30° W at a
         /// latitude of at least 10° N.
         case years2009to2013
@@ -353,23 +358,30 @@ public enum CrescentRules {
 
         public init(firstDay: RataDie) {
             let d = firstDay.dayNumber
-            if d < 733408 { self = .before2009 }            // before 2009-01-01
+            if d < 722815 { self = .before1980 }            // before 1980-01-01
+            else if d < 733408 { self = .years1980to2008 }  // before 2009-01-01
             else if d < 735234 { self = .years2009to2013 }  // before 2014-01-01
             else if d < 736330 { self = .years2014to2016 }  // before 2017-01-01
             else { self = .from2017 }
         }
     }
 
+    /// The limit of the test that reproduces Diyanet's months before 1980: minutes from sunset to moonset at Mecca.
+    /// Any value from 18.1 to 18.7 gives all 25 published decisions with a first day in 1978 or 1979; 18.4 to 18.6
+    /// is best for 1960–1979 (234 of 247).
+    public static let diyanetOlderTestMinimumLagMinutes = 18.5
+
     /// The published Diyanet month starts that the era rules do not reproduce, as (Hijri year, month) of the month that
-    /// Diyanet started one day later than the rule. Each is analysed in `Docs/CRESCENT_RULES_RESULTS.md` § Round 6:
-    /// 1399-9 (26 Jul 1979, the last year before the computed rule was in force), 1401-8 (4 Jun 1981) and 1411-5
-    /// (19 Nov 1990, decisive moment within a minute of the cut-off), 1444-11 (21 May 2023, the 2023–2027 run's
-    /// mainland definition), 1453-12 (13 Mar 2032, 3.6 minutes of sunset at the tip of the Seward Peninsula).
-    public static let diyanetCorrections: [(year: Int, month: Int)] = [(1399, 9), (1401, 8), (1411, 5), (1444, 11), (1453, 12)]
+    /// Diyanet started one day later than the rule. Each is analysed in `Docs/CRESCENT_RULES_RESULTS.md` § Round 10:
+    /// 1401-8 (4 Jun 1981: refused with the elongation reaching 8° 14 minutes before the cut-off, where Jul 1993
+    /// started with 13.8), 1411-5 (19 Nov 1990: 46 seconds before the cut-off in universal time, 12 seconds after it in
+    /// dynamical time), 1444-11 (21 May 2023: no thresholds refuse it and start May 2030), 1453-12 (13 Mar 2032: two
+    /// minutes of sunset at the tip of the Seward Peninsula, and 16 minutes at Wellington).
+    public static let diyanetCorrections: [(year: Int, month: Int)] = [(1401, 8), (1411, 5), (1444, 11), (1453, 12)]
 
     /// Length in days (29 or 30) of the Diyanet month that begins on `start`; `next` is the Hijri year and month of the
     /// following month. With `corrections` the result equals every published date AH 1399–1457 (707 of 707); without
-    /// them the era rules alone give 702, the five months in `diyanetCorrections` coming out 29 instead of 30.
+    /// them the era rules alone give 703, the four months in `diyanetCorrections` coming out 29 instead of 30.
     public static func diyanetMonthLength(start: RataDie, next: (year: Int, month: Int), corrections: Bool = true) -> Int {
         if corrections, diyanetCorrections.contains(where: { $0.year == next.year && $0.month == next.month }) { return 30 }
         return diyanetStartsTomorrow(evening: start + 28, era: DiyanetEra(firstDay: start + 29)) ? 29 : 30
@@ -377,6 +389,11 @@ public enum CrescentRules {
 
     /// Does the next month begin on the day after the evening of UTC date `day` (the 29th), under the rule of `era`?
     public static func diyanetStartsTomorrow(evening day: RataDie, era: DiyanetEra) -> Bool {
+        if case .before1980 = era {
+            // The older test: the moon sets at least 18.5 minutes after the sun at Mecca.
+            guard let lag = evening(day, at: makkah)?.lagMinutes else { return false }
+            return lag >= diyanetOlderTestMinimumLagMinutes
+        }
         let midnight = Moment(Double(day.dayNumber) + 1)
         let conjunction = Astronomical.newMoonBefore(midnight + 0.5)
         guard midnight.inner + 0.5 - conjunction.inner < 3 else { return false }   // no new crescent this evening
@@ -396,7 +413,7 @@ public enum CrescentRules {
             }
         }
         switch era {
-        case .before2009, .years2014to2016:
+        case .before1980, .years1980to2008, .years2014to2016:
             return false
         case .years2009to2013:
             // The latest sunset of this evening west of 30 W is just east of the date line.

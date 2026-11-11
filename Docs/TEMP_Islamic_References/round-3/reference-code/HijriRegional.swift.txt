@@ -16,7 +16,7 @@ public enum HijriRegional {
     public enum Method: Sendable {
         /// Saudi Arabia's civil calendar: the KACST table for AH 1300–1600, the rule with its correction beyond.
         case ummAlQuraTable
-        /// Türkiye: the Diyanet era rules with the five published corrections (`CrescentRules.diyanetMonthLength`).
+        /// Türkiye: the Diyanet era rules with the four published corrections (`CrescentRules.diyanetMonthLength`).
         case diyanet
         /// Malaysia: MABIMS criteria at the official reference point, with the two published corrections.
         case malaysia
