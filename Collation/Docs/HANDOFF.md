@@ -131,9 +131,9 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1576 tests in 140
-suites** — `swift test` prints three summary lines (45/5, 590/95, 941/40;
-since 2026-11-09); add them up.
+anything longer or with wider effect. Suite gate: **1580 tests in 141
+suites** — `swift test` prints three summary lines (45/5, 594/96, 941/40;
+since 2026-11-11, with the exit tests); add them up.
 
 **Read next, in this order:**
 1. Your memory index from disk and ALL its feedback files — the user's
@@ -460,7 +460,7 @@ of `gen_norm_data.swift`); `code_unchanged.py`: 45 files CODE UNCHANGED.
 `extract_cmsccoll.py`, `extract_g7coll.py`, `extract_locale_suites.py`,
 `extract_regcoll.py`) moved from `Collation/Tools` to `utils/collation`
 (license header, README rows; the fuzz corpus checked byte-identical for
-seed 42). Gaps 1–2 committed as `992650f2`. **Gap 4 DONE 2026-11-11 (uncommitted at writing):** DocC on `localizedCaseInsensitiveCompare`, `localizedStandardCompare`, `localizedCaseInsensitiveContains` (one line each, like their neighbours; comments only, CODE UNCHANGED). Gap 3 (exit tests for the 9 preconditions): ask the user.
+seed 42). Gaps 1–2 committed as `992650f2`. **Gap 4 DONE 2026-11-11 (uncommitted at writing):** DocC on `localizedCaseInsensitiveCompare`, `localizedStandardCompare`, `localizedCaseInsensitiveContains` (one line each, like their neighbours; comments only, CODE UNCHANGED). Gap 4 committed as `4de44253`. **Gap 3 DONE 2026-11-11 (uncommitted at writing):** `PreconditionExitTests.swift` (4 exit tests under `FOUNDATION_EXIT_TESTS`, each checks the precondition's message in the child's standard error; a mutation of the `CEBuffer` message made exactly its 2 tests fail); the other 5 preconditions cannot be reached through the API (Docs/31 section 8). Suite 1580/141. **All gaps of the guide check are closed** except what waits for the PR branch (Docs/31 sections 6–8).
 **At PR time (not now):** the split into small PRs (Docs/31 section 7), the
 target branch (upstream's merge-forward model: the earliest release branch
 that should get the change), the Evolution question (API parity with Darwin
