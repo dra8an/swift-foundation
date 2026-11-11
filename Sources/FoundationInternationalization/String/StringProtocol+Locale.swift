@@ -109,6 +109,7 @@ extension StringProtocol {
         return _localizedCompareConverting(aString)
     }
 
+    /// Compares the string with another using a case-insensitive, localized comparison in the current locale. Differences in diacritics still count.
     @_specialize(where Self == String, T == String)
     public func localizedCaseInsensitiveCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
@@ -117,6 +118,7 @@ extension StringProtocol {
         return _localizedCaseInsensitiveCompareConverting(aString)
     }
 
+    /// Compares the string with another as the Finder sorts file names: a localized comparison in the current locale that ignores case and compares runs of digits by their numeric value ("file2" before "file10").
     @_specialize(where Self == String, T == String)
     public func localizedStandardCompare<T: StringProtocol>(_ aString: T) -> ComparisonResult {
         if let string = _specialize(self, for: String.self), let other = _specialize(aString, for: String.self) {
@@ -179,6 +181,7 @@ extension StringProtocol {
         return _localizedStandardContainsConverting(string)
     }
 
+    /// Returns true if the string contains the given string using a case-insensitive, locale-aware search in the current locale. Differences in diacritics still count.
     @_specialize(where Self == String, T == String)
     public func localizedCaseInsensitiveContains<T: StringProtocol>(_ string: T) -> Bool {
         if let text = _specialize(self, for: String.self), let pattern = _specialize(string, for: String.self) {
