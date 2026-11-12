@@ -410,10 +410,16 @@ latin in BOTH build modes — no ascii or latin row may get slower (memory
 `feedback-no-ascii-latin-regression`). Comment-only steps: prove "CODE
 UNCHANGED" with `.build/l24/code_unchanged.py <file> [rev]` (run it from the
 repository root; a relative path from another folder reports "new:").
-**Minor leftovers (user: "very minor"):** upstream's `LockedState<Void>`
-gives a Thread Sanitizer false report (our code avoids it; not reported
-upstream — outward-facing, ask first); a plugin run of all 70 benchmark
-entries after the `scalingFactor` fix was offered, not run.
+**Minor leftovers (user: "very minor"):** ~~upstream's `LockedState<Void>`
+gives a Thread Sanitizer false report~~ CLOSED 2026-11-12: upstream removed
+`LockedState` (#1840, `Mutex` instead), so a report has no value; a trial of
+`Mutex` for our five locks stopped at the `sending` check of the
+explicit-locale slots — user decision: keep `LockedState`, address it if a
+future PR brings it up (technique log §52 (i), Docs/31 open point 9). A
+plugin run of all 70 benchmark entries after the `scalingFactor` fix was
+offered, not run. **Builds after the trial:** the main tree's EngineBench and
+`.build-ab-wmo` are at HEAD WITHOUT the probe rows; `.build-ab-nowmo` is at
+HEAD's code WITH them; the worktree's builds as in the state paragraph.
 
 **What 2026-11-10…11 decided and found (all committed and pushed but the
 last two commits):** user decisions — the ICU `NOTICE.txt` entry with the

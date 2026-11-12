@@ -178,6 +178,8 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    (`extract_cmsccoll.py`, `extract_g7coll.py`, `extract_locale_suites.py`,
    `extract_regcoll.py`); the test comments point there.
 
+9. **`LockedState` → `Mutex` at a move to a newer base.** The collation code uses upstream's `LockedState` (five locks: the collator cache, the tailoring cache, the fast-Latin cache), which exists on this branch's base, `release/6.3`. Upstream `main` replaced it with `Synchronization.Mutex` (swiftlang/swift-foundation#1840). A trial on 2026-11-12 showed one obstacle: `Mutex` checks that nothing that is not `Sendable` leaves the lock, and the explicit-locale cache returns a pointer to its published slot (memory that is never freed) from inside the lock. The clean fix adds one `@unchecked Sendable` wrapper for that pointer; the other four locks convert directly (one with a small rewrite). Owner's decision: keep `LockedState` until a PR needs the move (technique log §52 (i)).
+
 ## 7. A possible PR sequence
 
 The port can go in as one PR or in steps. The steps of Docs/26 still apply in
