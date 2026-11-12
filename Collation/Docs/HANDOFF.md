@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-## START HERE (current as of 2026-11-10 — everything below this section is history)
+## START HERE (current as of 2026-11-11 — everything below this section is history)
 
 **If anything in the history below contradicts this section, this section
 wins.** The history has stale rules and numbers on purpose; it is the record.
@@ -37,27 +37,39 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 §51 (ay): `Storage.init` and `writeSinglePass` only; since §51 (bd) also the
 three file parsers, creation only; §51 (av)).
 
-**The phase now (2026-11-10).** The performance round is FINISHED (final
+**The phase now (2026-11-11).** The performance round is FINISHED (final
 matrix recorded 2026-11-06, see "Current numbers"). The work is the
-**upstream preparation** of the port for swift-foundation: the CMake build,
-the compiled-in data, the maintainer summary (`Collation/Docs/31-maintainer-summary.md`)
-and the compliance with upstream's contribution guide (a 4-step plan; all
-four steps done on 2026-11-10, see NEXT TASK; then the license headers
-and the ICU entry in `NOTICE.txt`, the same day, Docs/31 section 8).
+**upstream preparation** of the port for swift-foundation. Done: the CMake
+build, the compiled-in data, the maintainer summary
+(`Collation/Docs/31-maintainer-summary.md`), and EVERY rule of upstream's
+contribution guide that the branch itself can meet (Docs/31 section 8:
+the 4-step plan, the license headers, the ICU entry in `NOTICE.txt`, the
+five gaps of the full guide check, the parameterized test probes). **The
+next topic is the unsafe code** (NEXT TASK below) — the user calls it "a
+much, much larger topic".
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
-paragraph).** Expected (2026-11-10, afternoon): HEAD = `b403e953` (ICU
-notice) on `147ebdc1` (headers), `bc8c65f8` (step 4), `893ae795` (step 3), `abcdac47` (the handoff docs of 2026-11-10), `a5d42d78` (step 2)
-and `c2f87de9` (step 1) — **equal to
-`origin/port/collation` = `b403e953` (pushed 2026-11-10)** — plus `a7d684e3` (gap 5,
-platforms, committed 2026-11-10) `992650f2` (gaps 1–2) and the commit of gap 4 if the user
-made it (check git; else give the add / commit lines). The worktree `../collation-baseline` is
-detached at `b403e953` (moved there 2026-11-10 for the TSan check of gap 5), clean; its builds are stale for A/Bs: move it to HEAD and rebuild
-before the next A/B (the block below). The main tree's builds: default
-`.build` (SwiftPM release, BenchFoundation) at HEAD's code; EngineBench
-`.build`/`.build-al`/`.build-g` at the code of `b30a9e66` (the same engine
-code as HEAD; comments differ); `.build/cmake` = the CMake build (see NEXT
-TASK); the matrix builds at `6266beef`.
+paragraph).** Expected (2026-11-11, 16:30): HEAD = `7ed74571` (benchmark
+`scalingFactor` fix) on `cc094c4f` (parameterized probes) — **2 commits
+ahead of `origin/port/collation` = `0c07edb1` (pushed 2026-11-11: gaps 5,
+1–2, 4, 3)**, not pushed — plus the handoff commit of 2026-11-11 if the
+user made it (else `HANDOFF.md`, `31-maintainer-summary.md` and
+`Collation/Tools/check_stack_protection.sh` are modified: give the add /
+commit lines). **Engine code changed on 2026-11-10 (gap 5, `a7d684e3`) on
+cold paths only** (the thread-local slot per platform, `LockedState`
+instead of `PoolLock`, `FoundationEssentials` imports); the machine code of
+every hot function was checked identical (`.build/l26/cmp_functions.py
+base/BenchFoundation new/BenchFoundation`, base = `b403e953`); everything
+after it changed comments, tests, docs and tools only. The worktree
+`../collation-baseline` is detached at `b403e953`, clean, with a Thread
+Sanitizer build in `.build/tsan`; **its other builds are stale: move it to
+HEAD and rebuild before any A/B** (the block below). The main tree's
+builds: default `.build` (SwiftPM release, BenchFoundation) at the code of
+`a7d684e3` (= HEAD's code); EngineBench `.build/engine-bench` rebuilt
+2026-11-11 by `check_stack_protection.sh` (HEAD's code, with the tool copy
+of `LockedState`); `.build/cmake` = the CMake build (links at `a7d684e3`);
+`Benchmarks/.build` = the swift-benchmark package (see the guide step 4
+notes); the matrix builds at `6266beef` (stale).
 (State of 2026-11-04, kept for its build list:) the A/B worktree was at `f64250b6` (the same
 engine code as `0f077c86`, i.e. BEFORE §51 (av)) with its own, unmodified
 `main.swift`; its builds there, all with Swift 6.5: EngineBench
@@ -138,20 +150,25 @@ since 2026-11-11, with the exit tests and the parameterized probes); add them up
 **Read next, in this order:**
 1. Your memory index from disk and ALL its feedback files — the user's
    working rules; then `project-next-steps-2026-11-06` (the state and the
-   decisions up to 2026-11-10), `project-m8-integration-state` (the
-   integration and the upstream preparation) and
-   `reference-upstream-contribution-guide`.
+   decisions up to 2026-11-11), `project-m8-integration-state` (the
+   integration and the upstream preparation),
+   `reference-upstream-contribution-guide`, `project-span-findings` (why
+   `Span` did not replace the pinned bytes), `project-array-vs-pointer` and
+   `project-prebaked-setup` (where pointers won and where they lost).
 2. `Collation/Docs/31-maintainer-summary.md` — the summary for the
-   swift-foundation maintainers: what the port is, what it changes,
-   correctness, performance, build changes, **section 6 (open points)** and
-   **section 8 (the gaps against the contribution guide, with what is done)**.
-3. `CONTRIBUTION_GUIDELINE.md` and `CONTRIBUTING.md` at the repository root
-   (copies of upstream `main`'s files) and `utils/collation/README.md` (the
-   data generators and the order of a data update).
-4. `Collation/Docs/optimization-targets.md` — §51 (bd)–(bf) and the final
-   matrix line after (bf) (2026-11-06…11-09: creation, the allocating
-   sortKey, the compiled-in data). Background only: §51 (aw)–(bc) and older;
-   the performance work is finished.
+   swift-foundation maintainers; **section 9 (why the engine uses unsafe
+   pointers: per kind, the reason in the source, the safe form, its measured
+   cost)**, section 8 (the contribution-guide rules, all done) and section 6
+   (open points).
+3. `CONTRIBUTION_GUIDELINE.md` (the unsafe rule is under "Coding Best
+   Practices") and `CONTRIBUTING.md` at the repository root (copies of
+   upstream `main`'s files).
+4. `Collation/Docs/optimization-targets.md` — the sections that section 9
+   cites: §22 (Span), §46 (a) (the writer's region), §50 (d) (the setup box),
+   §51 (b) (QuickCJKSetup by pointer), (h) (CEBuffer), (k) (the scratch
+   iterators behind pointers), (y) (the pinned-byte source), (aj) / (ak) (the
+   collator cache slots); Docs/11 round 6 (the data views). The performance
+   work itself is finished.
 5. `Collation/Docs/21-foundation-api-benchmark.md` — the last RECORDED
    matrix — the final one of the round (2026-11-06 16:23–16:42, the median
    of 4 runs at `630ec5c7`; Swift 6.5, macOS 27.2.1; WMO the main column).
@@ -337,7 +354,59 @@ lazy globals); keep the same block in both programs.
   the probe rows with the timed stream, `oncetest.swift` = the test without
   collation code, the traces).
 
-**NEXT TASK (2026-11-10) — ask the user first.** The open work is the
+**NEXT TASK (2026-11-11): the unsafe code — propose a plan first, start
+nothing before the user approves it.** The guide: "Avoid unsafe APIs …
+unless there is no safe alternative. When unsafe is required, isolate it to
+a small, focused helper." So far (2026-11-10, step 3): every kind has its
+reason in the source and its measured cost in **Docs/31 section 9**; no use
+was moved. The inventory of 2026-11-10 (250 uses; `grep -c
+"Unsafe[A-Za-z]*Pointer"` over the engine and `String+Collation.swift` gave
+227 mentions on 2026-11-11, after `PoolLock` went): read-only data views
+104, pinned UTF-8 bytes 45, boxes and in-place pointers 42, raw pointers
+for lock-free reads 18, a small rest. Questions a plan must answer, per
+kind: keep as is, isolate behind one small helper type (for example one
+`Sendable` wrapper for the immutable buffer views, which would also close
+the `@unchecked Sendable` TODOs of `RootCollator`, `Storage` and the data
+structs), or replace by a safe form (`Span` where it can be stored —
+non-escapable, `String.utf8Span` needs macOS 26, the package supports
+macOS 15). **Every change on a hot path:** count instructions before and
+after, compare the machine code (`.build/l26/cmp_functions.py`), and A/B
+against HEAD built in `../collation-baseline` (move it first), ascii and
+latin in BOTH build modes — no ascii or latin row may get slower (memory
+`feedback-no-ascii-latin-regression`). Comment-only steps: prove "CODE
+UNCHANGED" with `.build/l24/code_unchanged.py <file> [rev]` (run it from the
+repository root; a relative path from another folder reports "new:").
+**Minor leftovers (user: "very minor"):** upstream's `LockedState<Void>`
+gives a Thread Sanitizer false report (our code avoids it; not reported
+upstream — outward-facing, ask first); a plugin run of all 70 benchmark
+entries after the `scalingFactor` fix was offered, not run.
+
+**What 2026-11-10…11 decided and found (all committed and pushed but the
+last two commits):** user decisions — the ICU `NOTICE.txt` entry with the
+Unicode License V3 of `release-78.3`, UTS #10 first in the
+`RootCollator.swift` header and Docs/31 section 1, the "ported from"
+references kept; **no reference to ICU4X in any file for the PR** (the
+NFD-only test data is `TestData/ucadata-nfd-only.icu`,
+`CollationTestData.rootNFDOnly()`); the 5 test-data scripts moved to
+`utils/collation`; the wrapped comments of the C and Python generators
+are fine; the 36 parameterized tests. Pitfalls found — `import Foundation`
+in a swift-foundation file brings in the system Foundation on macOS and
+cannot build on Linux/Windows (use `FoundationEssentials`; a June
+`#if compiler(<6.2)` had hidden that leak); the target builds with
+`MemberImportVisibility`, so a file that needs the system Foundation (the
+tests' `SystemFoundation.swift`) keeps it from the other files;
+`SWIFTCI_USE_LOCAL_DEPS=1` in `Benchmarks/` picks the OLD checkout
+`~/Projects/dra8an/swift-foundation` — use `.build/benchroot`;
+`swift package benchmark` needs the local pin `swift package resolve
+swift-argument-parser --version 1.6.2` in `Benchmarks/`; benchmark entries
+must set `scalingFactor: .one` (the target's default `.kilo` divides by
+1000); `check_stack_protection.sh` needed `-package-name` since the engine
+types became `package` (fixed 2026-11-11; the result is the expected list);
+upstream's `LockedState<Void>` → TSan false report (ours has an `Int`
+state); zsh does not split a variable that holds several paths — use an
+array. Suite gate **1584 tests in 141 suites**.
+
+**NEXT TASK (2026-11-10, DONE — history below) — ask the user first.** The open work is the
 compliance with upstream's contribution guide (`CONTRIBUTION_GUIDELINE.md`
 at the root; gaps and status: section 8 of `Collation/Docs/31-maintainer-summary.md`),
 in the user's 4-step plan:

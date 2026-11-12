@@ -20,7 +20,8 @@ E="$REPO/.build/engine-bench"
 A=$(find "$E/.build" -name resource_bundle_accessor.swift -path "*CollEngine*" | head -1)
 OUT="$E/stack-protection.sil"
 cd "$E"
-"$SWIFTC" -O -wmo -emit-sil -parse-as-library -module-name CollEngine Sources/CollEngine/*.swift "$A" -o "$OUT"
+# -package-name: the engine types are `package` (since 2026-11-09), which needs a package name.
+"$SWIFTC" -O -wmo -emit-sil -parse-as-library -module-name CollEngine -package-name CollEngine Sources/CollEngine/*.swift "$A" -o "$OUT"
 FUNCS=$(grep -E "^sil [a-z_ ]*\[stack_protection\]" "$OUT" | sed 's/.*@\(\$s[A-Za-z0-9_]*\).*/\1/' | xcrun swift-demangle --simplified | sed 's/(.*//' | sort -u)
 echo "compiler: $("$SWIFT" --version 2>&1 | head -1)"
 if [[ -z "$FUNCS" ]]; then echo "engine functions with a stack protector (SIL): none"; else echo "engine functions with a stack protector (SIL):"; echo "$FUNCS" | sed 's/^/  /'; fi
