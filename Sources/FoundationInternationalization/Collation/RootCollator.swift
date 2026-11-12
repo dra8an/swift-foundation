@@ -74,7 +74,7 @@ package struct RootCollator: @unchecked Sendable {
                         UnsafeBufferPointer<UInt16>, UnsafeBufferPointer<UInt16>)
     }
 
-    /// All stored state lives behind one class reference, so a RootCollator value is a single pointer: a large struct would be copied on the stack at every method call, and per iteration around a throwing call, which the optimizer cannot hoist the copy across. Everything is immutable after init. The setup boxes (the `…Ptr` fields) are raw pointers to memory that this class allocates in init and frees in deinit: a pointer is a trivial value, so the static fast paths and the pinned-buffer closures receive it with no reference counting.
+    /// All stored state lives behind one class reference, so a RootCollator value is a single pointer: a large struct would be copied on the stack at every method call, and per iteration around a throwing call, which the optimizer cannot hoist the copy across. Everything is immutable after init. The setup boxes (the `…Box` fields) are `OwnedBox` values, which allocate their memory in init and free it in deinit: the static fast paths and the pinned-buffer closures receive the box's pointer, a trivial value, with no reference counting.
     // @unchecked Sendable: every stored property is a `let` set in init; the buffer views point into memory owned by the data (`DataStorage`), which this class retains.
     // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
     final class Storage: @unchecked Sendable {
@@ -112,22 +112,22 @@ package struct RootCollator: @unchecked Sendable {
         /// Owns the memory behind restartSafety's latin table.
         let restartSafetyStorage: DataStorage
         /// The same RestartSafety, heap-boxed, so that the fast-Latin path can take one pointer to it and read its fields only where it consults them (after a shared prefix); passed by value, all its fields would be loaded at the top of every compare.
-        let restartSafetyPtr: UnsafeMutablePointer<RestartSafety>
+        let restartSafetyBox: OwnedBox<RestartSafety>
         /// Script-starts data: the root's when the tailoring omits it (resolved once — callers pass the same value used for the fast-Latin setup).
         let scriptsData: CollationData
         /// Compressible-lead-byte table: the tailoring's own, or the base's when the tailoring omits it (the fastLatinTable aliasing rule).
         let compressibleBytes: UnsafeBufferPointer<Bool>
         /// Trivial-field views for the static quick-CJK dispatch, heap-boxed so the hot path passes one pointer.
-        let quickCJKSetupPtr: UnsafeMutablePointer<QuickCJKSetup>
+        let quickCJKSetupBox: OwnedBox<QuickCJKSetup>
         /// The default-options fast-Latin setup in one box; see DefaultFastLatinSetup.
-        let defaultFLSetupPtr: UnsafeMutablePointer<DefaultFastLatinSetup>
+        let defaultFLSetupBox: OwnedBox<DefaultFastLatinSetup>
         /// The fast-Latin primaries key (CollationFastLatin.primariesKey) of the default options, and of its numeric twin (the default key with numeric toggled), each with its packed options (the low 16 bits are replaced per word) and primaries, resolved at init. Declared last: fields inserted in the middle move the pointers that the default path reads, which slows it. They serve every options word with one of these two keys — strength, case and backward-secondary changes and `.numeric`, so every option set that the Foundation wrappers build — without the shared cache.
         let defaultFLKey: Int32
         let twinFLKey: Int32
         let twinFLPackedOptions: Int32
         let twinFLPrimaries: UnsafeBufferPointer<UInt16>
         /// The option sets of the Foundation wrappers, resolved at init; see OptionPresets. Declared last, for the reason above.
-        let optionPresetsPtr: UnsafeMutablePointer<OptionPresets>
+        let optionPresetsBox: OwnedBox<OptionPresets>
 
         init(data: CollationData, base: CollationData?, norm: NormalizationData,
              reordering: Reordering?, defaultOptions: CollationOptions,
@@ -142,9 +142,7 @@ package struct RootCollator: @unchecked Sendable {
             self.restartSafetyStorage = safetyStorage
             let safety = RestartSafety(data: data, base: base, norm: norm, storage: safetyStorage)
             self.restartSafety = safety
-            let safetyBox = UnsafeMutablePointer<RestartSafety>.allocate(capacity: 1)
-            safetyBox.initialize(to: safety)
-            self.restartSafetyPtr = safetyBox
+            self.restartSafetyBox = OwnedBox(safety)
             self.scriptsData = scriptsData
             if data.compressibleBytes.isEmpty {
                 guard let base else {
@@ -197,17 +195,13 @@ package struct RootCollator: @unchecked Sendable {
                 maxVariableTop: scriptsData.lastPrimaryForGroup(
                     CollationData.reorderCodeFirst + CollationOptions.MaxVariable.currency.rawValue),
                 dataCE32s: data.ce32s, baseCE32s: base?.ce32s ?? data.ce32s)
-            let box = UnsafeMutablePointer<QuickCJKSetup>.allocate(capacity: 1)
-            box.initialize(to: setup)
-            self.quickCJKSetupPtr = box
+            self.quickCJKSetupBox = OwnedBox(setup)
             // The default fast-Latin setup in one box: the same values as the separate fields above, resolved once.
-            let flBox = UnsafeMutablePointer<DefaultFastLatinSetup>.allocate(capacity: 1)
-            flBox.initialize(to: DefaultFastLatinSetup(
+            self.defaultFLSetupBox = OwnedBox(DefaultFastLatinSetup(
                 eligible: packed >= 0 && !fastLatinTable.isEmpty && defaultOptions.strength != .identical
                     && RootCollator.optionBitsAreExact,
                 optionBits: RootCollator.bits(of: defaultOptions), packedOptions: packed,
                 table: fastLatinTable, primaries: flPrimaries))
-            self.defaultFLSetupPtr = flBox
             // The presets: the same packed options and primaries as resolveFastLatinSetup gives for their words.
             func preset(_ strength: CollationOptions.Strength, numeric: Bool) -> (UInt64, Int32, Int32, UnsafeBufferPointer<UInt16>) {
                 var o = defaultOptions
@@ -235,22 +229,9 @@ package struct RootCollator: @unchecked Sendable {
             }
             let p0 = preset(.secondary, numeric: true), p1 = preset(.secondary, numeric: false), p2 = preset(.primary, numeric: false)
             let p3 = preset(.identical, numeric: true), p4 = preset(defaultOptions)
-            let presets = UnsafeMutablePointer<OptionPresets>.allocate(capacity: 1)
-            presets.initialize(to: OptionPresets(
+            self.optionPresetsBox = OwnedBox(OptionPresets(
                 bits: (p0.0, p1.0, p2.0, p3.0, p4.0), words: (p0.1, p1.1, p2.1, p3.1, p4.1),
                 packed: (p0.2, p1.2, p2.2, p3.2, p4.2), primaries: (p0.3, p1.3, p2.3, p3.3, p4.3)))
-            self.optionPresetsPtr = presets
-        }
-
-        deinit {
-            quickCJKSetupPtr.deinitialize(count: 1)
-            quickCJKSetupPtr.deallocate()
-            defaultFLSetupPtr.deinitialize(count: 1)
-            defaultFLSetupPtr.deallocate()
-            restartSafetyPtr.deinitialize(count: 1)
-            restartSafetyPtr.deallocate()
-            optionPresetsPtr.deinitialize(count: 1)
-            optionPresetsPtr.deallocate()
         }
     }
 
@@ -302,7 +283,7 @@ package struct RootCollator: @unchecked Sendable {
     private var defaultFLPrimaries: UnsafeBufferPointer<UInt16> { storage.defaultFLPrimaries }
     private var defaultFLPackedOptions: Int32 { storage.defaultFLPackedOptions }
     private var defaultFLWord: Int32 { storage.defaultFLWord }
-    private var defaultFLSetupPtr: UnsafeMutablePointer<DefaultFastLatinSetup> { storage.defaultFLSetupPtr }
+    private var defaultFLSetupPtr: UnsafeMutablePointer<DefaultFastLatinSetup> { storage.defaultFLSetupBox.pointer }
     var simpleCEs: UnsafeBufferPointer<Int64> { storage.simpleCEs }
     var thaiCEs: UnsafeBufferPointer<Int64> { storage.thaiCEs }
     var simpleCEsWithDigits: UnsafeBufferPointer<Int64> { storage.simpleCEsWithDigits }
@@ -310,7 +291,7 @@ package struct RootCollator: @unchecked Sendable {
     var markCEs: UnsafeBufferPointer<Int64> { storage.markCEs }
     var fastLatinTable: UnsafeBufferPointer<UInt16> { storage.fastLatinTable }
     var restartSafety: RestartSafety { storage.restartSafety }
-    private var restartSafetyPtr: UnsafePointer<RestartSafety> { UnsafePointer(storage.restartSafetyPtr) }
+    private var restartSafetyPtr: UnsafePointer<RestartSafety> { UnsafePointer(storage.restartSafetyBox.pointer) }
 
     /// A collator over the given data. Not cached: every call builds its own storage (custom data, tests).
     package init(data: CollationData, norm: NormalizationData) {
@@ -444,8 +425,8 @@ package struct RootCollator: @unchecked Sendable {
         // One pointer for the default setup, loaded once (see DefaultFastLatinSetup); the CJK setup pointer and the storage object likewise, so the closures below capture plain values, not self.
         let setup = defaultFLSetupPtr
         let st = storage
-        let cjkSetup = st.quickCJKSetupPtr
-        let safety = UnsafePointer(st.restartSafetyPtr)
+        let cjkSetup = st.quickCJKSetupBox.pointer
+        let safety = UnsafePointer(st.restartSafetyBox.pointer)
         // `optionsAreDefault` is a constant at each call site (this function is force-inlined): true skips the options compare.
         guard setup.pointee.eligible, optionsAreDefault || Self.bits(of: options) == setup.pointee.optionBits else { return nil }
         // The setup values the core reads, taken out of the box once.
@@ -458,7 +439,7 @@ package struct RootCollator: @unchecked Sendable {
                 let lBytes = RootCollator.untraced(lPinned)
                 let rBytes = RootCollator.untraced(rPinned)
                 var mismatch = -1
-                // RestartSafety by POINTER to its own box (see Storage.restartSafetyPtr), not by value — see DefaultFastLatinSetup.
+                // RestartSafety by POINTER to its own box (see Storage.restartSafetyBox), not by value — see DefaultFastLatinSetup.
                 let f = RootCollator.fastLatinUTF8(
                     lBytes, rBytes, table: table, primaries: primaries,
                     options: packed,
@@ -614,7 +595,7 @@ package struct RootCollator: @unchecked Sendable {
     ) throws -> Order {
         // The options word and, for the option sets of the Foundation wrappers, the fast-Latin setup: from the presets resolved at init when the pattern matches, else computed once for the whole slow path.
         let optionBits = Self.bits(of: options)
-        let presets = storage.optionPresetsPtr
+        let presets = storage.optionPresetsBox.pointer
         let word: Int32
         var presetPacked: Int32 = -1
         var presetPrimaries = UnsafeBufferPointer<UInt16>(start: nil, count: 0)
@@ -852,7 +833,7 @@ package struct RootCollator: @unchecked Sendable {
         let safety = UnsafePointer(restartSafetyPtr)
         let numeric = options.numeric
         // The quick CJK primary compare decides at the primary level, which comes first for any options; it is exact under shifted options too (its primaries are above every variable top).
-        let cjkSetup: UnsafePointer<QuickCJKSetup>? = UnsafePointer(storage.quickCJKSetupPtr)
+        let cjkSetup: UnsafePointer<QuickCJKSetup>? = UnsafePointer(storage.quickCJKSetupBox.pointer)
         let scanned = left.utf8.withContiguousStorageIfAvailable { lBytes in
             right.utf8.withContiguousStorageIfAvailable { rBytes in
                 RootCollator.optionsPassRestart(lBytes, rBytes, mismatch: mismatch, cjkSetup: cjkSetup, safety: safety, numeric: numeric)
@@ -933,11 +914,11 @@ package struct RootCollator: @unchecked Sendable {
 
     /// quickCJKPrimary of this collator, for `QuickCJKTests` (before reordering, in the space of the variable top; 0 = the full pipeline decides).
     func quickCJKPrimaryForTesting(_ c: UInt32) -> UInt32 {
-        Self.quickCJKPrimary(c, UnsafePointer(storage.quickCJKSetupPtr))
+        Self.quickCJKPrimary(c, UnsafePointer(storage.quickCJKSetupBox.pointer))
     }
 
     /// QuickCJKSetup.maxVariableTop of this collator, for `QuickCJKTests`.
-    var quickCJKMaxVariableTopForTesting: UInt32 { storage.quickCJKSetupPtr.pointee.maxVariableTop }
+    var quickCJKMaxVariableTopForTesting: UInt32 { storage.quickCJKSetupBox.pointer.pointee.maxVariableTop }
 
     // MARK: Search
 

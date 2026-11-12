@@ -64,8 +64,8 @@ extension RootCollator {
     @inline(never) func r0Exact(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
-        let safety = UnsafePointer(st.restartSafetyPtr)
-        let cjkSetup = st.quickCJKSetupPtr
+        let safety = UnsafePointer(st.restartSafetyBox.pointer)
+        let cjkSetup = st.quickCJKSetupBox.pointer
         guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return nil }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
@@ -98,7 +98,7 @@ extension RootCollator {
     @inline(never) func r1NoBailCalls(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
-        let safety = UnsafePointer(st.restartSafetyPtr)
+        let safety = UnsafePointer(st.restartSafetyBox.pointer)
         guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return nil }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
@@ -121,8 +121,8 @@ extension RootCollator {
     @inline(never) func r2NoOptionsCheck(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
-        let safety = UnsafePointer(st.restartSafetyPtr)
-        let cjkSetup = st.quickCJKSetupPtr
+        let safety = UnsafePointer(st.restartSafetyBox.pointer)
+        let cjkSetup = st.quickCJKSetupBox.pointer
         guard setup.pointee.eligible else { return nil }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
@@ -155,8 +155,8 @@ extension RootCollator {
     @inline(never) func r3NoConversion(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Int32 {
         let setup = defaultFLSetupPtr
         let st = storage
-        let safety = UnsafePointer(st.restartSafetyPtr)
-        let cjkSetup = st.quickCJKSetupPtr
+        let safety = UnsafePointer(st.restartSafetyBox.pointer)
+        let cjkSetup = st.quickCJKSetupBox.pointer
         guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return CollationFastLatin.bailOutResult }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
@@ -186,8 +186,8 @@ extension RootCollator {
     @inline(never) func r4NoOptionsCapture(_ left: String, _ right: String, options: CollationOptions, restart: inout Int) -> Order? {
         let setup = defaultFLSetupPtr
         let st = storage
-        let safety = UnsafePointer(st.restartSafetyPtr)
-        let cjkSetup = st.quickCJKSetupPtr
+        let safety = UnsafePointer(st.restartSafetyBox.pointer)
+        let cjkSetup = st.quickCJKSetupBox.pointer
         guard setup.pointee.eligible, RootCollator.bits(of: options) == setup.pointee.optionBits else { return nil }
         let table = setup.pointee.table
         let primaries = setup.pointee.primaries
@@ -230,7 +230,7 @@ extension RootCollator {
         let f = RootCollator.fastLatinUTF8(
             l, r, table: self.fastLatinTable, primaries: self.defaultFLPrimaries,
             options: self.defaultFLPackedOptions, numeric: options.numeric,
-            safety: UnsafePointer(self.storage.restartSafetyPtr), mismatch: &mismatch)
+            safety: UnsafePointer(self.storage.restartSafetyBox.pointer), mismatch: &mismatch)
         if f == CollationFastLatin.bailOutResult { return nil }
         return f < 0 ? .ascending : f == 0 ? .same : .descending
     }
@@ -268,7 +268,7 @@ do {
 let table = collator.fastLatinTable
 let primaries = collator.defaultFLPrimaries
 let packed = collator.defaultFLPackedOptions
-let safety = UnsafePointer(collator.storage.restartSafetyPtr)
+let safety = UnsafePointer(collator.storage.restartSafetyBox.pointer)
 let numeric = opts.numeric
 
 // Verification.

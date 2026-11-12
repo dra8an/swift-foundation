@@ -58,3 +58,20 @@ final class DataStorage: @unchecked Sendable {
         for allocation in allocations { allocation.deallocate() }
     }
 }
+
+/// One value in memory that the box allocates in init and frees in deinit.
+///
+/// The owner keeps the box in a `let` stored property and gives `pointer` to the hot paths. A pointer is a trivial value, so a caller receives it with no reference counting, and reads the fields of a large value in place instead of a copy. Memory behind a pointer also has no dynamically checked access scope, which a `var` stored property of a class opens at each `inout` use. Read `pointer` directly: a stored property is a plain load in every build mode, but a method of this type, called from another file, stays a call when the module compiles without whole-module optimization. The pointer must not outlive the box; noncopyable, the box has exactly one owner.
+struct OwnedBox<Value: ~Copyable>: ~Copyable {
+    let pointer: UnsafeMutablePointer<Value>
+
+    init(_ value: consuming Value) {
+        pointer = .allocate(capacity: 1)
+        pointer.initialize(to: value)
+    }
+
+    deinit {
+        pointer.deinitialize(count: 1)
+        pointer.deallocate()
+    }
+}
