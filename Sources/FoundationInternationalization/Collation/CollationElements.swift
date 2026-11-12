@@ -17,6 +17,7 @@
 /// The collation elements of one iteration: a growable buffer with an explicit count, like ICU's CEBuffer. An append is a capacity test and a store, and `removeAll()` sets the count to 0. As a Swift `Array`, every append would call the runtime's uniqueness check out of line (the compiler cannot hoist it out of the per-character loop), and every clear would run the general `replaceSubrange` — a noticeable part of a short sortKey.
 ///
 /// Noncopyable: it owns its memory and frees it in `deinit`, so a copy would be a second owner. The compiler rejects copies; owners pass it `inout` or `borrowing`. Reads keep the bounds check that `Array` has.
+// TODO: Replace with the standard library's `UniqueArray` (SE-0527) when the minimum deployment target is macOS 27, if its append and its removal of all elements are as cheap as here.
 struct CEBuffer: ~Copyable {
     private var storage: UnsafeMutablePointer<Int64>
     private var capacity: Int

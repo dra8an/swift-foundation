@@ -62,6 +62,7 @@ final class DataStorage: @unchecked Sendable {
 /// One value in memory that the box allocates in init and frees in deinit.
 ///
 /// The owner keeps the box in a `let` stored property and gives `pointer` to the hot paths. A pointer is a trivial value, so a caller receives it with no reference counting, and reads the fields of a large value in place instead of a copy. Memory behind a pointer also has no dynamically checked access scope, which a `var` stored property of a class opens at each `inout` use. Read `pointer` directly: a stored property is a plain load in every build mode, but a method of this type, called from another file, stays a call when the module compiles without whole-module optimization. The pointer must not outlive the box; noncopyable, the box has exactly one owner.
+// TODO: Replace with the standard library's `UniqueBox` (SE-0517), which has the same init and deinit, when the minimum deployment target is macOS 27. `UniqueBox` gives no pointer: the hot paths must then read the setups through its `value` accessor and pass them as `borrowing` parameters. With Swift 6.5 that form adds instructions to every compare, because a borrowed value cannot stay in a local variable across the closures that pin the UTF-8 bytes.
 struct OwnedBox<Value: ~Copyable>: ~Copyable {
     let pointer: UnsafeMutablePointer<Value>
 
