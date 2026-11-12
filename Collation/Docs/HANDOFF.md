@@ -415,9 +415,15 @@ gives a Thread Sanitizer false report~~ CLOSED 2026-11-12: upstream removed
 `LockedState` (#1840, `Mutex` instead), so a report has no value; a trial of
 `Mutex` for our five locks stopped at the `sending` check of the
 explicit-locale slots — user decision: keep `LockedState`, address it if a
-future PR brings it up (technique log §52 (i), Docs/31 open point 9). A
-plugin run of all 70 benchmark entries after the `scalingFactor` fix was
-offered, not run. **Builds after the trial:** the main tree's EngineBench and
+future PR brings it up (technique log §52 (i), Docs/31 open point 9).
+~~A plugin run of all 70 benchmark entries~~ DONE 2026-11-12 (14:43–14:46,
+load 7; `SWIFTCI_USE_LOCAL_DEPS=$R/.build/benchroot $X package benchmark
+--target InternationalizationBenchmarks --filter "Collation-.*"` in
+`Benchmarks/`): all 70 report the time of one pass (`localizedCompare` ascii
+2,751 ns = 13.8 ns per call), equal to or up to 11% above the direct run of
+2026-11-10 (`run1.md`); the plugin prints values from 10,000 ns with two
+significant digits. Output and table: `.build/benchroot/plugin-2026-11-12.txt`,
+`plugin-2026-11-12-table.md` (`plugin_table.py`). **Builds after the trial:** the main tree's EngineBench and
 `.build-ab-wmo` are at HEAD WITHOUT the probe rows; `.build-ab-nowmo` is at
 HEAD's code WITH them; the worktree's builds as in the state paragraph.
 
