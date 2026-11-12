@@ -57,16 +57,21 @@ pair, `String.utf8Span` is an out-of-line call); TODOs for SE-0517
 `UniqueBox` / SE-0527 `UniqueArray` at a macOS 27 minimum (`aef299c8`);
 `RootCollator` plainly `Sendable` (`5e9abca1`, `@unchecked Sendable` 8 → 7);
 step 2 (a wrapper type for the data views) SKIPPED by user decision. **After each Swift update, and every few weeks,** besides `check_stack_protection.sh`, repeat the `Span` check of §52 (g) (user request, 2026-11-12: "make that check occasionally, so we can reevaluate and eventually switch"): swiftlang/swift `main` `UTF8Span.swift` (is the Darwin exclusion `#if !_runtime(_ObjC)` of the inlinable `utf8Span` gone?), issue #91665, rdar://187156633 (Radar tool; keep its content out of the repo), and `.build/l27/span/spanprobe` (5 minutes): below ~1 ns per string, plan the switch of the compare entry's pinning to `Span`. **The
-next topic is not decided — ask the user.** Candidates: the PR-branch items
-of Docs/31 section 8 (the merge-forward target, open point 2: upstream's
-#1683), the minor leftovers below.
+next topic is not decided — ask the user.** **User decision (2026-11-12): no
+upstream PR any time soon** ("There is a lot of work in Foundation that
+prevent them from using our Collation as is. Lets keep everything on the
+feature branch."): all work stays on `port/collation`; do not propose the
+PR-branch items (Docs/31 sections 7 and 8, open point 2 / #1683, a fetch of
+upstream `main`, Docs/24) unless the user brings them up. Candidates: the
+minor leftovers below.
 
-**State (2026-11-12, VERIFY WITH GIT).** HEAD = `5e9abca1` on `aef299c8` on
-`d1df32c8` on `188f502b` — **6 commits ahead of `origin/port/collation` =
-`0c07edb1`**, not pushed — plus the docs of step 5 if the user committed
-them (else `Collation/Docs/31-maintainer-summary.md`,
-`Collation/Docs/optimization-targets.md` and this file are modified: give
-the add / commit lines). The worktree `../collation-baseline` is detached
+**State (2026-11-12, VERIFY WITH GIT).** HEAD = `692809ac` (docs: the `Span`
+story, part 2) on `21ed721c` (part 1) on `c5dbb905` (docs of the round) on
+`5e9abca1` (code: `RootCollator` plainly `Sendable`) on `aef299c8` on
+`d1df32c8` on `188f502b` — **9 commits
+ahead of `origin/port/collation` = `0c07edb1`**, not pushed — plus the
+commit of this file's no-PR decision if the user made it (else this file is
+modified: give the add / commit line). The code is the code of `5e9abca1`. The worktree `../collation-baseline` is detached
 at `5e9abca1`, clean; its EngineBench builds and BenchFoundation
 `.build-ab-wmo` / `.build-ab-nowmo` are at `5e9abca1`, **the BenchFoundation
 ones built WITH the temporary probe rows of `.build/l10/probe.swift`**
