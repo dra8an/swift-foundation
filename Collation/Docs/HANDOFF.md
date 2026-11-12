@@ -1,6 +1,6 @@
 # HANDOFF — Cold-Start Guide for the Collation Project
 
-## START HERE (current as of 2026-11-11 — everything below this section is history)
+## START HERE (current as of 2026-11-12 — everything below this section is history)
 
 **If anything in the history below contradicts this section, this section
 wins.** The history has stale rules and numbers on purpose; it is the record.
@@ -37,16 +37,44 @@ update run `Collation/Tools/check_stack_protection.sh` (expected since
 §51 (ay): `Storage.init` and `writeSinglePass` only; since §51 (bd) also the
 three file parsers, creation only; §51 (av)).
 
-**The phase now (2026-11-11).** The performance round is FINISHED (final
+**The phase now (2026-11-12).** The performance round is FINISHED (final
 matrix recorded 2026-11-06, see "Current numbers"). The work is the
 **upstream preparation** of the port for swift-foundation. Done: the CMake
 build, the compiled-in data, the maintainer summary
-(`Collation/Docs/31-maintainer-summary.md`), and EVERY rule of upstream's
+(`Collation/Docs/31-maintainer-summary.md`), EVERY rule of upstream's
 contribution guide that the branch itself can meet (Docs/31 section 8:
 the 4-step plan, the license headers, the ICU entry in `NOTICE.txt`, the
-five gaps of the full guide check, the parameterized test probes). **The
-next topic is the unsafe code** (NEXT TASK below) — the user calls it "a
-much, much larger topic".
+five gaps of the full guide check, the parameterized test probes), and
+**the unsafe-code round (2026-11-12, DONE — technique log §52, Docs/31
+section 9):** the four setup boxes of `RootCollator.Storage` are in one
+small owner type, `OwnedBox` (`d1df32c8`, machine code of every hot function
+identical); every other kind was tried in an isolated or safe form and
+stays, because each form cost instructions on the compare path or a call
+per read in `-no-WMO` (the scratch iterators in `OwnedBox`: Thai +5.5; the
+`UniqueBox` API with `borrowing` parameters: ascii compare +15, +10%; one
+pinning helper: ascii / latin +1, paths +10; `Span`: 2.97 → 5.60 ns per
+pair, `String.utf8Span` is an out-of-line call); TODOs for SE-0517
+`UniqueBox` / SE-0527 `UniqueArray` at a macOS 27 minimum (`aef299c8`);
+`RootCollator` plainly `Sendable` (`5e9abca1`, `@unchecked Sendable` 8 → 7);
+step 2 (a wrapper type for the data views) SKIPPED by user decision. **The
+next topic is not decided — ask the user.** Candidates: the PR-branch items
+of Docs/31 section 8 (the merge-forward target, open point 2: upstream's
+#1683), the minor leftovers below.
+
+**State (2026-11-12, VERIFY WITH GIT).** HEAD = `5e9abca1` on `aef299c8` on
+`d1df32c8` on `188f502b` — **6 commits ahead of `origin/port/collation` =
+`0c07edb1`**, not pushed — plus the docs of step 5 if the user committed
+them (else `Collation/Docs/31-maintainer-summary.md`,
+`Collation/Docs/optimization-targets.md` and this file are modified: give
+the add / commit lines). The worktree `../collation-baseline` is detached
+at `5e9abca1`, clean; its EngineBench builds and BenchFoundation
+`.build-ab-wmo` / `.build-ab-nowmo` are at `5e9abca1`, **the BenchFoundation
+ones built WITH the temporary probe rows of `.build/l10/probe.swift`**
+(rebuild before a Foundation A/B); its aligned BenchFoundation builds are
+at `188f502b` (also with the probe rows). The main tree: EngineBench at
+HEAD; `.build-ab-wmo` / `.build-ab-nowmo` at HEAD's code, with the probe
+rows; the bench file itself is clean in both trees. The paragraph below is
+the state of 2026-11-11, kept for its build notes.
 
 **State at the time of writing (VERIFY WITH GIT — do not trust this
 paragraph).** Expected (2026-11-11, 16:30): HEAD = `7ed74571` (benchmark
@@ -143,9 +171,9 @@ needs them (keep a copy of the original in `.build/`, restore it after,
 restore the worktree's copy before its next checkout, never commit them;
 row names may contain only letters, spaces and `().:_`, no digits, or the
 A/B parser skips them); CPU Counters recordings; `git fetch`. Ask before
-anything longer or with wider effect. Suite gate: **1584 tests in 141
-suites** — `swift test` prints three summary lines (45/5, 598/96, 941/40;
-since 2026-11-11, with the exit tests and the parameterized probes); add them up.
+anything longer or with wider effect. Suite gate: **1587 tests in 142
+suites** — `swift test` prints three summary lines (45/5, 601/97, 941/40;
+since 2026-11-12, with `OwnedBoxTests`); add them up.
 
 **Read next, in this order:**
 1. Your memory index from disk and ALL its feedback files — the user's
@@ -354,8 +382,9 @@ lazy globals); keep the same block in both programs.
   the probe rows with the timed stream, `oncetest.swift` = the test without
   collation code, the traces).
 
-**NEXT TASK (2026-11-11): the unsafe code — propose a plan first, start
-nothing before the user approves it.** The guide: "Avoid unsafe APIs …
+**NEXT TASK (2026-11-11, DONE 2026-11-12 — see "The phase now" and technique
+log §52): the unsafe code — propose a plan first, start nothing before the
+user approves it.** The guide: "Avoid unsafe APIs …
 unless there is no safe alternative. When unsafe is required, isolate it to
 a small, focused helper." So far (2026-11-10, step 3): every kind has its
 reason in the source and its measured cost in **Docs/31 section 9**; no use
@@ -404,7 +433,7 @@ must set `scalingFactor: .one` (the target's default `.kilo` divides by
 types became `package` (fixed 2026-11-11; the result is the expected list);
 upstream's `LockedState<Void>` → TSan false report (ours has an `Int`
 state); zsh does not split a variable that holds several paths — use an
-array. Suite gate **1584 tests in 141 suites**.
+array. Suite gate then **1584 tests in 141 suites** (since 2026-11-12: 1587/142).
 
 **NEXT TASK (2026-11-10, DONE — history below) — ask the user first.** The open work is the
 compliance with upstream's contribution guide (`CONTRIBUTION_GUIDELINE.md`

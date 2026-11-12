@@ -5871,3 +5871,49 @@ The cold process paid SwiftPM's bundle open and the file read; with the data in 
 
 **Checked.** Full suite 1576/140 on the compiled-in path (`DataParseTests` requires it); the SwiftPM resource bundle holds only `ucadata-icu4x.icu`; the CMake build links the data (`_foundation_collation_resource` and the arrays in `libFoundationInternationalization.dylib`), and a small program against the CMake libraries collates (root "apple" < "Banana"; sv "ä" > "z"); EngineBench and the four ladder tools build and run on their fallback path. Compare and sortKey code are unchanged (the change is in the loaders only). Open: a Linux build, the big-endian path of (bd), whether the ICU4X variant should move to the test target.
 
+
+### 52. The unsafe code: isolation where it is free (upstream preparation, 2026-11-12)
+
+**Why.** Upstream's `CONTRIBUTION_GUIDELINE.md`: "Avoid unsafe APIs … unless there is no safe alternative. When unsafe is required, isolate it to a small, focused helper." Docs/31 section 9 had the reason and the measured cost of each kind of unsafe use; no use was isolated yet. The plan (user decision): per kind, keep, isolate behind one small helper, or replace by a safe form; a change stays only if it costs nothing. The checks of each step: the machine code function by function (`.build/l26/cmp_functions.py`), instruction counts (EngineBench compare and sortKey on 5 corpora; the 32 Foundation groups of `.build/l10/count_groups.sh` in both build modes), `check_stack_protection.sh`, the suite, the Thread Sanitizer run, and a timing A/B in four layouts (WMO and `-no-WMO`, plain and aligned) against HEAD built in `../collation-baseline`. Steps 1b and 4 had a fixed exit: build, count, and discard at the first higher count. Tools in `.build/l27/` (`count_unsafe.py` = the count by kind; `probe0/`, `step1/`, `step1b/`, `step4/`, `span/`).
+
+#### (a) Step 0: a helper method in another file is a call in `-no-WMO`
+
+Two files, `swiftc -O -no-whole-module-optimization`: a read-only view type in one, a loop in the other. The view's subscript with `@inline(__always)`, `@inlinable`, `@_alwaysEmitIntoClient` or `@_transparent` (on the getter) is **one call per element** (generic: indirect through metadata; non-generic: a direct `bl`), and the loop loses its vectorization; WMO inlines all of them. A read through a stored `let` of the wrapper (`view.buffer[i]`) is byte-identical to a plain `UnsafeBufferPointer` loop in both modes; a noncopyable box with a stored `let pointer` in a class `let` is the same 4 instructions as a raw pointer field; a published-slot read through a helper method is a call, written out directly 5 instructions. **Consequence:** a helper type used from another file must give its hot reads through stored properties.
+
+#### (b) Step 1: `OwnedBox` for the four setup boxes of `RootCollator.Storage` — SHIPPED (`d1df32c8`)
+
+`OwnedBox<Value: ~Copyable>: ~Copyable` (in `DataStorage.swift`): allocates and initializes in init, deinitializes and frees in deinit, and gives its pointer as a stored `let`. The restart safety, the quick CJK setup, the default fast-Latin setup and the option presets moved into it; the hand-written `deinit` of `Storage` (8 lines) is gone. **First form, also the two scratch CE iterators of `ScratchBuffers`: rejected** — `compareFromRestart` 390 → 433 instructions in the binary (register moves), Thai compare +5.5 instructions per call (+0.27%), `-no-WMO` `sortKey` body 24 → 25; the iterators keep their pointer fields. **Shipped form:** every hot function byte-identical in EngineBench and BenchFoundation (WMO, `-no-WMO`, plain and aligned); only `Storage.init`/`deinit` and runtime helpers of the new type differ; counts identical (compare and sortKey on 5 corpora; 64 Foundation groups +0); stack protectors as expected; suite 1587/142 (+3 tests, `OwnedBoxTests`); TSan clean (95 tests). Timing: the "+" cells change sign between the plain and the aligned layout (`range(of:locale:)` ascii WMO +2.1% plain, −3.1% aligned; `-no-WMO` +0.7% / −5.4%), except `localizedStdRange` ascii (+0.7..+1.3% in all four layouts, byte-identical code). User decision: accepted.
+
+#### (c) Step 1b: the API of the standard library's `UniqueBox` — DISCARDED at the fixed exit
+
+SE-0517 `UniqueBox` (Swift 6.4; in the Swift 6.5 standard library, `@available(anyAppleOS 27.0, *)`) has the same init and deinit as `OwnedBox`; its pointer is internal, the value is reached through `borrow` / `mutate` accessors (with `@_unsafeSelfDependentResult`), `span`, `consume()`, `clone()`; Sendable when its value is. SE-0527 `UniqueArray` (same availability) is the standard form of `CEBuffer`. A copy with that API (private pointer, in `RootCollator.swift` so that its accessors inline in `-no-WMO`; no `span`, which needs the `Lifetimes` feature) and the hot helpers on `borrowing RestartSafety` / `borrowing QuickCJKSetup` parameters: **compare +15 ascii (159.3 → 174.7, +10%), +16 latin, +49 cjk, +19 paths, +62 thai instructions per call**; sortKey identical. All of it in `compare` (915 → 1135 instructions in the binary): a borrowed value cannot stay in a local variable across the pinned-byte closures, so each closure gets the setups again through the storage object and the box. Two findings: `borrow` accessors need `@_unsafeSelfDependentResult` (a `-typecheck` probe does not show it); a `borrowing` parameter cannot be used in `&&`, `||` or `assert` (their autoclosures cannot capture it). The variant is in `.build/l27/step1b/variant/`. Kept instead (`aef299c8`): TODOs at `OwnedBox` and `CEBuffer` to replace them with `UniqueBox` and `UniqueArray` at a macOS 27 minimum.
+
+#### (d) Step 2: a wrapper type for the data views — SKIPPED (user decision)
+
+After (a), only the form with a stored `let buffer` is free: every read becomes `.buffer[i]`, still an unsafe buffer. It would move the `@unchecked Sendable` reason of `CollationData` and `NormalizationData` into one type (not of `Storage`, which now holds `OwnedBox`, not Sendable), for about 290 changed lines of hot code (~150 reads, ~140 declarations and parameters, most in fast Latin and the CE iterator). Instead (`5e9abca1`): `RootCollator` is plainly `Sendable` (its only stored property is the Sendable `storage`); the `Storage` reason and TODO name the boxes. Machine code identical (620/620, 33688/33688, 35583/35583 functions); suite 1587/142. `@unchecked Sendable`: 8 → 7.
+
+#### (e) Step 3: the reads without a lock — KEPT (decided by (a))
+
+A published-slot helper used from `String+Collation.swift` and `ScratchBuffers.swift` would be a call on every read in `-no-WMO` (every `localizedCompare`), part of what the lock-free read saved (§51 (aj)).
+
+#### (f) Step 4: one pinning helper for the compare paths — DISCARDED at the fixed exit
+
+`withPinnedBytes(_:_:_:)` (generic, `@inline(__always)`, `rethrows`, `untraced` on both buffers, nil when a string is not contiguous) at the five two-string pinning places of `RootCollator.swift` (13 → 5 `withContiguousStorageIfAvailable` lines). Counts: **compare +1 ascii, +1 latin, +10 paths, +3..+5 thai**; cjk 0. Causes: the one optional result for both strings needs one more test than the bail-out value inside each closure; the compiler did not inline the helper into `compareSlowPath` (532 → 259 instructions, a separate specialized copy with a real closure); `compare` 915 → 920. Variant in `.build/l27/step4/variant/`.
+
+#### (g) `Span` against the pinned pointers, again (Swift 6.5; §22)
+
+A separate program (`.build/l27/span/main.swift`, `-target arm64-apple-macos26`): two adjacent corpus lines compared byte by byte, five ways. Fastest of 5 rounds, ns per pair (load 28, after a burst of 85–109 that gave the same direction):
+
+| corpus (mean bytes) | pointers (today) | `utf8Span.span` | span, `[unchecked:]` | span to a call | pointers to a call |
+|---|---:|---:|---:|---:|---:|
+| ascii (7) | 2.97 | 5.60 | 5.59 | 5.91 | 3.44 |
+| latin (7) | 2.71 | 5.37 | 5.37 | 5.69 | 3.21 |
+| cjk (11) | 2.94 | 6.77 | 6.83 | 7.15 | 3.62 |
+| paths (33) | 15.23 | 20.38 | 20.44 | 20.38 | 15.81 |
+| thai (20) | 13.48 | 17.48 | 17.61 | 17.96 | 13.89 |
+
+Instructions per call: ascii / latin 43 → 103, cjk 43 → 107, paths 154 → 243. 54 of the extra instructions are `String.utf8Span.getter` in `libswiftCore.dylib` (27 per string, out of line, not inlinable). Changed since ��22: a span passed to a function that is not inlined no longer traps (+0.3 ns); the checked reads cost nothing (the compiler removes the index checks). Unchanged: the property costs ~1.3–1.9 ns per string, above §22's "revisit below 1 ns". The pinned bytes stay pointers.
+
+#### (h) Counts after the round
+
+`count_unsafe.py` (code lines; `Unsafe…Pointer`, `withUnsafe…`, `withContiguousStorageIfAvailable`, `allocate`/`deallocate`, `assumingMemoryBound`, `bindMemory`, `Unmanaged`, `unsafeBitCast`, `unsafelyUnwrapped`): 317 → 304 (data views 139, pinned bytes 68, boxes 61 → 48, lock-free reads 29, the rest 20); the plain `Unsafe…Pointer` line count 227 → 220; `@unchecked Sendable` 8 → 7.
