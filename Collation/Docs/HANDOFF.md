@@ -56,7 +56,7 @@ pinning helper: ascii / latin +1, paths +10; `Span`: 2.97 → 5.60 ns per
 pair, `String.utf8Span` is an out-of-line call); TODOs for SE-0517
 `UniqueBox` / SE-0527 `UniqueArray` at a macOS 27 minimum (`aef299c8`);
 `RootCollator` plainly `Sendable` (`5e9abca1`, `@unchecked Sendable` 8 → 7);
-step 2 (a wrapper type for the data views) SKIPPED by user decision. **After each Swift update,** besides `check_stack_protection.sh`, run the `Span` test `.build/l27/span/spanprobe` (5 minutes; §52 (g)): if `String.utf8Span` became inlinable (below ~1 ns per string), the compare entry can pin with `Span`. **The
+step 2 (a wrapper type for the data views) SKIPPED by user decision. **After each Swift update, and every few weeks,** besides `check_stack_protection.sh`, repeat the `Span` check of §52 (g) (user request, 2026-11-12: "make that check occasionally, so we can reevaluate and eventually switch"): swiftlang/swift `main` `UTF8Span.swift` (is the Darwin exclusion `#if !_runtime(_ObjC)` of the inlinable `utf8Span` gone?), issue #91665, rdar://187156633 (Radar tool; keep its content out of the repo), and `.build/l27/span/spanprobe` (5 minutes): below ~1 ns per string, plan the switch of the compare entry's pinning to `Span`. **The
 next topic is not decided — ask the user.** Candidates: the PR-branch items
 of Docs/31 section 8 (the merge-forward target, open point 2: upstream's
 #1683), the minor leftovers below.
