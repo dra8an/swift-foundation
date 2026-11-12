@@ -389,10 +389,16 @@ in the user's 4-step plan:
    `python3 $R/.build/benchroot/run_collation.py
    .build/out/Products/Release/InternationalizationBenchmarks
    Benchmarks/Internationalization/Resources` (runs the executable directly
-   and prints ns per call; about 70 s). `swift package benchmark` FAILS on
-   this Mac: the plugin's own `BenchmarkTool` build stops with "unable to
-   resolve module dependency: '_FoundationCShims'" (the SDK's Foundation
-   finds the package's FoundationEssentials in the shared build folder).
+   and prints ns per call; about 70 s). `swift package benchmark` works
+   after a LOCAL pin (2026-11-11): `cd Benchmarks && SWIFTCI_USE_LOCAL_DEPS=$R/.build/benchroot
+   $X package resolve swift-argument-parser --version 1.6.2`, then
+   `SWIFTCI_USE_LOCAL_DEPS=$R/.build/benchroot $X package benchmark --target
+   InternationalizationBenchmarks --filter "Collation-.*"`. Cause: the
+   parser (1.7+) imports `FoundationEssentials` when it can, and finds the
+   local package's module in the shared products folder without its C module
+   `_FoundationCShims` (the scan diagnostics: `ArgumentParser-dependency-scan.dia`).
+   The entries now set `scalingFactor: .one` (they had inherited `.kilo`:
+   the plugin divided their times by 1000; the direct runs were right).
    First run (12:36, load 9): compare and search rows agree with Docs/21
    WMO (`localizedCompare` ascii 13.4 against 12, `range(of:locale:)` ascii
    38.6 against 37); the sort rows are near the `-no-WMO` column (cause not

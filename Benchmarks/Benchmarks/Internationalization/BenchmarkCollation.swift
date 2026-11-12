@@ -28,8 +28,10 @@ private struct CollationItem {
 ///
 /// One iteration is one pass over a corpus: a compare entry compares each line with the next one, a search entry searches each line for the first four characters of the second line, and a sort entry sorts all lines. The results go into one sum per pass, so that `blackHole` runs once per pass and not once per call.
 func collationBenchmarks() {
+    // `scalingFactor: .one`: one iteration is one pass, and the bodies do not loop over `benchmark.scaledIterations`. The other benchmarks of this target set `Benchmark.defaultConfiguration.scalingFactor` to `.kilo`, which would divide every time by 1000.
     let configuration = Benchmark.Configuration(
         metrics: [.cpuTotal, .wallClock, .throughput],
+        scalingFactor: .one,
         maxDuration: .seconds(1),
         maxIterations: 100_000)
     let locale = Locale(identifier: "en")
