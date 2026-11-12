@@ -22,9 +22,7 @@
 import FoundationEssentials
 #endif
 
-// @unchecked: the two stored views (fast Latin table, restart safety) point into the storage owned by `data`/`base`/`norm`, which the struct retains; everything is immutable after init.
-// TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
-package struct RootCollator: @unchecked Sendable {
+package struct RootCollator: Sendable {
     package enum Order: Int, Sendable {
         case ascending = -1
         case same = 0
@@ -75,8 +73,8 @@ package struct RootCollator: @unchecked Sendable {
     }
 
     /// All stored state lives behind one class reference, so a RootCollator value is a single pointer: a large struct would be copied on the stack at every method call, and per iteration around a throwing call, which the optimizer cannot hoist the copy across. Everything is immutable after init. The setup boxes (the `…Box` fields) are `OwnedBox` values, which allocate their memory in init and free it in deinit: the static fast paths and the pinned-buffer closures receive the box's pointer, a trivial value, with no reference counting.
-    // @unchecked Sendable: every stored property is a `let` set in init; the buffer views point into memory owned by the data (`DataStorage`), which this class retains.
-    // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, so that only that type needs @unchecked Sendable and this one can drop it.
+    // @unchecked Sendable: every stored property is a `let` set in init, and nothing changes after init: the buffer views point into memory owned by the data (`DataStorage`), which this class retains, and the setup boxes (`OwnedBox`, not Sendable: it holds a raw pointer) are written only in init.
+    // TODO: Keep the buffer views in one Sendable wrapper type for immutable buffers, and the setups in the standard library's `UniqueBox` (Sendable when its value is; see the TODO at `OwnedBox`); then this class can drop @unchecked Sendable.
     final class Storage: @unchecked Sendable {
         let data: CollationData
         /// The base (root) data when `data` is a tailoring.
