@@ -101,29 +101,44 @@ env for machine 2):
   path's NSString → CoreFoundation → C++ bridge, not from the engine. Do not
   use Table 2 as evidence about engine quality; Table 1 is that evidence.
 
-## What the harness itself costs (measured 2026-10-15)
+## What the harness itself costs (measured 2026-11-13; technique log §52 (k))
 
 EngineBench (Swift) and `bench_icu` (C) are different programs, so the loop
-around each call is not the same. Probes with empty stubs instead of the
-collator measured the difference (Apple Silicon, min of 3 runs × 9 passes):
+around each call is not the same. Measured with the same engine object and the
+loop reduced in stages (edits of the assembly of the benchmark's `main`):
 
-| empty loop, ns per call | ascii | paths | thai |
+| compare, ns per call | ascii | latin | cjk |
 |---|---:|---:|---:|
-| C compare loop (`char *` arguments) | 1.0 | 0.9 | 0.9 |
-| Swift compare loop (our API shape) | 2.0 | 2.0 | 2.0 |
-| C sortKey loop (stack buffer) | 1.0 | 0.9 | 0.9 |
-| Swift sortKey loop + the `[UInt8]` work | 9.7 | 12.7 | 14.0 |
+| Swift loop until 2026-11-13 (42 instructions around the call) | 8.9 | 9.4 | 19.0 |
+| Swift loop cut to the minimum (14 instructions) | 7.7 | 8.0 | 17.4 |
+| C loop as it is (13 instructions) | 9.3 | 10.1 | 40.6 |
+| C loop cut to the minimum (10 instructions) | 9.3 | 10.1 | 40.5 |
 
-**The extra ~1 ns per Swift call is the API's call shape, not the loop:**
-about 0.5 ns for `throws` (the error check after each call), 0.4 ns for two
-`String` arguments (two words each, against one for `char *`), and 0.2 ns
-for the `options` argument. Every Swift caller pays it. Three loop shapes
-(the current one, a local copy of the array, `withUnsafeBufferPointer`) all
-cost 2.02 ns, and paths — 100% heap strings — costs the same as ascii, so
-the loop does no reference counting. **Do not "optimize" the harness to
-remove this cost: it would measure a call that no user makes.**
+So the old Swift loop cost 1.2–1.5 ns of each compare, and the C loop costs
+nothing that shows. The parts of the old loop (latin): the call of
+`Order.rawValue` 0.3 ns (a `package` getter of another module, a call only in
+the bench programs); the options word packed again from the global `opts` on
+every pass 0.6 ns; the sum in the global `sink` 0.1 ns; the reload of the
+global `lines` with two bounds checks 0.4 ns. **Since 2026-11-13 EngineBench's
+timed loops use local copies and a local sum**; the compiler builds 10
+instructions around the call, and the rows read the minimum (7.6 / 7.9 / 17.6).
+What stays in the loop is what a caller pays: two `String` arguments, the
+options as a ready value, the call, the error check of a throwing call.
 
-The sortKey array work (clear, fill, terminate) is also real: our
+**The method of 2026-10-15 was wrong, and so was its conclusion** ("the extra
+~1 ns per Swift call is the API's call shape, not the loop … do not optimize
+the harness"). It timed each loop with an empty function in place of the
+collator (C 1.0, Swift 2.0 ns then; C 2.4, Swift 2.2 ns today). An empty
+loop is limited by the sum that lives in memory; with a real compare inside,
+that part runs in parallel and costs nothing, and the instructions that the
+empty loop hides cost time. To measure a loop's cost, keep the call and change
+the loop.
+
+**Rule for a change of a bench loop:** keep every value that the loop reads in
+a local, never add a call or a branch on the result, and run the loop check
+(below) before and after.
+
+The sortKey array work (clear, fill, terminate) is real: our
 `sortKey(for:into:)` does it inside the call.
 
 **Asymmetry that stays, by decision:** `bench_icu` converts each line to
@@ -133,12 +148,43 @@ compare takes UTF-8, so compare is symmetric). That conversion costs ICU
 each engine on its own native input, and making the reference slower would
 hide our gap rather than measure it.
 
-Net effect on the gap: the harness explains about 1 ns of the ascii compare
-gap — about 1 of 5.8 ns in the 2026-10-16 baseline (15.1 against 9.3); it was
-1 of 7.4 ns before §50 (16.7 against 9.3). The rest is engine time.
+## The loop check (since 2026-11-13; technique log §52 (k))
 
-Probe sources (not committed) lived in `.build/harness-probe/`; rebuild them
-from this description if the question comes back.
+A compare of 8 ns is about 150 instructions. Two instructions more in the
+benchmark's loop show as 1–3%, and they are not engine time: the step of latin
+compare from 9.1 to 9.4 between 2026-11-06 and 2026-11-12 was one call that a
+visibility change (`public` to `package`) put into the loop. The counts of
+`count_compare.sh` start at the entry of `compare` and do not see the loop.
+
+```sh
+Collation/Tools/insn-count/loop_check.sh <EngineBench binary>      # about 5 minutes, times nothing
+```
+
+It records whole passes under lldb and prints, for ascii, latin and cjk: the
+instructions per pass inside `compare` (the engine) and outside it (the loop),
+the taken branches, and two position rules. It compares with
+`Collation/Tools/insn-count/loop_check.ref` and ends with an error when the
+loop count changed or a rule applies. `--write-ref` after the binary's name
+replaces the reference (do that only with a recorded baseline).
+
+- **"LOOP CHANGED":** the benchmark, not the engine, differs from the
+  reference build. Do not compare the compare rows of the two builds; find
+  the cause in `main` first (`pc_trace.py` writes the executed addresses).
+- **Rule 1 applies:** a 4 KB address boundary cuts a hot straight run of code
+  so that it needs one more piece (the processor takes in code in pieces of at
+  most 16 instructions; a taken branch and a 4 KB boundary end a piece). Seen
+  cost: 0.5 ns on latin.
+- **Rule 2 applies:** two hot pieces of code that end in a return start a
+  multiple of 2 KB apart. Seen cost: 0.4 ns on latin.
+- With rule 1 or 2, the binary's latin / ascii / cjk compare rows are slower
+  than the same code at another position. Do not record a baseline from that
+  binary, and do not "fix" it with padding in the benchmark: say so in the
+  record, and measure the next build. The micro tests of both rules:
+  `Collation/Tools/layout-micro/run.sh`.
+
+Run it once for each new EngineBench binary of a matrix series (the four runs
+of a series use one binary), and for both binaries of an engine A/B whose
+latin, ascii or cjk compare rows differ by less than 5%.
 
 ## Prerequisites (one-time)
 
@@ -181,6 +227,10 @@ replace the older load limits and the "two runs, record run B" rule below.
 
   A set of runs counts if ICU C is within 2% and macOS within 2.5% of these.
   If only the macOS side drifts, run the frozen-binary check (below).
+- **The loop check (since 2026-11-13):** before a series is recorded, run
+  `Collation/Tools/insn-count/loop_check.sh` on its EngineBench binary (the
+  section "The loop check" above). A series whose binary reports a changed
+  loop or a position rule is not a baseline.
 - **Recording:** run the matrix **at least 4 times** and record the
   **median** of each cell: `python3 Collation/Tools/matrix_record.py
   <run1.txt> … <run4.txt>` prints the Docs/21 tables and the checks. A cell
@@ -201,7 +251,7 @@ replace the older load limits and the "two runs, record run B" rule below.
   before 16–19), and the macOS side did not change. Keep the same warm-up
   in both programs. EngineBench and `bench_icu` have none: the engine rows
   read no such global per call, and the paths compare levels have another
-  cause (not known).
+  cause (not known; not examined again with the tools of §52 (k)).
 - **A/B decisions on two-level rows:** trust the instruction count and the
   aligned builds; a timing difference below their range is not a finding.
 
