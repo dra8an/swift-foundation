@@ -16,6 +16,11 @@ REPO=${SCRIPT_DIR:h:h}
 OUT="$REPO/.build/thai-ladder"
 ENGINE_SRC="$REPO/Sources/FoundationInternationalization/Collation"
 
+# Start from an empty Sources folder: `cp` adds files but never removes them, so a file from another commit
+# (an engine file or a shim that this commit does not have) would stay and be compiled in. The build
+# output folders (.build*) stay, so the build is still incremental.
+[[ -n "$REPO" && "$OUT" == "$REPO/.build/"* ]] || { echo "unexpected OUT: $OUT" >&2; exit 1; }
+rm -rf -- "$OUT/Sources"
 mkdir -p "$OUT/Sources/ThaiLadder/Resources"
 cp "$ENGINE_SRC"/*.swift "$OUT/Sources/ThaiLadder/"
 cp "$SCRIPT_DIR/shims/LockedState.swift" "$OUT/Sources/ThaiLadder/"
