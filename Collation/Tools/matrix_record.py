@@ -54,13 +54,17 @@ def spread(values):
     m = med(values)
     return (max(values) - min(values)) / m if m else 0
 
+def num(x):
+    """A Table 2 value: whole when it is whole (the runs before 2026-11-13 print whole ns), else one decimal."""
+    return f'{x:.0f}' if float(x).is_integer() else f'{x:.1f}'
+
 def t2cell(api, c, i, label):
     v = [r[1][(api, c)][i] for r in runs]
     m = med(v)
     if spread(v) >= 0.05:
         two_level.append((api, c, label, min(v), max(v)))
-        return m, f'{m:.0f}‡'
-    return m, (f'{m:.0f}' if float(m).is_integer() else f'{m:.1f}')
+        return m, f'{num(m)}‡'
+    return m, num(m)
 
 # The checks.
 print(f'Checks over {len(runs)} runs (median; gates of Docs/27):\n')
@@ -88,7 +92,7 @@ for api, title in TITLES:
     print()
 print(f'‡ Two-level cells (the runs differ by 5% or more; the median is recorded), with the range over the {len(runs)} runs:')
 for api, c, label, lo, hi in two_level:
-    print(f'- {api}, {NAME[c]}, {label}: {lo:.0f}–{hi:.0f}')
+    print(f'- {api}, {NAME[c]}, {label}: {num(lo)}–{num(hi)}')
 print()
 print(f'Floor (lowest speedup): WMO {floor_w[0]:.2f}× ({floor_w[1]}); `-no-WMO` {floor_n[0]:.2f}× ({floor_n[1]}).\n')
 

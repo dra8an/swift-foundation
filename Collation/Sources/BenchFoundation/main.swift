@@ -35,7 +35,9 @@ func measure(_ name: String, ops: Int, _ body: () -> Void) {
         body()
         best = min(best, DispatchTime.now().uptimeNanoseconds - start)
     }
-    print("\(name): \(best / UInt64(ops)) ns/op (\(ops) ops)")
+    // One decimal, rounded: whole nanoseconds, cut off, made one step 8% of a 12 ns row (technique log §52 (l)).
+    let tenths = (best * 10 + UInt64(ops) / 2) / UInt64(ops)
+    print("\(name): \(tenths / 10).\(tenths % 10) ns/op (\(ops) ops)")
 }
 
 var sink = 0
@@ -80,134 +82,178 @@ do {
 // the copy across a throwing call (optimization-targets.md §29). A local
 // receiver hoists; real callers hold locals too, so this is the honest shape.
 
+// Each timed loop below reads local copies (`ls`, `loc`, `n`) and adds into a local sum. `lines`, `locale`, `needle`
+// and `sink` are top-level variables of this file, that is, globals: through a global, the loop loads and stores on
+// every pass, and that is time of the benchmark, not of the API (technique log §52 (k), (l)). Keep the two bench
+// programs (Sources/BenchFoundation/main.swift and Tools/bench_system_foundation.swift) in the same loop form.
+
 // 0. Direct RootCollator.compare — cross-module baseline
 measure("RootCollator.cmp  ", ops: (lines.count - 1) * reps) {
+    let ls = lines, o = defaultOpts
+    var sum = 0
     let c = collator
     for _ in 0..<reps {
-        for i in 1..<lines.count {
-            sink += (try! c.compare(lines[i - 1], lines[i], options: defaultOpts)).rawValue
+        for i in 1..<ls.count {
+            sum &+= Int(unsafeBitCast(try! c.compare(ls[i - 1], ls[i], options: o), to: UInt8.self))   // the tag byte: `rawValue` of the package enum is a call from this module
         }
     }
+    sink &+= sum
 }
 
 // 0b. Direct RootCollator.sortKey — pure-engine baseline vs ucol_getSortKey
 measure("RootCollator.sk   ", ops: lines.count * reps) {
+    let ls = lines, o = defaultOpts
+    var sum = 0
     let c = collator
     var key: [UInt8] = []
     for _ in 0..<reps {
-        for line in lines {
-            try! c.sortKey(for: line, into: &key, options: defaultOpts)
-            sink += key.count
+        for line in ls {
+            try! c.sortKey(for: line, into: &key, options: o)
+            sum &+= key.count
         }
     }
+    sink &+= sum
 }
 
 // 0c. Direct RootCollator.sortKey (allocating variant) — returns a fresh
 // [UInt8] per call; measures the allocation+copy the inout API avoids.
 measure("RootCollator.skRet", ops: lines.count * reps) {
+    let ls = lines, o = defaultOpts
+    var sum = 0
     let c = collator
     for _ in 0..<reps {
-        for line in lines {
-            sink += (try! c.sortKey(for: line, options: defaultOpts)).count
+        for line in ls {
+            sum &+= (try! c.sortKey(for: line, options: o)).count
         }
     }
+    sink &+= sum
 }
 
 // 1. compare(_:locale:)
 measure("compare(locale:)  ", ops: (lines.count - 1) * reps) {
+    let ls = lines, loc = locale
+    var sum = 0
     for _ in 0..<reps {
-        for i in 1..<lines.count {
-            sink += lines[i - 1].compare(lines[i], locale: locale).rawValue
+        for i in 1..<ls.count {
+            sum &+= ls[i - 1].compare(ls[i], locale: loc).rawValue
         }
     }
+    sink &+= sum
 }
 
 // 2. localizedCompare
 measure("localizedCompare  ", ops: (lines.count - 1) * reps) {
+    let ls = lines
+    var sum = 0
     for _ in 0..<reps {
-        for i in 1..<lines.count {
-            sink += lines[i - 1].localizedCompare(lines[i]).rawValue
+        for i in 1..<ls.count {
+            sum &+= ls[i - 1].localizedCompare(ls[i]).rawValue
         }
     }
+    sink &+= sum
 }
 
 // 3. localizedStandardCompare
 measure("localizedStdCmp   ", ops: (lines.count - 1) * reps) {
+    let ls = lines
+    var sum = 0
     for _ in 0..<reps {
-        for i in 1..<lines.count {
-            sink += lines[i - 1].localizedStandardCompare(lines[i]).rawValue
+        for i in 1..<ls.count {
+            sum &+= ls[i - 1].localizedStandardCompare(ls[i]).rawValue
         }
     }
+    sink &+= sum
 }
 
 // 3b. localizedCaseInsensitiveCompare — secondary strength, non-numeric
 measure("localizedCaseICmp ", ops: (lines.count - 1) * reps) {
+    let ls = lines
+    var sum = 0
     for _ in 0..<reps {
-        for i in 1..<lines.count {
-            sink += lines[i - 1].localizedCaseInsensitiveCompare(lines[i]).rawValue
+        for i in 1..<ls.count {
+            sum &+= ls[i - 1].localizedCaseInsensitiveCompare(ls[i]).rawValue
         }
     }
+    sink &+= sum
 }
 
 // 4. localizedStandardContains
 let needle = lines.count > 1 ? String(lines[1].prefix(4)) : "test"
 measure("localizedStdContns", ops: lines.count * reps) {
+    let ls = lines, n = needle
+    var sum = 0
     for _ in 0..<reps {
-        for line in lines {
-            sink += line.localizedStandardContains(needle) ? 1 : 0
+        for line in ls {
+            sum &+= line.localizedStandardContains(n) ? 1 : 0
         }
     }
+    sink &+= sum
 }
 
 // 4b. localizedCaseInsensitiveContains — secondary strength search
 measure("localizedCaseICnt ", ops: lines.count * reps) {
+    let ls = lines, n = needle
+    var sum = 0
     for _ in 0..<reps {
-        for line in lines {
-            sink += line.localizedCaseInsensitiveContains(needle) ? 1 : 0
+        for line in ls {
+            sum &+= line.localizedCaseInsensitiveContains(n) ? 1 : 0
         }
     }
+    sink &+= sum
 }
 
 // 5. localizedStandardRange(of:) — range-returning search
 measure("localizedStdRange ", ops: lines.count * reps) {
+    let ls = lines, n = needle
+    var sum = 0
     for _ in 0..<reps {
-        for line in lines {
-            if let r = line.localizedStandardRange(of: needle) {
-                sink += line.distance(from: r.lowerBound, to: r.upperBound)
+        for line in ls {
+            if let r = line.localizedStandardRange(of: n) {
+                sum &+= line.distance(from: r.lowerBound, to: r.upperBound)
             }
         }
     }
+    sink &+= sum
 }
 
 // 6. range(of:options:range:locale:) — generic locale search
 measure("range(of:locale:) ", ops: lines.count * reps) {
+    let ls = lines, loc = locale, n = needle
+    var sum = 0
     for _ in 0..<reps {
-        for line in lines {
-            if let r = line.range(of: needle, options: [], locale: locale) {
-                sink += line.distance(from: r.lowerBound, to: r.upperBound)
+        for line in ls {
+            if let r = line.range(of: n, options: [], locale: loc) {
+                sum &+= line.distance(from: r.lowerBound, to: r.upperBound)
             }
         }
     }
+    sink &+= sum
 }
 
 // 7. range(of:options:.backwards) — backward search (full CE pre-production)
 measure("range(backwards)  ", ops: lines.count * reps) {
+    let ls = lines, loc = locale, n = needle
+    var sum = 0
     for _ in 0..<reps {
-        for line in lines {
-            if let r = line.range(of: needle, options: [.backwards], locale: locale) {
-                sink += line.distance(from: r.lowerBound, to: r.upperBound)
+        for line in ls {
+            if let r = line.range(of: n, options: [.backwards], locale: loc) {
+                sum &+= line.distance(from: r.lowerBound, to: r.upperBound)
             }
         }
     }
+    sink &+= sum
 }
 
 // 8. compare(_:options:range:locale:) with non-default options — the options-translation path
 measure("compare(opts:loc:) ", ops: (lines.count - 1) * reps) {
+    let ls = lines, loc = locale
+    var sum = 0
     for _ in 0..<reps {
-        for i in 1..<lines.count {
-            sink += lines[i - 1].compare(lines[i], options: [.caseInsensitive, .diacriticInsensitive], range: nil, locale: locale).rawValue
+        for i in 1..<ls.count {
+            sum &+= ls[i - 1].compare(ls[i], options: [.caseInsensitive, .diacriticInsensitive], range: nil, locale: loc).rawValue
         }
     }
+    sink &+= sum
 }
 
 // 9. The sorting APIs: one op is one ELEMENT of a sort (a sort of n lines makes about n·log2(n) comparisons). Each pass sorts max(1, reps / 50) times, so thai (~33k lines, 10 reps) sorts once.

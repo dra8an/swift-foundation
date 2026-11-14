@@ -5986,3 +5986,26 @@ These are one interleaved A/B, not a matrix series: **Table 1 of Docs/21 (2026-1
 **6. What the observations of (j) mean now.** The tail experiment and the start padding: other loop code (table of 1), no position. The function-alignment sweep and the data sweep: correct, no effect. The "stale `LockedState.swift`" build of 2026-11-12 (latin 9.7; counters 81.3 / 1.4 / 12.1 / 5.1, the shares of the rule-1 case): the stale file changed the binary, and the loss looks like rule 1 — that binary no longer exists, so this is not checked. Also ruled out today: the stack position (the same binary at 17 environment sizes: 9.4 each) and crossings of 64-byte boundaries.
 
 **Open.** (a) The hardware reason of both rules is not known; they are measured on the M1 Max only. (b) Rule 1 explains the positions exactly and the size only in part. (c) BenchFoundation's direct engine rows (`RootCollator.cmp`, not in the tables) still have the loop with globals and the `rawValue` call. (d) A source of chance stays: a new build can fall on one of the rules (rule 1: one address in 1024 for each hot jump target; rule 2: return-ended pieces only); the loop check finds it in 5 minutes without timing.
+
+#### (l) The Table 2 bench programs: one decimal, and the same loop form (2026-11-13)
+
+**Why.** After (k), the same question for Table 2: BenchFoundation and `bench_system_foundation.swift` also read globals (`lines`, `locale`, `needle`, `sink`) in their timed loops, and both print whole nanoseconds, cut off — one step is 8% of a 12 ns row.
+
+**The loop in machine code** (`localizedCompare`, WMO build): 22 instructions around the call, against 42 in EngineBench's old loop — no options to pack, the `rawValue` of the public `ComparisonResult` in place; avoidable are the sum in the global `sink` (5 instructions), two reloads from the stack and a bounds check.
+
+**The change, in both programs alike:** each row prints one decimal, rounded; each timed loop of rows 0–8 reads local copies (`ls`, `loc`, `n`) and adds into a local sum; BenchFoundation's direct engine rows take the form of EngineBench (the tag byte in place of `rawValue`). The sort rows are not changed (one call sorts a whole array).
+
+**A/B, old loops against new loops, both with decimals** (WMO build, interleaved, 5 rounds; ascii / latin / cjk / paths; thai within 0.6% in every row):
+
+| row | ascii | latin | cjk | paths |
+|---|---|---|---|---|
+| direct engine compare | 9.0 → 7.6 | 9.3 → 7.8 | 18.9 → 17.7 | 19.7 → 17.4 |
+| `compare(_:locale:)` | 17.7 → 17.1 | 18.3 → 17.6 | 29.5 → 29.4 | 29.0 → 28.6 |
+| `localizedCompare` | 12.4 → 12.4 | 13.0 → 13.0 | 23.9 → 24.4 | 23.8 → 23.7 |
+| `localizedStandardCompare` | 14.9 → 14.6 | 15.2 → 15.2 | 31.5 → 31.5 | 26.9 → 26.7 |
+| `localizedCaseInsensitiveCompare` | 15.5 → 15.6 | 16.2 → 16.1 | 32.9 → 33.0 | 26.8 → 26.7 |
+| options compare | 24.3 → 24.3 | 24.7 → 24.7 | 42.7 → 42.6 | 35.2 → 35.3 |
+
+So the loops of the API rows cost nothing that shows, except `compare(_:locale:)` (0.6–0.7 ns on ascii and latin: the global `locale` on every pass); the search rows read 2–4% lower on cjk and within 1.5% elsewhere; the unchanged sort rows move by up to 6% between the two builds, which is their run-to-run size. The macOS program: every row within 0.7% (ascii, latin; 3 rounds), with one cell at −1.4%. **The decimal is the larger gain:** `localizedCompare` latin reads 13.0 — the recorded "12, two-level 12–13" was the cut-off at a whole number, not two levels. `matrix_record.py` keeps the decimal in marked cells and ranges.
+
+**Not done.** (a) Only the WMO build was timed; the `-no-WMO` column comes from the same source. (b) No whole-pass recording of a Table 2 row: a breakpoint on the API function is useless (the warm-up calls it for 100 ms), a breakpoint by address did not hit, and a recording from a line breakpoint hung; `loop_check.sh` covers EngineBench only. (c) **No series is recorded with these programs yet.** A first series of the day (14:06) read 2% slow on every column and does not count; the series of 14:39 is in Docs/21 (Table 1 with the new EngineBench loop; Table 2 with the old loops and whole numbers); the final series (6 runs) was not started, because the machine was on battery at 16:14 and `bench_icu` read ascii 9.5–9.9 against 9.3. Tools: `.build/l28/t2/` (`transform.py` = the two stages, `ab.py`, the A and B binaries), the script of the final series `.build/matrix/final-series-2026-11-13.sh`.

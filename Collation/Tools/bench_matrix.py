@@ -69,7 +69,7 @@ def ratio(a, b):
     return f"{a/b:.2f}x" if (a and b) else "  -"
 
 def fmt(v):
-    """Table 2: BenchFoundation and bench_system print whole numbers; keep them whole."""
+    """Table 2: whole numbers stay whole (runs before 2026-11-13); since then both programs print one decimal."""
     if v is None:
         return "-"
     return f"{v:.0f}" if float(v).is_integer() else f"{v:.1f}"

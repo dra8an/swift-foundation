@@ -227,6 +227,11 @@ replace the older load limits and the "two runs, record run B" rule below.
 
   A set of runs counts if ICU C is within 2% and macOS within 2.5% of these.
   If only the macOS side drifts, run the frozen-binary check (below).
+- **Table 2 prints one decimal (since 2026-11-13, technique log §52 (l)):**
+  BenchFoundation and `bench_system_foundation.swift` print rounded tenths;
+  before that, whole nanoseconds, cut off — a cell on the edge of a whole
+  number then looked like a two-level cell (`localizedCompare` latin "12–13"
+  is 13.0). The macOS gates stay whole numbers.
 - **The loop check (since 2026-11-13):** before a series is recorded, run
   `Collation/Tools/insn-count/loop_check.sh` on its EngineBench binary (the
   section "The loop check" above). A series whose binary reports a changed
@@ -256,6 +261,12 @@ replace the older load limits and the "two runs, record run B" rule below.
   aligned builds; a timing difference below their range is not a finding.
 
 ## Before you record anything: check the machine
+
+**First: the power source.** `pmset -g ps` must say "AC Power". On 2026-11-13
+a series was not started because the machine was on battery and `bench_icu`
+read ascii 9.5–9.9 against its gate of 9.3. Then run `bench_icu` on ascii,
+latin and thai five times each (one minute): the best of five must be at the
+gate before a series of 25–35 minutes starts.
 
 Load average alone is misleading on this hardware. A box can read load 9 with
 **52% of CPU idle**, because Darwin's load average counts threads blocked in
