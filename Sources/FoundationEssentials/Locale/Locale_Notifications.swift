@@ -19,13 +19,13 @@ internal import Synchronization
 /// If any cached values need to be recalculated process-wide, call `reset`.
 package struct LocaleNotifications : Sendable, ~Copyable {
     package static let cache = LocaleNotifications()
-
+    
 #if canImport(Synchronization) && FOUNDATION_FRAMEWORK
     let _count = Atomic<Int>(1)
 #else
     let _count = LockedState<Int>(initialState: 1)
 #endif
-
+    
     package func count() -> Int {
 #if canImport(Synchronization) && FOUNDATION_FRAMEWORK
         _count.load(ordering: .relaxed)
