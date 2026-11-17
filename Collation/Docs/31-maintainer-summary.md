@@ -45,7 +45,16 @@ Windows):** these APIs collate with the engine, with the Darwin signatures:
   `localizedStandardRange(of:)`, `range(of:options:range:locale:)`;
 - `String.StandardComparator` (`.localizedStandard`, `.localized`) and
   `String.Comparator` with a locale, so the sorts with `SortDescriptor` and
-  `KeyPathComparator` too.
+  `KeyPathComparator` too;
+- inside `#Predicate`: `localizedCompare` and `localizedStandardContains`.
+  For these, two public types that the Darwin framework already has are now
+  compiled in the other builds too: `PredicateExpressions.StringLocalizedCompare`
+  and `PredicateExpressions.StringLocalizedStandardContains`, with their
+  `build_localizedCompare` / `build_localizedStandardContains` functions and
+  their conformances (`Predicate/LocalizedString.swift`, whose
+  `#if FOUNDATION_FRAMEWORK` is gone). **These two types are new public API
+  in the builds without the framework**; the tests are in
+  `PredicateInternationalizationTests`.
 
 A locale change invalidates the cached collators (`LocaleNotifications`).
 
