@@ -219,11 +219,11 @@ replace the older load limits and the "two runs, record run B" rule below.
 
   | corpus | ICU C compare | ICU C sortKey | macOS `localizedCompare` |
   |---|---:|---:|---:|
-  | ascii | 9.3 | 100.9 | 200 |
-  | latin | 10.1 | 117.0 | 341 |
-  | cjk | 40.8 | 115.7 | 354 |
-  | paths | 30.0 | 349.6 | 314 |
-  | thai | 171.9 | 151.2 | 502 |
+  | ascii | 9.3 | 100.9 | 201.3 |
+  | latin | 10.1 | 117.0 | 347.2 |
+  | cjk | 40.8 | 115.7 | 355.2 |
+  | paths | 30.0 | 349.6 | 313.6 |
+  | thai | 171.9 | 151.2 | 505.0 |
 
   **The ICU C gates are for ICU 80.0.1 (since 2026-11-17, technique log
   §52 (m)).** The local ICU checkout was rebuilt on 2026-11-16; `bench_icu`
@@ -233,7 +233,14 @@ replace the older load limits and the "two runs, record run B" rule below.
   `otool -L Collation/Tools/bench_icu` and `uvernum.h` before a series): the
   ICU gates no longer apply; judge the machine with the macOS check and the
   frozen binary, take the medians of at least 4 runs that pass both as the
-  new gates, and write the old ones here. The macOS gates are of 2026-11-04.
+  new gates, and write the old ones here. **The macOS gates are also of
+  2026-11-17** (the same six runs; the frozen binary within 1 ns and the
+  unchanged EngineBench on its values showed a machine at its speed). Until
+  then (2026-11-04): 200 / 341 / 354 / 314 / 502 — latin read 347–350 in
+  every series since 2026-11-05, close to the 2.5% limit with a healthy
+  machine. The frozen binary of 2026-10-30 and its expected values (Docs/21)
+  stay as they are: it is the one check that no update of a reference can
+  move.
 
   A set of runs counts if ICU C is within 2% and macOS within 2.5% of these.
   If only the macOS side drifts, run the frozen-binary check (below).
@@ -241,7 +248,7 @@ replace the older load limits and the "two runs, record run B" rule below.
   BenchFoundation and `bench_system_foundation.swift` print rounded tenths;
   before that, whole nanoseconds, cut off — a cell on the edge of a whole
   number then looked like a two-level cell (`localizedCompare` latin "12–13"
-  is 13.0). The macOS gates stay whole numbers.
+  is 13.0). The macOS gates have one decimal since 2026-11-17.
 - **The loop check (since 2026-11-13):** before a series is recorded, run
   `Collation/Tools/insn-count/loop_check.sh` on its EngineBench binary (the
   section "The loop check" above). A series whose binary reports a changed

@@ -53,7 +53,10 @@ on ascii / latin / thai).
 **The checks (Docs/27), medians of the six runs:**
 
 1. **macOS** `localizedCompare` 201/347/355/314/505 against the reference
-   200/341/354/314/502: within 1.8% (limit 2.5%).
+   200/341/354/314/502: within 1.8% (limit 2.5%). From this series on, its
+   medians are the reference (201.3/347.2/355.2/313.6/505.0; user decision
+   2026-11-17, Docs/27): latin read 347–350 against 341 in every series
+   since 2026-11-05.
 2. **The frozen binary** of 2026-10-30 (`Collation/Tools/frozen_check.py`,
    load 7–8): `localizedStandardCompare` 53/55/81/75/275 against
    53/55/82/75/276, `localizedCompare` 38/40/59/56/258 against 39/40/58/56/257
