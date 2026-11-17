@@ -73,29 +73,39 @@ A locale change invalidates the cached collators (`LocaleNotifications`).
 
 ## 4. Performance
 
-Measured on Apple Silicon (M1 Max), macOS 27.2.1, Swift 6.5, the median of 4
-runs (Docs/21, 2026-11-06).
+Measured on Apple Silicon (M1 Max), macOS 27.2.1, Swift 6.5, the median of 6
+runs (Docs/21, the baseline of 2026-11-17).
 
-**The engine against ICU4C** (EngineBench against ICU C, ns per call;
-speedup = ICU / ours):
+**The engine against ICU4C** (EngineBench against ICU C, ICU 80.0.1, ns per
+call; speedup = ICU / ours):
 
 | corpus | compare | sortKey |
 |---|---|---|
-| ASCII | 8.9 / 9.3, 1.04× | 71.8 / 104.0, 1.45× |
-| Latin | 9.1 / 10.1, 1.11× | 92.1 / 120.7, 1.31× |
-| CJK | 18.4 / 40.5, 2.20× | 101.1 / 119.8, 1.19× |
-| paths | 19.9 / 29.5, 1.49× | 173.4 / 365.3, 2.11× |
-| Thai | 160.4 / 172.2, 1.07× | 143.1 / 153.9, 1.08× |
+| ASCII | 7.6 / 9.3, 1.22× | 71.0 / 100.9, 1.42× |
+| Latin | 7.9 / 10.1, 1.28× | 91.3 / 117.0, 1.28× |
+| CJK | 17.7 / 40.8, 2.31× | 100.8 / 115.7, 1.15× |
+| paths | 18.1 / 30.0, 1.66× | 173.2 / 349.6, 2.02× |
+| Thai | 158.8 / 171.9, 1.08× | 142.1 / 151.2, 1.06× |
 
-The API that returns a new `[UInt8]` key is 0.80–0.86× of ICU, which writes
+The API that returns a new `[UInt8]` key is 0.78–0.85× of ICU, which writes
 into the caller's buffer; most of that difference is the new array itself
 (§51 (be)).
+
+**How these numbers compare with older ones** (technique log §52 (k)–(n)).
+Recordings before 2026-11-13 show the compare rows 1.2–1.5 ns higher (for
+example ascii 8.9, "1.04×"): the benchmark program's own loop cost that
+much, and the C loop of the ICU side did not. The loop was corrected; the
+engine did not change. The ICU reference was ICU 79.1 until 2026-11-16; ICU
+80.0.1 has a sortKey that is 2–5% faster, so the sortKey speedups are a
+little lower than in older recordings with the same Swift times. Each series
+passes four checks (ICU C, macOS's own collation, a frozen binary of the
+engine, and a count of the benchmark loop's instructions; Docs/27).
 
 **The Foundation APIs against macOS's own implementation** (WMO release
 build against `NSString` → CoreFoundation → ICU on the same machine;
 mostly the bridge that the Swift path does not have): `localizedCompare`
-12 / 12 / 24 / 23.5 / 166 ns against 201 / 349 / 356 / 313 / 504 ns; the
-lowest speedup of all rows 2.90× (Docs/21).
+12.4 / 13.0 / 24.1 / 23.7 / 166.4 ns against 201.3 / 347.2 / 355.2 / 313.6 /
+505.0 ns; the lowest speedup of all rows 2.88× (Docs/21).
 
 **Collator creation** (the first collator of a process): 418 µs in a cold
 process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
@@ -118,6 +128,11 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
 - **Checked:** the SwiftPM build and its full suite; the CMake build on
   macOS (with Xcode's `cmake` and `ninja`), whose library collates in a small
   program (root and Swedish).
+- **One change in FoundationEssentials:** in
+  `Locale/Locale_Notifications.swift`, `LocaleNotifications`, its `cache` and
+  its `count()` are `package` (5 lines; no change of behaviour), so that the
+  collator cache in `FoundationInternationalization` sees a change of the
+  current locale. The port changes no other FoundationEssentials file.
 
 ## 6. Open points (for the maintainers to decide)
 
@@ -127,7 +142,10 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    are now `package`: visible inside swift-foundation (the Foundation wiring,
    the benchmark harness in the same package), not to its clients. The tests
    use `@testable import`. The machine code of compare and sortKey did not
-   change (instruction counts identical).
+   change (instruction counts identical). One effect outside the library:
+   another module of the package can no longer inline a synthesized member of
+   a `package` type, so `RootCollator.Order.rawValue` became a call in the
+   benchmark programs; they do not use it any more (technique log §52 (k)).
 2. **Upstream `main` has an ICU-based compare (PR #1683),** behind the flag
    `FOUNDATION_ICU_STRING_COMPARE` (off by default), for
    `compare(_:options:range:locale:)` only; it opens and closes an ICU
@@ -135,8 +153,8 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    (`dbacc677`); a PR to `main` must replace or reconcile it (rebase plan:
    Docs/24). **Open question:** that change also adds a stub in
    FoundationEssentials (`String/StringProtocol+Stub.swift`, behind the same
-   flag). Docs/24 proposes to remove it; the port so far makes no
-   FoundationEssentials change. Before the PR branch is made on a fresh
+   flag). Docs/24 proposes to remove it; the port so far changes one
+   FoundationEssentials file, by access level only (section 5). Before the PR branch is made on a fresh
    upstream `main`: can our PR leave that file untouched (for example, the
    flag simply stays off), or does it need a FoundationEssentials change?
    That decision belongs to the owner of the branch and the maintainers.
