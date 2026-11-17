@@ -219,11 +219,21 @@ replace the older load limits and the "two runs, record run B" rule below.
 
   | corpus | ICU C compare | ICU C sortKey | macOS `localizedCompare` |
   |---|---:|---:|---:|
-  | ascii | 9.3 | 104.1 | 200 |
-  | latin | 10.1 | 120.7 | 341 |
-  | cjk | 40.7 | 119.3 | 354 |
-  | paths | 29.5 | 365.2 | 314 |
-  | thai | 172.0 | 153.7 | 502 |
+  | ascii | 9.3 | 100.9 | 200 |
+  | latin | 10.1 | 117.0 | 341 |
+  | cjk | 40.8 | 115.7 | 354 |
+  | paths | 30.0 | 349.6 | 314 |
+  | thai | 171.9 | 151.2 | 502 |
+
+  **The ICU C gates are for ICU 80.0.1 (since 2026-11-17, technique log
+  §52 (m)).** The local ICU checkout was rebuilt on 2026-11-16; `bench_icu`
+  links whatever version the checkout has. The gates until then (ICU 79.1,
+  2026-11-04): compare 9.3 / 10.1 / 40.7 / 29.5 / 172.0, sortKey 104.1 /
+  120.7 / 119.3 / 365.2 / 153.7. **When the ICU version changes** (check
+  `otool -L Collation/Tools/bench_icu` and `uvernum.h` before a series): the
+  ICU gates no longer apply; judge the machine with the macOS check and the
+  frozen binary, take the medians of at least 4 runs that pass both as the
+  new gates, and write the old ones here. The macOS gates are of 2026-11-04.
 
   A set of runs counts if ICU C is within 2% and macOS within 2.5% of these.
   If only the macOS side drifts, run the frozen-binary check (below).
@@ -266,7 +276,9 @@ replace the older load limits and the "two runs, record run B" rule below.
 a series was not started because the machine was on battery and `bench_icu`
 read ascii 9.5–9.9 against its gate of 9.3. Then run `bench_icu` on ascii,
 latin and thai five times each (one minute): the best of five must be at the
-gate before a series of 25–35 minutes starts.
+gate before a series of 25–35 minutes starts. The unchanged EngineBench
+binary is a second thermometer, and it does not depend on the ICU version:
+it must read its recorded Table 1 values.
 
 Load average alone is misleading on this hardware. A box can read load 9 with
 **52% of CPU idle**, because Darwin's load average counts threads blocked in

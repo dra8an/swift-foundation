@@ -6,9 +6,12 @@
 #   The run files are the outputs of Collation/Tools/run_benchmarks.sh.
 import re, sys, statistics
 
-# The gates of the checks (Docs/27; set 2026-11-04 from 6 runs, Swift 6.5, macOS 27.2.1).
-GATE_ICU_CMP = {'ascii': 9.3, 'latin': 10.1, 'cjk': 40.7, 'paths': 29.5, 'thai': 172.0}
-GATE_ICU_SK = {'ascii': 104.1, 'latin': 120.7, 'cjk': 119.3, 'paths': 365.2, 'thai': 153.7}
+# The gates of the checks (Docs/27). ICU C: set 2026-11-17 from 6 runs with ICU 80.0.1 (the local checkout since
+# 2026-11-16), on a machine that passed the macOS check and the frozen-binary check; until then ICU 79.1, set
+# 2026-11-04: compare 9.3 / 10.1 / 40.7 / 29.5 / 172.0, sortKey 104.1 / 120.7 / 119.3 / 365.2 / 153.7.
+# macOS: set 2026-11-04 (Swift 6.5, macOS 27.2.1).
+GATE_ICU_CMP = {'ascii': 9.3, 'latin': 10.1, 'cjk': 40.8, 'paths': 30.0, 'thai': 171.9}
+GATE_ICU_SK = {'ascii': 100.9, 'latin': 117.0, 'cjk': 115.7, 'paths': 349.6, 'thai': 151.2}
 GATE_MACOS = {'ascii': 200, 'latin': 341, 'cjk': 354, 'paths': 314, 'thai': 502}  # system localizedCompare
 CORP = ['ascii', 'latin', 'cjk', 'paths', 'thai']
 NAME = {'ascii': 'ASCII', 'latin': 'Latin', 'cjk': 'CJK', 'paths': 'Paths', 'thai': 'Thai'}
