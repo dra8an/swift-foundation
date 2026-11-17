@@ -109,13 +109,18 @@ loop reduced in stages (edits of the assembly of the benchmark's `main`):
 
 | compare, ns per call | ascii | latin | cjk |
 |---|---:|---:|---:|
-| Swift loop until 2026-11-13 (42 instructions around the call) | 8.9 | 9.4 | 19.0 |
+| Swift loop until 2026-11-13 (42 instructions around the call; 40 before `b30a9e66`) | 8.9 | 9.4 | 18.9 |
 | Swift loop cut to the minimum (14 instructions) | 7.7 | 8.0 | 17.4 |
-| C loop as it is (13 instructions) | 9.3 | 10.1 | 40.6 |
-| C loop cut to the minimum (10 instructions) | 9.3 | 10.1 | 40.5 |
+| C loop as it is (13 instructions, plus 3 in the library stub) | 9.3 | 10.1 | 40.6 |
+| C loop with 3 instructions fewer (the sum in a register, no status reset) | 9.3 | 10.1 | 40.5 |
 
-So the old Swift loop cost 1.2–1.5 ns of each compare, and the C loop costs
-nothing that shows. The parts of the old loop (latin): the call of
+(The two Swift rows are one interleaved run; paths reads 20.0 → 18.6.) So the
+old Swift loop cost 1.2–1.5 ns of each compare on ascii, latin and cjk
+(1.4–1.6 on paths), and the C loop has nothing that can be removed with an
+effect; its library stub stays, because a caller of ICU pays it. The staged
+times below are from one run each, and each stage also moved the engine by 0,
+64 or 128 bytes, so the split per part is less sure than the total. The parts
+of the old loop (latin): the call of
 `Order.rawValue` 0.3 ns (a `package` getter of another module, a call only in
 the bench programs); the options word packed again from the global `opts` on
 every pass 0.6 ns; the sum in the global `sink` 0.1 ns; the reload of the
@@ -128,11 +133,13 @@ options as a ready value, the call, the error check of a throwing call.
 **The method of 2026-10-15 was wrong, and so was its conclusion** ("the extra
 ~1 ns per Swift call is the API's call shape, not the loop … do not optimize
 the harness"). It timed each loop with an empty function in place of the
-collator (C 1.0, Swift 2.0 ns then; C 2.4, Swift 2.2 ns today). An empty
-loop is limited by the sum that lives in memory; with a real compare inside,
-that part runs in parallel and costs nothing, and the instructions that the
-empty loop hides cost time. To measure a loop's cost, keep the call and change
-the loop.
+collator (C 1.0, Swift 2.0 ns then; C 2.4, Swift 2.2 ns with the empty
+functions of 2026-11-13). Those numbers do not predict what a loop adds to a
+real compare: the measured cost above is 1.2–1.5 ns for Swift and nothing for
+C. Why an empty loop misleads is NOT established (a first explanation, "the
+sum in memory limits both loops", is wrong: the C probe of 2026-10-15 had the
+same sum and read 1.0 ns; technique log §52 (n)). To measure a loop's cost,
+keep the call and change the loop.
 
 **Rule for a change of a bench loop:** keep every value that the loop reads in
 a local, never add a call or a branch on the result, and run the loop check
@@ -157,7 +164,8 @@ visibility change (`public` to `package`) put into the loop. The counts of
 `count_compare.sh` start at the entry of `compare` and do not see the loop.
 
 ```sh
-Collation/Tools/insn-count/loop_check.sh <EngineBench binary>      # about 5 minutes, times nothing
+Collation/Tools/insn-count/loop_check.sh <EngineBench binary>      # about 5 minutes, times nothing; ascii, latin, cjk
+Collation/Tools/insn-count/loop_check.sh <EngineBench binary> paths # another corpus (not thai: too long for a recording)
 ```
 
 It records whole passes under lldb and prints, for ascii, latin and cjk: the
@@ -170,12 +178,18 @@ replaces the reference (do that only with a recorded baseline).
 - **"LOOP CHANGED":** the benchmark, not the engine, differs from the
   reference build. Do not compare the compare rows of the two builds; find
   the cause in `main` first (`pc_trace.py` writes the executed addresses).
-- **Rule 1 applies:** a 4 KB address boundary cuts a hot straight run of code
-  so that it needs one more piece (the processor takes in code in pieces of at
-  most 16 instructions; a taken branch and a 4 KB boundary end a piece). Seen
-  cost: 0.5 ns on latin.
+- **Rule 1 applies:** a 4 KB address boundary cuts a hot run of code THAT
+  ENDS IN A RETURN so that it needs one more piece (the processor takes in
+  code in pieces of at most 16 instructions; a taken branch and a 4 KB
+  boundary end a piece). Seen cost: 0.5–0.7 ns on latin (one run: the exit of
+  `compareUTF8`). A cut run that ends in another instruction is printed as a
+  **note** and is not an error: one such case (a run that ends in a call) was
+  measured without a loss (technique log §52 (n)).
 - **Rule 2 applies:** two hot pieces of code that end in a return start a
-  multiple of 2 KB apart. Seen cost: 0.4 ns on latin.
+  multiple of 2 KB apart. Seen cost: 0.4 ns on latin (one pair in one real
+  build; the period of 2 KB is from the micro test).
+- The rules tell which positions are suspect, not how much they cost: the
+  same case cost 0.5–0.7 ns in one build and at most 0.2 ns in another.
 - With rule 1 or 2, the binary's latin / ascii / cjk compare rows are slower
   than the same code at another position. Do not record a baseline from that
   binary, and do not "fix" it with padding in the benchmark: say so in the
@@ -188,7 +202,7 @@ latin, ascii or cjk compare rows differ by less than 5%.
 
 ## Prerequisites (one-time)
 
-- A local ICU 79 build for `bench_icu`:
+- A local ICU build for `bench_icu` (ICU 80.0.1 since 2026-11-16; the gates below belong to that version):
   - Machine 1: source `~/Projects/claude/icu`, build `~/Projects/claude/collation/icu-build`.
   - Machine 2: source+build under `~/Projects/Unicode/icu-DraganBesevic-2/icu4c/source`
     — run with `ICU_SRC=… ICU_BUILD=… Collation/Tools/run_benchmarks.sh`.
@@ -214,8 +228,8 @@ replace the older load limits and the "two runs, record run B" rule below.
 - **When to measure:** at least 10 minutes after a wake, and no burst (the
   1-minute load not far above the 5-minute one). No fixed load limit: ICU C
   stayed within 1.5% and the macOS column within 2.0% across all six runs.
-- **The gates** (medians of the six runs; `Collation/Tools/matrix_record.py`
-  checks them):
+- **The gates** (since 2026-11-17 the medians of the six runs of the baseline
+  series, see below; `Collation/Tools/matrix_record.py` checks them):
 
   | corpus | ICU C compare | ICU C sortKey | macOS `localizedCompare` |
   |---|---:|---:|---:|
@@ -261,6 +275,12 @@ replace the older load limits and the "two runs, record run B" rule below.
   `localizedCompare`, `localizedStandardCompare`, `compare(_:locale:)` on
   ascii, latin, paths — and paths compare in Table 1 (19.0–20.6 ns). They
   take one of two levels per run (program start), not a spread of values.
+  **Paths compare, checked again 2026-11-17:** no two levels with the engine
+  of the baseline. Forty program starts each, compare on paths: the bench
+  loop with local values 18.0–18.4 (one start 18.7), the loop of before
+  2026-11-13 19.8–20.2 (three starts 20.5–20.9) — one group each. The two
+  levels of 2026-11-04 belong to the engine and bench of that date; their
+  cause was not found, and the binary no longer exists.
 - **The cause of the Table 2 levels, and the warm-up (since 2026-11-05,
   technique log §51 (aw)):** after the first use of a Swift `static let`,
   `dispatch_once` keeps its guard out of the fast path for ~16–28 ms, and
@@ -272,8 +292,8 @@ replace the older load limits and the "two runs, record run B" rule below.
   read one level (`localizedCompare` ascii WMO 12–12 ns over 15 starts,
   before 16–19), and the macOS side did not change. Keep the same warm-up
   in both programs. EngineBench and `bench_icu` have none: the engine rows
-  read no such global per call, and the paths compare levels have another
-  cause (not known; not examined again with the tools of §52 (k)).
+  read no such global per call, and the paths compare levels of 2026-11-04
+  had another cause (not known; they do not show any more, see above).
 - **A/B decisions on two-level rows:** trust the instruction count and the
   aligned builds; a timing difference below their range is not a finding.
 
@@ -311,12 +331,11 @@ system-ICU control, while the 1-minute load already read 13–27. The
 not. Also: a closed lid sleeps the machine and freezes a running benchmark;
 keep it awake (`caffeinate -i <command>`) if you leave it.
 
-Note on the controls: `bench_system` and BenchFoundation (Table 2) still
-print whole nanoseconds by integer division, so they truncate. That is
-harmless for the system-ICU control, because it truncates the same way in
-every run. Do not compare the decimal Table-1 values of a new run with the
-truncated Table-1 values recorded before 2026-10-15: they read up to 1 ns
-lower for that reason alone.
+Note on the controls: until 2026-11-13 `bench_system` and BenchFoundation
+(Table 2) printed whole nanoseconds by integer division, cut off; since then
+they print one rounded decimal (technique log §52 (l)). Do not compare the
+decimal Table-1 values of a new run with the truncated Table-1 values
+recorded before 2026-10-15: they read up to 1 ns lower for that reason alone.
 
 What actually degrades measurements, in order:
 
@@ -331,8 +350,9 @@ What actually degrades measurements, in order:
 
 **Primary control (since 2026-10-15): the system ICU in Table 2.** It is part
 of macOS, so it does not change unless the OS updates. On Apple Silicon
-(macOS 27.2.1, the reference of 2026-11-04) `localizedCompare` should read
-about 200/342/353/314/502 for ascii/latin/cjk/paths/thai (macOS 26.4, until
+(macOS 27.2.1, the reference of 2026-11-17) `localizedCompare` should read
+about 201.3/347.2/355.2/313.6/505.0 for ascii/latin/cjk/paths/thai (the
+reference of 2026-11-04 was 200/341/354/314/502; macOS 26.4, until
 2026-11-03: 194/365/369/300/494). If it matches within ~2–3%, the load did
 not distort the run.
 

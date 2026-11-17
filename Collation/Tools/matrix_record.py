@@ -58,8 +58,14 @@ def spread(values):
     m = med(values)
     return (max(values) - min(values)) / m if m else 0
 
+# True when a Table 2 value of any run has a decimal.
+DECIMALS = any(not float(x).is_integer() for r in runs for cell in r[1].values() for x in cell)
+
 def num(x):
-    """A Table 2 value: whole when it is whole (the runs before 2026-11-13 print whole ns), else one decimal."""
+    """A Table 2 value: one decimal when the runs print decimals (since 2026-11-13); for the older runs, which print
+    whole ns, whole when it is whole."""
+    if DECIMALS:
+        return f'{x:.1f}'
     return f'{x:.0f}' if float(x).is_integer() else f'{x:.1f}'
 
 def t2cell(api, c, i, label):

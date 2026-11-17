@@ -1,4 +1,4 @@
 # Reference of loop_check.sh: corpus, instructions per pass inside compare, outside it, taken branches.
-ascii 150.2 11.7 18.68
-cjk 287.0 11.7 40.69
-latin 149.2 11.7 18.56
+ascii 150.171 11.744 18.683
+cjk 286.955 11.744 40.693
+latin 149.166 11.744 18.563

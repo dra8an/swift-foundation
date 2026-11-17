@@ -11,8 +11,10 @@ rule of 2026-11-04 asks for at least 4; Docs/27, technique log §51 (au)).
 recordings only as said here** (technique log §52 (k), (l), (m)):
 
 1. **The benchmark loops (2026-11-13).** EngineBench's loop read three
-   globals and called `Order.rawValue`; that cost 1.2–1.5 ns of each compare
-   and about 1 ns of each sortKey. All three bench programs now use local
+   globals and called `Order.rawValue`; that cost 1.2–1.5 ns of each compare (no
+   cost is shown for sortKey: its rows moved by about 1 ns in the A/B, but so
+   did a control binary whose sortKey loops did not change). All three bench
+   programs now use local
    values in their timed loops. The engine did not change. **The Swift
    columns of Table 1 are not comparable with any recording before
    2026-11-13.** In Table 2 only `compare(_:locale:)` moved with the loops
@@ -83,8 +85,10 @@ data), not the 79.0.1 data that our collator bundles. Its KEYS differ from
 ours: do not generate golden files from that checkout (technique log §49).
 
 **The harness** (Docs/27, "What the harness itself costs"): since 2026-11-13
-the Swift loops have 10 instructions around a compare, the C loop 13; neither
-adds time that shows. What stays in our numbers is what a caller pays: two
+EngineBench's loop has 10 instructions around a compare (recorded), the C
+loop 13 plus a library stub of 3; neither has a part that can be removed with
+an effect. The loops of the Table 2 programs are not recorded; an A/B shows
+no cost that matters (technique log §52 (l)). What stays in our numbers is what a caller pays: two
 `String` arguments, the options, the call, the error check of a throwing
 call.
 
@@ -94,8 +98,8 @@ Same Foundation APIs, two backends:
 - **System ICU**: pre-compiled `bench_system` (system Foundation → NSString →
   CoreFoundation → ICU), compiled with the same Swift 6.5
 
-Table 2 values have one decimal (both programs round the same way); a median
-of six runs can end in a half tenth.
+Table 2 values have one decimal (both programs round the same way; the table
+rounds the median of six runs to one decimal again).
 
 ## Results (ns/op)
 
@@ -104,10 +108,10 @@ of six runs can end in a half tenth.
 | Corpus | Swift, WMO | Speedup | Swift, `-no-WMO` | Speedup | System ICU |
 |--------|-----------:|---------|-----------------:|---------|-----------:|
 | ASCII  | 12.4 | **16.23× faster** | 31.6 | 6.38× faster | 201.3 |
-| Latin  | 13 | **26.71× faster** | 32.4 | 10.72× faster | 347.2 |
+| Latin  | 13.0 | **26.71× faster** | 32.4 | 10.72× faster | 347.2 |
 | CJK    | 24.1 | **14.71× faster** | 50.8 | 6.99× faster | 355.2 |
 | Paths  | 23.7 | **13.23× faster** | 44.9 | 6.98× faster | 313.6 |
-| Thai   | 166.4 | **3.03× faster** | 220 | 2.30× faster | 505 |
+| Thai   | 166.4 | **3.03× faster** | 220.0 | 2.30× faster | 505.0 |
 
 ### localizedStandardCompare(_:)
 
@@ -125,9 +129,9 @@ of six runs can end in a half tenth.
 |--------|-----------:|---------|-----------------:|---------|-----------:|
 | ASCII  | 15.5 | **12.89× faster** | 35.8 | 5.58× faster | 199.8 |
 | Latin  | 16.1 | **20.98× faster** | 36.0 | 9.37× faster | 337.8 |
-| CJK    | 33 | **10.74× faster** | 64.3 | 5.51× faster | 354.4 |
+| CJK    | 33.0 | **10.74× faster** | 64.3 | 5.51× faster | 354.4 |
 | Paths  | 26.8 | **11.83× faster** | 54.0 | 5.88× faster | 317.1 |
-| Thai   | 168.5 | **2.88× faster** | 223.4 | 2.18× faster | 486 |
+| Thai   | 168.5 | **2.88× faster** | 223.4 | 2.18× faster | 486.0 |
 
 ### compare(_:locale:)
 
@@ -137,15 +141,15 @@ of six runs can end in a half tenth.
 | Latin  | 17.7 | **25.69× faster** | 30.9 | 14.72× faster | 454.8 |
 | CJK    | 29.2 | **16.04× faster** | 51.8 | 9.05× faster | 469.1 |
 | Paths  | 28.5 | **14.37× faster** | 44.8 | 9.13× faster | 409.6 |
-| Thai   | 172.2 | **3.57× faster** | 219.1 | 2.81× faster | 615 |
+| Thai   | 172.2 | **3.57× faster** | 219.1 | 2.81× faster | 615.0 |
 
 ### compare(_:options:range:locale:) — options [.caseInsensitive, .diacriticInsensitive]
 
 | Corpus | Swift, WMO | Speedup | Swift, `-no-WMO` | Speedup | System ICU |
 |--------|-----------:|---------|-----------------:|---------|-----------:|
-| ASCII  | 24 | **12.73× faster** | 46.9 | 6.51× faster | 305.5 |
+| ASCII  | 24.0 | **12.73× faster** | 46.9 | 6.51× faster | 305.5 |
 | Latin  | 24.7 | **18.35× faster** | 48.3 | 9.38× faster | 453.1 |
-| CJK    | 42.8 | **11.10× faster** | 76.8 | 6.18× faster | 475 |
+| CJK    | 42.8 | **11.10× faster** | 76.8 | 6.18× faster | 475.0 |
 | Paths  | 35.2 | **11.92× faster** | 64.7 | 6.49× faster | 419.6 |
 | Thai   | 178.7 | **3.11× faster** | 238.6 | 2.33× faster | 555.5 |
 
@@ -167,7 +171,7 @@ of six runs can end in a half tenth.
 | Latin  | 148.1 | **9.68× faster** | 249.4 | 5.75× faster | 1433.8 |
 | CJK    | 154.9 | **7.95× faster** | 263.7 | 4.67× faster | 1230.8 |
 | Paths  | 99.2 | **9.39× faster** | 176.9 | 5.26× faster | 930.9 |
-| Thai   | 152.3 | **9.11× faster** | 236 | 5.88× faster | 1387.3 |
+| Thai   | 152.3 | **9.11× faster** | 236.0 | 5.88× faster | 1387.3 |
 
 ### localizedStandardRange(of:)
 
@@ -176,7 +180,7 @@ of six runs can end in a half tenth.
 | ASCII  | 135.8 | **6.99× faster** | 288.9 | 3.29× faster | 949.9 |
 | Latin  | 154.4 | **8.99× faster** | 314.5 | 4.42× faster | 1388.8 |
 | CJK    | 159.8 | **7.65× faster** | 283.4 | 4.31× faster | 1221.8 |
-| Paths  | 173 | **5.43× faster** | 268.7 | 3.49× faster | 938.5 |
+| Paths  | 173.0 | **5.43× faster** | 268.7 | 3.49× faster | 938.5 |
 | Thai   | 203.8 | **6.79× faster** | 364.4 | 3.80× faster | 1384.0 |
 
 ### range(of:options:locale:)
@@ -186,7 +190,7 @@ of six runs can end in a half tenth.
 | ASCII  | 38.5 | **8.63× faster** | 79.8 | 4.17× faster | 332.9 |
 | Latin  | 170.1 | **4.63× faster** | 335.8 | 2.35× faster | 788.0 |
 | CJK    | 173.7 | **3.35× faster** | 301.0 | 1.94× faster | 582.8 |
-| Paths  | 49.4 | **6.48× faster** | 89 | 3.60× faster | 320.1 |
+| Paths  | 49.4 | **6.48× faster** | 89.0 | 3.60× faster | 320.1 |
 | Thai   | 192.4 | **3.74× faster** | 368.7 | 1.95× faster | 719.8 |
 
 ### range(of:options:.backwards,locale:)
@@ -206,7 +210,7 @@ of six runs can end in a half tenth.
 | ASCII  | 1022.4‡ | **12.63× faster** | 1468.7 | 8.79× faster | 12914.8 |
 | Latin  | 1066.7‡ | **14.40× faster** | 1529.7 | 10.04× faster | 15358.4 |
 | CJK    | 1286.7 | **12.63× faster** | 1919.5 | 8.46× faster | 16244.8 |
-| Paths  | 102.5 | **10.52× faster** | 158 | 6.82× faster | 1078.0 |
+| Paths  | 102.5 | **10.52× faster** | 158.0 | 6.82× faster | 1078.0 |
 | Thai   | 632.1 | **8.36× faster** | 909.1 | 5.81× faster | 5284.8 |
 
 ### sorted(using: String.Comparator(options: [], locale:)) — ns per element
@@ -217,7 +221,7 @@ of six runs can end in a half tenth.
 | Latin  | 867.0 | **6.97× faster** | 1179.3 | 5.12× faster | 6039.4 |
 | CJK    | 1171.4 | **5.45× faster** | 1543.9 | 4.13× faster | 6380.2 |
 | Paths  | 80.5 | **4.78× faster** | 104.5 | 3.68× faster | 384.8 |
-| Thai   | 623 | **3.61× faster** | 828.8 | 2.71× faster | 2249.9 |
+| Thai   | 623.0 | **3.61× faster** | 828.8 | 2.71× faster | 2249.9 |
 
 ### sorted(using: KeyPathComparator(\.name, comparator: .localizedStandard)) — ns per element
 
@@ -235,7 +239,7 @@ of six runs can end in a half tenth.
 |--------|-----------:|---------|-----------------:|---------|-----------:|
 | ASCII  | 1396.9 | **9.40× faster** | 1901.4 | 6.91× faster | 13132.5 |
 | Latin  | 1443.8 | **10.80× faster** | 1942.8 | 8.03× faster | 15593.0 |
-| CJK    | 1768.5 | **9.32× faster** | 2366 | 6.96× faster | 16477.7 |
+| CJK    | 1768.5 | **9.32× faster** | 2366.0 | 6.96× faster | 16477.7 |
 | Paths  | 133.2 | **8.26× faster** | 174.9 | 6.29× faster | 1100.0 |
 | Thai   | 779.2 | **6.87× faster** | 1052.0 | 5.09× faster | 5354.1 |
 
@@ -338,7 +342,7 @@ paths) because it allocates a fresh `[UInt8]` per call BY API CONTRACT; the
 inout twin is the one to compare against ICU.
 
 **Foundation APIs (Table 2):** every cell is ahead of system ICU — floor
-**2.88× in WMO** (`localizedStandardCompare` on thai) and **1.95× in
+**2.88× in WMO** (`localizedCaseInsensitiveCompare` on thai) and **1.94× in
 `-no-WMO`** (`range(of:locale:)` on cjk). Most of that lead comes from
 removing the system path's NSString → CoreFoundation → C++ bridge layers,
 not from the collation engine. Do not use Table 2 as evidence about engine
@@ -396,10 +400,11 @@ Sanity gates before you record a run:
 - **When:** at least 10 minutes after a wake, and no burst (the 1-minute
   load not far above the 5-minute one). No fixed load limit: on 2026-11-04
   the checks held at loads of 9–43 with full memory.
-- **The checks decide** (gates of 2026-11-04, six runs): ICU C within 2% of
-  9.3/10.1/40.7/29.5/172.0 compare and 104.1/120.7/119.3/365.2/153.7
-  sortKey; system-ICU `localizedCompare` within 2.5% of
-  200/341/354/314/502. If the system side drifts, run the frozen-binary
+- **The checks decide** (gates of 2026-11-17, six runs, ICU 80.0.1; Docs/27):
+  ICU C within 2% of 9.3/10.1/40.8/30.0/171.9 compare and
+  100.9/117.0/115.7/349.6/151.2 sortKey; system-ICU `localizedCompare` within
+  2.5% of 201.3/347.2/355.2/313.6/505.0. First: AC power, and the loop check
+  for a new EngineBench binary. If the system side drifts, run the frozen-binary
   check (`python3 Collation/Tools/frozen_check.py Collation/Tools/bench_system 3`).
   First check which ICU the checkout holds (`git -C $ICU_SRC branch --show-current`).
 - **Record the median of at least 4 runs:**
