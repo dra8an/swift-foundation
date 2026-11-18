@@ -45,6 +45,58 @@ import Testing
         #expect(primaries[0x20] != 0)
     }
 
+    /// The order of two sort keys, as -1 / 0 / 1.
+    static func keyOrder(_ collator: RootCollator, _ a: String, _ b: String, _ options: CollationOptions) throws -> Int {
+        let ka = try collator.sortKey(for: a, options: options)
+        let kb = try collator.sortKey(for: b, options: options)
+        return ka.lexicographicallyPrecedes(kb) ? -1 : (kb.lexicographicallyPrecedes(ka) ? 1 : 0)
+    }
+
+    /// With alternate = shifted, the fast path must treat the same characters as variable as the full path does, for each "max variable" group. The case is ICU's regression test for ICU-21992 (Bengali, max variable = space): the top of the group's mini primaries must include the tertiary bits, or the last characters of the group count as not variable.
+    @Test func shiftedCompareAgreesWithSortKeysICU21992() throws {
+        let bengali = try RootCollator(tailoringNamed: "bn")
+        var options = bengali.defaultOptions
+        options.strength = .tertiary
+        options.alternate = .shifted
+        options.maxVariable = .space
+        let s1 = "\u{0002}\u{2000}湢", s2 = "ô\u{0B00}\u{0B03}"
+        #expect(try bengali.compare(s1, s2, options: options).rawValue == Self.keyOrder(bengali, s1, s2, options))
+    }
+
+    /// The same agreement for every character of the fast Latin table (U+0001...U+017F, U+2000...U+203F) against 16 characters from the groups that "max variable" selects (controls, spaces, punctuation, symbols, currency signs, a digit, a letter), alone and after a letter, for each "max variable" group. U+00A0 is the last space of the table: before the fix of ICU-21992 it disagreed with 66 other characters.
+    @Test(arguments: [CollationOptions.MaxVariable.space, .punctuation, .symbol, .currency])
+    func shiftedCompareAgreesWithSortKeysForEachGroup(maxVariable: CollationOptions.MaxVariable) throws {
+        let root = try Self.root
+        var options = root.defaultOptions
+        options.strength = .tertiary
+        options.alternate = .shifted
+        options.maxVariable = maxVariable
+        let partners: [UInt32] = [0x01, 0x09, 0x20, 0x21, 0x24, 0x2B, 0x30, 0x61, 0xA0, 0xA2, 0xA7, 0xBF, 0x2000, 0x2010, 0x2020, 0x203F]
+        var disagreements = 0
+        var first = ""
+        for prefix in ["", "a"] {
+            // One sort key per string; a pair then costs one compare.
+            var strings: [(String, [UInt8])] = []
+            for value in Array(UInt32(0x01)...0x17F) + Array(UInt32(0x2000)...0x203F) {
+                let string = prefix + String(try #require(Unicode.Scalar(value)))
+                strings.append((string, try root.sortKey(for: string, options: options)))
+            }
+            for value in partners {
+                let partner = prefix + String(try #require(Unicode.Scalar(value)))
+                let partnerKey = try root.sortKey(for: partner, options: options)
+                for (string, key) in strings {
+                    let compared = try root.compare(string, partner, options: options).rawValue
+                    let byKeys = key.lexicographicallyPrecedes(partnerKey) ? -1 : (partnerKey.lexicographicallyPrecedes(key) ? 1 : 0)
+                    if compared != byKeys {
+                        disagreements += 1
+                        if first.isEmpty { first = "\(string.unicodeScalars.map { String($0.value, radix: 16) }) / \(partner.unicodeScalars.map { String($0.value, radix: 16) }): compare \(compared), sort keys \(byKeys)" }
+                    }
+                }
+            }
+        }
+        #expect(disagreements == 0, "first: \(first)")
+    }
+
     /// Real results, not bail-outs, for plain ASCII and Latin-1 text.
     @Test(arguments: [
         ("ab", "ac", Int32(-1)),

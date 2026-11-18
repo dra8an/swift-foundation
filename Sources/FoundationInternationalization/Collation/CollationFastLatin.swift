@@ -116,7 +116,8 @@ enum CollationFastLatin {
             if i >= headerLength {
                 return -1  // variableTop >= digits, should not occur
             }
-            miniVarTop = UInt32(table[i])
+            // Turn the max long primary of the group into a max mini CE: a mini CE of the group that has tertiary bits is then variable too (ICU-21992).
+            miniVarTop = UInt32(table[i]) | tertiaryMask
         }
 
         var digitsAreReordered = false
@@ -174,8 +175,11 @@ enum CollationFastLatin {
             for c in 0x30...0x39 { primaries[c] = 0 }
         }
 
+        // The numeric flag also tells the compare that the digits are reordered: it then leaves the fast path at a digit (ICU-23016).
+        let fastOptions = digitsAreReordered ? options | CollationOptions.Bits.numeric : options
+
         // Shift the miniVarTop above other options.
-        return (Int32(bitPattern: miniVarTop << 16)) | options
+        return (Int32(bitPattern: miniVarTop << 16)) | fastOptions
     }
 
     /// Compares the two scalar streams on the mini-CE table. Returns -1/0/1, or bailOutResult if the regular comparison must be used. (CollationFastLatin::compareUTF16, over scalars: every supported character is a single BMP code unit, and everything else bails out, so scalar order equals code unit order here.)
