@@ -139,7 +139,7 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
   program (root and Swedish).
 - **One change in FoundationEssentials:** in
   `Locale/Locale_Notifications.swift`, `LocaleNotifications`, its `cache` and
-  its `count()` are `package` (5 lines; no change of behaviour), so that the
+  its `count()` are `package` (three words on three lines; no change of behaviour), so that the
   collator cache in `FoundationInternationalization` sees a change of the
   current locale. The port changes no other FoundationEssentials file.
 
