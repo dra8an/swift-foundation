@@ -116,6 +116,8 @@ mostly the bridge that the Swift path does not have): `localizedCompare`
 12.4 / 13.0 / 24.1 / 23.7 / 166.4 ns against 201.3 / 347.2 / 355.2 / 313.6 /
 505.0 ns; the lowest speedup of all rows 2.88× (Docs/21).
 
+These Foundation numbers include a lock that this branch's base (`release/6.3`) takes on each call that uses the current locale; upstream removed it in 2026 (open point 10). With upstream's form of that read, `localizedCompare` reads 10.5 / 11.1 / 21.3 / 21.5 / 160.7 ns in an A/B on one thread, and calls from several threads no longer wait for each other.
+
 **Collator creation** (the first collator of a process): 418 µs in a cold
 process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
 (§51 (bf)).
@@ -206,6 +208,46 @@ process, 436 µs after a `Bundle.main` lookup; a tailoring 190–250 µs
    `extract_regcoll.py`); the test comments point there.
 
 9. **`LockedState` → `Mutex` at a move to a newer base.** The collation code uses upstream's `LockedState` (five locks: the collator cache, the tailoring cache, the fast-Latin cache), which exists on this branch's base, `release/6.3`. Upstream `main` replaced it with `Synchronization.Mutex` (swiftlang/swift-foundation#1840). A trial on 2026-11-12 showed one obstacle: `Mutex` checks that nothing that is not `Sendable` leaves the lock, and the explicit-locale cache returns a pointer to its published slot (memory that is never freed) from inside the lock. The clean fix adds one `@unchecked Sendable` wrapper for that pointer; the other four locks convert directly (one with a small rewrite). Owner's decision: keep `LockedState` until a PR needs the move (technique log §52 (i)).
+
+10. **A lock on each current-locale call, on this base only (measured 2026-11-18; no change by the port).**
+
+    **What happens.** The collator cache keeps the collator of the current locale and checks on every call that the locale did not change: it reads the locale generation, `LocaleNotifications.cache.count()` (FoundationEssentials, `Locale/Locale_Notifications.swift`), which upstream documents for exactly this use ("Compare that to a cached value to see if your cached `Locale.current`, `TimeZone.current`, or `Calendar.current` to see if it is out of date"). On `release/6.3` that count is an `Atomic<Int>` only under `FOUNDATION_FRAMEWORK`; in every other build it is a `LockedState<Int>`, so `count()` takes and releases a lock (`os_unfair_lock` on Darwin). The engine runs in exactly those other builds. So each `localizedCompare`, `localizedStandardCompare`, `localizedCaseInsensitiveCompare`, each localized search and each `.localizedStandard` comparison of a sort takes one process-wide lock. `compare(_:locale:)` and the other calls with an explicit locale do not read the count. The rest of the current-locale path takes no lock (one atomic load of a published slot).
+
+    **The history of the file upstream** (swiftlang/swift-foundation; read from GitHub on 2026-11-18):
+
+    | PR | merged | author | what it did to `Locale_Notifications.swift` |
+    |---|---|---|---|
+    | #719 "Improve performance of FormatStyle formatting when used in multithreaded context" | 2024-07-09 | Tony Parker | Added the file. `Atomic<Int>` under `#if !canImport(Darwin) \|\| FOUNDATION_FRAMEWORK`, `LockedState<Int>` otherwise: the package build on Darwin had the lock from the first day, Linux had the atomic. |
+    | #724 "Still use canImport(Synchronization)" | 2024-07-09 | Tony Parker | The condition became `canImport(Synchronization) && (!canImport(Darwin) \|\| FOUNDATION_FRAMEWORK)`. |
+    | #736 "Limit Synchronization usage to FOUNDATION_FRAMEWORK" | 2024-07-15 | Jeremy Schonfeld | The condition became `canImport(Synchronization) && FOUNDATION_FRAMEWORK`: from here on every build outside the framework has the lock, Linux too. The PR text: "There are some issues with using the `Synchronization` module from within the toolchain on Linux so for now we'll limit its usage to `FOUNDATION_FRAMEWORK` only". |
+    | #744 "Revert formatting performance improvements" | 2024-07-19 | Tony Parker | Removed the file with the rest of #719. The PR text: "There appears to be some kind of race or memory smash in ICU after these, and we need more time to investigate the full root cause." |
+    | #884 "Formatting performance improvements" | 2024-08-23 | Tony Parker | Brought the file back in the form of #736. The PR text: "Re-apply the diff from #719 (reverted in #744). We discovered the root cause was use of ICU's ability to set the malloc functions used, which can race." **This is the form on `release/6.3` and `release/6.3.1`, and on this branch.** |
+    | #1840 "Replace LockedState with Mutex" | 2026-03-20 | Jeremy Schonfeld | Removed the conditions and the `LockedState` form: `let _count = Atomic<Int>(1)` in every build. The PR text: "Removes all conditionals around importing `Synchronization`". **This is the form on `main` and on the 6.4 branches (checked: `release/6.4.x`, `release/6.4.0`, `release/6.4.3`).** |
+    | #2232 "Adopt @c @implementation in favor of @_cdecl" | 2026-09-09 | Jeremy Schonfeld | The exported C function of the framework build only; the count did not change. |
+
+    The port's own changes to the file: commit `c7e2ff6e` (2026-07-20) made `LocaleNotifications`, its `cache` and its `count()` visible to `FoundationInternationalization` (`package`, three words); `80b10d12` (2026-11-17) restored upstream's whitespace. The port did not add the lock and did not change the count.
+
+    **What the lock costs** (an A/B of two copies of this branch, WMO release build; the second copy has the four conditions of the file without `&& FOUNDATION_FRAMEWORK`, which is the code of #1840 for the count; technique log §52 (q)). One thread, ns per call, lock → atomic:
+
+    | API | ASCII | Latin | CJK | paths | Thai |
+    |---|---|---|---|---|---|
+    | `localizedCompare` | 12.4 → 10.5 | 13.0 → 11.1 | 24.2 → 21.3 | 23.7 → 21.5 | 165.9 → 160.7 |
+    | `localizedStandardCompare` | 14.6 → 12.7 | 15.2 → 13.3 | 31.6 → 29.0 | 26.7 → 26.8 | 166.9 → 161.5 |
+    | `localizedCaseInsensitiveCompare` | 15.5 → 13.7 | 16.1 → 14.3 | 32.8 → 30.2 | 26.7 → 25.3 | 168.2 → 162.4 |
+    | `localizedStandardContains` | 126.9 → 121.7 | 146.6 → 140.8 | 152.9 → 147.1 | 131.0 → 125.6 | 151.0 → 145.8 |
+
+    About 1.9 ns of each short compare (15% on ASCII and Latin) and 5–6 ns of each localized search. The calls with an explicit locale and the direct engine calls are the same in both copies. Several threads that call `localizedCompare` at the same time (ASCII, each thread with its own strings; ns per call in each thread, and the total of all threads):
+
+    | threads | with the lock | total, million calls / s | with the atomic read | total |
+    |---:|---:|---:|---:|---:|
+    | 1 | 14.5–15.0 | 67–69 | 11.9–12.2 | 82–84 |
+    | 2 | 93–100 | 20–21 | 12.0–12.3 | 163–167 |
+    | 4 | 201–203 | 20 | 12.6 | 316 |
+    | 8 | 378–424 | 19–21 | 12.9–15.3 | 512–606 |
+
+    With the lock, two threads together do less than one thread alone, and the total stays near 20 million calls per second for any number of threads. With the atomic read the total grows about 7 times at 8 threads. `compare(_:locale:)` in the same test scales in both copies (18.7 ns at 1 thread, 19.8 ns at 8), so the engine, its scratch buffers and its caches do not limit parallel calls; this one lock does. Limits of the measurement: one machine (M1 Max), ASCII only for the thread test, at most 8 threads, the WMO build only.
+
+    **What it means.** On a base that has #1840 (`main`, `release/6.4.x`) the lock is gone, and the port's change to the file is still the three `package` words (the type, `cache` and `count()` are internal there). On `release/6.3` the port leaves the file as it is: the owner does not change FoundationEssentials beyond those three words (decision 2026-11-18). If the engine must ship on a base without #1840, taking that PR's form of the count is the maintainers' decision. In the package sources of this branch the collator cache is the only caller of `count()` (the framework build also exports it to C as `_localeNotificationCount`), so no other code of the package pays this lock.
 
 ## 7. A possible PR sequence
 
