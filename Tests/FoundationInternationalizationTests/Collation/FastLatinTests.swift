@@ -97,6 +97,66 @@ import Testing
         #expect(disagreements == 0, "first: \(first)")
     }
 
+    /// A reordering that puts Latin before the digits (ICU's `colReorder=latn-digit`), made from the script starts of the root data: the lead bytes from the end of the digits to the end of Latin (the reserved bytes before Latin, then Latin) move down to the first lead byte of the digits, and the lead bytes of the digits move up behind them. The engine reads a reordering only from tailoring data, and no bundled tailoring moves the digits, so the test makes this one.
+    static func latinBeforeDigits() throws -> Reordering {
+        let data = try Self.root.data
+        let digitGroup = CollationData.reorderCodeFirst + 4  // UCOL_REORDER_CODE_DIGIT
+        let latinGroup: Int32 = 25  // USCRIPT_LATIN
+        let digitStart = data.firstPrimaryForGroup(digitGroup)
+        let digitLimit = data.lastPrimaryForGroup(digitGroup) &+ 1
+        let latinStart = data.firstPrimaryForGroup(latinGroup)
+        let latinLimit = data.lastPrimaryForGroup(latinGroup) &+ 1
+        // Each group is a run of whole lead bytes, and Latin comes after the digits: the permutation needs no ranges for split lead bytes.
+        let bounds = [digitStart, digitLimit, latinStart, latinLimit]
+        try #require(bounds.allSatisfy { $0 & 0xff_ffff == 0 }, "\(bounds.map { String($0, radix: 16) })")
+        try #require(0 < digitStart && digitStart < digitLimit && digitLimit <= latinStart && latinStart < latinLimit, "\(bounds.map { String($0, radix: 16) })")
+        let firstDigit = Int(digitStart >> 24), afterDigits = Int(digitLimit >> 24), afterLatin = Int(latinLimit >> 24)
+        var table = (0...255).map { UInt8($0) }
+        for lead in firstDigit..<afterDigits { table[lead] = UInt8(lead + (afterLatin - afterDigits)) }
+        for lead in afterDigits..<afterLatin { table[lead] = UInt8(lead - (afterDigits - firstDigit)) }
+        return Reordering(table: table, rawRanges: [])
+    }
+
+    /// The sort key of the root data under a reordering, with the default options: the full path (CE production and the key writer), which never uses fast Latin.
+    static func sortKey(_ s: String, reordering: Reordering) throws -> [UInt8] {
+        let root = try Self.root
+        let scratch = ScratchBuffers(data: root.data, base: nil, norm: root.norm)
+        var key: [UInt8] = []
+        try scratch.resetCollectAndWriteKey(
+            numeric: false, scalars: s.unicodeScalars, compressibleBytes: root.data.compressibleBytes,
+            options: CollationOptions().icuOptions, variableTopValue: 0,
+            reordering: reordering, terminate: true, into: &key)
+        return key
+    }
+
+    /// When a reordering moves the digits, the mini CEs of the digits in the fast Latin table are in the wrong place: the fast path must leave at a digit. `getOptions` clears the primaries of the digits and sets the numeric flag, which tells the compare to leave there (ICU-23016). The three pairs and their orders are those of ICU's test (cmsccoll.c, TestDigitReordering, `colReorder=latn-digit`): the sort keys give ICU's order, the fast path leaves for the two pairs with digits, and it still decides the pair of letters.
+    @Test func digitsMovedByReorderingLeaveTheFastPathICU23016() throws {
+        let root = try Self.root
+        let reordering = try Self.latinBeforeDigits()
+        let table = root.data.fastLatinTable
+        var primaries: [UInt16] = []
+        let packed = CollationFastLatin.getOptions(
+            table: table, scriptsData: root.data, reordering: reordering,
+            options: CollationOptions().icuOptions, primaries: &primaries)
+        #expect(packed >= 0)
+        #expect(packed & CollationOptions.Bits.numeric != 0)
+        #expect(primaries[0x30...0x39].allSatisfy { $0 == 0 })
+        #expect(primaries[Int(UnicodeScalar("A").value)] != 0)
+
+        let leaves = CollationFastLatin.bailOutResult
+        let cases: [(String, String, byKeys: Int, fast: Int32)] = [
+            ("123", "ABC", 1, leaves), ("ABC", "123", -1, leaves), ("123", "124", -1, leaves), ("ABC", "ABD", -1, -1),
+        ]
+        for (a, b, byKeys, fast) in cases {
+            let ka = try Self.sortKey(a, reordering: reordering), kb = try Self.sortKey(b, reordering: reordering)
+            #expect((ka.lexicographicallyPrecedes(kb) ? -1 : (kb.lexicographicallyPrecedes(ka) ? 1 : 0)) == byKeys, "\(a) vs \(b), sort keys")
+            let viaScalars = CollationFastLatin.compare(
+                table: table, primaries: primaries, options: packed, left: Self.side(a), right: Self.side(b))
+            #expect(viaScalars == fast, "\(a) vs \(b), scalars")
+            #expect(try Self.utf8Compare(a, b, table: table, primaries: primaries, packed: packed) == fast, "\(a) vs \(b), UTF-8")
+        }
+    }
+
     /// Real results, not bail-outs, for plain ASCII and Latin-1 text.
     @Test(arguments: [
         ("ab", "ac", Int32(-1)),
