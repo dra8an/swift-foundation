@@ -83,18 +83,19 @@ A locale change invalidates the cached collators (`LocaleNotifications`).
 ## 4. Performance
 
 Measured on Apple Silicon (M1 Max), macOS 27.2.1, Swift 6.5, the median of 6
-runs (Docs/21, the baseline of 2026-11-17).
+runs (Docs/21, the recording of 2026-11-19 at `1cbc4682`; the baseline of
+2026-11-17 read the same within 0.6% in this table).
 
 **The engine against ICU4C** (EngineBench against ICU C, ICU 80.0.1, ns per
 call; speedup = ICU / ours):
 
 | corpus | compare | sortKey |
 |---|---|---|
-| ASCII | 7.6 / 9.3, 1.22× | 71.0 / 100.9, 1.42× |
-| Latin | 7.9 / 10.1, 1.28× | 91.3 / 117.0, 1.28× |
-| CJK | 17.7 / 40.8, 2.31× | 100.8 / 115.7, 1.15× |
-| paths | 18.1 / 30.0, 1.66× | 173.2 / 349.6, 2.02× |
-| Thai | 158.8 / 171.9, 1.08× | 142.1 / 151.2, 1.06× |
+| ASCII | 7.6 / 9.3, 1.22× | 70.9 / 100.8, 1.42× |
+| Latin | 7.9 / 10.1, 1.28× | 91.2 / 116.8, 1.28× |
+| CJK | 17.8 / 40.7, 2.28× | 100.3 / 115.8, 1.15× |
+| paths | 18.2 / 30.0, 1.65× | 173.1 / 351.0, 2.03× |
+| Thai | 159.4 / 173.0, 1.08× | 142.2 / 151.8, 1.07× |
 
 The API that returns a new `[UInt8]` key is 0.78–0.85× of ICU, which writes
 into the caller's buffer; most of that difference is the new array itself
@@ -113,8 +114,8 @@ engine, and a count of the benchmark loop's instructions; Docs/27).
 **The Foundation APIs against macOS's own implementation** (WMO release
 build against `NSString` → CoreFoundation → ICU on the same machine;
 mostly the bridge that the Swift path does not have): `localizedCompare`
-12.4 / 13.0 / 24.1 / 23.7 / 166.4 ns against 201.3 / 347.2 / 355.2 / 313.6 /
-505.0 ns; the lowest speedup of all rows 2.88× (Docs/21).
+12.4 / 13.0 / 24.1 / 23.8 / 167.1 ns against 201.8 / 347.6 / 355.9 / 313.4 /
+507.6 ns; the lowest speedup of all rows 2.88× (Docs/21).
 
 These Foundation numbers include a lock that this branch's base (`release/6.3`) takes on each call that uses the current locale; upstream removed it in 2026 (open point 10). With upstream's form of that read, `localizedCompare` reads 10.5 / 11.1 / 21.3 / 21.5 / 160.7 ns in an A/B on one thread, and calls from several threads no longer wait for each other.
 
